@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "wow-lore-companion"
+version = "0.1.0"
+description = "Foundational toolchain and scaffolding for WoW Lore Companion"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "pydantic>=2.11.0",
+  "prefect>=3.4.0",
+  "typer>=0.16.0",
+]
+
+[dependency-groups]
+dev = [
+  "mypy>=1.15.0",
+  "pytest>=8.3.0",
+  "ruff>=0.11.0",
+]
+
+[project.scripts]
+lore-pipeline = "pipeline.cli:main"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pipeline"]
