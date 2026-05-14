@@ -1,0 +1,33 @@
+{
+  "description": "Strict-four source pointer required for provenance.",
+  "properties": {
+    "excerpt_hash": {
+      "minLength": 1,
+      "title": "Excerpt Hash",
+      "type": "string"
+    },
+    "locator": {
+      "minLength": 1,
+      "title": "Locator",
+      "type": "string"
+    },
+    "revision_id": {
+      "minLength": 1,
+      "title": "Revision Id",
+      "type": "string"
+    },
+    "source_id": {
+      "minLength": 1,
+      "title": "Source Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "source_id",
+    "locator",
+    "revision_id",
+    "excerpt_hash"
+  ],
+  "title": "SourcePointer",
+  "type": "object"
+}

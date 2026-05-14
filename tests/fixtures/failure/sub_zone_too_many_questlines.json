@@ -1,0 +1,255 @@
+{
+  "id": "subzone-andorhal-cap",
+  "slug": "andorhal-cap",
+  "name": "Andorhal Cap Test",
+  "parent_zone_id": "zone-western-plaguelands",
+  "at_a_glance": "Former grain city now central to post-war territorial conflict around Western Plaguelands logistics.",
+  "currently": "Andorhal remains a hardened conflict site where patrol discipline and defensive readiness are required to keep nearby routes operational.",
+  "history": "Once a Lordaeron logistics center, the city fell during plague-era devastation and became a recurring military objective through later faction campaigns across multiple eras.",
+  "major_questlines_alliance": [
+    {
+      "id": "ql-cap-1",
+      "faction": "alliance",
+      "title": "Cap overload arc 1",
+      "hook": "Alliance forces attempt to secure Andorhal through a sustained campaign that combines plague containment, civilian extraction, supply-line defense, and repeated assaults on fortified undead positions. The arc highlights command friction, battlefield reversals, and difficult tradeoffs between holding ground and protecting vulnerable settlements while pressure escalates across nearby routes.",
+      "start_anchor": "Andorhal",
+      "story_beats": [],
+      "inclusion_decision": {
+        "inclusion_score": 10,
+        "criteria_breakdown": {
+          "importance": 2,
+          "coherence": 2,
+          "evidence": 2,
+          "relevance": 2,
+          "pilot_fit": 2
+        },
+        "include_decision": "include",
+        "decision_reason": "Synthetic fixture exceeding sub-zone questline cap.",
+        "source_refs": [
+          {
+            "source_id": "src-wiki-wpl",
+            "locator": "section:cap paragraph:1",
+            "revision_id": "oldid:888",
+            "excerpt_hash": "sha256:capdeadbeef0001"
+          }
+        ]
+      },
+      "depends_on_parent_context": false
+    },
+    {
+      "id": "ql-cap-2",
+      "faction": "alliance",
+      "title": "Cap overload arc 2",
+      "hook": "Alliance forces attempt to secure Andorhal through a sustained campaign that combines plague containment, civilian extraction, supply-line defense, and repeated assaults on fortified undead positions. The arc highlights command friction, battlefield reversals, and difficult tradeoffs between holding ground and protecting vulnerable settlements while pressure escalates across nearby routes.",
+      "start_anchor": "Andorhal",
+      "story_beats": [],
+      "inclusion_decision": {
+        "inclusion_score": 10,
+        "criteria_breakdown": {
+          "importance": 2,
+          "coherence": 2,
+          "evidence": 2,
+          "relevance": 2,
+          "pilot_fit": 2
+        },
+        "include_decision": "include",
+        "decision_reason": "Synthetic fixture exceeding sub-zone questline cap.",
+        "source_refs": [
+          {
+            "source_id": "src-wiki-wpl",
+            "locator": "section:cap paragraph:2",
+            "revision_id": "oldid:888",
+            "excerpt_hash": "sha256:capdeadbeef0002"
+          }
+        ]
+      },
+      "depends_on_parent_context": false
+    },
+    {
+      "id": "ql-cap-3",
+      "faction": "alliance",
+      "title": "Cap overload arc 3",
+      "hook": "Alliance forces attempt to secure Andorhal through a sustained campaign that combines plague containment, civilian extraction, supply-line defense, and repeated assaults on fortified undead positions. The arc highlights command friction, battlefield reversals, and difficult tradeoffs between holding ground and protecting vulnerable settlements while pressure escalates across nearby routes.",
+      "start_anchor": "Andorhal",
+      "story_beats": [],
+      "inclusion_decision": {
+        "inclusion_score": 10,
+        "criteria_breakdown": {
+          "importance": 2,
+          "coherence": 2,
+          "evidence": 2,
+          "relevance": 2,
+          "pilot_fit": 2
+        },
+        "include_decision": "include",
+        "decision_reason": "Synthetic fixture exceeding sub-zone questline cap.",
+        "source_refs": [
+          {
+            "source_id": "src-wiki-wpl",
+            "locator": "section:cap paragraph:3",
+            "revision_id": "oldid:888",
+            "excerpt_hash": "sha256:capdeadbeef0003"
+          }
+        ]
+      },
+      "depends_on_parent_context": false
+    },
+    {
+      "id": "ql-cap-4",
+      "faction": "alliance",
+      "title": "Cap overload arc 4",
+      "hook": "Alliance forces attempt to secure Andorhal through a sustained campaign that combines plague containment, civilian extraction, supply-line defense, and repeated assaults on fortified undead positions. The arc highlights command friction, battlefield reversals, and difficult tradeoffs between holding ground and protecting vulnerable settlements while pressure escalates across nearby routes.",
+      "start_anchor": "Andorhal",
+      "story_beats": [],
+      "inclusion_decision": {
+        "inclusion_score": 10,
+        "criteria_breakdown": {
+          "importance": 2,
+          "coherence": 2,
+          "evidence": 2,
+          "relevance": 2,
+          "pilot_fit": 2
+        },
+        "include_decision": "include",
+        "decision_reason": "Synthetic fixture exceeding sub-zone questline cap.",
+        "source_refs": [
+          {
+            "source_id": "src-wiki-wpl",
+            "locator": "section:cap paragraph:4",
+            "revision_id": "oldid:888",
+            "excerpt_hash": "sha256:capdeadbeef0004"
+          }
+        ]
+      },
+      "depends_on_parent_context": false
+    }
+  ],
+  "major_questlines_horde": [],
+  "major_questlines_shared": [],
+  "major_characters": [
+    {
+      "id": "character-thassarian",
+      "name": "Thassarian",
+      "summary": "Alliance commander whose tactical priorities influence control of Andorhal frontline sectors."
+    }
+  ],
+  "instances": [],
+  "major_landmarks": [
+    {
+      "id": "landmark-andorhal",
+      "name": "Andorhal",
+      "summary": "Battle-scarred urban center defining regional strategy and supply movement."
+    }
+  ],
+  "glossary": [
+    {
+      "term_id": "term-scourge"
+    }
+  ],
+  "sources": [
+    {
+      "source_id": "src-wiki-wpl",
+      "url": "https://wowpedia.fandom.com/wiki/Western_Plaguelands",
+      "revision_id": "oldid:888"
+    }
+  ],
+  "provenance": {
+    "at_a_glance": [
+      {
+        "source_id": "src-wiki-wpl",
+        "locator": "section:lead paragraph:1",
+        "revision_id": "oldid:888",
+        "excerpt_hash": "sha256:capagl1111111111"
+      }
+    ],
+    "currently": [
+      {
+        "source_id": "src-wiki-wpl",
+        "locator": "section:currently paragraph:1",
+        "revision_id": "oldid:888",
+        "excerpt_hash": "sha256:capcur2222222222"
+      }
+    ],
+    "history": [
+      {
+        "source_id": "src-wiki-wpl",
+        "locator": "section:history paragraph:1",
+        "revision_id": "oldid:888",
+        "excerpt_hash": "sha256:caphist333333333"
+      },
+      {
+        "source_id": "src-wiki-wpl",
+        "locator": "section:history paragraph:2",
+        "revision_id": "oldid:888",
+        "excerpt_hash": "sha256:caphist444444444"
+      }
+    ],
+    "major_questlines_alliance": {
+      "ql-cap-1": [
+        {
+          "source_id": "src-wiki-wpl",
+          "locator": "section:quests paragraph:10",
+          "revision_id": "oldid:888",
+          "excerpt_hash": "sha256:capqlbeef0001"
+        }
+      ],
+      "ql-cap-2": [
+        {
+          "source_id": "src-wiki-wpl",
+          "locator": "section:quests paragraph:11",
+          "revision_id": "oldid:888",
+          "excerpt_hash": "sha256:capqlbeef0002"
+        }
+      ],
+      "ql-cap-3": [
+        {
+          "source_id": "src-wiki-wpl",
+          "locator": "section:quests paragraph:12",
+          "revision_id": "oldid:888",
+          "excerpt_hash": "sha256:capqlbeef0003"
+        }
+      ],
+      "ql-cap-4": [
+        {
+          "source_id": "src-wiki-wpl",
+          "locator": "section:quests paragraph:13",
+          "revision_id": "oldid:888",
+          "excerpt_hash": "sha256:capqlbeef0004"
+        }
+      ]
+    },
+    "major_questlines_horde": {},
+    "major_questlines_shared": {},
+    "major_characters": {
+      "character-thassarian": [
+        {
+          "source_id": "src-wiki-wpl",
+          "locator": "section:characters paragraph:1",
+          "revision_id": "oldid:888",
+          "excerpt_hash": "sha256:capchar555555555"
+        }
+      ]
+    },
+    "instances": {},
+    "major_landmarks": {
+      "landmark-andorhal": [
+        {
+          "source_id": "src-wiki-wpl",
+          "locator": "section:landmarks paragraph:1",
+          "revision_id": "oldid:888",
+          "excerpt_hash": "sha256:caplm6666666666"
+        }
+      ]
+    },
+    "glossary": {
+      "term-scourge": [
+        {
+          "source_id": "src-wiki-wpl",
+          "locator": "section:glossary paragraph:1",
+          "revision_id": "oldid:888",
+          "excerpt_hash": "sha256:capgl7777777777"
+        }
+      ]
+    }
+  }
+}

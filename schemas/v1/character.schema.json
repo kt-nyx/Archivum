@@ -1,0 +1,193 @@
+{
+  "$defs": {
+    "CharacterProvenance": {
+      "properties": {
+        "short_history": {
+          "items": {
+            "$ref": "#/$defs/SourcePointer"
+          },
+          "title": "Short History",
+          "type": "array"
+        },
+        "summary": {
+          "items": {
+            "$ref": "#/$defs/SourcePointer"
+          },
+          "title": "Summary",
+          "type": "array"
+        }
+      },
+      "title": "CharacterProvenance",
+      "type": "object"
+    },
+    "GlossaryLink": {
+      "properties": {
+        "term_id": {
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "title": "Term Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "term_id"
+      ],
+      "title": "GlossaryLink",
+      "type": "object"
+    },
+    "SourceManifestEntry": {
+      "properties": {
+        "revision_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        },
+        "source_id": {
+          "minLength": 1,
+          "title": "Source Id",
+          "type": "string"
+        },
+        "url": {
+          "minLength": 1,
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "url"
+      ],
+      "title": "SourceManifestEntry",
+      "type": "object"
+    },
+    "SourcePointer": {
+      "description": "Strict-four source pointer required for provenance.",
+      "properties": {
+        "excerpt_hash": {
+          "minLength": 1,
+          "title": "Excerpt Hash",
+          "type": "string"
+        },
+        "locator": {
+          "minLength": 1,
+          "title": "Locator",
+          "type": "string"
+        },
+        "revision_id": {
+          "minLength": 1,
+          "title": "Revision Id",
+          "type": "string"
+        },
+        "source_id": {
+          "minLength": 1,
+          "title": "Source Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "locator",
+        "revision_id",
+        "excerpt_hash"
+      ],
+      "title": "SourcePointer",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "affiliations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Affiliations",
+      "type": "array"
+    },
+    "glossary": {
+      "items": {
+        "$ref": "#/$defs/GlossaryLink"
+      },
+      "title": "Glossary",
+      "type": "array"
+    },
+    "id": {
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "media_assets": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Media Assets",
+      "type": "array"
+    },
+    "name": {
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "provenance": {
+      "$ref": "#/$defs/CharacterProvenance"
+    },
+    "short_history": {
+      "minLength": 1,
+      "title": "Short History",
+      "type": "string"
+    },
+    "slug": {
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Slug",
+      "type": "string"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/SourceManifestEntry"
+      },
+      "title": "Sources",
+      "type": "array"
+    },
+    "status_hint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Status Hint"
+    },
+    "summary": {
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    },
+    "titles": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Titles",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "slug",
+    "name",
+    "summary",
+    "short_history",
+    "glossary",
+    "sources",
+    "provenance"
+  ],
+  "title": "Character",
+  "type": "object"
+}

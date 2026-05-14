@@ -1,0 +1,310 @@
+{
+  "$defs": {
+    "CharacterCard": {
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "thumbnail_asset_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thumbnail Asset Id"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "summary"
+      ],
+      "title": "CharacterCard",
+      "type": "object"
+    },
+    "GlossaryLink": {
+      "properties": {
+        "term_id": {
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "title": "Term Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "term_id"
+      ],
+      "title": "GlossaryLink",
+      "type": "object"
+    },
+    "InstanceProvenance": {
+      "properties": {
+        "identity_header": {
+          "items": {
+            "$ref": "#/$defs/SourcePointer"
+          },
+          "title": "Identity Header",
+          "type": "array"
+        },
+        "key_characters": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/SourcePointer"
+            },
+            "type": "array"
+          },
+          "title": "Key Characters",
+          "type": "object"
+        },
+        "story_context": {
+          "items": {
+            "$ref": "#/$defs/SourcePointer"
+          },
+          "title": "Story Context",
+          "type": "array"
+        }
+      },
+      "title": "InstanceProvenance",
+      "type": "object"
+    },
+    "InstanceType": {
+      "enum": [
+        "dungeon",
+        "raid",
+        "scenario"
+      ],
+      "title": "InstanceType",
+      "type": "string"
+    },
+    "SourceManifestEntry": {
+      "properties": {
+        "revision_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        },
+        "source_id": {
+          "minLength": 1,
+          "title": "Source Id",
+          "type": "string"
+        },
+        "url": {
+          "minLength": 1,
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "url"
+      ],
+      "title": "SourceManifestEntry",
+      "type": "object"
+    },
+    "SourcePointer": {
+      "description": "Strict-four source pointer required for provenance.",
+      "properties": {
+        "excerpt_hash": {
+          "minLength": 1,
+          "title": "Excerpt Hash",
+          "type": "string"
+        },
+        "locator": {
+          "minLength": 1,
+          "title": "Locator",
+          "type": "string"
+        },
+        "revision_id": {
+          "minLength": 1,
+          "title": "Revision Id",
+          "type": "string"
+        },
+        "source_id": {
+          "minLength": 1,
+          "title": "Source Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "locator",
+        "revision_id",
+        "excerpt_hash"
+      ],
+      "title": "SourcePointer",
+      "type": "object"
+    },
+    "ZoneBacklink": {
+      "properties": {
+        "label": {
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "zone_id": {
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "title": "Zone Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "zone_id",
+        "label"
+      ],
+      "title": "ZoneBacklink",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "expansion": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Expansion"
+    },
+    "glossary": {
+      "items": {
+        "$ref": "#/$defs/GlossaryLink"
+      },
+      "title": "Glossary",
+      "type": "array"
+    },
+    "id": {
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "identity_header": {
+      "minLength": 1,
+      "title": "Identity Header",
+      "type": "string"
+    },
+    "key_characters": {
+      "items": {
+        "$ref": "#/$defs/CharacterCard"
+      },
+      "title": "Key Characters",
+      "type": "array"
+    },
+    "media_assets": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Media Assets",
+      "type": "array"
+    },
+    "name": {
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "provenance": {
+      "$ref": "#/$defs/InstanceProvenance"
+    },
+    "related_factions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Related Factions",
+      "type": "array"
+    },
+    "slug": {
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Slug",
+      "type": "string"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/SourceManifestEntry"
+      },
+      "title": "Sources",
+      "type": "array"
+    },
+    "story_context": {
+      "minLength": 1,
+      "title": "Story Context",
+      "type": "string"
+    },
+    "type": {
+      "$ref": "#/$defs/InstanceType"
+    },
+    "version_notes": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Version Notes"
+    },
+    "wing_count": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Wing Count"
+    },
+    "zone_backlink": {
+      "$ref": "#/$defs/ZoneBacklink"
+    },
+    "zone_id": {
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Zone Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "slug",
+    "name",
+    "type",
+    "zone_id",
+    "identity_header",
+    "story_context",
+    "key_characters",
+    "zone_backlink",
+    "glossary",
+    "sources",
+    "provenance"
+  ],
+  "title": "Instance",
+  "type": "object"
+}

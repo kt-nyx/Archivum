@@ -1,0 +1,579 @@
+{
+  "$defs": {
+    "CharacterCard": {
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "thumbnail_asset_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thumbnail Asset Id"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "summary"
+      ],
+      "title": "CharacterCard",
+      "type": "object"
+    },
+    "Faction": {
+      "enum": [
+        "alliance",
+        "horde",
+        "shared"
+      ],
+      "title": "Faction",
+      "type": "string"
+    },
+    "GlossaryLink": {
+      "properties": {
+        "term_id": {
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "title": "Term Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "term_id"
+      ],
+      "title": "GlossaryLink",
+      "type": "object"
+    },
+    "IncludeDecision": {
+      "enum": [
+        "include",
+        "exclude"
+      ],
+      "title": "IncludeDecision",
+      "type": "string"
+    },
+    "InclusionDecision": {
+      "description": "Inclusion/exclusion audit object used in candidate filtering.",
+      "properties": {
+        "criteria_breakdown": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Criteria Breakdown",
+          "type": "object"
+        },
+        "decision_reason": {
+          "minLength": 1,
+          "title": "Decision Reason",
+          "type": "string"
+        },
+        "include_decision": {
+          "$ref": "#/$defs/IncludeDecision"
+        },
+        "inclusion_score": {
+          "maximum": 12,
+          "minimum": 0,
+          "title": "Inclusion Score",
+          "type": "integer"
+        },
+        "source_refs": {
+          "items": {
+            "$ref": "#/$defs/SourcePointer"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "inclusion_score",
+        "criteria_breakdown",
+        "include_decision",
+        "decision_reason"
+      ],
+      "title": "InclusionDecision",
+      "type": "object"
+    },
+    "InstanceLinkCard": {
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "thumbnail_asset_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thumbnail Asset Id"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "summary"
+      ],
+      "title": "InstanceLinkCard",
+      "type": "object"
+    },
+    "LandmarkCard": {
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "significance_tag": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Significance Tag"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "thumbnail_asset_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thumbnail Asset Id"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "summary"
+      ],
+      "title": "LandmarkCard",
+      "type": "object"
+    },
+    "QuestlineCard": {
+      "properties": {
+        "dependency_note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dependency Note"
+        },
+        "depends_on_parent_context": {
+          "default": false,
+          "title": "Depends On Parent Context",
+          "type": "boolean"
+        },
+        "faction": {
+          "$ref": "#/$defs/Faction"
+        },
+        "hook": {
+          "minLength": 1,
+          "title": "Hook",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "inclusion_decision": {
+          "$ref": "#/$defs/InclusionDecision"
+        },
+        "parallel_arc_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parallel Arc Key"
+        },
+        "start_anchor": {
+          "minLength": 1,
+          "title": "Start Anchor",
+          "type": "string"
+        },
+        "story_beats": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 3,
+          "title": "Story Beats",
+          "type": "array"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "faction",
+        "title",
+        "hook",
+        "start_anchor",
+        "inclusion_decision"
+      ],
+      "title": "QuestlineCard",
+      "type": "object"
+    },
+    "SourceManifestEntry": {
+      "properties": {
+        "revision_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        },
+        "source_id": {
+          "minLength": 1,
+          "title": "Source Id",
+          "type": "string"
+        },
+        "url": {
+          "minLength": 1,
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "url"
+      ],
+      "title": "SourceManifestEntry",
+      "type": "object"
+    },
+    "SourcePointer": {
+      "description": "Strict-four source pointer required for provenance.",
+      "properties": {
+        "excerpt_hash": {
+          "minLength": 1,
+          "title": "Excerpt Hash",
+          "type": "string"
+        },
+        "locator": {
+          "minLength": 1,
+          "title": "Locator",
+          "type": "string"
+        },
+        "revision_id": {
+          "minLength": 1,
+          "title": "Revision Id",
+          "type": "string"
+        },
+        "source_id": {
+          "minLength": 1,
+          "title": "Source Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "locator",
+        "revision_id",
+        "excerpt_hash"
+      ],
+      "title": "SourcePointer",
+      "type": "object"
+    },
+    "SubZoneProvenance": {
+      "properties": {
+        "at_a_glance": {
+          "items": {
+            "$ref": "#/$defs/SourcePointer"
+          },
+          "title": "At A Glance",
+          "type": "array"
+        },
+        "currently": {
+          "items": {
+            "$ref": "#/$defs/SourcePointer"
+          },
+          "title": "Currently",
+          "type": "array"
+        },
+        "glossary": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/SourcePointer"
+            },
+            "type": "array"
+          },
+          "title": "Glossary",
+          "type": "object"
+        },
+        "history": {
+          "items": {
+            "$ref": "#/$defs/SourcePointer"
+          },
+          "title": "History",
+          "type": "array"
+        },
+        "instances": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/SourcePointer"
+            },
+            "type": "array"
+          },
+          "title": "Instances",
+          "type": "object"
+        },
+        "major_characters": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/SourcePointer"
+            },
+            "type": "array"
+          },
+          "title": "Major Characters",
+          "type": "object"
+        },
+        "major_landmarks": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/SourcePointer"
+            },
+            "type": "array"
+          },
+          "title": "Major Landmarks",
+          "type": "object"
+        },
+        "major_questlines_alliance": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/SourcePointer"
+            },
+            "type": "array"
+          },
+          "title": "Major Questlines Alliance",
+          "type": "object"
+        },
+        "major_questlines_horde": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/SourcePointer"
+            },
+            "type": "array"
+          },
+          "title": "Major Questlines Horde",
+          "type": "object"
+        },
+        "major_questlines_shared": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/SourcePointer"
+            },
+            "type": "array"
+          },
+          "title": "Major Questlines Shared",
+          "type": "object"
+        }
+      },
+      "title": "SubZoneProvenance",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Contract for sub-zone micro pages (section 15 locked policy).",
+  "properties": {
+    "at_a_glance": {
+      "minLength": 1,
+      "title": "At A Glance",
+      "type": "string"
+    },
+    "currently": {
+      "minLength": 1,
+      "title": "Currently",
+      "type": "string"
+    },
+    "expansion": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Expansion"
+    },
+    "glossary": {
+      "items": {
+        "$ref": "#/$defs/GlossaryLink"
+      },
+      "title": "Glossary",
+      "type": "array"
+    },
+    "history": {
+      "minLength": 1,
+      "title": "History",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "instances": {
+      "items": {
+        "$ref": "#/$defs/InstanceLinkCard"
+      },
+      "title": "Instances",
+      "type": "array"
+    },
+    "major_characters": {
+      "items": {
+        "$ref": "#/$defs/CharacterCard"
+      },
+      "title": "Major Characters",
+      "type": "array"
+    },
+    "major_landmarks": {
+      "items": {
+        "$ref": "#/$defs/LandmarkCard"
+      },
+      "title": "Major Landmarks",
+      "type": "array"
+    },
+    "major_questlines_alliance": {
+      "items": {
+        "$ref": "#/$defs/QuestlineCard"
+      },
+      "title": "Major Questlines Alliance",
+      "type": "array"
+    },
+    "major_questlines_horde": {
+      "items": {
+        "$ref": "#/$defs/QuestlineCard"
+      },
+      "title": "Major Questlines Horde",
+      "type": "array"
+    },
+    "major_questlines_shared": {
+      "items": {
+        "$ref": "#/$defs/QuestlineCard"
+      },
+      "title": "Major Questlines Shared",
+      "type": "array"
+    },
+    "map_id": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Map Id"
+    },
+    "name": {
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "parent_zone_id": {
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Parent Zone Id",
+      "type": "string"
+    },
+    "provenance": {
+      "$ref": "#/$defs/SubZoneProvenance"
+    },
+    "slug": {
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Slug",
+      "type": "string"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/SourceManifestEntry"
+      },
+      "title": "Sources",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "slug",
+    "name",
+    "parent_zone_id",
+    "at_a_glance",
+    "currently",
+    "history",
+    "major_characters",
+    "major_landmarks",
+    "glossary",
+    "sources",
+    "provenance"
+  ],
+  "title": "SubZone",
+  "type": "object"
+}

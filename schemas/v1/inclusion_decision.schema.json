@@ -1,0 +1,84 @@
+{
+  "$defs": {
+    "IncludeDecision": {
+      "enum": [
+        "include",
+        "exclude"
+      ],
+      "title": "IncludeDecision",
+      "type": "string"
+    },
+    "SourcePointer": {
+      "description": "Strict-four source pointer required for provenance.",
+      "properties": {
+        "excerpt_hash": {
+          "minLength": 1,
+          "title": "Excerpt Hash",
+          "type": "string"
+        },
+        "locator": {
+          "minLength": 1,
+          "title": "Locator",
+          "type": "string"
+        },
+        "revision_id": {
+          "minLength": 1,
+          "title": "Revision Id",
+          "type": "string"
+        },
+        "source_id": {
+          "minLength": 1,
+          "title": "Source Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "locator",
+        "revision_id",
+        "excerpt_hash"
+      ],
+      "title": "SourcePointer",
+      "type": "object"
+    }
+  },
+  "description": "Inclusion/exclusion audit object used in candidate filtering.",
+  "properties": {
+    "criteria_breakdown": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Criteria Breakdown",
+      "type": "object"
+    },
+    "decision_reason": {
+      "minLength": 1,
+      "title": "Decision Reason",
+      "type": "string"
+    },
+    "include_decision": {
+      "$ref": "#/$defs/IncludeDecision"
+    },
+    "inclusion_score": {
+      "maximum": 12,
+      "minimum": 0,
+      "title": "Inclusion Score",
+      "type": "integer"
+    },
+    "source_refs": {
+      "items": {
+        "$ref": "#/$defs/SourcePointer"
+      },
+      "title": "Source Refs",
+      "type": "array"
+    }
+  },
+  "required": [
+    "inclusion_score",
+    "criteria_breakdown",
+    "include_decision",
+    "decision_reason"
+  ],
+  "title": "InclusionDecision",
+  "type": "object"
+}

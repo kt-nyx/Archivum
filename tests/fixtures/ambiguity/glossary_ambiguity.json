@@ -1,0 +1,53 @@
+{
+  "id": "term-scarlet-crusade-remnants",
+  "slug": "scarlet-crusade-remnants",
+  "label": "Scarlet Crusade remnants",
+  "category": "faction",
+  "aliases": [
+    "scarlet crusade remnants",
+    "scarlet remnant"
+  ],
+  "summary": "Collective label for surviving Scarlet Crusade splinter groups that persisted after major losses in the Plaguelands and Northrend campaigns, especially cells that reused Scarlet symbols while operating under fragmented leadership and uneven regional strategic objectives.",
+  "brief_history": "Following defeats and territorial collapse, Scarlet-aligned survivors appeared in multiple successor formations, including groups linked to Scarlet Monastery and the Scarlet Onslaught legacy. Sources often blur whether specific cells represented direct Crusade continuity, opportunistic reuse of Scarlet iconography, or temporary coalitions. Because leadership lines and organizational labels overlap in records, historians treat many post-fall Scarlet references as context-dependent and require source-level disambiguation before assigning exact lineage.",
+  "sources": [
+    {
+      "source_id": "src-wiki-scarlet",
+      "url": "https://wowpedia.fandom.com/wiki/Scarlet_Crusade"
+    }
+  ],
+  "provenance": {
+    "summary": [
+      {
+        "source_id": "src-wiki-scarlet",
+        "locator": "section:lead paragraph:1",
+        "revision_id": "oldid:444",
+        "excerpt_hash": "sha256:ababcdcdababcdcd"
+      }
+    ],
+    "brief_history": [
+      {
+        "source_id": "src-wiki-scarlet",
+        "locator": "section:history paragraph:2",
+        "revision_id": "oldid:444",
+        "excerpt_hash": "sha256:bcbcdededededede"
+      }
+    ]
+  },
+  "facets": {
+    "faction": {
+      "alignment": "zealot"
+    }
+  },
+  "timeline_hint": "Post-Third War through Cataclysm era references",
+  "expansion_tags": [
+    "wrath",
+    "cataclysm"
+  ],
+  "ambiguity_notes": "Some records use Scarlet Crusade terminology interchangeably with successor militia cells.",
+  "related_terms": [
+    "term-scarlet-crusade",
+    "term-scarlet-onslaught",
+    "term-scourge"
+  ]
+}
+

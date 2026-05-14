@@ -1,0 +1,220 @@
+{
+  "$defs": {
+    "AssetProvenance": {
+      "properties": {
+        "caption": {
+          "items": {
+            "$ref": "#/$defs/SourcePointer"
+          },
+          "title": "Caption",
+          "type": "array"
+        },
+        "metadata": {
+          "items": {
+            "$ref": "#/$defs/SourcePointer"
+          },
+          "title": "Metadata",
+          "type": "array"
+        }
+      },
+      "title": "AssetProvenance",
+      "type": "object"
+    },
+    "SourceManifestEntry": {
+      "properties": {
+        "revision_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        },
+        "source_id": {
+          "minLength": 1,
+          "title": "Source Id",
+          "type": "string"
+        },
+        "url": {
+          "minLength": 1,
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "url"
+      ],
+      "title": "SourceManifestEntry",
+      "type": "object"
+    },
+    "SourcePointer": {
+      "description": "Strict-four source pointer required for provenance.",
+      "properties": {
+        "excerpt_hash": {
+          "minLength": 1,
+          "title": "Excerpt Hash",
+          "type": "string"
+        },
+        "locator": {
+          "minLength": 1,
+          "title": "Locator",
+          "type": "string"
+        },
+        "revision_id": {
+          "minLength": 1,
+          "title": "Revision Id",
+          "type": "string"
+        },
+        "source_id": {
+          "minLength": 1,
+          "title": "Source Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "locator",
+        "revision_id",
+        "excerpt_hash"
+      ],
+      "title": "SourcePointer",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "allowed_use": {
+      "title": "Allowed Use",
+      "type": "boolean"
+    },
+    "allowed_use_reason": {
+      "minLength": 1,
+      "title": "Allowed Use Reason",
+      "type": "string"
+    },
+    "asset_type": {
+      "enum": [
+        "image",
+        "icon",
+        "model_ref"
+      ],
+      "title": "Asset Type",
+      "type": "string"
+    },
+    "associated_entity_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Associated Entity Ids",
+      "type": "array"
+    },
+    "caption": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Caption"
+    },
+    "credit": {
+      "minLength": 1,
+      "title": "Credit",
+      "type": "string"
+    },
+    "crop_hint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Crop Hint"
+    },
+    "id": {
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "internal_notes": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Internal Notes"
+    },
+    "license": {
+      "minLength": 1,
+      "title": "License",
+      "type": "string"
+    },
+    "locale": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Locale"
+    },
+    "proof_ref": {
+      "minLength": 1,
+      "title": "Proof Ref",
+      "type": "string"
+    },
+    "provenance": {
+      "$ref": "#/$defs/AssetProvenance"
+    },
+    "source_url": {
+      "minLength": 1,
+      "title": "Source Url",
+      "type": "string"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/SourceManifestEntry"
+      },
+      "title": "Sources",
+      "type": "array"
+    },
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "asset_type",
+    "title",
+    "source_url",
+    "license",
+    "credit",
+    "allowed_use",
+    "allowed_use_reason",
+    "proof_ref",
+    "sources",
+    "provenance"
+  ],
+  "title": "Asset",
+  "type": "object"
+}

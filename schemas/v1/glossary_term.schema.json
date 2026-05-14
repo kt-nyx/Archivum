@@ -1,0 +1,217 @@
+{
+  "$defs": {
+    "GlossaryCategory": {
+      "enum": [
+        "person",
+        "event",
+        "artifact",
+        "faction",
+        "place",
+        "concept"
+      ],
+      "title": "GlossaryCategory",
+      "type": "string"
+    },
+    "GlossaryFacets": {
+      "additionalProperties": true,
+      "properties": {},
+      "title": "GlossaryFacets",
+      "type": "object"
+    },
+    "GlossaryTermProvenance": {
+      "properties": {
+        "brief_history": {
+          "items": {
+            "$ref": "#/$defs/SourcePointer"
+          },
+          "title": "Brief History",
+          "type": "array"
+        },
+        "summary": {
+          "items": {
+            "$ref": "#/$defs/SourcePointer"
+          },
+          "title": "Summary",
+          "type": "array"
+        }
+      },
+      "title": "GlossaryTermProvenance",
+      "type": "object"
+    },
+    "SourceManifestEntry": {
+      "properties": {
+        "revision_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        },
+        "source_id": {
+          "minLength": 1,
+          "title": "Source Id",
+          "type": "string"
+        },
+        "url": {
+          "minLength": 1,
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "url"
+      ],
+      "title": "SourceManifestEntry",
+      "type": "object"
+    },
+    "SourcePointer": {
+      "description": "Strict-four source pointer required for provenance.",
+      "properties": {
+        "excerpt_hash": {
+          "minLength": 1,
+          "title": "Excerpt Hash",
+          "type": "string"
+        },
+        "locator": {
+          "minLength": 1,
+          "title": "Locator",
+          "type": "string"
+        },
+        "revision_id": {
+          "minLength": 1,
+          "title": "Revision Id",
+          "type": "string"
+        },
+        "source_id": {
+          "minLength": 1,
+          "title": "Source Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "locator",
+        "revision_id",
+        "excerpt_hash"
+      ],
+      "title": "SourcePointer",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "aliases": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Aliases",
+      "type": "array"
+    },
+    "ambiguity_notes": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ambiguity Notes"
+    },
+    "brief_history": {
+      "minLength": 1,
+      "title": "Brief History",
+      "type": "string"
+    },
+    "category": {
+      "$ref": "#/$defs/GlossaryCategory"
+    },
+    "expansion_tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Expansion Tags",
+      "type": "array"
+    },
+    "facets": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GlossaryFacets"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "id": {
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "label": {
+      "minLength": 1,
+      "title": "Label",
+      "type": "string"
+    },
+    "provenance": {
+      "$ref": "#/$defs/GlossaryTermProvenance"
+    },
+    "related_terms": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Related Terms",
+      "type": "array"
+    },
+    "slug": {
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Slug",
+      "type": "string"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/SourceManifestEntry"
+      },
+      "title": "Sources",
+      "type": "array"
+    },
+    "summary": {
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    },
+    "timeline_hint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Timeline Hint"
+    }
+  },
+  "required": [
+    "id",
+    "slug",
+    "label",
+    "category",
+    "aliases",
+    "summary",
+    "brief_history",
+    "sources",
+    "provenance"
+  ],
+  "title": "GlossaryTerm",
+  "type": "object"
+}

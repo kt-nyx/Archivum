@@ -1,0 +1,15 @@
+{
+  "contracts": [
+    "inclusion_decision",
+    "source_pointer"
+  ],
+  "entities": [
+    "asset",
+    "character",
+    "glossary_term",
+    "instance",
+    "sub_zone",
+    "zone"
+  ],
+  "schema_version": "v1"
+}
