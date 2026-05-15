@@ -1,0 +1,4 @@
+version: v1
+policy:
+  min_margin: 0.1
+  require_manual_review_below: 0.8

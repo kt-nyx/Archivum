@@ -1,0 +1,24 @@
+{
+  "version": "v1",
+  "aliases": [
+    {"term_id": "term-scourge", "alias": "Scourge", "alias_type": "canonical", "case_rule": "insensitive", "category": "faction"},
+    {"term_id": "term-scourge", "alias": "undead forces", "alias_type": "exact_synonym", "case_rule": "insensitive", "category": "faction"},
+    {"term_id": "term-scourge", "alias": "plaguelands undead", "alias_type": "fuzzy", "case_rule": "insensitive", "category": "faction"},
+    {"term_id": "term-argent-dawn", "alias": "Argent Dawn", "alias_type": "canonical", "case_rule": "insensitive", "category": "faction"},
+    {"term_id": "term-argent-dawn", "alias": "Argent Crusade", "alias_type": "exact_synonym", "case_rule": "insensitive", "category": "faction"},
+    {"term_id": "term-western-plaguelands", "alias": "Western Plaguelands", "alias_type": "canonical", "case_rule": "insensitive", "category": "place"},
+    {"term_id": "term-western-plaguelands", "alias": "WPL", "alias_type": "exact_synonym", "case_rule": "insensitive", "category": "place"},
+    {"term_id": "term-andorhal", "alias": "Andorhal", "alias_type": "canonical", "case_rule": "insensitive", "category": "place"},
+    {"term_id": "term-andorhal", "alias": "battle for andorhal", "alias_type": "exact_synonym", "case_rule": "insensitive", "category": "event"},
+    {"term_id": "term-scholomance", "alias": "Scholomance", "alias_type": "canonical", "case_rule": "insensitive", "category": "place"},
+    {"term_id": "term-scholomance", "alias": "school of necromancy", "alias_type": "fuzzy", "case_rule": "insensitive", "category": "concept"},
+    {"term_id": "term-caer-darrow", "alias": "Caer Darrow", "alias_type": "canonical", "case_rule": "insensitive", "category": "place"},
+    {"term_id": "term-plague", "alias": "plague", "alias_type": "canonical", "case_rule": "insensitive", "category": "concept"},
+    {"term_id": "term-plague", "alias": "blight", "alias_type": "exact_synonym", "case_rule": "insensitive", "category": "concept"},
+    {"term_id": "term-plague", "alias": "plague outbreak", "alias_type": "fuzzy", "case_rule": "insensitive", "category": "concept"},
+    {"term_id": "term-plaguelands-campaign", "alias": "plaguelands campaign", "alias_type": "canonical", "case_rule": "insensitive", "category": "event"},
+    {"term_id": "term-plaguelands-campaign", "alias": "campaign front", "alias_type": "fuzzy", "case_rule": "insensitive", "category": "event"},
+    {"term_id": "term-command-corridor", "alias": "supply corridor", "alias_type": "exact_synonym", "case_rule": "insensitive", "category": "concept"},
+    {"term_id": "term-command-corridor", "alias": "route security", "alias_type": "fuzzy", "case_rule": "insensitive", "category": "concept"}
+  ]
+}

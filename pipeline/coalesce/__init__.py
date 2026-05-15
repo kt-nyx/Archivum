@@ -1,0 +1,1 @@
+"""Coalesce stage modules."""

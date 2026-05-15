@@ -1,0 +1,6 @@
+version: v1
+preferences:
+  zone: [place, event]
+  instance: [place, event]
+  character: [person, faction]
+  glossary_term: [concept, artifact]

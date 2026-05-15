@@ -1,0 +1,7 @@
+version: 1
+alias_thresholds:
+  direct_alias_match: 0.9
+  contextual_match: 0.75
+disambiguation:
+  min_margin: 0.1
+  require_manual_review_below: 0.87

@@ -25,3 +25,4 @@ class ValidationReport(BaseModel):
     hard_fail_count: int
     warn_count: int
     passed: bool
+    fact_check_report: dict[str, object] | None = None

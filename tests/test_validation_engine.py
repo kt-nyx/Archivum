@@ -1,8 +1,13 @@
+import copy
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
+import pytest
+
 from pipeline.validate.engine import validate_payload
+from pipeline.validate.types import ValidationSeverity
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -535,3 +540,287 @@ def test_zone_questline_dependency_note_required_when_parent_context_true() -> N
     assert report.passed is False
     codes = {issue.code for issue in report.issues}
     assert "structure.zone_questline_dependency_note_required" in codes
+
+
+def test_fact_check_warn_profile_routes_contradiction_to_warning() -> None:
+    payload = _load_fixture("happy", "zone_valid.json")
+    payload["history"] = f"{payload['history']} [CONTRADICTED]"
+    report = validate_payload(
+        "zone",
+        payload,
+        validation_context={"fact_check_profile": "warn"},
+    )
+    assert report.passed is True
+    assert report.fact_check_report is not None
+    codes = {issue.code for issue in report.issues}
+    assert "fact_check.contradiction" in codes
+    contradiction_issue = next(
+        issue for issue in report.issues if issue.code == "fact_check.contradiction"
+    )
+    assert contradiction_issue.severity.value == "warn"
+
+
+def test_fact_check_strict_profile_blocks_contradictions() -> None:
+    payload = _load_fixture("happy", "zone_valid.json")
+    payload["currently"] = f"{payload['currently']} [CONTRADICTED]"
+    report = validate_payload(
+        "zone",
+        payload,
+        validation_context={"fact_check_profile": "strict"},
+    )
+    assert report.passed is False
+    contradiction_issue = next(
+        issue for issue in report.issues if issue.code == "fact_check.contradiction"
+    )
+    assert contradiction_issue.severity.value == "hard-fail"
+
+
+def test_fact_check_uses_local_snapshots_for_evidence() -> None:
+    payload = _load_fixture("happy", "zone_valid.json")
+    source_ids = [entry["source_id"] for entry in payload["sources"]]
+    report = validate_payload(
+        "zone",
+        payload,
+        validation_context={
+            "fact_check_profile": "warn",
+            "fact_check_source_snapshots": [
+                {
+                    "source_id": source_ids[0],
+                    "url": "https://example.test/wpl",
+                    "body": (
+                        "Western Plaguelands is a contested region with strategic patrol routes, "
+                        "military recovery campaigns, and zone history tied to repeated conflict."
+                    ),
+                },
+                {
+                    "source_id": source_ids[1],
+                    "url": "https://example.test/scholomance",
+                    "body": (
+                        "Scholomance and surrounding campaigns define high-impact historical arcs "
+                        "for the region."
+                    ),
+                },
+            ],
+        },
+    )
+    assert report.fact_check_report is not None
+    rows = cast(list[dict[str, object]], report.fact_check_report["claims"])
+    assert rows
+    assert any(row["status"] == "supported" for row in rows)
+
+
+def test_fact_check_warns_when_web_toggle_enabled_without_google_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_CSE_ID", raising=False)
+    payload = _load_fixture("happy", "zone_valid.json")
+    report = validate_payload(
+        "zone",
+        payload,
+        validation_context={
+            "fact_check_profile": "warn",
+            "fact_check_web_search": True,
+            "fact_check_target_entity_ids": [str(payload["id"])],
+        },
+    )
+    codes = {issue.code for issue in report.issues}
+    assert "fact_check.web_unavailable" in codes
+
+
+def test_fact_check_warn_profile_runs_llm_for_low_confidence_supported_claims(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _load_fixture("happy", "zone_valid.json")
+    source_ids = [entry["source_id"] for entry in payload["sources"]]
+    settings = SimpleNamespace(
+        openai_ready=True,
+        google_ready=False,
+        openai_model="gpt-4.1-mini",
+        google_api_key="",
+        google_cse_id="",
+    )
+    monkeypatch.setattr("pipeline.validate.rules.fact_check.load_ai_settings", lambda: settings)
+    llm_calls = {"count": 0}
+
+    def fake_chat(*_args: object, **_kwargs: object) -> dict[str, object]:
+        llm_calls["count"] += 1
+        return {
+            "status": "supported",
+            "confidence": 0.91,
+            "reason": "Evidence supports the claim.",
+        }
+
+    monkeypatch.setattr("pipeline.validate.rules.fact_check.chat_json_completion", fake_chat)
+    report = validate_payload(
+        "zone",
+        payload,
+        validation_context={
+            "fact_check_profile": "warn",
+            "fact_check_enable_llm": True,
+            "fact_check_target_entity_ids": [str(payload["id"])],
+            "fact_check_source_snapshots": [
+                {
+                    "source_id": source_ids[0],
+                    "url": "https://example.test/wpl",
+                    "body": "Western Plaguelands remains contested across campaign fronts.",
+                },
+                {
+                    "source_id": source_ids[1],
+                    "url": "https://example.test/wpl-2",
+                    "body": "Commanders maintain route security under sustained pressure.",
+                },
+            ],
+        },
+    )
+    assert report.fact_check_report is not None
+    assert llm_calls["count"] > 0
+
+
+def test_fact_check_warn_profile_skips_llm_for_non_target_entities(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _load_fixture("happy", "zone_valid.json")
+    settings = SimpleNamespace(
+        openai_ready=True,
+        google_ready=False,
+        openai_model="gpt-4.1-mini",
+        google_api_key="",
+        google_cse_id="",
+    )
+    monkeypatch.setattr("pipeline.validate.rules.fact_check.load_ai_settings", lambda: settings)
+    llm_calls = {"count": 0}
+
+    def fake_chat(*_args: object, **_kwargs: object) -> dict[str, object]:
+        llm_calls["count"] += 1
+        return {
+            "status": "supported",
+            "confidence": 0.91,
+            "reason": "Evidence supports the claim.",
+        }
+
+    monkeypatch.setattr("pipeline.validate.rules.fact_check.chat_json_completion", fake_chat)
+    report = validate_payload(
+        "zone",
+        payload,
+        validation_context={
+            "fact_check_profile": "warn",
+            "fact_check_enable_llm": True,
+            "fact_check_target_entity_ids": ["zone-other"],
+        },
+    )
+    assert report.fact_check_report is not None
+    assert llm_calls["count"] == 0
+    assert report.fact_check_report["targeted_for_adjudication"] is False
+
+
+def test_similarity_warns_on_high_token_overlap_with_ingest_body() -> None:
+    payload = copy.deepcopy(_load_fixture("happy", "zone_valid.json"))
+    payload["at_a_glance"] = "one two three four five six seven eight nine ten"
+    report = validate_payload(
+        "zone",
+        payload,
+        validation_context={
+            "fact_check_source_snapshots": [
+                {
+                    "source_id": "src-wiki-wpl",
+                    "url": "https://example.test/wpl",
+                    "body": (
+                        "one two three four five six seven eight nine ten eleven twelve "
+                        "thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty"
+                    ),
+                }
+            ],
+        },
+    )
+    codes = {issue.code for issue in report.issues}
+    assert "similarity.verbatim_overlap_warn" in codes
+    assert "similarity.verbatim_overlap_hard" not in codes
+
+
+def test_similarity_hard_fails_on_near_verbatim_ingest_body() -> None:
+    shared = (
+        "identical verbatim block alpha bravo charlie delta echo foxtrot golf hotel "
+        "india juliet kilo lima mike november oscar papa quebec romeo sierra tango"
+    )
+    payload = copy.deepcopy(_load_fixture("happy", "zone_valid.json"))
+    payload["at_a_glance"] = shared
+    report = validate_payload(
+        "zone",
+        payload,
+        validation_context={
+            "fact_check_source_snapshots": [
+                {
+                    "source_id": "src-wiki-wpl",
+                    "url": "https://example.test/wpl",
+                    "body": shared,
+                }
+            ],
+        },
+    )
+    codes = {issue.code for issue in report.issues}
+    assert "similarity.verbatim_overlap_hard" in codes
+
+
+def test_similarity_clean_when_draft_diverges_from_ingest_body() -> None:
+    payload = copy.deepcopy(_load_fixture("happy", "zone_valid.json"))
+    payload["at_a_glance"] = (
+        "xyzzy quux plugh frobnitz wibble nimbus vortex shard prism lattice aurora"
+    )
+    report = validate_payload(
+        "zone",
+        payload,
+        validation_context={
+            "fact_check_source_snapshots": [
+                {
+                    "source_id": "src-wiki-wpl",
+                    "url": "https://example.test/wpl",
+                    "body": (
+                        "Western Plaguelands is a contested region with strategic patrol routes, "
+                        "military recovery campaigns, and zone history tied to repeated conflict."
+                    ),
+                }
+            ],
+        },
+    )
+    codes = {issue.code for issue in report.issues}
+    assert not any(code.startswith("similarity.") for code in codes)
+
+
+def test_similarity_emits_unavailable_when_snapshots_required_but_missing() -> None:
+    payload = copy.deepcopy(_load_fixture("happy", "zone_valid.json"))
+    report = validate_payload(
+        "zone",
+        payload,
+        validation_context={
+            "fact_check_profile": "warn",
+            "similarity_require_snapshots": True,
+            "fact_check_source_snapshots": [],
+        },
+    )
+    issues = [i for i in report.issues if i.code == "similarity.ingest_snapshots_unavailable"]
+    assert len(issues) == 1
+    assert issues[0].severity == ValidationSeverity.WARN
+
+
+def test_similarity_stage_context_strict_profile_unavailable_snapshots_is_hard_fail() -> None:
+    """Mirrors run_validate_stage keys: strict escalates missing ingest bodies to hard-fail."""
+    payload = copy.deepcopy(_load_fixture("happy", "zone_valid.json"))
+    report = validate_payload(
+        "zone",
+        payload,
+        validation_context={
+            "fact_check_profile": "strict",
+            "similarity_require_snapshots": True,
+            "fact_check_source_snapshots": [],
+        },
+    )
+    inv = [i for i in report.issues if i.code == "similarity.ingest_snapshots_unavailable"]
+    assert len(inv) == 1
+    assert inv[0].severity == ValidationSeverity.HARD_FAIL
+    assert report.passed is False
+
+
+def test_similarity_skipped_without_issue_when_snapshots_absent_by_default() -> None:
+    report = validate_payload("zone", _load_fixture("happy", "zone_valid.json"))
+    assert not any(issue.code.startswith("similarity.") for issue in report.issues)

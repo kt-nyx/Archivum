@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Ingest Source Manifest",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": [
+      "entity_id",
+      "entity_type",
+      "slug",
+      "name",
+      "source_id",
+      "source_url",
+      "source_class",
+      "selection_version",
+      "policy_version",
+      "manifest_run_id"
+    ],
+    "properties": {
+      "entity_id": { "type": "string", "minLength": 1 },
+      "entity_type": {
+        "type": "string",
+        "enum": ["zone", "sub_zone", "instance", "character", "glossary_term", "asset"]
+      },
+      "slug": { "type": "string", "minLength": 1 },
+      "name": { "type": "string", "minLength": 1 },
+      "source_id": { "type": "string", "minLength": 1 },
+      "source_url": { "type": "string", "minLength": 1 },
+      "url": { "type": "string", "minLength": 1 },
+      "priority": { "type": "integer", "minimum": 1, "maximum": 10 },
+      "source_class": { "type": "string", "enum": ["warcraft_wiki", "wowpedia"] },
+      "selection_version": { "type": "string", "minLength": 1 },
+      "policy_version": { "type": "string", "minLength": 1 },
+      "manifest_run_id": { "type": "string", "minLength": 1 },
+      "parent_zone_id": { "type": "string", "minLength": 1 },
+      "notes": { "type": "string" }
+    },
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "entity_type": { "const": "instance" }
+          }
+        },
+        "then": {
+          "required": ["parent_zone_id"]
+        }
+      }
+    ]
+  }
+}

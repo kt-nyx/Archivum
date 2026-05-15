@@ -1,0 +1,56 @@
+[
+  {
+    "entity_id": "zone-western-plaguelands",
+    "entity_type": "zone",
+    "slug": "western-plaguelands",
+    "name": "Western Plaguelands",
+    "source_id": "src-wpl-warcraft-overview",
+    "source_url": "https://warcraft.wiki.gg/wiki/Western_Plaguelands",
+    "source_class": "warcraft_wiki",
+    "priority": 1,
+    "selection_version": "pilot-v1",
+    "policy_version": "policy-v1",
+    "manifest_run_id": "manifest-pilot-v1"
+  },
+  {
+    "entity_id": "zone-western-plaguelands",
+    "entity_type": "zone",
+    "slug": "western-plaguelands",
+    "name": "Western Plaguelands",
+    "source_id": "src-wpl-wowpedia-overview",
+    "source_url": "https://wowpedia.fandom.com/wiki/Western_Plaguelands",
+    "source_class": "wowpedia",
+    "priority": 2,
+    "selection_version": "pilot-v1",
+    "policy_version": "policy-v1",
+    "manifest_run_id": "manifest-pilot-v1"
+  },
+  {
+    "entity_id": "instance-scholomance",
+    "entity_type": "instance",
+    "slug": "scholomance",
+    "name": "Scholomance",
+    "source_id": "src-scholomance-warcraft-overview",
+    "source_url": "https://warcraft.wiki.gg/wiki/Scholomance",
+    "source_class": "warcraft_wiki",
+    "priority": 1,
+    "parent_zone_id": "zone-western-plaguelands",
+    "selection_version": "pilot-v1",
+    "policy_version": "policy-v1",
+    "manifest_run_id": "manifest-pilot-v1"
+  },
+  {
+    "entity_id": "instance-scholomance",
+    "entity_type": "instance",
+    "slug": "scholomance",
+    "name": "Scholomance",
+    "source_id": "src-scholomance-wowpedia-overview",
+    "source_url": "https://wowpedia.fandom.com/wiki/Scholomance",
+    "source_class": "wowpedia",
+    "priority": 2,
+    "parent_zone_id": "zone-western-plaguelands",
+    "selection_version": "pilot-v1",
+    "policy_version": "policy-v1",
+    "manifest_run_id": "manifest-pilot-v1"
+  }
+]

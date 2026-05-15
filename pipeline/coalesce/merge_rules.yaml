@@ -1,0 +1,7 @@
+version: 1
+entity_resolution:
+  confidence_threshold: 0.8
+  id_stability_key: "source_ids"
+claim_merge:
+  dedupe_strategy: "exact_text_then_source_overlap"
+  contradiction_bias: "prefer_higher_revision_id"

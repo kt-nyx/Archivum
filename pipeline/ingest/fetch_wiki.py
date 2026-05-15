@@ -1,0 +1,304 @@
+"""Ingest source snapshot fetch stage."""
+
+from __future__ import annotations
+
+import json
+import re
+import time
+from datetime import UTC, datetime
+from hashlib import sha256
+from pathlib import Path
+from typing import Any, TypedDict
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.request import Request, urlopen
+
+from jsonschema import Draft202012Validator
+
+from pipeline.common.run_context import RunContext
+from pipeline.ingest.retrieval_profiles import profile_for_source_class
+
+PARAGRAPH_RE = re.compile(r"<p[^>]*>(.*?)</p>", re.IGNORECASE | re.DOTALL)
+BLOCK_RE = re.compile(r"<(h[1-6]|p)[^>]*>(.*?)</\1>", re.IGNORECASE | re.DOTALL)
+TAG_RE = re.compile(r"<[^>]+>")
+REVISION_RE = re.compile(r'"wgRevisionId"\s*:\s*([0-9]+)')
+
+
+class SourceSnapshot(TypedDict):
+    entity_id: str
+    entity_type: str
+    slug: str
+    name: str
+    source_id: str
+    source_class: str
+    url: str
+    revision_id: str
+    captured_at: str
+    locator: str
+    body: str
+    retrieval_mode: str
+    selection_version: str
+    policy_version: str
+    manifest_run_id: str
+    parent_zone_id: str
+    requested_revision_id: str
+    priority: int
+
+
+class ValidatedManifestRow(TypedDict):
+    entity_id: str
+    entity_type: str
+    slug: str
+    name: str
+    source_id: str
+    source_url: str
+    source_class: str
+    selection_version: str
+    policy_version: str
+    manifest_run_id: str
+    parent_zone_id: str
+    requested_revision_id: str
+    priority: int
+
+
+def _fallback_priority(row_index: int) -> int:
+    """Return deterministic fallback priority within contract range 1..10.
+
+    Row-order modulo 10 is used intentionally, so rows 11+ collide with earlier
+    priority buckets while remaining stable across runs.
+    """
+    return ((row_index - 1) % 10) + 1
+
+
+def _load_manifest(context: RunContext) -> list[dict[str, Any]]:
+    manifest_path = context.root_dir / "source_manifest.json"
+    if not manifest_path.exists():
+        raise RuntimeError(
+            "missing ingest manifest at run root: expected source_manifest.json "
+            f"at '{manifest_path}'"
+        )
+    blob = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(blob, list):
+        raise RuntimeError("source_manifest.json must be a JSON array")
+    for index, row in enumerate(blob, start=1):
+        if not isinstance(row, dict):
+            raise RuntimeError(f"source_manifest.json row {index} is not an object")
+    _validate_manifest_schema(blob)
+    return blob
+
+
+def _manifest_schema_path() -> Path:
+    return Path(__file__).with_name("source_manifest.schema.json")
+
+
+def _validate_manifest_schema(rows: list[dict[str, Any]]) -> None:
+    schema_path = _manifest_schema_path()
+    if not schema_path.exists():
+        return
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema)
+    errors = sorted(validator.iter_errors(rows), key=lambda err: list(err.path))
+    if not errors:
+        return
+    first_error = errors[0]
+    path_tokens = [str(token) for token in first_error.absolute_path]
+    path = "$" if not path_tokens else "$." + ".".join(path_tokens)
+    raise RuntimeError(f"source_manifest.json schema error at {path}: {first_error.message}")
+
+
+def _validate_manifest_row(row: dict[str, Any], index: int) -> ValidatedManifestRow:
+    required_fields = (
+        "entity_id",
+        "entity_type",
+        "slug",
+        "name",
+        "source_id",
+        "source_url",
+        "source_class",
+        "selection_version",
+        "policy_version",
+        "manifest_run_id",
+    )
+    missing = [field for field in required_fields if not str(row.get(field, "")).strip()]
+    if missing:
+        raise RuntimeError(f"manifest row {index} missing required fields: {', '.join(missing)}")
+    entity_type = str(row["entity_type"]).strip()
+    if entity_type not in {"zone", "sub_zone", "instance", "character", "glossary_term", "asset"}:
+        raise RuntimeError(f"manifest row {index} has unsupported entity_type '{entity_type}'")
+    source_class = str(row["source_class"]).strip()
+    if source_class not in {"warcraft_wiki", "wowpedia"}:
+        raise RuntimeError(f"manifest row {index} has unsupported source_class '{source_class}'")
+    parent_zone_id = str(row.get("parent_zone_id", "")).strip()
+    if entity_type == "instance" and not parent_zone_id:
+        raise RuntimeError(
+            f"manifest row {index} for instance entity requires non-empty parent_zone_id"
+        )
+    priority = row.get("priority")
+    normalized_priority: int | None = None
+    if isinstance(priority, int):
+        normalized_priority = priority
+    elif isinstance(priority, str) and priority.isdigit():
+        normalized_priority = int(priority)
+    if normalized_priority is not None and not 1 <= normalized_priority <= 10:
+        normalized_priority = None
+
+    return {
+        "entity_id": str(row["entity_id"]).strip(),
+        "entity_type": entity_type,
+        "slug": str(row["slug"]).strip(),
+        "name": str(row["name"]).strip(),
+        "source_id": str(row["source_id"]).strip(),
+        "source_url": str(row["source_url"]).strip(),
+        "source_class": source_class,
+        "selection_version": str(row["selection_version"]).strip(),
+        "policy_version": str(row["policy_version"]).strip(),
+        "manifest_run_id": str(row["manifest_run_id"]).strip(),
+        "parent_zone_id": parent_zone_id,
+        "requested_revision_id": str(
+            row.get("revision_id", row.get("requested_revision_id", ""))
+        ).strip(),
+        "priority": (
+            normalized_priority
+            if normalized_priority is not None
+            else _fallback_priority(index)
+        ),
+    }
+
+
+def _normalize_locator_section(value: str) -> str:
+    section = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+    return section or "lead"
+
+
+def _extract_main_text(html: str, *, max_chars: int) -> tuple[str, str]:
+    paragraphs = PARAGRAPH_RE.findall(html)
+    cleaned_chunks: list[str] = []
+    first_locator = "section:lead paragraph:1"
+    current_section = "lead"
+    paragraph_index_by_section: dict[str, int] = {"lead": 0}
+    for tag_name, raw_value in BLOCK_RE.findall(html):
+        cleaned = " ".join(TAG_RE.sub(" ", raw_value).split())
+        if not cleaned:
+            continue
+        if tag_name.lower().startswith("h"):
+            current_section = _normalize_locator_section(cleaned)
+            paragraph_index_by_section.setdefault(current_section, 0)
+            continue
+        paragraph_index_by_section[current_section] = (
+            paragraph_index_by_section.get(current_section, 0) + 1
+        )
+        if first_locator == "section:lead paragraph:1":
+            first_locator = (
+                f"section:{current_section} paragraph:{paragraph_index_by_section[current_section]}"
+            )
+            break
+    for paragraph in paragraphs:
+        stripped = TAG_RE.sub(" ", paragraph)
+        collapsed = " ".join(stripped.split())
+        if collapsed:
+            cleaned_chunks.append(collapsed)
+    if not cleaned_chunks:
+        fallback = TAG_RE.sub(" ", html)
+        cleaned_chunks = [" ".join(fallback.split())]
+    text = "\n".join(cleaned_chunks)
+    return text[:max_chars], first_locator
+
+
+def _fetch_url_text(url: str, source_class: str) -> tuple[str, str, str]:
+    profile = profile_for_source_class(source_class)
+    last_error: Exception | None = None
+    for attempt in range(profile.retries + 1):
+        try:
+            request = Request(url, headers={"User-Agent": "wow-lore-ingest/1.0"})
+            with urlopen(request, timeout=profile.timeout_seconds) as response:  # noqa: S310
+                html = response.read().decode("utf-8", errors="replace")
+            body, locator = _extract_main_text(html, max_chars=profile.max_chars)
+            revision_match = REVISION_RE.search(html)
+            if revision_match:
+                revision_id = f"mw:{revision_match.group(1)}"
+            else:
+                revision_id = "sha256:" + sha256(html.encode("utf-8")).hexdigest()[:16]
+            return body, revision_id, locator
+        except (HTTPError, URLError, TimeoutError) as exc:
+            last_error = exc
+            if attempt < profile.retries:
+                time.sleep(profile.retry_backoff_seconds * (2**attempt))
+            continue
+    msg = f"unable to fetch source url '{url}'"
+    if last_error is not None:
+        msg = f"{msg}: {last_error!r}"
+    raise RuntimeError(msg)
+
+
+def _build_revision_pinned_url(url: str, requested_revision_id: str) -> str:
+    revision = requested_revision_id.strip()
+    if not revision:
+        return url
+    if revision.startswith("mw:"):
+        revision = revision.split(":", 1)[1]
+    if not revision.isdigit():
+        return url
+    parsed = urlparse(url)
+    query_pairs = [(key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True)]
+    query_without_oldid = [(key, value) for key, value in query_pairs if key.lower() != "oldid"]
+    query_without_oldid.append(("oldid", revision))
+    updated_query = urlencode(query_without_oldid, doseq=True)
+    return urlunparse(parsed._replace(query=updated_query))
+
+
+def run_fetch_wiki(context: RunContext) -> Path:
+    """Fetch source snapshots from manifest-driven wiki URLs."""
+    manifest_rows = _load_manifest(context)
+    captured_at = datetime.now(UTC).isoformat()
+    snapshots: list[SourceSnapshot] = []
+    raw_dir = context.data_dir / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    for index, raw_row in enumerate(manifest_rows, start=1):
+        row = _validate_manifest_row(raw_row, index)
+        source_id = row["source_id"]
+        requested_revision_id = row["requested_revision_id"]
+        url = _build_revision_pinned_url(row["source_url"], requested_revision_id)
+        source_class = row["source_class"]
+        body, revision_id, locator = _fetch_url_text(url, source_class)
+        if requested_revision_id and revision_id.startswith("mw:"):
+            normalized_requested = requested_revision_id
+            if not normalized_requested.startswith("mw:"):
+                normalized_requested = f"mw:{normalized_requested}"
+            if normalized_requested != revision_id:
+                raise RuntimeError(
+                    f"manifest row {index} expected revision '{normalized_requested}' "
+                    f"but fetched '{revision_id}'"
+                )
+
+        snapshot: SourceSnapshot = {
+            "entity_id": row["entity_id"],
+            "entity_type": row["entity_type"],
+            "slug": row["slug"],
+            "name": row["name"],
+            "source_id": source_id,
+            "source_class": source_class,
+            "url": url,
+            "revision_id": revision_id,
+            "captured_at": captured_at,
+            "locator": locator,
+            "body": body,
+            "retrieval_mode": "revision-pinned" if requested_revision_id else "live",
+            "selection_version": row["selection_version"],
+            "policy_version": row["policy_version"],
+            "manifest_run_id": row["manifest_run_id"],
+            "parent_zone_id": row["parent_zone_id"],
+            "requested_revision_id": requested_revision_id,
+            "priority": int(row["priority"]),
+        }
+        snapshots.append(snapshot)
+
+    stage_dir = context.stage_dir("ingest")
+    output_path = stage_dir / "source_snapshots.json"
+    output_path.write_text(json.dumps(snapshots, indent=2), encoding="utf-8")
+    raw_ndjson_path = raw_dir / "source_snapshots.ndjson"
+    raw_ndjson_path.write_text(
+        "\n".join(json.dumps(snapshot) for snapshot in snapshots) + "\n",
+        encoding="utf-8",
+    )
+    return output_path

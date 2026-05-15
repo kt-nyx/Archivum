@@ -3,3 +3,10 @@ Reference/
 __pycache__/
 *.py[cod]
 .venv/
+
+# Local secrets and overrides (use `.env.example` as the template)
+.env
+.env.local
+
+# Pipeline run outputs (reproducible locally; not source)
+artifacts/

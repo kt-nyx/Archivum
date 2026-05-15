@@ -9,7 +9,9 @@ from pydantic import BaseModel, ValidationError
 
 from pipeline.contracts.models import ENTITY_MODEL_MAP
 from pipeline.validate.rules.budget import validate_budget_rules
+from pipeline.validate.rules.fact_check import validate_fact_check_rules
 from pipeline.validate.rules.provenance import validate_provenance_rules
+from pipeline.validate.rules.similarity import validate_similarity_rules
 from pipeline.validate.rules.structure import validate_structural_rules
 from pipeline.validate.types import ValidationIssue, ValidationReport, ValidationSeverity
 
@@ -36,7 +38,12 @@ def _schema_issues_from_exception(exc: ValidationError) -> list[ValidationIssue]
     return issues
 
 
-def _finalize_report(entity_type: str, issues: list[ValidationIssue]) -> ValidationReport:
+def _finalize_report(
+    entity_type: str,
+    issues: list[ValidationIssue],
+    *,
+    fact_check_report: dict[str, object] | None = None,
+) -> ValidationReport:
     hard_fail_count = sum(1 for issue in issues if issue.severity == ValidationSeverity.HARD_FAIL)
     warn_count = len(issues) - hard_fail_count
     return ValidationReport(
@@ -45,6 +52,7 @@ def _finalize_report(entity_type: str, issues: list[ValidationIssue]) -> Validat
         hard_fail_count=hard_fail_count,
         warn_count=warn_count,
         passed=hard_fail_count == 0,
+        fact_check_report=fact_check_report,
     )
 
 
@@ -76,4 +84,17 @@ def validate_payload(
     issues.extend(
         validate_provenance_rules(entity_type, parsed_entity, validation_context=validation_context)
     )
-    return _finalize_report(entity_type, issues)
+    # Anti-verbatim: narrative sections vs ingest snapshot bodies (after provenance, before
+    # fact-check so downstream checks see the same payload).
+    issues.extend(
+        validate_similarity_rules(
+            entity_type, parsed_entity, validation_context=validation_context
+        )
+    )
+    fact_check_issues, fact_check_report = validate_fact_check_rules(
+        entity_type,
+        parsed_entity,
+        validation_context=validation_context,
+    )
+    issues.extend(fact_check_issues)
+    return _finalize_report(entity_type, issues, fact_check_report=fact_check_report)
