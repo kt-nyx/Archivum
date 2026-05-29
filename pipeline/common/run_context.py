@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 import uuid
+from hashlib import sha1
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -53,15 +55,33 @@ class RunContext:
         return self.traces_dir / "stage_trace.jsonl"
 
 
+def _repository_root() -> Path:
+    """Directory that contains the ``pipeline`` package (repository root in editable installs)."""
+    return Path(__file__).resolve().parent.parent.parent
+
+
+def _default_artifacts_runs_dir() -> Path:
+    """Resolve ``artifacts/runs`` for CLI and library use.
+
+    Defaults to ``<repository_root>/artifacts/runs`` so commands behave the same no matter which
+    working directory the shell uses. Override with ``WOW_LORE_ARTIFACTS_ROOT`` (absolute or
+    relative path to the ``runs`` directory — i.e. the parent of each ``<run_id>/`` folder).
+    """
+    raw = os.environ.get("WOW_LORE_ARTIFACTS_ROOT", "").strip()
+    if raw:
+        return Path(raw).expanduser().resolve()
+    return (_repository_root() / "artifacts" / "runs").resolve()
+
+
 def ensure_run_context(
     run_id: str | None = None,
     *,
     artifacts_root: Path | None = None,
 ) -> RunContext:
-    """Create and return a run context rooted under artifacts/runs."""
+    """Create a run context under ``artifacts/runs`` (default: under the repository root)."""
     resolved_run_id = run_id or build_run_id()
-    root = artifacts_root or Path("artifacts") / "runs"
-    run_root = root / resolved_run_id
+    root = artifacts_root or _default_artifacts_runs_dir()
+    run_root = (root / resolved_run_id).resolve()
     run_root.mkdir(parents=True, exist_ok=True)
     (run_root / "data").mkdir(exist_ok=True)
     (run_root / "reports").mkdir(exist_ok=True)
@@ -81,6 +101,17 @@ def write_stage_manifest(
     metadata: dict[str, object] | None = None,
 ) -> Path:
     """Persist stage input/output manifest for run traceability."""
+    normalized_metadata = metadata or {}
+    config_hash = sha1(
+        json.dumps(
+            {
+                "stage": stage_name,
+                "inputs": inputs,
+                "metadata": normalized_metadata,
+            },
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
     manifest = {
         "run_id": context.run_id,
         "stage_id": f"{context.run_id}:{stage_name}",
@@ -91,7 +122,8 @@ def write_stage_manifest(
         "retries": retries,
         "escalated": escalated,
         "updated_at": datetime.now(UTC).isoformat(),
-        "metadata": metadata or {},
+        "metadata": normalized_metadata,
+        "config_hash": config_hash,
     }
     manifest_path = context.stage_manifest_path(stage_name)
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
