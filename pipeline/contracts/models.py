@@ -43,6 +43,36 @@ class GlossaryCategory(StrEnum):
 class IncludeDecision(StrEnum):
     INCLUDE = "include"
     EXCLUDE = "exclude"
+    DEFER = "defer"
+
+
+class EntityType(StrEnum):
+    ZONE = "zone"
+    INSTANCE = "instance"
+    LOCATION = "location"
+    QUEST = "quest"
+    CHARACTER = "character"
+    FACTION = "faction"
+    GLOSSARY_TERM = "glossary_term"
+
+
+class LocationType(StrEnum):
+    CITY = "city"
+    STARTER_AREA = "starter_area"
+    MAJOR_LOCATION = "major_location"
+
+
+class RetailEligibility(StrEnum):
+    ELIGIBLE = "eligible"
+    INELIGIBLE_CLASSIC_ONLY = "ineligible_classic_only"
+    INELIGIBLE_OTHER_GAME = "ineligible_other_game"
+    UNKNOWN = "unknown"
+
+
+class DisambiguationState(StrEnum):
+    NONE = "none"
+    RESOLVED = "resolved"
+    UNRESOLVED = "unresolved"
 
 
 class BudgetRule(BaseModel):
@@ -67,6 +97,93 @@ class SourceManifestEntry(BaseModel):
     source_id: str = Field(min_length=1)
     url: str = Field(min_length=1)
     revision_id: str | None = None
+
+
+class CanonicalEntityRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entity_id: str = Field(pattern=ID_PATTERN)
+    entity_type: EntityType
+    wiki_title: str = Field(min_length=1)
+    wiki_url: str = Field(min_length=1)
+    page_id: int | None = None
+    redirect_chain: list[str] = Field(default_factory=list)
+    disambiguation_state: DisambiguationState = DisambiguationState.NONE
+    retail_eligibility: RetailEligibility = RetailEligibility.UNKNOWN
+
+
+class HistorySection(BaseModel):
+    heading: str = Field(min_length=1)
+    body: str = Field(min_length=1)
+    source_refs: list[SourcePointer] = Field(default_factory=list)
+
+
+class FactionCard(BaseModel):
+    id: str = Field(pattern=ID_PATTERN)
+    name: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    wiki_url: str = Field(min_length=1)
+
+
+class LocationCard(BaseModel):
+    id: str = Field(pattern=ID_PATTERN)
+    name: str = Field(min_length=1)
+    location_type: LocationType
+    zone_id: str = Field(pattern=ID_PATTERN)
+    wiki_url: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    significance: str = Field(min_length=1)
+    decision_reason_codes: list[str] = Field(default_factory=list)
+    ui_hints: dict[str, str] = Field(default_factory=dict)
+    provenance: list[SourcePointer] = Field(default_factory=list)
+
+
+class QuestlineCardV2(BaseModel):
+    id: str = Field(pattern=ID_PATTERN)
+    title: str = Field(min_length=1)
+    faction: Faction
+    cta_hook: str = Field(min_length=1)
+    start_anchor: str = Field(min_length=1)
+    chain_refs: list[str] = Field(default_factory=list)
+    include_decision: IncludeDecision
+    reason_codes: list[str] = Field(default_factory=list)
+    wiki_refs: list[str] = Field(default_factory=list)
+
+
+class DecisionArtifact(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    subject_id: str = Field(min_length=1)
+    subject_type: str = Field(min_length=1)
+    run_id: str = Field(min_length=1)
+    algorithm_version: str = Field(min_length=1)
+    features: dict[str, float | int | str | bool] = Field(default_factory=dict)
+    hard_reject: bool = False
+    hard_reject_reasons: list[str] = Field(default_factory=list)
+    score: float | None = None
+    thresholds: dict[str, float] = Field(default_factory=dict)
+    borderline_adjudication: dict[str, str] | None = None
+    final_decision: IncludeDecision
+    reason_codes: list[str] = Field(default_factory=list)
+
+
+class EvidenceItem(BaseModel):
+    source_url: str = Field(min_length=1)
+    source_title: str = Field(min_length=1)
+    snippet: str = Field(min_length=1)
+    section_role: str = Field(min_length=1)
+    confidence: float = Field(ge=0, le=1)
+
+
+class EvidencePack(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    subject_id: str = Field(min_length=1)
+    subject_type: str = Field(min_length=1)
+    field_name: str = Field(min_length=1)
+    evidence_items: list[EvidenceItem] = Field(default_factory=list)
+    constraints: dict[str, str | int | bool] = Field(default_factory=dict)
+    build_meta: dict[str, str] = Field(default_factory=dict)
 
 
 class InclusionDecision(BaseModel):
@@ -150,6 +267,26 @@ class ZoneProvenance(BaseModel):
     glossary: dict[str, list[SourcePointer]] = Field(default_factory=dict)
 
 
+class ZonePage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    zone_id: str = Field(pattern=ID_PATTERN)
+    name: str = Field(min_length=1)
+    wiki_url: str = Field(min_length=1)
+    parent_continent: str = Field(min_length=1)
+    expansion_context: str = Field(min_length=1)
+    at_a_glance: str = Field(min_length=1)
+    currently: str = Field(min_length=1)
+    history_sections: list[HistorySection] = Field(default_factory=list)
+    major_factions: list[FactionCard] = Field(default_factory=list)
+    major_questlines: list[QuestlineCardV2] = Field(default_factory=list)
+    location_cards: list[LocationCard] = Field(default_factory=list)
+    instance_links: list[InstanceLinkCard] = Field(default_factory=list)
+    glossary_refs: list[GlossaryLink] = Field(default_factory=list)
+    sources: list[SourceManifestEntry] = Field(default_factory=list)
+    provenance: ZoneProvenance
+
+
 class Zone(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -227,6 +364,30 @@ class InstanceProvenance(BaseModel):
     identity_header: list[SourcePointer] = Field(default_factory=list)
     story_context: list[SourcePointer] = Field(default_factory=list)
     key_characters: dict[str, list[SourcePointer]] = Field(default_factory=dict)
+
+
+class InstancePage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    instance_id: str = Field(pattern=ID_PATTERN)
+    name: str = Field(min_length=1)
+    instance_type: Literal["raid", "dungeon"]
+    parent_zone_id: str = Field(pattern=ID_PATTERN)
+    expansion_context: str = Field(min_length=1)
+    wiki_url: str = Field(min_length=1)
+    at_a_glance: str = Field(min_length=1)
+    overview: str = Field(min_length=1)
+    history_sections: list[HistorySection] = Field(default_factory=list)
+    key_enemies: list[CharacterCard] = Field(default_factory=list)
+    major_factions: list[FactionCard] = Field(default_factory=list)
+    related_quest_chains: list[QuestlineCardV2] = Field(default_factory=list)
+    lore_source: Literal["instance_page", "linked_lore_page"] = "instance_page"
+    lore_source_reason: str | None = None
+    variant_policy: Literal["standalone", "merged_variant"] = "standalone"
+    variant_reason_codes: list[str] = Field(default_factory=list)
+    glossary_refs: list[GlossaryLink] = Field(default_factory=list)
+    sources: list[SourceManifestEntry] = Field(default_factory=list)
+    provenance: InstanceProvenance
 
 
 class Instance(BaseModel):
@@ -430,4 +591,13 @@ ENTITY_MODEL_MAP: dict[str, type[BaseModel]] = {
     "character": Character,
     "glossary_term": GlossaryTerm,
     "asset": Asset,
+}
+
+WIKI_FIRST_ENTITY_MODEL_MAP: dict[str, type[BaseModel]] = {
+    "zone_page": ZonePage,
+    "instance_page": InstancePage,
+    "location_card": LocationCard,
+    "canonical_entity_ref": CanonicalEntityRef,
+    "decision_artifact": DecisionArtifact,
+    "evidence_pack": EvidencePack,
 }

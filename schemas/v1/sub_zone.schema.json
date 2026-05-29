@@ -64,7 +64,8 @@
     "IncludeDecision": {
       "enum": [
         "include",
-        "exclude"
+        "exclude",
+        "defer"
       ],
       "title": "IncludeDecision",
       "type": "string"

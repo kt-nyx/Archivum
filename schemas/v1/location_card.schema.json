@@ -1,0 +1,113 @@
+{
+  "$defs": {
+    "LocationType": {
+      "enum": [
+        "city",
+        "starter_area",
+        "major_location"
+      ],
+      "title": "LocationType",
+      "type": "string"
+    },
+    "SourcePointer": {
+      "description": "Strict-four source pointer required for provenance.",
+      "properties": {
+        "excerpt_hash": {
+          "minLength": 1,
+          "title": "Excerpt Hash",
+          "type": "string"
+        },
+        "locator": {
+          "minLength": 1,
+          "title": "Locator",
+          "type": "string"
+        },
+        "revision_id": {
+          "minLength": 1,
+          "title": "Revision Id",
+          "type": "string"
+        },
+        "source_id": {
+          "minLength": 1,
+          "title": "Source Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "locator",
+        "revision_id",
+        "excerpt_hash"
+      ],
+      "title": "SourcePointer",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "decision_reason_codes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Decision Reason Codes",
+      "type": "array"
+    },
+    "id": {
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "location_type": {
+      "$ref": "#/$defs/LocationType"
+    },
+    "name": {
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "provenance": {
+      "items": {
+        "$ref": "#/$defs/SourcePointer"
+      },
+      "title": "Provenance",
+      "type": "array"
+    },
+    "significance": {
+      "minLength": 1,
+      "title": "Significance",
+      "type": "string"
+    },
+    "summary": {
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    },
+    "ui_hints": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Ui Hints",
+      "type": "object"
+    },
+    "wiki_url": {
+      "minLength": 1,
+      "title": "Wiki Url",
+      "type": "string"
+    },
+    "zone_id": {
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Zone Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "location_type",
+    "zone_id",
+    "wiki_url",
+    "summary",
+    "significance"
+  ],
+  "title": "LocationCard",
+  "type": "object"
+}

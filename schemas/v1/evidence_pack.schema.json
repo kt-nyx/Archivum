@@ -1,0 +1,99 @@
+{
+  "$defs": {
+    "EvidenceItem": {
+      "properties": {
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "section_role": {
+          "minLength": 1,
+          "title": "Section Role",
+          "type": "string"
+        },
+        "snippet": {
+          "minLength": 1,
+          "title": "Snippet",
+          "type": "string"
+        },
+        "source_title": {
+          "minLength": 1,
+          "title": "Source Title",
+          "type": "string"
+        },
+        "source_url": {
+          "minLength": 1,
+          "title": "Source Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_url",
+        "source_title",
+        "snippet",
+        "section_role",
+        "confidence"
+      ],
+      "title": "EvidenceItem",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "build_meta": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Build Meta",
+      "type": "object"
+    },
+    "constraints": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "title": "Constraints",
+      "type": "object"
+    },
+    "evidence_items": {
+      "items": {
+        "$ref": "#/$defs/EvidenceItem"
+      },
+      "title": "Evidence Items",
+      "type": "array"
+    },
+    "field_name": {
+      "minLength": 1,
+      "title": "Field Name",
+      "type": "string"
+    },
+    "subject_id": {
+      "minLength": 1,
+      "title": "Subject Id",
+      "type": "string"
+    },
+    "subject_type": {
+      "minLength": 1,
+      "title": "Subject Type",
+      "type": "string"
+    }
+  },
+  "required": [
+    "subject_id",
+    "subject_type",
+    "field_name"
+  ],
+  "title": "EvidencePack",
+  "type": "object"
+}

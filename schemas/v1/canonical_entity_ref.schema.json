@@ -1,0 +1,92 @@
+{
+  "$defs": {
+    "DisambiguationState": {
+      "enum": [
+        "none",
+        "resolved",
+        "unresolved"
+      ],
+      "title": "DisambiguationState",
+      "type": "string"
+    },
+    "EntityType": {
+      "enum": [
+        "zone",
+        "instance",
+        "location",
+        "quest",
+        "character",
+        "faction",
+        "glossary_term"
+      ],
+      "title": "EntityType",
+      "type": "string"
+    },
+    "RetailEligibility": {
+      "enum": [
+        "eligible",
+        "ineligible_classic_only",
+        "ineligible_other_game",
+        "unknown"
+      ],
+      "title": "RetailEligibility",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "disambiguation_state": {
+      "$ref": "#/$defs/DisambiguationState",
+      "default": "none"
+    },
+    "entity_id": {
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Entity Id",
+      "type": "string"
+    },
+    "entity_type": {
+      "$ref": "#/$defs/EntityType"
+    },
+    "page_id": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Page Id"
+    },
+    "redirect_chain": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Redirect Chain",
+      "type": "array"
+    },
+    "retail_eligibility": {
+      "$ref": "#/$defs/RetailEligibility",
+      "default": "unknown"
+    },
+    "wiki_title": {
+      "minLength": 1,
+      "title": "Wiki Title",
+      "type": "string"
+    },
+    "wiki_url": {
+      "minLength": 1,
+      "title": "Wiki Url",
+      "type": "string"
+    }
+  },
+  "required": [
+    "entity_id",
+    "entity_type",
+    "wiki_title",
+    "wiki_url"
+  ],
+  "title": "CanonicalEntityRef",
+  "type": "object"
+}

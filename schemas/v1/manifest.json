@@ -5,11 +5,17 @@
   ],
   "entities": [
     "asset",
+    "canonical_entity_ref",
     "character",
+    "decision_artifact",
+    "evidence_pack",
     "glossary_term",
     "instance",
+    "instance_page",
+    "location_card",
     "sub_zone",
-    "zone"
+    "zone",
+    "zone_page"
   ],
   "schema_version": "v1"
 }

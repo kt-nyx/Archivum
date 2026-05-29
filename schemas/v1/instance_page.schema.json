@@ -1,0 +1,430 @@
+{
+  "$defs": {
+    "CharacterCard": {
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "thumbnail_asset_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thumbnail Asset Id"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "summary"
+      ],
+      "title": "CharacterCard",
+      "type": "object"
+    },
+    "Faction": {
+      "enum": [
+        "alliance",
+        "horde",
+        "shared"
+      ],
+      "title": "Faction",
+      "type": "string"
+    },
+    "FactionCard": {
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "wiki_url": {
+          "minLength": 1,
+          "title": "Wiki Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "summary",
+        "wiki_url"
+      ],
+      "title": "FactionCard",
+      "type": "object"
+    },
+    "GlossaryLink": {
+      "properties": {
+        "term_id": {
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "title": "Term Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "term_id"
+      ],
+      "title": "GlossaryLink",
+      "type": "object"
+    },
+    "HistorySection": {
+      "properties": {
+        "body": {
+          "minLength": 1,
+          "title": "Body",
+          "type": "string"
+        },
+        "heading": {
+          "minLength": 1,
+          "title": "Heading",
+          "type": "string"
+        },
+        "source_refs": {
+          "items": {
+            "$ref": "#/$defs/SourcePointer"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "heading",
+        "body"
+      ],
+      "title": "HistorySection",
+      "type": "object"
+    },
+    "IncludeDecision": {
+      "enum": [
+        "include",
+        "exclude",
+        "defer"
+      ],
+      "title": "IncludeDecision",
+      "type": "string"
+    },
+    "InstanceProvenance": {
+      "properties": {
+        "identity_header": {
+          "items": {
+            "$ref": "#/$defs/SourcePointer"
+          },
+          "title": "Identity Header",
+          "type": "array"
+        },
+        "key_characters": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/SourcePointer"
+            },
+            "type": "array"
+          },
+          "title": "Key Characters",
+          "type": "object"
+        },
+        "story_context": {
+          "items": {
+            "$ref": "#/$defs/SourcePointer"
+          },
+          "title": "Story Context",
+          "type": "array"
+        }
+      },
+      "title": "InstanceProvenance",
+      "type": "object"
+    },
+    "QuestlineCardV2": {
+      "properties": {
+        "chain_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Chain Refs",
+          "type": "array"
+        },
+        "cta_hook": {
+          "minLength": 1,
+          "title": "Cta Hook",
+          "type": "string"
+        },
+        "faction": {
+          "$ref": "#/$defs/Faction"
+        },
+        "id": {
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "include_decision": {
+          "$ref": "#/$defs/IncludeDecision"
+        },
+        "reason_codes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reason Codes",
+          "type": "array"
+        },
+        "start_anchor": {
+          "minLength": 1,
+          "title": "Start Anchor",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "wiki_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Wiki Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "faction",
+        "cta_hook",
+        "start_anchor",
+        "include_decision"
+      ],
+      "title": "QuestlineCardV2",
+      "type": "object"
+    },
+    "SourceManifestEntry": {
+      "properties": {
+        "revision_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        },
+        "source_id": {
+          "minLength": 1,
+          "title": "Source Id",
+          "type": "string"
+        },
+        "url": {
+          "minLength": 1,
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "url"
+      ],
+      "title": "SourceManifestEntry",
+      "type": "object"
+    },
+    "SourcePointer": {
+      "description": "Strict-four source pointer required for provenance.",
+      "properties": {
+        "excerpt_hash": {
+          "minLength": 1,
+          "title": "Excerpt Hash",
+          "type": "string"
+        },
+        "locator": {
+          "minLength": 1,
+          "title": "Locator",
+          "type": "string"
+        },
+        "revision_id": {
+          "minLength": 1,
+          "title": "Revision Id",
+          "type": "string"
+        },
+        "source_id": {
+          "minLength": 1,
+          "title": "Source Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "locator",
+        "revision_id",
+        "excerpt_hash"
+      ],
+      "title": "SourcePointer",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "at_a_glance": {
+      "minLength": 1,
+      "title": "At A Glance",
+      "type": "string"
+    },
+    "expansion_context": {
+      "minLength": 1,
+      "title": "Expansion Context",
+      "type": "string"
+    },
+    "glossary_refs": {
+      "items": {
+        "$ref": "#/$defs/GlossaryLink"
+      },
+      "title": "Glossary Refs",
+      "type": "array"
+    },
+    "history_sections": {
+      "items": {
+        "$ref": "#/$defs/HistorySection"
+      },
+      "title": "History Sections",
+      "type": "array"
+    },
+    "instance_id": {
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Instance Id",
+      "type": "string"
+    },
+    "instance_type": {
+      "enum": [
+        "raid",
+        "dungeon"
+      ],
+      "title": "Instance Type",
+      "type": "string"
+    },
+    "key_enemies": {
+      "items": {
+        "$ref": "#/$defs/CharacterCard"
+      },
+      "title": "Key Enemies",
+      "type": "array"
+    },
+    "lore_source": {
+      "default": "instance_page",
+      "enum": [
+        "instance_page",
+        "linked_lore_page"
+      ],
+      "title": "Lore Source",
+      "type": "string"
+    },
+    "lore_source_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Lore Source Reason"
+    },
+    "major_factions": {
+      "items": {
+        "$ref": "#/$defs/FactionCard"
+      },
+      "title": "Major Factions",
+      "type": "array"
+    },
+    "name": {
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "overview": {
+      "minLength": 1,
+      "title": "Overview",
+      "type": "string"
+    },
+    "parent_zone_id": {
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Parent Zone Id",
+      "type": "string"
+    },
+    "provenance": {
+      "$ref": "#/$defs/InstanceProvenance"
+    },
+    "related_quest_chains": {
+      "items": {
+        "$ref": "#/$defs/QuestlineCardV2"
+      },
+      "title": "Related Quest Chains",
+      "type": "array"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/SourceManifestEntry"
+      },
+      "title": "Sources",
+      "type": "array"
+    },
+    "variant_policy": {
+      "default": "standalone",
+      "enum": [
+        "standalone",
+        "merged_variant"
+      ],
+      "title": "Variant Policy",
+      "type": "string"
+    },
+    "variant_reason_codes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Variant Reason Codes",
+      "type": "array"
+    },
+    "wiki_url": {
+      "minLength": 1,
+      "title": "Wiki Url",
+      "type": "string"
+    }
+  },
+  "required": [
+    "instance_id",
+    "name",
+    "instance_type",
+    "parent_zone_id",
+    "expansion_context",
+    "wiki_url",
+    "at_a_glance",
+    "overview",
+    "provenance"
+  ],
+  "title": "InstancePage",
+  "type": "object"
+}

@@ -7,7 +7,12 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from pipeline.contracts.models import ENTITY_MODEL_MAP, InclusionDecision, SourcePointer
+from pipeline.contracts.models import (
+    ENTITY_MODEL_MAP,
+    WIKI_FIRST_ENTITY_MODEL_MAP,
+    InclusionDecision,
+    SourcePointer,
+)
 
 SCHEMA_VERSION = "v1"
 
@@ -23,6 +28,7 @@ def export_all_schemas(output_dir: Path) -> list[Path]:
 
     schema_model_map: dict[str, type[BaseModel]] = {
         **ENTITY_MODEL_MAP,
+        **WIKI_FIRST_ENTITY_MODEL_MAP,
         "inclusion_decision": InclusionDecision,
         "source_pointer": SourcePointer,
     }
@@ -36,7 +42,7 @@ def export_all_schemas(output_dir: Path) -> list[Path]:
 
     manifest = {
         "schema_version": SCHEMA_VERSION,
-        "entities": sorted(ENTITY_MODEL_MAP),
+        "entities": sorted({*ENTITY_MODEL_MAP, *WIKI_FIRST_ENTITY_MODEL_MAP}),
         "contracts": sorted(["inclusion_decision", "source_pointer"]),
     }
     manifest_path = output_dir / "manifest.json"
