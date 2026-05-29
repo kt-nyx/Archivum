@@ -6,6 +6,7 @@ from pipeline.generate.draft.prose_lint import MAX_AT_A_GLANCE_WORDS, word_count
 from pipeline.generate.draft.wiki_first_workers import (
     synthesize_at_a_glance,
     synthesize_currently,
+    synthesize_faction_summary,
     synthesize_history_sections,
 )
 
@@ -59,3 +60,19 @@ def test_workers_return_empty_for_empty_pools(monkeypatch) -> None:
     assert synthesize_at_a_glance([]) == ("", [])
     assert synthesize_currently([]) == ("", [])
     assert synthesize_history_sections([]) == ([], [])
+    assert synthesize_faction_summary([], faction_name="Argent Crusade", zone_name="Example Zone") == ("", [])
+
+
+def test_faction_summary_deterministic_respects_max_words(monkeypatch) -> None:
+    monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
+    snippet = " ".join(["reclamation"] * 200) + "."
+    summary, used = synthesize_faction_summary(
+        [{"source_id": "src-faction", "snippet": snippet}],
+        faction_name="Argent Crusade",
+        zone_name="Example Zone",
+        max_words=40,
+    )
+    assert summary
+    assert used == ["src-faction"]
+    assert word_count(summary) <= 40
+

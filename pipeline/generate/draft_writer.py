@@ -113,6 +113,12 @@ def run_draft_writer(
                 subject_id = str(row.get("subject_id", "")).strip()
                 if subject_id:
                     questline_decision_map[subject_id] = row
+    faction_profile_targets: list[dict[str, Any]] = []
+    faction_targets_path = context.data_dir / "discovery" / "faction_profile_targets.json"
+    if faction_targets_path.exists():
+        targets_blob = json.loads(faction_targets_path.read_text(encoding="utf-8"))
+        if isinstance(targets_blob, list):
+            faction_profile_targets = [row for row in targets_blob if isinstance(row, dict)]
 
     def _write(path: Path) -> tuple[Path | None, dict[str, object] | None]:
         fact_pack = json.loads(path.read_text(encoding="utf-8"))
@@ -140,6 +146,11 @@ def run_draft_writer(
                     location_candidate_map,
                     location_decision_map,
                     questline_decision_map.get(entity_id),
+                    faction_profile_targets=[
+                        row
+                        for row in faction_profile_targets
+                        if str(row.get("zone_id", "")).strip() == entity_id
+                    ],
                 )
             else:
                 lore_source = next(

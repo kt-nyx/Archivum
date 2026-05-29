@@ -50,11 +50,15 @@ def word_count(text: str) -> int:
     return len(re.findall(r"\b[\w']+\b", text))
 
 
-def trim_words(text: str, max_words: int) -> str:
+def trim_words(text: str, max_words: int, *, ensure_terminal_punct: bool = False) -> str:
     words = text.split()
     if len(words) <= max_words:
-        return text.strip()
-    return " ".join(words[:max_words]).strip()
+        result = text.strip()
+    else:
+        result = " ".join(words[:max_words]).strip()
+    if ensure_terminal_punct and result and result[-1] not in ".?!":
+        return f"{result}."
+    return result
 
 
 def has_historical_framing(text: str) -> bool:

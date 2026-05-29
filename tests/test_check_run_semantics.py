@@ -229,3 +229,62 @@ def test_check_run_fails_when_currently_has_player_meta(tmp_path: Path) -> None:
     _write_minimal_run(run_root, draft=draft)
     with pytest.raises(SemanticCheckError, match="currently"):
         check_run(run_root, zone_id="zone-example")
+
+
+def test_check_run_fails_when_major_factions_use_generic_filler(tmp_path: Path) -> None:
+    run_root = tmp_path / "run-factions"
+    run_root.mkdir()
+    draft = _valid_draft()
+    draft["major_factions"] = [
+        {
+            "id": "faction-argent-crusade",
+            "name": "Argent Crusade",
+            "summary": "The Argent Crusade appears in this zone's active conflicts.",
+            "wiki_url": "https://warcraft.wiki.gg/wiki/Argent_Crusade",
+        }
+    ]
+    _write_minimal_run(run_root, draft=draft)
+    with pytest.raises(SemanticCheckError, match="major_factions"):
+        check_run(run_root, zone_id="zone-example")
+
+
+def test_check_run_fails_when_major_factions_below_minimum_with_candidates(tmp_path: Path) -> None:
+    run_root = tmp_path / "run-faction-min"
+    run_root.mkdir()
+    draft = _valid_draft()
+    draft["major_factions"] = []
+    _write_minimal_run(run_root, draft=draft)
+    (run_root / "data" / "discovery" / "faction_profile_targets.json").write_text(
+        json.dumps(
+            [
+                {"zone_id": "zone-example", "faction_id": "faction-argent-crusade", "name": "Argent Crusade"},
+                {"zone_id": "zone-example", "faction_id": "faction-cenarion-circle", "name": "Cenarion Circle"},
+            ],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(SemanticCheckError, match="major_factions count"):
+        check_run(run_root, zone_id="zone-example")
+
+
+def test_check_run_warns_alliance_without_quest_bindings(tmp_path: Path, capsys) -> None:
+    run_root = tmp_path / "run-alliance-warn"
+    run_root.mkdir()
+    draft = _valid_draft()
+    draft["major_factions"] = [
+        {
+            "id": "faction-alliance",
+            "name": "Alliance",
+            "summary": (
+                "Alliance forces coordinate reclamation patrols along the main road while securing "
+                "supply lines across the contested frontier throughout the zone."
+            ),
+            "wiki_url": "https://warcraft.wiki.gg/wiki/Alliance",
+        }
+    ]
+    _write_minimal_run(run_root, draft=draft)
+    check_run(run_root, zone_id="zone-example")
+    captured = capsys.readouterr()
+    assert "WARN: 'faction-alliance' present in major_factions without strong conflict signal" in captured.out
+

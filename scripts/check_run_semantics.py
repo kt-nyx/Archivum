@@ -167,6 +167,27 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
     if "&#91;" in blob or "History 1" in blob:
         _fail("history_sections contain raw passthrough markers")
 
+    from pipeline.generate.draft.faction_lint import lint_faction_summary
+    from pipeline.generate.draft.faction_scoring import (
+        MAX_FACTION_CARDS,
+        MIN_FACTION_CARDS,
+        alliance_horde_conflict_met,
+    )
+
+    major_factions = draft.get("major_factions") or []
+    faction_cards = [row for row in major_factions if isinstance(row, dict)]
+    for card in faction_cards:
+        card_id = str(card.get("id", "")).strip()
+        if not card_id.startswith("faction-"):
+            _fail(f"major_factions card id is not faction-scoped: {card_id!r}")
+        summary = str(card.get("summary", "")).strip()
+        if not summary:
+            _fail(f"major_factions card missing summary: {card_id!r}")
+        for issue in lint_faction_summary(summary, zone_name=zone_name):
+            _fail(f"major_factions quality check failed for {card_id!r}: {issue}")
+    if len(faction_cards) > MAX_FACTION_CARDS:
+        _fail(f"major_factions exceeds cap ({len(faction_cards)} > {MAX_FACTION_CARDS})")
+
     if not draft.get("location_cards"):
         _fail("location_cards is empty")
     if len(draft.get("sources", [])) < 2:
@@ -237,18 +258,26 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
 
     evidence_path = run_root / "data" / "evidence" / "evidence_packs.jsonl"
     if evidence_path.exists():
-        eligible_history_blocks = 0
-        covered_clusters: set[str] = set()
-        glance_items = 0
+        zone_evidence_rows: list[dict[str, Any]] = []
         for line in evidence_path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
             row = json.loads(line)
-            field_name = str(row.get("field_name", ""))
             build_meta = row.get("build_meta") or {}
             subject_zone = str(build_meta.get("subject_zone_id", row.get("subject_id", "")))
             if subject_zone not in {"", resolved_zone_id}:
                 continue
+            zone_evidence_rows.append(row)
+
+        eligible_history_blocks = 0
+        covered_clusters: set[str] = set()
+        glance_items = 0
+        eligible_faction_candidates: set[str] = set()
+        faction_ids_with_profile: set[str] = set()
+        faction_names_by_id: dict[str, str] = {}
+        for row in zone_evidence_rows:
+            field_name = str(row.get("field_name", ""))
+            build_meta = row.get("build_meta") or {}
             if field_name == "history_digest":
                 eligible_history_blocks += len(row.get("evidence_items", []))
             elif field_name == "quest_cluster_lore":
@@ -257,6 +286,103 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
                     covered_clusters.add(cluster_id)
             elif field_name == "at_a_glance_input":
                 glance_items += len(row.get("evidence_items", []))
+            elif field_name == "faction_pool":
+                faction_id = str(build_meta.get("faction_id", "")).strip()
+                if faction_id:
+                    eligible_faction_candidates.add(faction_id)
+                    faction_ids_with_profile.add(faction_id)
+                    faction_name = str(build_meta.get("faction_name", "")).strip()
+                    if faction_name:
+                        faction_names_by_id[faction_id] = faction_name
+        targets_path = run_root / "data" / "discovery" / "faction_profile_targets.json"
+        if targets_path.exists():
+            targets_blob = _load_json(targets_path)
+            if isinstance(targets_blob, list):
+                for row in targets_blob:
+                    if not isinstance(row, dict):
+                        continue
+                    if str(row.get("zone_id", "")).strip() != resolved_zone_id:
+                        continue
+                    faction_id = str(row.get("faction_id", "")).strip()
+                    faction_name = str(row.get("name", "")).strip()
+                    if faction_id:
+                        eligible_faction_candidates.add(faction_id)
+                        if faction_name:
+                            faction_names_by_id.setdefault(faction_id, faction_name)
+        for card in faction_cards:
+            card_id = str(card.get("id", "")).strip()
+            card_name = str(card.get("name", "")).strip()
+            if card_id and card_name:
+                faction_names_by_id.setdefault(card_id, card_name)
+
+        def _seed_mentions_for_faction(faction_id: str) -> list[dict[str, Any]]:
+            faction_name = faction_names_by_id.get(faction_id, "").strip()
+            if not faction_name:
+                return []
+            mentions: list[dict[str, Any]] = []
+            for row in zone_evidence_rows:
+                field_name = str(row.get("field_name", ""))
+                if field_name not in {"history_digest", "currently_input", "questline_pool", "at_a_glance_input"}:
+                    continue
+                build_meta = row.get("build_meta") or {}
+                for item in row.get("evidence_items", []):
+                    if not isinstance(item, dict):
+                        continue
+                    snippet = str(item.get("snippet", "")).strip()
+                    if not snippet:
+                        continue
+                    if re.search(rf"\b{re.escape(faction_name)}\b", snippet, re.IGNORECASE):
+                        mentions.append(
+                            {
+                                "snippet": snippet,
+                                "section_role": str(item.get("section_role", build_meta.get("section_role", ""))),
+                                "field_name": field_name,
+                            }
+                        )
+            return mentions
+        if len(eligible_faction_candidates) >= MIN_FACTION_CARDS and len(faction_cards) < MIN_FACTION_CARDS:
+            _fail(
+                f"major_factions count {len(faction_cards)} below minimum {MIN_FACTION_CARDS} "
+                f"for {len(eligible_faction_candidates)} faction candidates"
+            )
+        draft_faction_ids = {str(card.get("id", "")).strip() for card in faction_cards}
+        unknown_ids = sorted(draft_faction_ids - eligible_faction_candidates)
+        if unknown_ids and eligible_faction_candidates:
+            _fail(
+                "major_factions cards reference unknown faction ids "
+                f"(got {unknown_ids}, expected subset of {sorted(eligible_faction_candidates)})"
+            )
+        provenance = draft.get("provenance") or {}
+        faction_provenance = provenance.get("major_factions") or {}
+        for card in faction_cards:
+            card_id = str(card.get("id", "")).strip()
+            if card_id in faction_ids_with_profile and card_id not in faction_provenance:
+                _fail(f"major_factions card missing provenance despite profile evidence: {card_id!r}")
+        for card in faction_cards:
+            card_id = str(card.get("id", "")).strip()
+            if card_id not in {"faction-alliance", "faction-horde"}:
+                continue
+            binding_count = 0
+            if v3_rows:
+                binding = "alliance" if card_id == "faction-alliance" else "horde"
+                binding_count = sum(
+                    1
+                    for row in v3_rows
+                    if isinstance(row, dict)
+                    and str(row.get("zone_id", "")) == resolved_zone_id
+                    and str(row.get("node_type", "")) == "quest"
+                    and str(row.get("faction_binding", "")).strip().lower() == binding
+                )
+            seed_mentions = _seed_mentions_for_faction(card_id)
+            if not alliance_horde_conflict_met(
+                faction_id=card_id,
+                quest_binding_count=binding_count,
+                seed_mentions=seed_mentions,
+            ):
+                print(
+                    f"WARN: {card_id!r} present in major_factions without strong conflict signal "
+                    "(quest bindings or high-weight seed mention)"
+                )
         if eligible_history_blocks >= MIN_HISTORY_SECTIONS and len(history) < MIN_HISTORY_SECTIONS:
             _fail(
                 f"history_sections count {len(history)} below minimum {MIN_HISTORY_SECTIONS} "
@@ -271,10 +397,7 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
             _fail(f"at_a_glance_input pool exceeds cap: {glance_items}")
 
         source_kind_by_id: dict[str, str] = {}
-        for line in evidence_path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            row = json.loads(line)
+        for row in zone_evidence_rows:
             build_meta = row.get("build_meta") or {}
             source_id = str(build_meta.get("source_id", "")).strip()
             source_kind = str(build_meta.get("source_kind", "")).strip()

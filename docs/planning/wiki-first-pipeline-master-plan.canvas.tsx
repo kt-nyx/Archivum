@@ -33,7 +33,7 @@ const SLICES = [
   {
     id: "slice-4",
     content: "Slice 4 — Faction scoring, ranking, zone-role summaries",
-    status: "pending" as const,
+    status: "completed" as const,
   },
   {
     id: "slice-5",
@@ -74,6 +74,7 @@ export default function WikiFirstPipelineMasterPlan() {
         <Stat label="Slice 1" value="Completed" tone="success" />
         <Stat label="Slice 2" value="Completed" tone="success" />
         <Stat label="Slice 3" value="Completed" tone="success" />
+        <Stat label="Slice 4" value="Completed" tone="success" />
       </Row>
 
       <Callout tone="info" title="Zone-agnostic engineering policy">
@@ -308,6 +309,94 @@ export default function WikiFirstPipelineMasterPlan() {
       </CollapsibleSection>
 
       <Divider />
+      <H2>Slice 4 — completed summary</H2>
+      <Table
+        headers={["Deliverable", "Status", "Notes"]}
+        rows={[
+          ["enrich build_meta.faction_id", "Done", "faction_profile packs tagged with faction_id + faction_name"],
+          ["faction_scoring.py", "Done", "Candidate collection, significance scoring, ranked election (2–6)"],
+          ["faction_lint.py", "Done", "Shared heuristics for draft finalize + check_run_semantics"],
+          ["synthesize_faction_summary", "Done", "Zone-role worker; deterministic trim fallback; no generic filler"],
+          ["build_major_factions", "Done", "Replaces _FACTION_HINTS / _extract_factions in build_zone_page"],
+          ["draft_writer wiring", "Done", "Loads faction_profile_targets.json per zone"],
+          ["Semantic faction checks", "Done", "Card count, lint, provenance, Alliance/Horde WARN in check_run_semantics.py"],
+          ["Instance major_factions", "Deferred", "build_instance_page returns [] until Slice 6"],
+        ]}
+      />
+
+      <CollapsibleSection title="Slice 4 — intentional deviations (documented)" count={8}>
+        <Table
+          headers={["Topic", "Plan / canvas wording", "Actual behaviour", "Rationale"]}
+          rows={[
+            [
+              "major_factions validate budget",
+              "Optional warn-level 2–6 in budget.py",
+              "Card count enforced in check_run_semantics only (when ≥2 candidates)",
+              "Matches Slice 3 semantics-only enforcement pattern",
+            ],
+            [
+              "Instance faction parity",
+              "Shared build_major_factions on instance pages",
+              "build_instance_page emits major_factions: [] until Slice 6",
+              "Avoid stale _FACTION_HINTS substring matching on instance drafts",
+            ],
+            [
+              "Alliance/Horde semantics",
+              "WARN if present without quest-binding or high-weight seed",
+              "WARN via shared alliance_horde_conflict_met helper (bindings or high-weight seed roles)",
+              "Warn-only (not fail) so thin runs pass while flagging suspicious cards",
+            ],
+            [
+              "Finalize backfill",
+              "Election picks N candidates; finalize may skip failing cards",
+              "Backfill queue uses score ≥ MIN_SCORE when eligible candidates exist; thin runs use score > 0",
+              "Recovers card count when top picks fail lint without promoting sub-threshold factions",
+            ],
+            [
+              "Seed candidate discovery",
+              "Seed mentions may infer candidates beyond targets",
+              "Candidates limited to discovery targets, faction_pool evidence, and v3 Alliance/Horde bindings",
+              "Avoids global registry substring false positives in seed prose",
+            ],
+            [
+              "Zone-role soft lint",
+              "Optional has_zone_role_framing heuristic in faction_lint",
+              "Enforced in lint_faction_summary (present-tense role verbs or historical framing)",
+              "Implemented in Slice 4 follow-up — rejects bare factual stubs",
+            ],
+            [
+              "Duplicate faction summaries",
+              "Optionally duplicate structure.py check in semantics",
+              "Enforced only in validate/rules/structure.py during validate stage",
+              "Early fail not needed; validate stage already covers duplicates",
+            ],
+            [
+              "PoC artifact regression",
+              "Optional LORE_PILOT_RUN_ROOT WPL faction rank spot-check",
+              "Not added — unit/integration tests use neutral fixtures only",
+              "Optional per plan; manual QA + semantics on pilot runs instead",
+            ],
+          ]}
+        />
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Slice 4 — verification (completed)" count={5}>
+        <Table
+          headers={["Check", "Criterion"]}
+          rows={[
+            ["major_factions count", "2–6 when ≥2 faction candidates in evidence/targets"],
+            ["Card summaries", "Zone-role prose; no generic filler; ≥12 words; ends with sentence punctuation"],
+            ["Alliance/Horde gate", "Scoring + semantics use alliance_horde_conflict_met (bindings or high-weight seed)"],
+            ["Unit tests", "tests/test_faction_scoring.py, test_zone_faction_draft.py, test_wiki_first_workers.py"],
+            [
+              "Run semantics",
+              "uv run python scripts/check_run_semantics.py artifacts/runs/<run-id> [--zone-id zone-...]",
+            ],
+          ]}
+        />
+      </CollapsibleSection>
+
+      <Divider />
       <H2>Deferred hardcoded cleanup (outside Slice 1 scope)</H2>
       <Text tone="secondary">
         The following still contain pilot-specific names as test data, static glossary seeds, or validation fixtures.
@@ -374,7 +463,7 @@ export default function WikiFirstPipelineMasterPlan() {
           ],
           ["2 ✓", "W4, W5", "Quest traverse; lore extract; cluster questline cards", "—"],
           ["3 ✓", "W2", "at-a-glance / currently / history workers + election + lint", "—"],
-          ["4", "W6", "Faction zone-significance scoring + ranked cards", "Major factions section"],
+          ["4 ✓", "W6", "Faction zone-significance scoring + ranked cards", "—"],
           ["5", "W7", "Location denylist, relevance, no defer padding", "Landmarks section"],
           ["6", "W8", "Instance LLM workers, boss parse, instance_lore traverse", "Instance pages"],
           ["7", "W9", "Run-scoped glossary terms; linker; wiki_url on refs", "Click-to-wiki UX"],
@@ -383,7 +472,7 @@ export default function WikiFirstPipelineMasterPlan() {
       />
 
       <Divider />
-      <H2>Verification commands (Slice 1–3)</H2>
+      <H2>Verification commands (Slice 1–4)</H2>
       <Table
         headers={["Check", "Command"]}
         rows={[
@@ -458,6 +547,21 @@ export default function WikiFirstPipelineMasterPlan() {
         </Stack>
       </CollapsibleSection>
 
+      <CollapsibleSection title="Slice 4 — Faction scoring and zone-role summaries" count={2}>
+        <Stack gap={12}>
+          <H3>Acceptance (generalized)</H3>
+          <Table
+            headers={["Check", "Criterion"]}
+            rows={[
+              ["major_factions count", "2–6 when ≥2 scored candidates; discovery-driven ids (no _FACTION_HINTS)"],
+              ["Card summaries", "Zone-role only; present tense for active role; no reputation/achievement meta"],
+              ["Alliance/Horde", "Included only when conflict_score ≥ threshold (quest bindings or high-weight seed)"],
+            ]}
+          />
+          <Text tone="success">Slice 4 completed — see summary and verification tables above.</Text>
+        </Stack>
+      </CollapsibleSection>
+
       <Divider />
       <H2>Pipeline stage touchpoints</H2>
       <Table
@@ -469,14 +573,14 @@ export default function WikiFirstPipelineMasterPlan() {
           ["discovery / storyline_html", "List-item quest parse only (Slice 1 ✓)"],
           ["discovery / entity_typing", "Denylist taxonomy + zone_name self-check (Slice 1 ✓)"],
           ["discovery / enrich", "Scoped evidence + quest_lore / quest_cluster_lore (Slice 1–2 ✓)"],
-          ["scripts/check_run_semantics.py", "Cluster cards + traversal denylist + prose quality (Slice 1–3 ✓)"],
-          ["draft / wiki_first", "Cluster questline cards + zone prose election/lint (Slice 2–3 ✓)"],
+          ["scripts/check_run_semantics.py", "Cluster cards + traversal denylist + prose + faction quality (Slice 1–4 ✓)"],
+          ["draft / wiki_first", "Cluster questline cards + zone prose + major_factions election/lint (Slice 2–4 ✓)"],
           ["dictionary/", "Run-scoped terms replace static pilot aliases"],
         ]}
       />
 
       <Row gap={8}>
-        <Pill tone="accent">Next: Slice 4</Pill>
+        <Pill tone="accent">Next: Slice 5</Pill>
         <Pill tone="neutral">PoC QA: WPL + Scholomance (data only)</Pill>
         <Pill tone="success">Policy: zone-agnostic code</Pill>
       </Row>

@@ -9,6 +9,7 @@ from pipeline.ai.config import load_ai_settings
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.generate.draft.llm import llm_json_with_retry
 from pipeline.generate.draft.prose_election import history_heading_from_role, precompress_at_a_glance_evidence
+from pipeline.generate.draft.faction_lint import trim_faction_summary
 from pipeline.generate.draft.prose_lint import MAX_HISTORY_SECTIONS, trim_words, word_count
 
 
@@ -172,6 +173,58 @@ def synthesize_history_sections(
             used_ids.append(str(item.get("source_id", "")))
         return sections, used_ids
     return sections_out, used
+
+
+def synthesize_faction_summary(
+    items: list[dict[str, Any]],
+    *,
+    faction_name: str,
+    zone_name: str,
+    max_words: int = 40,
+) -> tuple[str, list[str]]:
+    if not items:
+        return "", []
+    settings = load_ai_settings()
+    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
+        ranked = sorted(items, key=lambda row: word_count(str(row.get("snippet", ""))), reverse=True)
+        for item in ranked:
+            snippet = clean_wiki_snippet(str(item.get("snippet", "")))
+            if not snippet:
+                continue
+            summary = trim_faction_summary(snippet, max_words)
+            if summary:
+                return summary, [str(item.get("source_id", ""))]
+        return "", []
+    result = llm_json_with_retry(
+        required_keys=("summary", "used_evidence_ids"),
+        response_json_schema={
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["summary", "used_evidence_ids"],
+            "properties": {
+                "summary": {"type": "string"},
+                "used_evidence_ids": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+        system_prompt=(
+            f"Write a zone-role summary for faction '{faction_name}' in zone '{zone_name}' using ONLY evidence. "
+            f"Maximum {max_words} words. Describe what this faction does in this zone only. "
+            "Use present tense for active roles; past tense for defunct leadership when evidence is historical. "
+            "Do not copy generic faction wiki ledes, geography lists, reputation/achievement meta, or out-of-zone plot."
+        ),
+        user_prompt=f"Evidence:\n{_format_evidence_block(items)}",
+        response_schema_name="wiki_first_faction_summary",
+        substep="wiki_first_faction_summary",
+    )
+    summary = trim_faction_summary(clean_wiki_snippet(str(result.get("summary", ""))), max_words)
+    used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
+    if not summary:
+        ranked = sorted(items, key=lambda row: word_count(str(row.get("snippet", ""))), reverse=True)
+        for item in ranked:
+            snippet = trim_faction_summary(clean_wiki_snippet(str(item.get("snippet", ""))), max_words)
+            if snippet:
+                return snippet, [str(item.get("source_id", ""))]
+    return summary, used
 
 
 def synthesize_card_summary(

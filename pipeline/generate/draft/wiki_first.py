@@ -7,6 +7,15 @@ import re
 from typing import Any
 
 from pipeline.common.text_normalize import clean_wiki_snippet
+from pipeline.generate.draft.faction_lint import ensure_sentence_terminator, lint_faction_summary
+from pipeline.generate.draft.faction_scoring import (
+    FactionCandidate,
+    MAX_FACTION_CARDS,
+    candidates_for_finalize,
+    collect_faction_candidates,
+    fallback_faction_summary,
+    finalize_evidence_pools,
+)
 from pipeline.generate.draft.prose_election import (
     fallback_at_a_glance,
     fallback_currently,
@@ -28,19 +37,10 @@ from pipeline.generate.draft.wiki_first_workers import (
     synthesize_at_a_glance,
     synthesize_card_summary,
     synthesize_currently,
+    synthesize_faction_summary,
     synthesize_history_sections,
 )
 
-_FACTION_HINTS: tuple[tuple[str, str], ...] = (
-    ("faction-argent-crusade", "Argent Crusade"),
-    ("faction-scarlet-crusade", "Scarlet Crusade"),
-    ("faction-scourge", "Scourge"),
-    ("faction-cenarion-circle", "Cenarion Circle"),
-    ("faction-cult-of-the-damned", "Cult of the Damned"),
-    ("faction-alliance", "Alliance"),
-    ("faction-horde", "Horde"),
-    ("faction-forsaken", "Forsaken"),
-)
 
 _NAME_STOP_WORDS = {
     "The",
@@ -113,6 +113,8 @@ def _iter_evidence_items(
                     "source_id": str((row.get("build_meta") or {}).get("source_id", "")),
                     "field_name": str(row.get("field_name", "")),
                     "cluster_id": str((row.get("build_meta") or {}).get("cluster_id", "")),
+                    "faction_id": str((row.get("build_meta") or {}).get("faction_id", "")),
+                    "faction_name": str((row.get("build_meta") or {}).get("faction_name", "")),
                 }
             )
     return items
@@ -190,8 +192,8 @@ def _build_evidence_pools(evidence_rows: list[dict[str, Any]]) -> dict[str, list
     faction_pool = _iter_evidence_items(evidence_rows, {"faction_pool"})
     location_pool_items = _iter_evidence_items(evidence_rows, {"location_pool"})
     instance_pool = _iter_evidence_items(evidence_rows, {"instances_or_dungeons", "history_digest"})
-    faction_role_pool = faction_pool or _iter_evidence_items(
-        evidence_rows, {"history_digest", "currently_input", "questline_pool"}
+    faction_role_pool = _iter_evidence_items(
+        evidence_rows, {"history_digest", "currently_input", "questline_pool", "at_a_glance_input"}
     )
     location_pool = location_pool_items or _iter_evidence_items(evidence_rows, {"history_digest"})
     return {
@@ -329,25 +331,83 @@ def _first_item(
     return items[0]
 
 
-def _extract_factions(evidence_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    pools = _build_evidence_pools(evidence_rows)
-    text_blob = " ".join(item["snippet"] for item in pools["faction_role_pool"])
-    lowered = text_blob.lower()
-    faction_cards: list[dict[str, Any]] = []
-    for faction_id, name in _FACTION_HINTS:
-        if name.lower() not in lowered:
-            continue
-        role_snippet = _best_snippet_for_term(pools["faction_role_pool"], name, min_words=10)
-        summary = role_snippet or f"{name} appears in this zone's active conflicts and political narrative."
-        faction_cards.append(
-            {
-                "id": faction_id,
-                "name": name,
-                "summary": summary,
-                "wiki_url": f"https://warcraft.wiki.gg/wiki/{name.replace(' ', '_')}",
-            }
+def _finalize_faction_card(
+    candidate: FactionCandidate,
+    *,
+    zone_name: str,
+) -> tuple[dict[str, Any] | None, list[str], list[dict[str, Any]]]:
+    pools_to_try = finalize_evidence_pools(candidate)
+    if not pools_to_try:
+        return None, [], []
+
+    for pool in pools_to_try:
+        summary, used = synthesize_faction_summary(
+            pool,
+            faction_name=candidate.name,
+            zone_name=zone_name,
+            max_words=40,
         )
-    return faction_cards[:6]
+        summary = ensure_sentence_terminator(summary)
+        if not lint_faction_summary(summary, zone_name=zone_name):
+            return (
+                {
+                    "id": candidate.faction_id,
+                    "name": candidate.name,
+                    "summary": summary,
+                    "wiki_url": candidate.wiki_url,
+                },
+                used,
+                pool,
+            )
+        summary, used = fallback_faction_summary(pool)
+        summary = ensure_sentence_terminator(summary)
+        if not lint_faction_summary(summary, zone_name=zone_name):
+            return (
+                {
+                    "id": candidate.faction_id,
+                    "name": candidate.name,
+                    "summary": summary,
+                    "wiki_url": candidate.wiki_url,
+                },
+                used,
+                pool,
+            )
+    return None, [], []
+
+
+def build_major_factions(
+    *,
+    zone_id: str,
+    zone_name: str,
+    evidence_rows: list[dict[str, Any]],
+    pools: dict[str, list[dict[str, Any]]],
+    questline_rows: list[dict[str, Any]],
+    revision_map: dict[str, str],
+    faction_profile_targets: list[dict[str, Any]] | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, str]]]]:
+    candidates = collect_faction_candidates(
+        zone_id=zone_id,
+        evidence_rows=evidence_rows,
+        pools=pools,
+        faction_profile_targets=faction_profile_targets,
+        v3_rows=questline_rows,
+    )
+    target_count, queue = candidates_for_finalize(candidates)
+    cards: list[dict[str, Any]] = []
+    provenance_map: dict[str, list[dict[str, str]]] = {}
+    for candidate in queue:
+        if len(cards) >= MAX_FACTION_CARDS:
+            break
+        card, used, pool = _finalize_faction_card(candidate, zone_name=zone_name)
+        if card is None:
+            continue
+        cards.append(card)
+        pointers = _pointers_for_source_ids(pool, used, revision_map)
+        if pointers:
+            provenance_map[str(card["id"])] = pointers
+        if target_count and len(cards) >= target_count:
+            break
+    return cards, provenance_map
 
 
 def _build_location_cards(
@@ -574,6 +634,8 @@ def build_zone_page(
     location_candidate_map: dict[str, dict[str, Any]],
     location_decision_map: dict[str, dict[str, Any]],
     questline_decision: dict[str, Any] | None,
+    *,
+    faction_profile_targets: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     zone_id = str(fact_pack.get("entity_id", "zone-unknown"))
     name = str(fact_pack.get("name", zone_id))
@@ -702,18 +764,18 @@ def build_zone_page(
             for pointer in pointers:
                 used_source_ids.add(pointer["source_id"])
 
-    faction_cards = _extract_factions(evidence_rows)
-    faction_provenance_map: dict[str, list[dict[str, str]]] = {}
-    for card in faction_cards:
-        scoped = [item for item in pools["faction_role_pool"] if str(card.get("name", "")).lower() in str(item.get("snippet", "")).lower()] or pools["faction_role_pool"]
-        summary, used_ids = synthesize_card_summary(scoped, subject=str(card.get("name", "")), max_words=40)
-        if summary:
-            card["summary"] = summary
-        pointers = _pointers_for_source_ids(scoped, used_ids, revision_map)
-        if pointers:
-            faction_provenance_map[str(card["id"])] = pointers
-            for pointer in pointers:
-                used_source_ids.add(pointer["source_id"])
+    faction_cards, faction_provenance_map = build_major_factions(
+        zone_id=zone_id,
+        zone_name=name,
+        evidence_rows=evidence_rows,
+        pools=pools,
+        questline_rows=active_questline_rows,
+        revision_map=revision_map,
+        faction_profile_targets=faction_profile_targets,
+    )
+    for pointers in faction_provenance_map.values():
+        for pointer in pointers:
+            used_source_ids.add(pointer["source_id"])
     sources = [
         {"source_id": source_id, "url": source_urls[source_id], "revision_id": revision_map.get(source_id)}
         for source_id in sorted(used_source_ids)
@@ -826,7 +888,7 @@ def build_instance_page(
         ),
         "history_sections": history_sections,
         "key_enemies": key_enemies,
-        "major_factions": _extract_factions(evidence_rows),
+        "major_factions": [],
         "related_quest_chains": [],
         "lore_source": str((lore_source or {}).get("lore_source", "instance_page")),
         "lore_source_reason": (lore_source or {}).get("fallback_reason"),

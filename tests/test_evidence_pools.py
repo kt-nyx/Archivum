@@ -267,3 +267,34 @@ def test_quest_lore_evidence_fields() -> None:
     assert "quest_lore" in field_names
     assert "quest_cluster_lore" in field_names
 
+
+def test_faction_profile_pack_includes_faction_id_in_build_meta() -> None:
+    snapshots = [
+        {
+            "entity_id": ZONE_ID,
+            "entity_type": "zone",
+            "name": ZONE_NAME,
+            "source_id": "src-faction-argent",
+            "url": "https://warcraft.wiki.gg/wiki/Argent_Crusade",
+            "section_blocks": [
+                {
+                    "section_role": "lead",
+                    "text": (
+                        "The Argent Crusade coordinates reclamation efforts against undead forces "
+                        "across contested frontiers throughout the eastern kingdoms."
+                    ),
+                }
+            ],
+            "auxiliary_role": "faction_profile",
+            "auxiliary_target_id": "faction-argent-crusade",
+            "page_title": "Argent Crusade",
+        }
+    ]
+    packs = _build_evidence_packs(snapshots, "run-test")
+    faction_packs = [row for row in packs if row.get("field_name") == "faction_pool"]
+    assert faction_packs
+    build_meta = faction_packs[0].get("build_meta") or {}
+    assert build_meta.get("faction_id") == "faction-argent-crusade"
+    assert build_meta.get("faction_name") == "Argent Crusade"
+    assert build_meta.get("subject_zone_id") == ZONE_ID
+

@@ -225,6 +225,18 @@ def _build_evidence_packs(
                 continue
 
             for field_name in field_names:
+                build_meta: dict[str, Any] = {
+                    "run_id": run_id,
+                    "source_id": source_id,
+                    "phase": "enrich",
+                    "source_kind": source_kind,
+                    "auxiliary_role": aux_role,
+                    "subject_zone_id": subject_zone_id,
+                    "section_role": role,
+                }
+                if aux_role == "faction_profile":
+                    build_meta["faction_id"] = str(snapshot.get("auxiliary_target_id", "")).strip()
+                    build_meta["faction_name"] = page_title or entity_name
                 packs.append(
                     {
                         "subject_id": subject_id,
@@ -240,15 +252,7 @@ def _build_evidence_packs(
                             }
                         ],
                         "constraints": {"max_tokens": 1200, "forbidden_extrapolation": True},
-                        "build_meta": {
-                            "run_id": run_id,
-                            "source_id": source_id,
-                            "phase": "enrich",
-                            "source_kind": source_kind,
-                            "auxiliary_role": aux_role,
-                            "subject_zone_id": subject_zone_id,
-                            "section_role": role,
-                        },
+                        "build_meta": build_meta,
                     }
                 )
 
