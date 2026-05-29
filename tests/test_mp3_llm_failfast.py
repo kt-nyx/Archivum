@@ -12,6 +12,7 @@ from pipeline.orchestrator.stages import (
     run_extract_stage,
     run_ingest_stage,
 )
+from tests.draft_llm_mocks import fake_draft_chat_by_schema
 
 
 def _pilot_manifest_fixture() -> list[dict[str, object]]:
@@ -28,11 +29,17 @@ def _seed_pilot_manifest(context_root: Path) -> None:
 
 
 def _mock_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_fetch(url: str, source_class: str) -> tuple[str, str, str]:
+    def fake_fetch(
+        url: str, source_class: str
+    ) -> tuple[str, str, str, list[dict[str, str]], list[str], list[dict[str, str]], str]:
         return (
             f"{source_class} source evidence for {url} with zone chronology and conflict context.",
             "mw:654321",
             "section:lead paragraph:1",
+            [{"section_role": "lead", "text": "Lead section evidence."}],
+            [],
+            [],
+            "",
         )
 
     monkeypatch.setattr("pipeline.ingest.fetch_wiki._fetch_url_text", fake_fetch)
@@ -44,7 +51,7 @@ def _mock_coalesce_llm(
     openai_ready: bool,
     chat_result: dict[str, Any] | None = None,
 ) -> None:
-    settings = SimpleNamespace(openai_ready=openai_ready, openai_model="gpt-4.1-mini")
+    settings = SimpleNamespace(openai_ready=openai_ready, openai_model="gpt-5.5")
     monkeypatch.setattr(
         "pipeline.coalesce.resolve_entities.load_ai_settings",
         lambda: settings,
@@ -60,125 +67,40 @@ def _mock_coalesce_llm(
     )
 
 
+def _draft_settings(*, openai_ready: bool) -> SimpleNamespace:
+    return SimpleNamespace(
+        openai_ready=openai_ready,
+        openai_model="gpt-5.5",
+        openai_reasoning_effort=None,
+        openai_verbosity=None,
+        openai_draft_reasoning_effort=None,
+        openai_draft_verbosity=None,
+        openai_use_responses_api=False,
+        openai_request_timeout_seconds=600,
+    )
+
+
 def _mock_draft_llm(
     monkeypatch: pytest.MonkeyPatch,
     *,
     openai_ready: bool,
     chat_result: dict[str, Any] | None = None,
 ) -> None:
-    settings = SimpleNamespace(openai_ready=openai_ready, openai_model="gpt-4.1-mini")
-    monkeypatch.setattr(
+    settings = _draft_settings(openai_ready=openai_ready)
+    for target in (
         "pipeline.generate.draft_writer.load_ai_settings",
-        lambda: settings,
-    )
+        "pipeline.generate.draft.llm.load_ai_settings",
+    ):
+        monkeypatch.setattr(target, lambda: settings)
 
-    def fake_chat(*_args: object, **kwargs: object) -> dict[str, Any] | None:
-        if chat_result is not None:
-            return chat_result
-        system_prompt = str(kwargs.get("system_prompt", ""))
-        if "zone draft body" in system_prompt:
-            return {
-                "expansion": "retail",
-                "at_a_glance": "An actively contested lore region under sustained pressure.",
-                "currently": (
-                    "Current campaigns prioritize route security and settlement stabilization."
-                ),
-                "history": (
-                    "Historical conflict cycles and command shifts define present strategic stakes."
-                ),
-                "major_questlines_alliance": [
-                    {
-                        "id": "ql-zone-alliance-core",
-                        "faction": "alliance",
-                        "title": "Alliance Core Campaign",
-                        "hook": "Alliance operations restore strategic control.",
-                        "start_anchor": "Field Command",
-                        "story_beats": ["Assess", "Stabilize", "Consolidate"],
-                        "inclusion_decision": {
-                            "inclusion_score": 8,
-                            "criteria_breakdown": {
-                                "importance": 2,
-                                "coherence": 2,
-                                "evidence": 2,
-                                "relevance": 2,
-                            },
-                            "include_decision": "include",
-                            "decision_reason": "Evidence-backed campaign arc.",
-                            "source_refs": [],
-                        },
-                        "depends_on_parent_context": False,
-                    }
-                ],
-                "major_questlines_horde": [],
-                "major_questlines_shared": [],
-                "major_characters": [
-                    {
-                        "id": "character-zone-figure-one",
-                        "name": "Zone Figure One",
-                        "summary": "Leads campaign stabilization efforts.",
-                    },
-                    {
-                        "id": "character-zone-figure-two",
-                        "name": "Zone Figure Two",
-                        "summary": "Coordinates strategic responses.",
-                    },
-                    {
-                        "id": "character-zone-figure-three",
-                        "name": "Zone Figure Three",
-                        "summary": "Documents conflict outcomes.",
-                    },
-                ],
-                "instances": [
-                    {
-                        "id": "instance-zone-associated",
-                        "name": "Associated Instance",
-                        "summary": "Related conflict site tied to campaign outcomes.",
-                    }
-                ],
-                "major_landmarks": [
-                    {
-                        "id": "landmark-zone-site-one",
-                        "name": "Zone Site One",
-                        "summary": "Strategic site under ongoing pressure.",
-                    },
-                    {
-                        "id": "landmark-zone-site-two",
-                        "name": "Zone Site Two",
-                        "summary": "Operational hub for recovery efforts.",
-                    },
-                    {
-                        "id": "landmark-zone-site-three",
-                        "name": "Zone Site Three",
-                        "summary": "Frontline location for active campaigns.",
-                    },
-                ],
-                "glossary": [],
-            }
-        if "instance draft body" in system_prompt:
-            return {
-                "type": "dungeon",
-                "identity_header": "A high-risk instance with concentrated hostile leadership.",
-                "story_context": (
-                    "The instance story context covers campaign escalation, command response, "
-                    "and the strategic consequences of unresolved threats."
-                ),
-                "key_characters": [
-                    {
-                        "id": "character-instance-key-one",
-                        "name": "Instance Key One",
-                        "summary": "Drives the instance's central conflict trajectory.",
-                    },
-                    {
-                        "id": "character-instance-key-two",
-                        "name": "Instance Key Two",
-                        "summary": "Shapes the operational stakes within the dungeon.",
-                    },
-                ],
-                "glossary": [],
-            }
-        return None
+    def fake_chat(*args: object, **kwargs: object) -> dict[str, Any] | None:
+        return fake_draft_chat_by_schema(*args, chat_result=chat_result, **kwargs)
 
-    monkeypatch.setattr("pipeline.generate.draft_writer.chat_json_completion", fake_chat)
+    for target in (
+        "pipeline.generate.draft.llm.chat_json_completion",
+        "pipeline.generate.draft_writer.chat_json_completion",
+    ):
+        monkeypatch.setattr(target, fake_chat)
 
 
 def test_mp3_generation_succeeds_when_llm_available(
@@ -336,10 +258,10 @@ def test_ingest_uses_revision_pinned_oldid_url_when_revision_is_supplied(
     )
     captured_urls: list[str] = []
 
-    def fake_fetch(url: str, source_class: str) -> tuple[str, str, str]:
+    def fake_fetch(url: str, source_class: str) -> tuple[str, str, str, list, list, list, str]:
         _ = source_class
         captured_urls.append(url)
-        return ("Pinned revision body text.", "mw:123456", "section:lead paragraph:1")
+        return ("Pinned revision body text.", "mw:123456", "section:lead paragraph:1", [], [], [], "")
 
     monkeypatch.setattr("pipeline.ingest.fetch_wiki._fetch_url_text", fake_fetch)
     run_ingest_stage(context)
@@ -362,8 +284,8 @@ def test_ingest_fails_when_requested_revision_does_not_match_fetched_revision(
         encoding="utf-8",
     )
 
-    def fake_fetch(_url: str, _source_class: str) -> tuple[str, str, str]:
-        return ("Body text.", "mw:222222", "section:lead paragraph:1")
+    def fake_fetch(_url: str, _source_class: str) -> tuple[str, str, str, list, list, list, str]:
+        return ("Body text.", "mw:222222", "section:lead paragraph:1", [], [], [], "")
 
     monkeypatch.setattr("pipeline.ingest.fetch_wiki._fetch_url_text", fake_fetch)
     with pytest.raises(RuntimeError, match="expected revision"):
@@ -398,11 +320,15 @@ def test_ingest_priority_fallback_stays_within_contract_range_for_large_manifest
         encoding="utf-8",
     )
 
-    def fake_fetch(url: str, source_class: str) -> tuple[str, str, str]:
+    def fake_fetch(url: str, source_class: str) -> tuple[str, str, str, list, list, list, str]:
         return (
             f"{source_class} evidence for {url}",
             "mw:654321",
             "section:lead paragraph:1",
+            [],
+            [],
+            [],
+            "",
         )
 
     monkeypatch.setattr("pipeline.ingest.fetch_wiki._fetch_url_text", fake_fetch)
@@ -433,16 +359,13 @@ def test_mp3_draft_retries_until_schema_valid(
         openai_ready=True,
         chat_result={"claims": ["Claim one.", "Claim two."]},
     )
-    settings = SimpleNamespace(openai_ready=True, openai_model="gpt-4.1-mini")
-    monkeypatch.setattr(
-        "pipeline.generate.draft_writer.load_ai_settings",
-        lambda: settings,
-    )
+    monkeypatch.setenv("WOW_LORE_DRAFT_MODE", "legacy")
+    _mock_draft_llm(monkeypatch, openai_ready=True)
     zone_attempts = {"count": 0}
 
-    def flaky_draft_chat(*_args: object, **kwargs: object) -> dict[str, Any]:
-        system_prompt = str(kwargs.get("system_prompt", ""))
-        if "zone draft body" in system_prompt:
+    def flaky_draft_chat(*args: object, **kwargs: object) -> dict[str, Any] | None:
+        schema_name = str(kwargs.get("response_schema_name", ""))
+        if schema_name == "zone_draft_body":
             zone_attempts["count"] += 1
             if zone_attempts["count"] == 1:
                 return {
@@ -458,78 +381,13 @@ def test_mp3_draft_retries_until_schema_valid(
                     "major_landmarks": [],
                     "glossary": [],
                 }
-            return {
-                "expansion": "retail",
-                "at_a_glance": "An actively contested lore region under sustained pressure.",
-                "currently": (
-                    "Current campaigns prioritize route security and settlement stabilization."
-                ),
-                "history": (
-                    "Historical conflict cycles and command shifts define present strategic stakes."
-                ),
-                "major_questlines_alliance": [],
-                "major_questlines_horde": [],
-                "major_questlines_shared": [],
-                "major_characters": [
-                    {
-                        "id": "character-zone-figure-one",
-                        "name": "Zone Figure One",
-                        "summary": "Leads campaign stabilization efforts.",
-                    },
-                    {
-                        "id": "character-zone-figure-two",
-                        "name": "Zone Figure Two",
-                        "summary": "Coordinates strategic responses.",
-                    },
-                    {
-                        "id": "character-zone-figure-three",
-                        "name": "Zone Figure Three",
-                        "summary": "Documents conflict outcomes.",
-                    },
-                ],
-                "instances": [],
-                "major_landmarks": [
-                    {
-                        "id": "landmark-zone-site-one",
-                        "name": "Zone Site One",
-                        "summary": "Strategic site under ongoing pressure.",
-                    },
-                    {
-                        "id": "landmark-zone-site-two",
-                        "name": "Zone Site Two",
-                        "summary": "Operational hub for recovery efforts.",
-                    },
-                    {
-                        "id": "landmark-zone-site-three",
-                        "name": "Zone Site Three",
-                        "summary": "Frontline location for active campaigns.",
-                    },
-                ],
-                "glossary": [],
-            }
-        return {
-            "type": "dungeon",
-            "identity_header": "A high-risk instance with concentrated hostile leadership.",
-            "story_context": (
-                "The instance story context covers campaign escalation, command response, "
-                "and the strategic consequences of unresolved threats."
-            ),
-            "key_characters": [
-                {
-                    "id": "character-instance-key-one",
-                    "name": "Instance Key One",
-                    "summary": "Drives the instance's central conflict trajectory.",
-                },
-                {
-                    "id": "character-instance-key-two",
-                    "name": "Instance Key Two",
-                    "summary": "Shapes the operational stakes within the dungeon.",
-                },
-            ],
-            "glossary": [],
-        }
+        return fake_draft_chat_by_schema(*args, **kwargs)
 
-    monkeypatch.setattr("pipeline.generate.draft_writer.chat_json_completion", flaky_draft_chat)
+    for target in (
+        "pipeline.generate.draft.llm.chat_json_completion",
+        "pipeline.generate.draft_writer.chat_json_completion",
+    ):
+        monkeypatch.setattr(target, flaky_draft_chat)
 
     ingest_output = run_ingest_stage(context)
     coalesced_path = run_coalesce_stage(
@@ -580,99 +438,7 @@ def test_mp3_draft_supports_additional_entity_types(
         "run-test-mp3-draft-additional-types",
         artifacts_root=tmp_path / "runs",
     )
-    settings = SimpleNamespace(openai_ready=True, openai_model="gpt-4.1-mini")
-    monkeypatch.setattr(
-        "pipeline.generate.draft_writer.load_ai_settings",
-        lambda: settings,
-    )
-
-    def multi_entity_chat(*_args: object, **kwargs: object) -> dict[str, Any] | None:
-        system_prompt = str(kwargs.get("system_prompt", ""))
-        if "sub-zone draft body" in system_prompt:
-            return {
-                "at_a_glance": "A heavily contested district within the larger warfront.",
-                "currently": (
-                    "Patrol routes remain unstable while commanders rotate forces to maintain "
-                    "defensive continuity and prevent corridor collapse under pressure."
-                ),
-                "history": (
-                    "The district repeatedly shifted control through plague-era collapse and "
-                    "later military offensives, leaving layered command scars and unresolved "
-                    "infrastructure failures that still influence regional strategy."
-                ),
-                "major_questlines_alliance": [],
-                "major_questlines_horde": [],
-                "major_questlines_shared": [],
-                "major_characters": [
-                    {
-                        "id": "character-subzone-figure-one",
-                        "name": "Sub-zone Figure One",
-                        "summary": (
-                            "Coordinates frontline command logistics under sustained threat."
-                        ),
-                    }
-                ],
-                "instances": [],
-                "major_landmarks": [
-                    {
-                        "id": "landmark-subzone-site-one",
-                        "name": "Sub-zone Site One",
-                        "summary": "A strategic position repeatedly contested by opposing forces.",
-                    }
-                ],
-                "glossary": [{"term_id": "term-scourge"}],
-            }
-        if "character draft body" in system_prompt:
-            return {
-                "summary": (
-                    "This veteran commander balances discipline, reconnaissance pacing, and "
-                    "operational morale across volatile lines. Their role emphasizes routing "
-                    "support assets, preserving evacuation corridors, and maintaining pressure "
-                    "on destabilizing threats while civilian risks remain elevated."
-                ),
-                "short_history": (
-                    "Early campaigns established the commander's reputation for adaptive planning, "
-                    "measured escalation, and rapid tactical resets during severe attrition. "
-                    "Subsequent operations expanded their remit into coalition coordination, "
-                    "where they brokered temporary alignments, stabilized fractured supply chains, "
-                    "and documented lessons that reshaped regional defensive doctrine."
-                ),
-                "glossary": [{"term_id": "term-scourge"}],
-            }
-        if "glossary term draft body" in system_prompt:
-            return {
-                "category": "concept",
-                "aliases": ["plaguelands campaign", "plaguefront"],
-                "summary": (
-                    "A recurring operational concept describing prolonged conflict against "
-                    "plague-era "
-                    "threat networks and associated territorial instability."
-                ),
-                "brief_history": (
-                    "The term emerged from campaign reports that tracked repeating patterns of "
-                    "containment, tactical withdrawal, and route-denial pressure across successive "
-                    "command cycles. Over time it became shorthand for multi-phase response "
-                    "strategy, especially where logistics fragility and persistent hostile "
-                    "adaptation intersected."
-                ),
-            }
-        if "asset metadata draft body" in system_prompt:
-            return {
-                "asset_type": "image",
-                "title": "Strategic map image for contested campaign routes.",
-                "license": "CC-BY-SA-4.0",
-                "credit": "Lore Pipeline Archive Team",
-                "allowed_use": True,
-                "allowed_use_reason": (
-                    "License permits attribution-based redistribution in addon docs."
-                ),
-                "proof_ref": "proof:asset-license-bundle-v1",
-                "associated_entity_ids": ["zone-western-plaguelands"],
-                "caption": "Annotated campaign corridor map used for review and planning context.",
-            }
-        return None
-
-    monkeypatch.setattr("pipeline.generate.draft_writer.chat_json_completion", multi_entity_chat)
+    _mock_draft_llm(monkeypatch, openai_ready=True)
 
     extract_dir = context.data_dir / "extracted"
     extract_dir.mkdir(parents=True, exist_ok=True)

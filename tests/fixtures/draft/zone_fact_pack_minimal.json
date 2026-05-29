@@ -1,0 +1,36 @@
+{
+  "entity_id": "zone-western-plaguelands",
+  "entity_type": "zone",
+  "slug": "western-plaguelands",
+  "name": "Western Plaguelands",
+  "parent_zone_id": "",
+  "confidence": 0.9,
+  "claims": [
+    "The region remains contested by military and undead forces.",
+    "Faction campaigns emphasize route security and recovery operations."
+  ],
+  "fact_items": [
+    {
+      "claim": "The region remains contested by military and undead forces.",
+      "source_id": "src-wiki-wpl",
+      "url": "https://warcraft.wiki.gg/wiki/Western_Plaguelands",
+      "revision_id": "oldid:111",
+      "locator": "section:lead paragraph:1",
+      "excerpt_hash": "sha256:aaaaaaaa"
+    },
+    {
+      "claim": "Faction campaigns emphasize route security and recovery operations.",
+      "source_id": "src-wiki-wpl",
+      "url": "https://warcraft.wiki.gg/wiki/Western_Plaguelands",
+      "revision_id": "oldid:111",
+      "locator": "section:lead paragraph:2",
+      "excerpt_hash": "sha256:bbbbbbbb"
+    }
+  ],
+  "source_ids": ["src-wiki-wpl"],
+  "revision_ids": ["oldid:111"],
+  "source_urls": {
+    "src-wiki-wpl": "https://warcraft.wiki.gg/wiki/Western_Plaguelands"
+  },
+  "coalesce_mode": "openai"
+}
