@@ -44,20 +44,32 @@ def test_run_pipeline_flow_passes_linker_report_to_validate(
         },
     )
     monkeypatch.setattr(
+        "pipeline.orchestrator.flow.run_discovery_stage",
+        lambda _context, _manifest_path: {},
+    )
+    monkeypatch.setattr(
+        "pipeline.orchestrator.flow.run_traverse_stage",
+        lambda _context: {},
+    )
+    monkeypatch.setattr(
+        "pipeline.orchestrator.flow.run_discovery_enrich_stage",
+        lambda _context, _manifest_path: {},
+    )
+    monkeypatch.setattr(
         "pipeline.orchestrator.flow.run_coalesce_stage",
-        lambda _context, _manifest_path, max_entity_concurrency=4: coalesced_path,
+        lambda _context, _manifest_path, max_entity_concurrency=4, **_kw: coalesced_path,
     )
     monkeypatch.setattr(
         "pipeline.orchestrator.flow.run_extract_stage",
-        lambda _context, _coalesced_path, max_entity_concurrency=4: [extracted_path],
+        lambda _context, _coalesced_path, max_entity_concurrency=4, **_kw: [extracted_path],
     )
     monkeypatch.setattr(
         "pipeline.orchestrator.flow.run_draft_stage",
-        lambda _context, _extracted_paths, max_entity_concurrency=4: [draft_path],
+        lambda _context, _extracted_paths, max_entity_concurrency=4, **_kw: [draft_path],
     )
     monkeypatch.setattr(
         "pipeline.orchestrator.flow.run_linker_stage",
-        lambda _context, _draft_paths, max_entity_concurrency=4: linker_path,
+        lambda _context, _draft_paths, max_entity_concurrency=4, **_kw: linker_path,
     )
 
     observed = {"linker_report_path": None}
@@ -78,6 +90,10 @@ def test_run_pipeline_flow_passes_linker_report_to_validate(
         }
 
     monkeypatch.setattr("pipeline.orchestrator.flow.run_validate_stage", fake_validate)
+    monkeypatch.setattr(
+        "pipeline.orchestrator.flow.run_addon_bundle_stage",
+        lambda _context: _context.root_dir / "build" / "lua",
+    )
 
     result = run_pipeline_flow(run_id=context.run_id, retries_per_stage=0)
     assert result["validate"]["passed"] is True
@@ -106,22 +122,34 @@ def test_run_pipeline_flow_retries_failed_stage_once(tmp_path: Path, monkeypatch
 
     monkeypatch.setattr("pipeline.orchestrator.flow.run_ingest_stage", flaky_ingest)
     monkeypatch.setattr(
+        "pipeline.orchestrator.flow.run_discovery_stage",
+        lambda _context, _manifest_path: {},
+    )
+    monkeypatch.setattr(
+        "pipeline.orchestrator.flow.run_traverse_stage",
+        lambda _context: {},
+    )
+    monkeypatch.setattr(
+        "pipeline.orchestrator.flow.run_discovery_enrich_stage",
+        lambda _context, _manifest_path: {},
+    )
+    monkeypatch.setattr(
         "pipeline.orchestrator.flow.run_coalesce_stage",
-        lambda _context, _manifest_path, max_entity_concurrency=4: (
+        lambda _context, _manifest_path, max_entity_concurrency=4, **_kw: (
             context.data_dir / "coalesced" / "entities.jsonl"
         ),
     )
     monkeypatch.setattr(
         "pipeline.orchestrator.flow.run_extract_stage",
-        lambda _context, _coalesced_path, max_entity_concurrency=4: [],
+        lambda _context, _coalesced_path, max_entity_concurrency=4, **_kw: [],
     )
     monkeypatch.setattr(
         "pipeline.orchestrator.flow.run_draft_stage",
-        lambda _context, _extracted_paths, max_entity_concurrency=4: [],
+        lambda _context, _extracted_paths, max_entity_concurrency=4, **_kw: [],
     )
     monkeypatch.setattr(
         "pipeline.orchestrator.flow.run_linker_stage",
-        lambda _context, _draft_paths, max_entity_concurrency=4: (
+        lambda _context, _draft_paths, max_entity_concurrency=4, **_kw: (
             context.stage_dir("linker") / "linker_qa_report.json"
         ),
     )
@@ -133,6 +161,10 @@ def test_run_pipeline_flow_retries_failed_stage_once(tmp_path: Path, monkeypatch
             "fact_check_report_path": context.reports_dir / "validate" / "fact_check_report.json",
             "fact_check_summary_path": context.reports_dir / "validate" / "fact_check_summary.md",
         },
+    )
+    monkeypatch.setattr(
+        "pipeline.orchestrator.flow.run_addon_bundle_stage",
+        lambda _context: _context.root_dir / "build" / "lua",
     )
 
     result = run_pipeline_flow(run_id=context.run_id, retries_per_stage=1)

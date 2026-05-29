@@ -1,0 +1,1555 @@
+import { Callout, Divider, H1, H2, Row, Stack, Stat, Table, Text } from "cursor/canvas";
+
+export default function WowLoreCompendiumStarterPlan() {
+  return (
+    <Stack gap={16}>
+      <H1>WoW Lore Compendium - Living Product Blueprint</H1>
+      <Text tone="secondary">
+        Source-of-truth baseline for future planning sessions. Focus: strict_original content, concise player context,
+        map-driven UX, and a single-zone pilot that proves the full authoring-to-runtime loop.
+      </Text>
+
+      <Row gap={12}>
+        <Stat label="Experience Goal" value="Player-context lore, not wiki walls" tone="accent" />
+        <Stat label="Pilot Package" value="Western Plaguelands + Scholomance" tone="success" />
+        <Stat label="Execution Model" value="Data-first with locked quality gates" tone="success" />
+        <Stat label="Readiness" value="Implementation planning ready" tone="success" />
+      </Row>
+
+      <Callout tone="info" title="Design North Star">
+        <Text>
+          Build a Blizzard-like lore companion that opens from the world map and quickly answers: what this place is,
+          why it matters now, what happened here, and what connected content to explore next.
+        </Text>
+      </Callout>
+
+      <Divider />
+
+      <H2>How To Use This Blueprint</H2>
+      <Callout tone="info" title="Read Order for Fast Onboarding">
+        <Text>
+          Start with Product Charter and Page System for intent, then read Core Build Contracts for implementation
+          requirements, then Governance and Delivery for quality and release enforcement. Use the Pilot Baselines appendix
+          as concrete reference data during implementation and evaluation.
+        </Text>
+      </Callout>
+
+      <H2>Project Spirit and Core Goals</H2>
+      <Table
+        headers={["Theme", "Intent", "Implementation Meaning"]}
+        rows={[
+          [
+            "player-context first",
+            "Prioritize what matters now in active play over encyclopedic completeness.",
+            "Short, useful sections with clear narrative hooks and practical relevance.",
+          ],
+          [
+            "blizzard-like presentation",
+            "Deliver polished map-driven reading and navigation experience.",
+            "Consistent page structures, clear hierarchy, strong cross-linking, and clean UI flow.",
+          ],
+          [
+            "reliable lore synthesis",
+            "Use multi-source research while shipping only original rewritten prose.",
+            "Strict provenance, anti-verbatim controls, and human editorial gates before release.",
+          ],
+          [
+            "small but real pilot",
+            "Prove end-to-end pipeline with one high-quality package first.",
+            "Western Plaguelands plus Scholomance package validates workflow before scale-up.",
+          ],
+        ]}
+      />
+
+      <Divider />
+      <H2>Part A - Product and Experience Contract</H2>
+
+      <H2>0) Charter and Boundaries</H2>
+      <Table
+        headers={["Area", "Decision", "Rationale"]}
+        rows={[
+          [
+            "primary user value",
+            "Lore context for active play, not encyclopedic completeness.",
+            "Players need fast orientation and narrative hooks while in-game.",
+          ],
+          [
+            "content posture",
+            "Rewritten summaries only, with section-level provenance metadata.",
+            "Supports strict_original and reduces legal exposure.",
+          ],
+          [
+            "runtime data model",
+            "All data prebuilt and shipped in addon files (no HTTP at runtime).",
+            "WoW addon API constraints require static packaged data.",
+          ],
+          [
+            "v1 non-goals",
+            "No full questline wiki pages, no leveling optimization, no massive world coverage.",
+            "Keep scope tight for quality, review speed, and iteration.",
+          ],
+          [
+            "future-facing goal",
+            "Later add player progress awareness for questline state indicators.",
+            "High-value enhancement after stable v1 content pipeline.",
+          ],
+          [
+            "v1 extension scope",
+            "Support short sub-zone pages (cities/starter subzones) nested under parent zones.",
+            "Examples: Stormwind in Elwynn, Orgrimmar in Durotar, Deathknell in Tirisfal.",
+          ],
+        ]}
+      />
+
+      <H2>1) Page System and Information Architecture</H2>
+      <Table
+        headers={["Page Type", "Decision", "Core Sections"]}
+        rows={[
+          [
+            "zone",
+            "Primary page. Keep concise but rich; include landmarks as a dedicated section.",
+            "At-a-glance, Currently, History, Major Questlines (Alliance/Horde/Shared), Major Characters, Instances, Major Landmarks, Glossary",
+          ],
+          [
+            "instance",
+            "Primary page. Story setup, significance, history, and player purpose are one narrative section.",
+            "Header identity, Story Context and Why You Enter, Key Characters, Zone Backlink (top), Glossary",
+          ],
+          [
+            "character",
+            "Secondary minimal page. Keep compact.",
+            "Header + summary, short history, glossary",
+          ],
+          [
+            "questline",
+            "No standalone page in v1. Represent as structured synopsis cards on zone pages (and optional instance references).",
+            "Hook, spoiler-light synopsis, start guidance, optional branch/merge hints",
+          ],
+          [
+            "glossary_term",
+            "Reference page with category facets. Independent from referring page context.",
+            "Header/summary/category, brief history/major beats, optional related links (later)",
+          ],
+        ]}
+      />
+
+      <Callout tone="info" title="Zone History Presentation Rule">
+        <Text>
+          Organize history as chronological beats anchored to games/expansions where possible (for example Warcraft 2,
+          Cataclysm), with off-screen events inserted at the correct chronology point. This is an editorial guideline,
+          not a strict formatting law.
+        </Text>
+      </Callout>
+
+      <Callout tone="info" title="Pilot Ground-Truth Notes (Western Plaguelands)">
+        <Text>
+          For the pilot, questline organization follows current Retail/Cataclysm-era zone structure with faction-aware
+          storytelling. Zone questline presentation is split into Alliance, Horde, and Shared sections. Hearthglen is
+          included as a major landmark seed. Lilian Voss is treated as instance-only unless future evidence supports
+          major zone-beat inclusion.
+        </Text>
+      </Callout>
+
+      <H2>2) Authoring Contract Consolidation</H2>
+      <Callout tone="info" title="Authoring Contract Consolidation">
+        <Text>
+          Page-level must-have content and trimming guidance is enforced by the Schema Contracts, Budget Policies, and
+          Editorial Style sections below to avoid duplicated rule definitions.
+        </Text>
+      </Callout>
+
+      <Divider />
+      <H2>Part B - Data and Content Pipeline Contract</H2>
+
+      <H2>3) Proposed Repository Structure</H2>
+      <Table
+        headers={["Path", "Purpose", "Key Files"]}
+        rows={[
+          [
+            "addon/",
+            "In-game runtime addon code only (UI, navigation, rendering, links).",
+            "addon/Core.lua, addon/UI/MapEntry.lua, addon/UI/Pages/*.lua, addon/DataLoader.lua",
+          ],
+          [
+            "schemas/v1/",
+            "Canonical JSON schema contracts and shared validation constants.",
+            "zone.schema.json, instance.schema.json, glossary_term.schema.json, asset.schema.json",
+          ],
+          [
+            "pipeline/ingest/",
+            "Source retrieval + normalization from Warcraft Wiki/Wowpedia (+ optional Chronicle notes).",
+            "fetch_wiki.py, normalize_source.py, source_manifest.schema.json",
+          ],
+          [
+            "pipeline/coalesce/",
+            "Entity resolution and multi-source fact coalescence with confidence scores.",
+            "resolve_entities.py, merge_rules.yaml, confidence_model.py",
+          ],
+          [
+            "pipeline/generate/",
+            "Extraction and rewritten draft generation under style/budget controls.",
+            "extract_facts.py, draft_writer.py, prompts/*.md",
+          ],
+          [
+            "pipeline/validate/",
+            "Schema, budget, style, provenance, and anti-verbatim checks.",
+            "validate_schema.py, validate_style.py, validate_similarity.py",
+          ],
+          [
+            "review/",
+            "Editorial artifacts and round-trip review docs for human edits.",
+            "packs/*.md, decisions/*.yaml, redlines/*.json",
+          ],
+          [
+            "build/lua/",
+            "Compile canonical content into runtime Lua modules split by package.",
+            "compile_to_lua.py, out/zones/*.lua, out/glossary/*.lua",
+          ],
+          [
+            "tests/",
+            "Automated pipeline tests plus addon smoke harness/checklists.",
+            "schema/*.json, linker/*.json, smoke/zone_pilot_checklist.md, fixtures/pilot/*.json",
+          ],
+        ]}
+      />
+
+      <H2>4) Schema v1 Contracts and Word Budgets</H2>
+      <Table
+        headers={["Type", "Required Fields", "Optional Fields", "Constraints + Budgets"]}
+        rows={[
+          [
+            "zone",
+            "id, slug, name, expansion, at_a_glance, currently, history, major_questlines_alliance, major_questlines_horde, major_questlines_shared, major_characters, instances, major_landmarks, glossary, sources, provenance",
+            "map_id, faction_notes, timeline_start, timeline_end, media_assets, editorial_notes, future_player_progress_hooks",
+            "id lowercase kebab-case; currently 80-140 words; history 140-400 words as chrono beats; 2-8 major questline cards (spoiler-light, max 100 words each); landmarks 3-8; instances excluded from landmarks list.",
+          ],
+          [
+            "instance",
+            "id, slug, name, type, zone_id, identity_header, story_context, key_characters, zone_backlink, glossary, sources, provenance",
+            "expansion, wing_count, version_notes, related_factions, media_assets",
+            "type in [dungeon, raid, scenario]; story_context combines setup + significance + player purpose (160-320 words); key_characters 2-10 including notable allies when relevant; must link valid zone_id.",
+          ],
+          [
+            "character",
+            "id, slug, name, summary, short_history, glossary, sources, provenance",
+            "titles, affiliations, media_assets, status_hint",
+            "summary 40-100 words; short_history 80-180 words; compact by design with total page budget cap.",
+          ],
+          [
+            "glossary_term",
+            "id, slug, label, category, aliases, summary, brief_history, sources, provenance",
+            "facets{person|event|artifact|faction|place|concept}, timeline_hint, expansion_tags, ambiguity_notes, related_terms",
+            "aliases unique normalized lowercase; summary 35-90 words; brief_history 70-170 words; related_terms optional for v1.",
+          ],
+          [
+            "asset",
+            "id, asset_type, title, source_url, license, credit, allowed_use, proof_ref, associated_entity_ids, provenance",
+            "caption, crop_hint, locale, internal_notes",
+            "asset_type in [image, icon, model_ref]; allowed_use boolean + reason; no asset accepted without license + proof_ref.",
+          ],
+        ]}
+      />
+
+      <H2>4b) Starting Generation Budgets (Pilot Defaults)</H2>
+      <Table
+        headers={["Section", "Target / Min / Max", "Validation Mode"]}
+        rows={[
+          ["zone.at_a_glance", "35 / 20 / 60 words", "warn"],
+          ["zone.currently", "110 / 80 / 140 words", "hard-fail"],
+          ["zone.history", "220 / 140 / 400 words", "hard-fail"],
+          ["zone.major_questlines_{alliance|horde|shared}.card", "70 / 45 / 100 words", "hard-fail"],
+          ["zone.major_questlines_total", "2-6 cards across all faction buckets, <= 480 total words", "hard-fail"],
+          ["zone.major_characters.card", "28 / 18 / 45 words", "warn"],
+          ["zone.instances.card", "30 / 18 / 50 words", "warn"],
+          ["zone.major_landmarks.card", "32 / 20 / 50 words", "warn"],
+          ["instance.identity_header", "25 / 10 / 45 words", "warn"],
+          ["instance.story_context", "230 / 170 / 320 words", "hard-fail"],
+          ["instance.key_characters.card", "30 / 18 / 50 words", "warn"],
+          ["character.summary", "70 / 45 / 100 words", "hard-fail"],
+          ["character.short_history", "110 / 70 / 160 words", "hard-fail"],
+          ["character.page_total", "<= 200 words", "hard-fail"],
+          ["glossary.summary", "60 / 35 / 90 words", "hard-fail"],
+          ["glossary.brief_history", "115 / 70 / 170 words", "hard-fail"],
+        ]}
+      />
+
+      <Callout tone="info" title="Budget Policy">
+        <Text>
+          Hard-fail sections block compile until fixed or explicitly overridden with decision_reason. Warn sections are
+          allowed in pilot builds but must appear in review diagnostics.
+        </Text>
+      </Callout>
+
+      <H2>4c) Questline Card Contract (Faction-Aware)</H2>
+      <Table
+        headers={["Field", "Purpose", "Notes"]}
+        rows={[
+          ["title", "Card title shown to player", "Should be readable without prior lore context"],
+          ["hook", "Spoiler-light synopsis", "Faction perspective wording required for faction-specific cards"],
+          ["start_anchor", "Where the player starts this arc", "Named hub, NPC, or breadcrumb identifier"],
+          ["story_beats", "Optional short beat bullets", "Keep concise; max 3 beats in v1"],
+          ["parallel_arc_key", "Links allied/horde mirror arcs", "Use when same macro arc is told from both factions"],
+          ["faction", "Rendering bucket selector", "enum(alliance|horde|shared)"],
+        ]}
+      />
+
+      <H2>4d) Schema Example Payloads (Pilot Contract)</H2>
+      <Callout tone="info" title="Purpose of Example Payloads">
+        <Text>
+          These examples are implementation contracts for v1. Validators, generators, review export, and runtime UI
+          should treat these shapes as canonical unless a later schema revision is approved.
+        </Text>
+      </Callout>
+
+      <Table
+        headers={["zone field", "example value", "notes"]}
+        rows={[
+          ["id", "zone-western-plaguelands", "stable canonical id"],
+          ["slug", "western-plaguelands", "kebab-case"],
+          ["name", "Western Plaguelands", "display name"],
+          ["expansion", "cataclysm-state", "content framing for Retail zone"],
+          ["at_a_glance", "Once Lordaeron's grain heartland, now a partially reclaimed war-scarred frontier.", "20-60 words"],
+          ["currently", "The land is healing under Argent and Cenarion influence, but Andorhal and nearby sites remain conflict-scarred.", "80-140 words"],
+          ["history", "Chronology beats from pre-Third War farmland through Cataclysm reclamation and Andorhal outcome.", "140-400 words"],
+          ["major_questlines_alliance", "[{...card}]", "array of questline cards"],
+          ["major_questlines_horde", "[{...card}]", "array of questline cards"],
+          ["major_questlines_shared", "[{...card}]", "array of questline cards"],
+          ["major_characters", "[{id:'character-thassarian', summary:'...'}]", "3-6 cards in pilot"],
+          ["instances", "[{id:'instance-scholomance', summary:'...'}]", "linked instance cards"],
+          ["major_landmarks", "[{id:'landmark-hearthglen', summary:'...'}]", "3-8 cards; no instances"],
+          ["glossary", "[{term_id:'term-scourge'},{term_id:'term-andorhal'}]", "8-20 linked terms"],
+          ["sources", "[{source_id:'src-wiki-wpl', url:'...'}]", "entity-level sources"],
+          ["provenance", "{currently:[...], history:[...], cards:{...}}", "section/card-level source mapping"],
+        ]}
+      />
+
+      <Table
+        headers={["instance field", "example value", "notes"]}
+        rows={[
+          ["id", "instance-scholomance", "stable canonical id"],
+          ["slug", "scholomance", "kebab-case"],
+          ["name", "Scholomance", "display name"],
+          ["type", "dungeon", "enum(dungeon|raid|scenario)"],
+          ["zone_id", "zone-western-plaguelands", "must resolve to existing zone id"],
+          ["identity_header", "School of necromancy beneath Caer Darrow.", "10-45 words"],
+          ["story_context", "Covers origin, significance, and why players enter now.", "170-320 words"],
+          ["key_characters", "[{id:'character-darkmaster-gandling', summary:'...'}]", "2-10 cards"],
+          ["zone_backlink", "{zone_id:'zone-western-plaguelands', label:'Back to Western Plaguelands'}", "top-page navigation context"],
+          ["glossary", "[{term_id:'term-cult-of-the-damned'}]", "5-15 linked terms"],
+          ["sources", "[{source_id:'src-wiki-scholomance', url:'...'}]", "entity-level sources"],
+          ["provenance", "{story_context:[...], key_characters:{...}}", "section/card-level source mapping"],
+        ]}
+      />
+
+      <Table
+        headers={["character field", "example value", "notes"]}
+        rows={[
+          ["id", "character-thassarian", "stable canonical id"],
+          ["slug", "thassarian", "kebab-case"],
+          ["name", "Thassarian", "display name"],
+          ["summary", "Alliance death knight commander during the Andorhal campaign.", "45-100 words"],
+          ["short_history", "Condensed background plus WPL-relevant role.", "70-160 words"],
+          ["glossary", "[{term_id:'term-alliance'},{term_id:'term-andorhal'}]", "3-10 linked terms"],
+          ["sources", "[{source_id:'src-wiki-battle-for-andorhal', url:'...'}]", "entity-level sources"],
+          ["provenance", "{summary:[...], short_history:[...]}", "section-level source mapping"],
+        ]}
+      />
+
+      <Table
+        headers={["glossary_term field", "example value", "notes"]}
+        rows={[
+          ["id", "term-cult-of-the-damned", "stable canonical id"],
+          ["slug", "cult-of-the-damned", "kebab-case"],
+          ["label", "Cult of the Damned", "display label"],
+          ["category", "faction", "enum(person|event|artifact|faction|place|concept)"],
+          ["aliases", "['the Cult']", "normalized alias array"],
+          ["summary", "Necromantic organization that spread plague and built Scourge influence in Lordaeron.", "35-90 words"],
+          ["brief_history", "Major origin and involvement beats relevant to WPL and Scholomance.", "70-170 words"],
+          ["facets", "{faction:{alignment:'scourge-aligned'}}", "optional category facet object"],
+          ["sources", "[{source_id:'src-wiki-cult-of-the-damned', url:'...'}]", "entity-level sources"],
+          ["provenance", "{summary:[...], brief_history:[...]}", "section-level source mapping"],
+        ]}
+      />
+
+      <Table
+        headers={["sub-object", "example shape", "notes"]}
+        rows={[
+          [
+            "questline_card",
+            "{id:'ql-andorhal-alliance', faction:'alliance', title:'Andorhal War Campaign', hook:'...', start_anchor:'Andorhal', story_beats:['...'], parallel_arc_key:'andorhal-war-core'}",
+            "hook spoiler-light; max 100 words",
+          ],
+          [
+            "character_card",
+            "{id:'character-koltira-deathweaver', name:'Koltira Deathweaver', thumbnail_asset_id:'asset-koltira-thumb', summary:'...'}",
+            "used on zone/instance pages",
+          ],
+          [
+            "landmark_card",
+            "{id:'landmark-hearthglen', name:'Hearthglen', thumbnail_asset_id:'asset-hearthglen-thumb', summary:'...', significance_tag:'arg-crusade-base'}",
+            "landmarks exclude instances",
+          ],
+          [
+            "instance_link_card",
+            "{id:'instance-scholomance', name:'Scholomance', thumbnail_asset_id:'asset-scholomance-thumb', summary:'...'}",
+            "zone to instance bridge card",
+          ],
+          [
+            "source_pointer",
+            "{source_id:'src-wiki-wpl', locator:'section:History paragraph:2', excerpt_hash:'sha256:...'}",
+            "supports provenance and anti-verbatim checks",
+          ],
+        ]}
+      />
+
+      <Callout tone="warning" title="Shared Validation Rules">
+        <Text>
+          Every section must include provenance pointers to one or more source passages. Validator rejects verbatim
+          overlap above threshold, missing source links, budget overflow, unresolved references, and unknown enum values.
+        </Text>
+      </Callout>
+
+      <H2>5) End-to-End Pipeline Contract</H2>
+      <Table
+        headers={["Stage", "Input", "Output", "Format"]}
+        rows={[
+          [
+            "ingest",
+            "source_manifest.yaml (entity targets + source priorities)",
+            "raw source snapshots with revision metadata",
+            "Input YAML -> output NDJSON in data/raw/*.ndjson",
+          ],
+          [
+            "coalesce",
+            "data/raw/*.ndjson + entity_seed.json",
+            "coalesced entity candidates + scored facts",
+            "JSON Lines in data/coalesced/*.jsonl",
+          ],
+          [
+            "extract",
+            "coalesced facts",
+            "normalized fact graph per entity",
+            "JSON in data/extracted/{entity_id}.json",
+          ],
+          [
+            "draft",
+            "fact graph + style profile + budget config",
+            "canonical draft records by schema type",
+            "JSON in data/drafts/{zone|instance|character|glossary|asset}/*.json",
+          ],
+          [
+            "validate",
+            "draft records + schemas + glossary dictionary",
+            "pass/fail report + rule diagnostics + auto-fix hints",
+            "JSON report + text summary + metrics snapshot in reports/validate/",
+          ],
+          [
+            "review export",
+            "validated drafts",
+            "human-edit markdown pack + change manifest + unresolved question list",
+            "Markdown in review/packs/*.md + YAML manifest",
+          ],
+          [
+            "human edit",
+            "review markdown pack",
+            "editor-approved canonical JSON patch + include/exclude rationale notes",
+            "JSON patch in review/redlines/*.json",
+          ],
+          [
+            "compile",
+            "approved canonical JSON",
+            "Lua data modules ready for addon load",
+            "Lua files in build/lua/out/**/*.lua",
+          ],
+          [
+            "in-game smoke test",
+            "compiled Lua modules + addon runtime",
+            "smoke result checklist + bug list + UX notes",
+            "Markdown checklist + JSON status in tests/smoke/results/",
+          ],
+        ]}
+      />
+
+      <H2>6) Glossary Auto-Linking Strategy</H2>
+      <Table
+        headers={["Area", "Rule", "Implementation Contract"]}
+        rows={[
+          [
+            "alias handling",
+            "Store canonical term id with normalized aliases and protected exact forms.",
+            "dictionary/glossary_aliases.v1.json (term_id, alias, alias_type, case_rule)",
+          ],
+          [
+            "candidate matching",
+            "Match longest alias first, then exact word boundary, then safe fuzzy fallback.",
+            "linker emits match spans with source alias and score components",
+          ],
+          [
+            "disambiguation",
+            "Use local context window plus section-level category preference; contextual denylist for ambiguous generic terms.",
+            "rules/disambiguation.v1.yaml with category tie-break map and denylist conditions",
+          ],
+          [
+            "confidence thresholds",
+            "auto-link >= 0.87, review queue 0.65-0.86, reject < 0.65",
+            "reports/linker_decisions.jsonl stores score + reason per match",
+          ],
+          [
+            "overlink prevention",
+            "First occurrence only per section for the same term; density cap 4 links per 100 words in zone/instance narratives.",
+            "style checker enforces occurrence cap and density limits",
+          ],
+          [
+            "alias collisions",
+            "Apply category tie-break first; if unresolved, send to review queue (no direct auto-link).",
+            "collision handler writes review_queue records with candidate terms",
+          ],
+          [
+            "category preference map",
+            "Basic map enabled for v1 (history favors event/person/place; glossary page prefers exact category match).",
+            "rules/category_preference.v1.yaml",
+          ],
+          [
+            "qa report",
+            "Track false positives, false negatives, ambiguous skips, and per-term precision/recall.",
+            "reports/glossary_link_qa.md + reports/glossary_link_qa.json",
+          ],
+        ]}
+      />
+
+      <H2>7) Editorial Style Guide (Enforceable)</H2>
+      <Table
+        headers={["Rule", "Target", "Automated Check"]}
+        rows={[
+          [
+            "Player-first framing",
+            "Explain present relevance before deep history.",
+            "currently must appear before history; lint order check",
+          ],
+          [
+            "Brevity discipline",
+            "Stay within section budgets for every record type.",
+            "hard fail on min/max word budget violations",
+          ],
+          [
+            "Actionable context",
+            "Questline entries are hooks and synopses, not leveling optimization.",
+            "disallow route-optimization language; require start-point guidance for each major questline card",
+          ],
+          [
+            "Neutral canon tone",
+            "No fanon speculation; factual voice and clear uncertainty labels.",
+            "banned phrase list + uncertainty tag requirement",
+          ],
+          [
+            "No wiki-copy prose",
+            "Original rewritten text only.",
+            "similarity gate against source passages with threshold cap",
+          ],
+          [
+            "Glossary restraint",
+            "Link major concepts, not one-off terms.",
+            "max links per 100 words + allowlist-only linking",
+          ],
+          [
+            "Faction-aware questline rendering",
+            "Zone questlines are grouped by Alliance, Horde, and Shared blocks.",
+            "schema requires faction bucket fields and card.faction enum validation",
+          ],
+          [
+            "Character page minimalism",
+            "Character pages stay summary-first and compact.",
+            "hard cap on section count and total word budget",
+          ],
+          [
+            "Spoiler-light hooks",
+            "Questline cards should intrigue without over-explaining major endings.",
+            "flag banned high-spoiler phrases and require hook-style synopsis length",
+          ],
+        ]}
+      />
+
+      <H2>8) Inclusion Scoring Framework (Major Items)</H2>
+      <Table
+        headers={["Area", "Criteria (score each 0-2)", "Threshold + Rules"]}
+        rows={[
+          [
+            "major questlines (zone)",
+            "narrative centrality; presence breadth; named cast significance; consequence weight; instance relevance; player discoverability",
+            "include at >= 8/12; exclude filler travel chains; merge branches that are one arc; split arcs with distinct stakes/themes",
+          ],
+          [
+            "major characters (zone)",
+            "story function; screen presence; lore leverage; current relevance; cross-link value; recognition value",
+            "include at >= 7/12; target 3-6 characters on zone page",
+          ],
+          [
+            "major characters (instance)",
+            "story function; screen presence in key beats; lore leverage; current relevance to this version; cross-link value; recognition value",
+            "include at >= 8/12; usually include required bosses plus significant allies; optional bosses only if lore-significant",
+          ],
+          [
+            "major landmarks (zone)",
+            "lore significance; story utility; distinctiveness; visit relevance; visual legibility; canonical stability",
+            "include at >= 8/12; target 3-8 landmarks; instances never appear in landmarks section",
+          ],
+        ]}
+      />
+
+      <Callout tone="warning" title="Scoring and Override Policy">
+        <Text>
+          Use objective scoring first, then allow editorial override with a required short reason. This prevents missing
+          iconic lore anchors while keeping inclusion criteria consistent and auditable.
+        </Text>
+      </Callout>
+
+      <Table
+        headers={["Override Type", "When To Use", "Required Note"]}
+        rows={[
+          [
+            "legacy iconic override",
+            "Item is community-recognized and needed for zone identity despite lower current relevance score.",
+            "why iconic and why included now",
+          ],
+          [
+            "continuity override",
+            "Item is needed to understand linked instance or another included major section.",
+            "dependency being preserved",
+          ],
+          [
+            "pilot cap trimming",
+            "Too many items pass threshold; retain highest-value items for concise pilot scope.",
+            "which items were dropped and why",
+          ],
+        ]}
+      />
+
+      <Table
+        headers={["Decision Field", "Purpose", "Format"]}
+        rows={[
+          ["inclusion_score", "Stores total score for candidate item", "integer"],
+          ["criteria_breakdown", "Stores per-criterion scores for auditability", "object of criterion -> 0|1|2"],
+          ["include_decision", "Final include/exclude state", "enum(include|exclude)"],
+          ["decision_reason", "Concise editorial rationale, especially for overrides", "string"],
+          ["source_refs", "Evidence references used to justify scoring", "array of source pointers"],
+        ]}
+      />
+
+      <Divider />
+      <H2>Part D - Governance, Quality, and Delivery Operations</H2>
+
+      <H2>11) Editorial Review and Redline Workflow (Markdown-Only)</H2>
+      <Callout tone="info" title="Workflow Intent">
+        <Text>
+          All human edits happen in markdown review packs. Redlines are parsed into structured changes and applied back
+          to canonical JSON. Reason text is both an audit trail and an active instruction signal used by the agent when
+          rewriting follow-up drafts.
+        </Text>
+      </Callout>
+
+      <Table
+        headers={["Step", "Input", "Output"]}
+        rows={[
+          [
+            "review export",
+            "validated canonical JSON draft",
+            "review markdown pack with budgets, scores, provenance, and unresolved questions",
+          ],
+          [
+            "human edit",
+            "review markdown pack",
+            "redline entries (action + target + reason + status)",
+          ],
+          [
+            "redline compile",
+            "review markdown + redline entries",
+            "structured JSON patch payload",
+          ],
+          [
+            "agent revise",
+            "JSON patch + reasons + policy rules",
+            "updated canonical JSON draft and change summary",
+          ],
+          [
+            "re-validate",
+            "updated canonical JSON",
+            "pass/fail report and final review status",
+          ],
+        ]}
+      />
+
+      <Table
+        headers={["Allowed Edit Action", "Meaning", "Reason Text Required"]}
+        rows={[
+          ["reword", "Improve clarity/tone without changing factual meaning", "optional"],
+          ["trim", "Reduce length/repetition", "optional"],
+          ["expand", "Add missing context while staying concise", "optional (required if new claim added)"],
+          ["reorder", "Reorder beats/cards for chronology and flow", "optional"],
+          ["merge", "Combine overlapping cards/sections", "required"],
+          ["split", "Divide overloaded card/section into focused units", "required"],
+          ["remove", "Delete low-value or redundant content", "required"],
+          ["fact_check", "Flag claim for verification/provenance correction", "required"],
+          ["retarget_link", "Change glossary/entity link target", "required if semantic target changes"],
+          ["defer", "Move item out of current release scope", "required"],
+        ]}
+      />
+
+      <Table
+        headers={["Reason Text Policy", "Rule", "Why"]}
+        rows={[
+          [
+            "definition",
+            "A concise one-sentence note: what changed and why now.",
+            "Creates clear decision intent for humans and agents.",
+          ],
+          [
+            "mandatory cases",
+            "remove, merge, split, fact_check, defer, any score/budget/provenance override, semantic retarget_link",
+            "High-impact edits require explicit rationale and auditability.",
+          ],
+          [
+            "agent behavior",
+            "Agent must parse reason text and incorporate it into rewrite decisions and prioritization.",
+            "Reason text is an instruction signal, not only documentation.",
+          ],
+          [
+            "traceability",
+            "Each applied change stores original reason text in change metadata.",
+            "Supports QA, rollback analysis, and future iteration.",
+          ],
+        ]}
+      />
+
+      <Table
+        headers={["Override Type", "Allowed When", "Mandatory Fields"]}
+        rows={[
+          [
+            "score override",
+            "Iconic, continuity, or obvious relevance missed by scoring model",
+            "override_type, reason, owner, revisit_by_or_expiry",
+          ],
+          [
+            "budget override",
+            "Clarity or chronology requires temporary budget exception",
+            "override_type, reason, owner, revisit_by_or_expiry",
+          ],
+          [
+            "provenance override",
+            "Temporary source pointer gap with active follow-up task",
+            "override_type, reason, owner, follow_up_ticket",
+          ],
+        ]}
+      />
+
+      <Table
+        headers={["Entry Final Status", "Meaning", "Compile Eligibility"]}
+        rows={[
+          ["approved", "Meets content, budget, provenance, and policy rules", "yes"],
+          ["approved_with_exceptions", "Accepted with documented overrides", "yes"],
+          ["needs_rewrite", "Quality or structure issues require another draft pass", "no"],
+          ["needs_fact_check", "Blocked pending claim/source verification", "no"],
+          ["deferred", "Intentionally out of current pilot scope", "no"],
+          ["blocked", "Cannot proceed due to missing dependency or source", "no"],
+        ]}
+      />
+
+      <Callout tone="warning" title="Minimum Redline Entry Shape">
+        <Text>
+          Each redline entry should include: entry_id, target_path, action, reason_text, editor_status, confidence,
+          and optional old_text/new_text snippets. This keeps markdown review human-friendly while preserving a strict
+          machine-apply contract.
+        </Text>
+      </Callout>
+
+      <H2>12) Provenance Contract v1 (Locked)</H2>
+      <Table
+        headers={["Decision Area", "Policy", "Status"]}
+        rows={[
+          ["granularity", "Section-level for narrative sections plus card-level for list/card sections", "locked"],
+          ["narrative source minimum", "Dynamic by length: <=120 words => min 1; 121-240 => min 2; >240 => min 3", "locked"],
+          ["card source minimum", "At least 1 source pointer per card", "locked"],
+          ["mixed-source expectation", "Recommended only (not hard-required)", "locked"],
+          ["staleness policy", "Warn only when source revisions change after draft generation", "locked"],
+          ["missing provenance severity", "Hard-fail for all required sections and cards", "locked"],
+          ["override window", "Override must be resolved by next release gate", "locked"],
+        ]}
+      />
+
+      <Table
+        headers={["Source Pointer Field", "Requirement", "Notes"]}
+        rows={[
+          ["source_id", "required", "Must match entry in sources[] manifest"],
+          ["locator", "required", "Section/paragraph locator or equivalent precise reference"],
+          ["revision_id", "required", "Snapshot or oldid reference for reproducibility"],
+          ["excerpt_hash", "required", "Content fingerprint for anti-verbatim and drift checks"],
+        ]}
+      />
+
+      <Table
+        headers={["Validation Rule", "Behavior", "Severity"]}
+        rows={[
+          ["missing required pointer field", "Fail validation on affected section/card", "hard-fail"],
+          ["missing minimum pointer count", "Fail validation on affected section/card", "hard-fail"],
+          ["stale source revision", "Emit stale warning with affected pointers", "warn"],
+          ["mixed-source not present", "Emit recommendation note only", "warn"],
+          ["unresolved provenance override at release gate", "Block release package", "hard-fail"],
+        ]}
+      />
+
+      <H2>13) Navigation and State Contract v1 (Locked)</H2>
+      <Table
+        headers={["Decision Area", "Selected Policy", "Status"]}
+        rows={[
+          ["navigation model", "Hybrid (Back=history, Up=structural parent)", "locked"],
+          [
+            "canonical parents",
+            "Zone->Root, Instance->Zone, Glossary->Root, Character->contextual parent when available else Root",
+            "locked",
+          ],
+          ["Back behavior", "Always history stack", "locked"],
+          ["Up behavior", "Always structural parent", "locked"],
+          ["breadcrumb source", "Structural hierarchy", "locked"],
+          ["deep-link behavior", "Back disabled when history is empty; Up still works", "locked"],
+          ["glossary open mode", "Hybrid: open in side/overlay quick panel, with 'Open Full Entry' promotion", "locked"],
+          ["return affordance", "Show explicit 'Back to [source]' helper in linked pages", "locked"],
+          ["history stack", "20 entries, session-only", "locked"],
+          ["persisted state", "Persist last-opened page only", "locked"],
+          ["duplicate pushes", "Collapse immediate duplicate entries", "locked"],
+          ["missing target behavior", "Show inline unavailable message and stay on current page", "locked"],
+        ]}
+      />
+
+      <Callout tone="info" title="Glossary Open Mode (Locked)">
+        <Text>
+          Glossary links open a quick side/overlay panel by default to preserve reading context. The panel includes an
+          explicit action to promote the entry into full-page navigation when deeper reading is desired.
+        </Text>
+      </Callout>
+
+      <H2>14) Execution Strategy and Milestone Gating (Locked)</H2>
+      <Table
+        headers={["Decision Area", "Selected Policy", "Status"]}
+        rows={[
+          ["execution strategy", "Data-first", "locked"],
+          ["gate strictness", "Hard gates", "locked"],
+          ["parallelism level", "Mostly sequential (minimum coordination risk)", "locked"],
+          ["implementation exception policy", "No implementation-stage exceptions; block until fixed", "locked"],
+          ["release exception policy", "Minor release-gate exceptions allowed only with owner approval and documented risk", "locked"],
+          ["plan session deliverables", "Spec diff, updated artifacts, test plan updates, risks/assumptions/blockers, and clear exit criteria", "locked"],
+        ]}
+      />
+
+      <Table
+        headers={["Milestone", "Primary Goal", "Exit Gate"]}
+        rows={[
+          [
+            "M1",
+            "Content generation pipeline baseline is operational and produces canonical draft data for pilot entities.",
+            "Pipeline run succeeds on pilot inputs and emits valid draft artifacts for downstream validation.",
+          ],
+          [
+            "M2",
+            "Integrate pipeline outputs into canonical addon schema and compile contracts.",
+            "Schema validation and compile contract checks pass on pilot fixtures.",
+          ],
+          [
+            "M3",
+            "Basic runtime UI renders pilot content and supports locked navigation model.",
+            "In-game smoke pass confirms page rendering, links, and glossary panel behavior.",
+          ],
+        ]}
+      />
+
+      <Callout tone="warning" title="Implementation-Ready Gate (Best-Judgment Default)">
+        <Text>
+          Pilot is implementation-ready only when all locked foundations are complete: schema/examples, review/redline
+          workflow, provenance and glossary linker policies, navigation/state contract, and pilot candidate baselines.
+        </Text>
+      </Callout>
+
+      <H2>15) Sub-Zone Micro Page Contract v1 (Locked)</H2>
+      <Table
+        headers={["Decision Area", "Selected Policy", "Status"]}
+        rows={[
+          ["model", "New page type: sub_zone", "locked"],
+          ["parent relationship", "Exactly one required parent_zone_id", "locked"],
+          ["up behavior", "Always navigate Up to parent zone", "locked"],
+          ["breadcrumb", "Always Root > Zone > Sub-zone", "locked"],
+          ["required sections", "At-a-glance, Currently, History, Major Characters, Major Landmarks, Glossary", "locked"],
+          ["instance section", "Optional; show only when directly relevant content exists", "locked"],
+          ["inclusion rubric", "Same scoring rubric as zones with a higher threshold", "locked"],
+          ["pilot handling", "Contract + fixture only for WPL pilot (no required sub-zone content)", "locked"],
+          ["v1 scope", "Contract-ready, optional content by zone", "locked"],
+          ["glossary rules", "Same linking rules as zone pages", "locked"],
+        ]}
+      />
+
+      <Callout tone="info" title="Schema Evolution Note">
+        <Text>
+          Keep sub_zone as a separate type for now to isolate behavior and allow conceptual divergence. Revisit possible
+          merge with zone type later if differences prove redundant in production.
+        </Text>
+      </Callout>
+
+      <Callout tone="info" title="Parent Model Evidence Note">
+        <Text>
+          Current WoW map hierarchy research indicates a single parent relationship model (parentMapID), which supports
+          the single required parent_zone_id design for sub-zone pages.
+        </Text>
+      </Callout>
+
+      <Table
+        headers={["Parent/Hierarchy Edge Case", "Implication for sub_zone", "Policy"]}
+        rows={[
+          [
+            "API model provides one parentMapID (or 0 when none)",
+            "No native multiple-parent hierarchy to model",
+            "Keep exactly one required parent_zone_id",
+          ],
+          [
+            "Map types include Orphan, Dungeon, and other non-standard context maps",
+            "Not all maps are suitable lore sub-zones under a normal zone page",
+            "Exclude non-zone-context maps from sub_zone content type unless explicitly promoted later",
+          ],
+          [
+            "Transit/special maps may feel cross-zone from player perspective",
+            "Can create ambiguity if treated as normal sub-zones",
+            "Handle as separate future content class, not v1 sub_zone",
+          ],
+        ]}
+      />
+
+      <Table
+        headers={["Sub-Zone Questline Policy", "Selected Rule", "Status"]}
+        rows={[
+          ["section presence", "Optional section; render only when qualifying content exists", "locked"],
+          ["inclusion strictness", "Higher threshold than zone major questline threshold", "locked"],
+          ["faction split", "Alliance/Horde/Shared split only when non-empty and relevant", "locked"],
+          ["card budget", "65 / 40 / 95 words (target/min/max)", "locked"],
+          ["max card count", "Maximum 3 questline cards on sub-zone pages", "locked"],
+          ["dependency note", "Required when card depends on parent-zone context", "locked"],
+        ]}
+      />
+
+      <H2>16) Conditional Section Rendering Rule (Global)</H2>
+      <Table
+        headers={["Rule", "Policy", "Status"]}
+        rows={[
+          ["required narrative sections", "At-a-glance/Currently and History must have content and must render", "locked"],
+          ["optional sections", "Render section only if it has at least one content item", "locked"],
+          ["optional subsections", "For faction quest blocks (Alliance/Horde/Shared), render only non-empty blocks", "locked"],
+          ["instances", "Hide instance section when no instance content exists", "locked"],
+          ["questlines", "Hide quest section when no qualifying questline content exists", "locked"],
+        ]}
+      />
+
+      <Callout tone="info" title="Pre-Implementation Discussion Queue">
+        <Text>
+          Baseline is stable enough for implementation planning mode. Focus next on milestone task decomposition and
+          execution sequencing rather than policy discovery.
+        </Text>
+      </Callout>
+
+      <H2>17) Pilot Release Gate and Sign-Off Policy (Locked)</H2>
+      <Table
+        headers={["Decision Area", "Selected Policy", "Status"]}
+        rows={[
+          ["release gate strictness", "All mandatory categories must pass", "locked"],
+          ["blocking severity", "Medium and above block release", "locked"],
+          ["mandatory categories", "Schema/compile, provenance, editorial closure, glossary quality, runtime smoke, reproducibility", "locked"],
+          ["release exceptions", "Minor exceptions allowed only with owner approval and documented risk", "locked"],
+          ["regression tolerance", "Small regression allowed (<=3%) with explicit justification", "locked"],
+          ["known issues", "Non-blocking issues only", "locked"],
+          ["rerun scope after blocking fix", "Full release gate rerun required", "locked"],
+          ["artifact freeze", "Optional freeze; recommended for stable comparison points", "locked"],
+        ]}
+      />
+
+      <Table
+        headers={["Sign-Off Model", "Policy", "Notes"]}
+        rows={[
+          [
+            "ownership",
+            "Single owner approval model (project owner is sole human approver).",
+            "Automated checks and AI review support decision-making but do not replace owner approval.",
+          ],
+          [
+            "sign-off checkpoints",
+            "Content/editorial, technical/pipeline, runtime/UI smoke, and final go/no-go must be explicitly acknowledged.",
+            "In single-owner mode, these are separate checklist checkpoints completed by the same person.",
+          ],
+          [
+            "approval record",
+            "Each release gate records approver identity and timestamp.",
+            "Supports audit and rollback traceability.",
+          ],
+        ]}
+      />
+
+      <Table
+        headers={["Required Final Go/No-Go Artifacts", "Purpose", "Required"]}
+        rows={[
+          ["Signed release checklist", "Confirms all mandatory gates and checkpoints were reviewed", "yes"],
+          ["Gate report by category", "Pass/fail detail with evidence references", "yes"],
+          ["Version + hash manifest", "Ensures reproducibility and artifact traceability", "yes"],
+          ["Known issues log", "Captures non-blocking unresolved items and workarounds", "yes"],
+          ["Risk waiver note (if exception used)", "Documents minor exception rationale and owner approval", "conditional"],
+        ]}
+      />
+
+      <H2>18) Testing Setup Contract v1 (Locked)</H2>
+      <Table
+        headers={["Decision Area", "Selected Policy", "Status"]}
+        rows={[
+          ["test scope", "Comprehensive pack", "locked"],
+          ["fixture strategy", "Happy-path, edge cases, intentional failures, missing/partial data, and ambiguous glossary fixtures", "locked"],
+          ["test families", "Schema, provenance, budget/style, linker quality, compile integrity, runtime smoke, reproducibility", "locked"],
+          ["blocking policy", "Core families are blocking; selected families can warn depending on feature maturity", "locked"],
+          ["regression method", "Both hash and metric threshold comparisons", "locked"],
+          ["linker QA sampling", "Stratified sample for pilot speed and coverage balance", "locked"],
+          ["test cadence", "Run full suite on every substantive change", "locked"],
+        ]}
+      />
+
+      <Table
+        headers={["Core Blocking Families (Default)", "Rationale", "Severity"]}
+        rows={[
+          ["Schema validation", "Prevents structural contract breakage", "blocking"],
+          ["Provenance validation", "Required for strict_original reliability posture", "blocking"],
+          ["Compile integrity", "Ensures runtime data loads and structure compiles", "blocking"],
+          ["Runtime smoke (when UI/features exist)", "Verifies user-visible baseline behavior", "blocking"],
+          ["Reproducibility/determinism", "Prevents hidden drift across runs", "blocking"],
+          ["Budget/style and linker quality", "Quality-critical; may warn only when feature area is not yet implemented", "conditional"],
+        ]}
+      />
+
+      <Table
+        headers={["Rerun Trigger Policy", "Required Runs", "Notes"]}
+        rows={[
+          [
+            "schema/validation rule changes",
+            "Run affected families immediately; full suite before commit/release gate",
+            "Covers structural and policy-level drift risk",
+          ],
+          [
+            "generation prompt/template changes",
+            "Run affected quality families immediately; full suite before commit/release gate",
+            "Content behavior changes can cascade into many checks",
+          ],
+          [
+            "linker rule changes",
+            "Run linker + provenance + budget checks immediately; full suite before commit/release gate",
+            "Auto-link behavior can affect readability and citation burden",
+          ],
+          [
+            "compile logic changes",
+            "Run compile + schema + smoke immediately; full suite before commit/release gate",
+            "Compile path changes can break runtime loading",
+          ],
+          [
+            "navigation/glossary UI behavior changes",
+            "Run runtime smoke + affected data/render checks immediately; full suite before commit/release gate",
+            "Protects navigation contract and glossary hybrid behavior",
+          ],
+        ]}
+      />
+
+      <Callout tone="info" title="Testing Artifact Policy">
+        <Text>
+          Each run should emit: family pass/fail summary, rule-level validation diagnostics, linker QA metrics, compile
+          manifest plus output hashes, and smoke checklist logs. Capture additional metrics where reliable and low-cost.
+        </Text>
+      </Callout>
+
+      <H2>19) Versioning and Release Identity Contract v1 (Locked)</H2>
+      <Table
+        headers={["Decision Area", "Selected Policy", "Status"]}
+        rows={[
+          ["version model", "Triple-track: addon version + data version + pipeline profile version", "locked"],
+          ["version format", "SemVer with build metadata/hash suffix", "locked"],
+          ["layer coupling", "Independent layer versioning", "locked"],
+          ["addon bump policy", "Standard SemVer", "locked"],
+          ["data bump policy", "Standard SemVer", "locked"],
+          ["pipeline bump policy", "Standard SemVer", "locked"],
+          ["release channels", "dev -> candidate -> release", "locked"],
+          ["schema compatibility", "No backward-compatibility guarantee during v1 build phase", "locked"],
+          ["release tagging", "Required for each gated release", "locked"],
+          ["baseline pinning", "Required (version plus hash IDs)", "locked"],
+        ]}
+      />
+
+      <Table
+        headers={["Artifact Stamping Policy", "Version + Hash Required", "Notes"]}
+        rows={[
+          ["Canonical JSON dataset", "yes", "Primary content identity"],
+          ["Compile output manifest", "yes", "Runtime output traceability"],
+          ["Validation/report artifacts", "yes", "Quality gate evidence"],
+          ["Smoke test results", "yes", "Runtime acceptance evidence"],
+          ["Release checklist", "yes", "Final go/no-go audit trail"],
+        ]}
+      />
+
+      <Table
+        headers={["Rollback and Retention", "Policy", "Rationale"]}
+        rows={[
+          [
+            "hot rollback set",
+            "Retain and index last 10 gated releases as fast rollback candidates.",
+            "Practical operational window for quick recovery.",
+          ],
+          [
+            "long-term history",
+            "Keep full historical release metadata via Git tags/manifests.",
+            "Supports deep audits without bloating active rollback set.",
+          ],
+          [
+            "rollback target selection",
+            "Default to most recent fully passing release in same channel.",
+            "Reduces risk of reintroducing older known issues.",
+          ],
+        ]}
+      />
+
+      <Callout tone="info" title="Repository Setup Priority (Early Action)">
+        <Text>
+          Create a private GitHub repository as an early setup step using a temporary working name such as WoW Lore
+          Companion. Final project naming can be revisited later without blocking implementation planning.
+        </Text>
+      </Callout>
+
+      <H2>20) Agent Orchestration Contract v1 (Locked)</H2>
+      <Table
+        headers={["Decision Area", "Selected Policy", "Status"]}
+        rows={[
+          ["orchestration architecture", "Deterministic orchestrator plus specialized stage workers", "locked"],
+          ["execution model", "Sequential stages with safe entity-level parallelism within stages", "locked"],
+          ["AI-owned hotspots", "Coalescence, draft writing, and glossary disambiguation assistance", "locked"],
+          ["deterministic-owned stages", "Schema, budget/style, provenance, compile-to-Lua, and release gate evaluation", "locked"],
+          ["human review gates", "Mandatory after draft+validate and after compile+smoke; conditional after coalescence when risk flags spike", "locked"],
+          ["retry policy", "Retry failed jobs up to 3 times then escalate", "locked"],
+          ["escalation policy", "Escalate to owner and block pipeline on unresolved failures", "locked"],
+          ["concurrency default", "Entity-level concurrency default 4 (tunable 2-6)", "locked"],
+          ["idempotency policy", "Required for core deterministic stages; best-effort for AI stages", "locked"],
+          ["runtime target", "Local CLI orchestration runtime in v1", "locked"],
+        ]}
+      />
+
+      <Table
+        headers={["Run Trace Requirements", "Required", "Purpose"]}
+        rows={[
+          ["Run ID plus stage IDs", "yes", "End-to-end traceability"],
+          ["Input/output artifact manifest", "yes", "Deterministic audit and rerun reproducibility"],
+          ["Decision/reason log", "yes", "Preserve AI and rule rationale for review"],
+          ["Retry/escalation log", "yes", "Operational debugging and reliability tracking"],
+          ["Stage timing/performance metrics", "yes", "Throughput tuning and bottleneck detection"],
+        ]}
+      />
+
+      <Callout tone="info" title="Tooling Recommendation (v1)">
+        <Text>
+          Use Prefect as the lightweight orchestration framework for v1 with a local runner first. Pair with Pydantic
+          contracts for stage I/O schemas and Typer CLI entrypoints. Keep workflow deterministic where possible and use
+          AI only in defined hotspot stages.
+        </Text>
+      </Callout>
+
+      <Callout tone="warning" title="Framework Scope Note">
+        <Text>
+          LangGraph/LangFlow style frameworks are useful later if agentic branching expands significantly, but Prefect is
+          the preferred lightweight fit for the current contract-driven pilot scope.
+        </Text>
+      </Callout>
+
+      <H2>21) Recommended Toolchain v1 (Core + Optional)</H2>
+      <Table
+        headers={["Layer", "Core Recommendation", "Why"]}
+        rows={[
+          ["Python environment and dependencies", "uv (or Poetry fallback) with lockfile discipline", "Fast, reproducible local and CI environments"],
+          ["CLI surface", "Typer", "Consistent command entrypoints across pipeline stages"],
+          ["Contracts and schemas", "Pydantic models plus JSON Schema export", "Single source of truth for stage I/O contracts"],
+          ["Workflow runtime", "Prefect (see Section 20 orchestration contract)", "Stateful retries, task dependency management, and observability without heavy infra"],
+          ["Lint and formatting", "Ruff", "Fast linting and formatting in one toolchain"],
+          ["Type checking", "mypy", "Catches contract and interface drift early"],
+          ["Automated tests", "pytest", "Flexible test layering for schema, pipeline, and smoke harness checks"],
+          ["Structured logging", "JSON log schema (via stdlib logging formatter or structlog)", "Queryable run traces and auditability"],
+        ]}
+      />
+
+      <Table
+        headers={["Optional Tool", "Primary Use", "Adoption Trigger"]}
+        rows={[
+          ["pytest-xdist", "Parallel test execution", "Adopt when full suite runtime becomes a bottleneck"],
+          ["hypothesis", "Property-based edge/fuzz testing", "Adopt for high-risk parser/linker/validator edge cases"],
+          ["DuckDB", "Ad-hoc analytics over JSONL/Parquet artifacts", "Adopt when QA/reporting queries become frequent"],
+          ["Great Expectations", "Formal data expectation suites", "Adopt if custom validators become hard to maintain"],
+          ["rapidfuzz", "String similarity and alias matching support", "Adopt for linker disambiguation and entity match quality"],
+          ["textdistance", "Alternative distance metrics toolkit", "Adopt if rapidfuzz metrics are insufficient for niche cases"],
+          ["MkDocs", "Internal pipeline/docs portal", "Adopt when docs volume and onboarding needs increase"],
+          ["LangGraph", "Agentic branching orchestration", "Re-evaluate only if dynamic branching complexity grows substantially"],
+          ["LangFlow", "Visual flow prototyping", "Use only for experimentation, not production source-of-truth pipeline"],
+        ]}
+      />
+
+      <Table
+        headers={["Standardization Target", "Policy", "Status"]}
+        rows={[
+          ["artifact naming", "One naming/versioning convention across all stage outputs and reports", "locked"],
+          ["run identifiers", "Every stage artifact carries run_id, stage_id, and entity_id where applicable", "locked"],
+          ["contract authority", "Pydantic models are canonical; generated schemas and docs derive from them", "locked"],
+          ["CLI ergonomics", "Use consistent verb pattern (ingest/coalesce/extract/draft/validate/review/compile/smoke/release)", "locked"],
+          ["test taxonomy", "Shared family labels across local, CI, and release reports", "locked"],
+          ["decision logging", "Store reason_text and rule decision traces in machine-readable logs", "locked"],
+        ]}
+      />
+
+      <Callout tone="info" title="Adoption Principle">
+        <Text>
+          Start with the core stack and add optional tools only when measurable pain appears (runtime, reliability, or
+          maintenance). Keep contracts and artifacts stable while tooling evolves.
+        </Text>
+      </Callout>
+
+      <H2>22) Legal and Licensing Contract v1 (Locked)</H2>
+      <Table
+        headers={["Decision Area", "Selected Policy", "Status"]}
+        rows={[
+          ["content reuse posture", "strict_original (no verbatim external prose in shipped addon content)", "locked"],
+          ["source classes", "Primary Warcraft Wiki (CC BY-SA 4.0), secondary Wowpedia legacy (CC BY-SA 3.0)", "locked"],
+          ["shipping policy", "Ship rewritten summaries with provenance metadata and similarity gate enforcement", "locked"],
+          ["addon policy alignment", "Follow Blizzard UI Add-On policy: free, visible code, no ads, no in-game donation asks", "locked"],
+          ["asset policy", "Do not ship third-party assets without explicit compatible license and proof", "locked"],
+        ]}
+      />
+
+      <Table
+        headers={["Repository Licensing Recommendation", "Selected", "Notes"]}
+        rows={[
+          ["Code", "Apache-2.0", "Open and permissive with clearer legal/patent terms"],
+          ["Generated lore dataset and docs", "CC BY-SA 4.0", "Conservative compatibility posture with attribution/share-alike expectations"],
+          ["Third-party source text", "Not redistributed verbatim in shipped addon output", "Use provenance references and rewritten summaries only"],
+        ]}
+      />
+
+      <Table
+        headers={["Required Legal Artifacts", "Purpose", "Required"]}
+        rows={[
+          ["docs/legal/SOURCES.md", "Declare source classes and acquisition boundaries", "yes"],
+          ["docs/legal/ATTRIBUTION.md", "Provide required/preferred attribution records", "yes"],
+          ["docs/legal/CONTENT_POLICY.md", "Codify strict_original and rewrite constraints", "yes"],
+          ["docs/legal/THIRD_PARTY_ASSETS.md", "Track asset licenses, credits, and allowed use", "yes"],
+          ["docs/legal/DISCLAIMER.md", "IP/trademark ownership disclaimer language", "yes"],
+        ]}
+      />
+
+      <Table
+        headers={["Legal Release Checks", "Gate Rule", "Severity"]}
+        rows={[
+          ["provenance completeness", "All required sections/cards have valid source pointers", "blocking"],
+          ["anti-verbatim similarity gate", "No section exceeds approved similarity threshold to external source prose", "blocking"],
+          ["license metadata completeness", "All shipped assets have license plus proof references", "blocking"],
+          ["attribution artifact freshness", "Legal docs updated for latest release candidate inputs", "blocking"],
+          ["unresolved legal flags", "Any unresolved legal-risk flag blocks candidate promotion", "blocking"],
+        ]}
+      />
+
+      <Callout tone="warning" title="IP and Trademark Disclaimer Requirement">
+        <Text>
+          Include a standard notice that Warcraft, World of Warcraft, Blizzard, and related marks/material are property
+          of Blizzard Entertainment and that this project is an independent fan-made addon and tooling effort.
+        </Text>
+      </Callout>
+
+      <Callout tone="info" title="Facts vs Expression Handling">
+        <Text>
+          Facts and game events may be used as inputs, but expressive source prose should not be copied into shipped
+          output. Preserve factual substance while rewriting language and structure in original concise form.
+        </Text>
+      </Callout>
+
+      <H2>23) Evaluation Harness Contract v1 (Locked)</H2>
+      <Table
+        headers={["Decision Area", "Selected Policy", "Status"]}
+        rows={[
+          ["scoring model", "Dual scorecard (contract compliance plus editorial usefulness) with hard blockers", "locked"],
+          ["weighting profile", "Balanced weighting across reliability and editorial quality", "locked"],
+          ["regression policy", "Allow <=3% regression with explicit justification", "locked"],
+          ["baseline anchor", "Compare against last release baseline", "locked"],
+          ["threshold strategy", "Per-metric minimums plus overall score minimum", "locked"],
+          ["harness cadence", "Run full harness on every substantive change", "locked"],
+        ]}
+      />
+
+      <Table
+        headers={["Mandatory Metric Families (Best-Judgment Default)", "Purpose", "Required"]}
+        rows={[
+          ["Schema/contract compliance", "Structural validity and reference integrity", "yes"],
+          ["Provenance completeness/quality", "Reliability and strict_original support", "yes"],
+          ["Budget/structure compliance", "Conciseness and section contract adherence", "yes"],
+          ["Glossary linker quality", "Precision/FP/FN and ambiguity handling quality", "yes"],
+          ["Editorial usefulness/clarity", "Player-facing utility and readability", "yes"],
+          ["Cross-page coherence/link integrity", "Entity consistency and navigation correctness", "yes"],
+          ["Runtime readiness proxy", "Signals likely runtime compatibility before smoke", "yes"],
+        ]}
+      />
+
+      <Table
+        headers={["Annotation Scope", "Selected Default", "Rationale"]}
+        rows={[
+          [
+            "human annotation strategy",
+            "Stratified sample annotation",
+            "Balances statistical confidence with practical review effort for pilot cadence.",
+          ],
+        ]}
+      />
+
+      <Table
+        headers={["Escalation Triggers (Best-Judgment Default)", "Action", "Severity"]}
+        rows={[
+          ["Provenance metric below threshold", "Force manual review escalation", "blocking"],
+          ["Linker precision below threshold", "Force manual review escalation", "blocking"],
+          ["Editorial usefulness below threshold", "Escalate for editorial pass before progression", "blocking"],
+          ["Cross-page coherence/integrity failures", "Escalate and block until resolved", "blocking"],
+          ["Unexpected regression pattern", "Escalate for root-cause analysis", "blocking"],
+        ]}
+      />
+
+      <Table
+        headers={["Required Evaluation Artifacts", "Purpose", "Required"]}
+        rows={[
+          ["Machine-readable eval JSON", "Programmatic gating and trend ingestion", "yes"],
+          ["Human-readable eval summary markdown", "Quick reviewer consumption", "yes"],
+          ["Trend snapshot vs last release", "Regression visibility over time", "yes"],
+          ["Top deltas/regression diff report", "Pinpoint quality movement drivers", "yes"],
+          ["Annotation/sample decision export", "Auditability for labeled quality checks", "yes"],
+        ]}
+      />
+
+      <H2>24) CI/CD Contract v1 (Locked)</H2>
+      <Table
+        headers={["Decision Area", "Selected Policy", "Status"]}
+        rows={[
+          ["workflow structure", "Tiered workflows: PR-fast, full integration, release gate", "locked"],
+          ["PR blocking checks", "Lint/type, schema/contract, provenance, budget/structure, core tests, compile integrity", "locked"],
+          ["main-branch default checks", "Full suite + evaluation harness + compile artifacts + smoke proxy checks", "locked"],
+          ["candidate promotion (dev -> candidate)", "Full CI pass + eval thresholds pass + required artifacts + owner checkpoint", "locked"],
+          ["release promotion (candidate -> release)", "Full rerun + manual in-game smoke + final owner sign-off + release artifact bundle", "locked"],
+          ["smoke policy in CI", "Automated smoke proxy plus manual in-game smoke confirmation", "locked"],
+          ["cache/perf strategy", "Dependency caching + split test jobs by family", "locked"],
+          ["failure retry policy", "Auto-retry once for transient CI failures, then fail", "locked"],
+          ["branch/tag model", "dev/main/release branches with required candidate/release tags", "locked"],
+        ]}
+      />
+
+      <Table
+        headers={["Required CI Artifacts", "Purpose", "Required"]}
+        rows={[
+          ["Test report bundle", "Family-level pass/fail and diagnostics", "yes"],
+          ["Evaluation harness report bundle", "Quality scorecards and threshold outcomes", "yes"],
+          ["Compile manifest + hashes", "Reproducibility and release identity", "yes"],
+          ["Validation diagnostics bundle", "Rule-level failure context", "yes"],
+          ["Smoke result record", "Proxy plus manual smoke traceability", "yes"],
+          ["Release checklist/report/known issues bundle", "Final promotion evidence", "yes (release runs)"],
+        ]}
+      />
+
+      <Callout tone="info" title="Manual Smoke Minimization Plan">
+        <Text>
+          Keep manual in-game smoke short and stable by generating a fixed smoke checklist, auto-preparing test data
+          packs, and producing a one-screen runbook with expected click path and success signals for zone links, glossary
+          panel behavior, Back/Up navigation, and Lua error checks.
+        </Text>
+      </Callout>
+
+      <Divider />
+      <H2>Part C - Pilot Baselines and Acceptance (Reference Appendix)</H2>
+
+      <H2>8b) Pilot Candidate Set v1 (Grounded Baseline)</H2>
+      <Callout tone="info" title="How To Use This Candidate Set">
+        <Text>
+          This is the human-curated baseline for Western Plaguelands plus Scholomance. Future agent outputs should be
+          compared against it for recall, precision, and inclusion rationale quality.
+        </Text>
+      </Callout>
+
+      <Table
+        headers={["WPL Questlines - Alliance", "Score", "Decision"]}
+        rows={[
+          ["Andorhal War Campaign (Alliance perspective)", "10/12", "include"],
+          ["Alliance Farmers' Militia Escalation", "7/12", "exclude (fold into Andorhal card for v1 brevity)"],
+        ]}
+      />
+
+      <Table
+        headers={["WPL Questlines - Horde", "Score", "Decision"]}
+        rows={[
+          ["Andorhal War Campaign (Horde perspective)", "11/12", "include"],
+          ["Lindsay Ravensun and Val'kyr Counterattack branch", "8/12", "include"],
+        ]}
+      />
+
+      <Table
+        headers={["WPL Questlines - Shared", "Score", "Decision"]}
+        rows={[
+          ["Scourge Purge and Araj Operations", "9/12", "include"],
+          ["The Menders' Stead Restoration Arc", "10/12", "include"],
+          ["Hearthglen and Renewed Plague Pressure", "8/12", "include"],
+        ]}
+      />
+
+      <Table
+        headers={["WPL Major Characters (Zone)", "Score", "Decision"]}
+        rows={[
+          ["Thassarian", "10/12", "include"],
+          ["Koltira Deathweaver", "10/12", "include"],
+          ["Lindsay Ravensun", "8/12", "include"],
+          ["Araj the Summoner", "8/12", "include"],
+          ["Tirion Fordring", "7/12", "include"],
+          ["High Executor Derrington", "6/12", "exclude (reserve)"],
+          ["Lilian Voss", "5/12", "exclude from zone (instance-only policy)"],
+        ]}
+      />
+
+      <Table
+        headers={["Scholomance Key Characters (Instance)", "Score", "Decision"]}
+        rows={[
+          ["Darkmaster Gandling", "12/12", "include"],
+          ["Lilian Voss", "10/12", "include"],
+          ["Instructor Chillheart", "8/12", "include"],
+          ["Jandice Barov", "9/12", "include"],
+          ["Rattlegore", "8/12", "include"],
+          ["Lord Alexei Barov", "7/12", "include (optional slot)"],
+          ["Doctor Theolen Krastinov", "5/12", "exclude (reserve)"],
+        ]}
+      />
+
+      <Table
+        headers={["WPL Major Landmarks", "Score", "Decision"]}
+        rows={[
+          ["Andorhal", "12/12", "include"],
+          ["Hearthglen", "10/12", "include"],
+          ["Caer Darrow", "10/12", "include"],
+          ["The Menders' Stead", "9/12", "include"],
+          ["Felstone Field", "8/12", "include"],
+          ["Uther's Tomb", "7/12", "include (iconic override)"],
+          ["Gahrron's Withering", "7/12", "exclude (reserve)"],
+        ]}
+      />
+
+      <Table
+        headers={["Glossary Seed Terms (16)", "Category Hint", "Decision"]}
+        rows={[
+          ["Scourge", "faction/concept", "include"],
+          ["Cult of the Damned", "faction", "include"],
+          ["Plague of Undeath", "event/concept", "include"],
+          ["Forsaken", "faction", "include"],
+          ["Alliance", "faction", "include"],
+          ["Argent Crusade", "faction", "include"],
+          ["Cenarion Circle", "faction", "include"],
+          ["Val'kyr", "concept", "include"],
+          ["Andorhal", "place", "include"],
+          ["Hearthglen", "place", "include"],
+          ["Caer Darrow", "place", "include"],
+          ["Scholomance", "place", "include"],
+          ["Thassarian", "person", "include"],
+          ["Koltira Deathweaver", "person", "include"],
+          ["Lindsay Ravensun", "person", "include"],
+          ["Darkmaster Gandling", "person", "include"],
+        ]}
+      />
+
+      <Callout tone="warning" title="Pilot Candidate Set Notes">
+        <Text>
+          Reserve swap candidates: Araj the Summoner, Tirion Fordring, Necromancy, Third War.
+        </Text>
+      </Callout>
+
+      <H2>8c) Pilot History Baseline v1 (Western Plaguelands)</H2>
+      <Table
+        headers={["History Beat Candidate", "Score", "Decision"]}
+        rows={[
+          ["Pre-Third War farmland era: Andorhal grain hub and Hearthglen regional seat", "12/12", "include"],
+          ["Third War lead-up: Kel'Thuzad and Cult of the Damned plague-grain spread", "12/12", "include"],
+          ["Scourging aftermath: collapse into blight and undead territorial control", "11/12", "include"],
+          ["Scarlet Crusade hold in Hearthglen and failed regional stabilization", "8/12", "include"],
+          ["Argent anti-cauldron campaigns (legacy context before Cata state)", "7/12", "include (brief mention)"],
+          ["Wrath aftermath: Argent Crusade re-establishes Hearthglen foothold", "8/12", "include"],
+          ["Cataclysm reclamation: Cenarion Circle healing and land recovery", "11/12", "include"],
+          ["Battle for Andorhal: Alliance/Forsaken/Scourge conflict pivot", "12/12", "include"],
+          ["Battle outcome: Forsaken consolidation and Alliance retreat from Andorhal", "10/12", "include"],
+          ["Current continuity: Argent presence in Hearthglen and ongoing Scholomance threat", "9/12", "include"],
+        ]}
+      />
+
+      <H2>9) Pilot Acceptance Criteria and Test Plan</H2>
+      <Table
+        headers={["Category", "Acceptance Criteria", "Test Method"]}
+        rows={[
+          [
+            "Data completeness",
+            "Exactly 1 zone, 1 linked instance, and 10-20 glossary terms present and linked.",
+            "schema count check + link integrity test",
+          ],
+          [
+            "Legal posture",
+            "No verbatim source prose in shipped output; provenance on all sections.",
+            "similarity scan + provenance completeness validator",
+          ],
+          [
+            "Runtime behavior",
+            "Zone page opens from map UI and links to instance, character, and glossary pages without errors.",
+            "in-game manual smoke checklist + Lua error scan",
+          ],
+          [
+            "Content quality",
+            "Meets budgets and includes Currently, History, Major Questlines, Major Characters, Instances, Major Landmarks, and Glossary.",
+            "budget/style validator + editorial signoff checklist",
+          ],
+          [
+            "Glossary linking",
+            "Auto-link precision >= 0.95 with false-positive rate <= 5% on pilot QA sample.",
+            "QA annotation run with false-positive/negative report",
+          ],
+          [
+            "Build reproducibility",
+            "Pipeline rerun from manifest yields identical canonical IDs and stable output.",
+            "determinism test via hash comparison in CI",
+          ],
+        ]}
+      />
+
+      <H2>10) Recommended Plan Session Workstreams</H2>
+      <Table
+        headers={["Workstream", "Primary Output", "Definition of Done"]}
+        rows={[
+          [
+            "A. runtime UI foundation",
+            "Map entry point, page renderer shell, shared components, navigation/back/up patterns.",
+            "Can open mock zone/instance/character/glossary pages with stable nav state.",
+          ],
+          [
+            "B. schema and validation",
+            "Final schema JSON files and validator rules for budgets, provenance, and inclusion decisions.",
+            "Validation CLI catches all required contract violations on test fixtures.",
+          ],
+          [
+            "C. source ingest and coalescence",
+            "Manifest-driven fetchers, entity resolution, and scored fact coalescence outputs.",
+            "Pilot zone sources ingest reproducibly with stable entity ids.",
+          ],
+          [
+            "D. draft writer and review export",
+            "Draft generation templates, style profile, markdown review pack with redline workflow.",
+            "Editor can round-trip one complete pilot package without manual schema surgery.",
+          ],
+          [
+            "E. compile and smoke loop",
+            "Compile-to-Lua, packaging checks, in-game smoke checklist automation hooks.",
+            "Pilot package loads, renders, links correctly, and logs no Lua errors.",
+          ],
+        ]}
+      />
+
+    </Stack>
+  );
+}

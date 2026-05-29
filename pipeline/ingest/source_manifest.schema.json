@@ -28,12 +28,19 @@
       "source_url": { "type": "string", "minLength": 1 },
       "url": { "type": "string", "minLength": 1 },
       "priority": { "type": "integer", "minimum": 1, "maximum": 10 },
-      "source_class": { "type": "string", "enum": ["warcraft_wiki", "wowpedia"] },
+      "source_class": { "type": "string", "enum": ["warcraft_wiki"] },
       "selection_version": { "type": "string", "minLength": 1 },
       "policy_version": { "type": "string", "minLength": 1 },
       "manifest_run_id": { "type": "string", "minLength": 1 },
-      "parent_zone_id": { "type": "string", "minLength": 1 },
-      "notes": { "type": "string" }
+      "parent_zone_id": { "type": "string" },
+      "notes": { "type": "string" },
+      "auxiliary_role": {
+        "type": "string",
+        "enum": ["storyline", "quest", "faction_profile", "location_profile", "instance_lore"]
+      },
+      "auxiliary_target_id": { "type": "string", "minLength": 1 },
+      "traversal_origin": { "type": "string", "minLength": 1 },
+      "page_title": { "type": "string", "minLength": 1 }
     },
     "allOf": [
       {

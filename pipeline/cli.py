@@ -9,10 +9,14 @@ from pipeline.common.run_context import ensure_run_context
 from pipeline.orchestrator.flow import run_pipeline_flow
 from pipeline.orchestrator.stages import (
     run_coalesce_stage,
+    run_discovery_enrich_stage,
+    run_discovery_stage,
     run_draft_stage,
     run_extract_stage,
     run_ingest_stage,
     run_linker_stage,
+    run_addon_bundle_stage,
+    run_traverse_stage,
     run_validate_stage,
 )
 
@@ -68,6 +72,40 @@ def ingest(run_id: str | None = typer.Option(default=None, help="Existing run id
     context = ensure_run_context(run_id)
     run_ingest_stage(context)
     _echo_run(context.run_id, "ingest")
+
+
+@app.command()
+def discovery(run_id: str = typer.Option(..., help="Existing run id.")) -> None:
+    """Run deterministic discovery artifact stage."""
+    context = ensure_run_context(run_id)
+    source_manifest_path = context.stage_dir("ingest") / "source_manifest.json"
+    outputs = run_discovery_stage(context, source_manifest_path)
+    typer.echo(f"run_id={context.run_id} stage=discovery outputs={len(outputs)}")
+
+
+@app.command()
+def traverse(run_id: str = typer.Option(..., help="Existing run id.")) -> None:
+    """Fetch auxiliary wiki pages from discovery targets."""
+    context = ensure_run_context(run_id)
+    outputs = run_traverse_stage(context)
+    typer.echo(f"run_id={context.run_id} stage=traverse outputs={len(outputs)}")
+
+
+@app.command(name="discovery-enrich")
+def discovery_enrich(run_id: str = typer.Option(..., help="Existing run id.")) -> None:
+    """Rebuild discovery graphs, decisions, and evidence after traversal."""
+    context = ensure_run_context(run_id)
+    source_manifest_path = context.stage_dir("ingest") / "source_manifest.json"
+    outputs = run_discovery_enrich_stage(context, source_manifest_path)
+    typer.echo(f"run_id={context.run_id} stage=discovery_enrich outputs={len(outputs)}")
+
+
+@app.command()
+def addon_bundle(run_id: str = typer.Option(..., help="Existing run id.")) -> None:
+    """Build addon-ingestible data bundle from drafts."""
+    context = ensure_run_context(run_id)
+    output_root = run_addon_bundle_stage(context)
+    typer.echo(f"run_id={context.run_id} stage=addon_bundle output={output_root}")
 
 
 @app.command()
@@ -184,7 +222,7 @@ def validate(
         help="Disable LLM fact-check adjudication even for warn/strict profiles.",
     ),
     fact_check_llm_model: str = typer.Option(
-        default="gpt-4.1-mini",
+        default="gpt-5.5",
         help="OpenAI model used for claim adjudication.",
     ),
     max_entity_concurrency: int = typer.Option(
@@ -255,7 +293,7 @@ def run_all(
         help="Disable LLM fact-check adjudication even for warn/strict profiles.",
     ),
     fact_check_llm_model: str = typer.Option(
-        default="gpt-4.1-mini",
+        default="gpt-5.5",
         help="OpenAI model used for claim adjudication.",
     ),
     max_entity_concurrency: int = typer.Option(
@@ -265,6 +303,20 @@ def run_all(
         help="Per-stage entity concurrency (default 4, tunable 2-6).",
     ),
     retries_per_stage: int = typer.Option(default=1, min=0, help="Retries per stage."),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Print each pipeline stage start/finish to stderr (helps during long LLM calls).",
+    ),
+    retail_only: bool = typer.Option(
+        True,
+        help="Enable retail-only filtering policy in discovery/classification stages.",
+    ),
+    instance_variant_policy: str = typer.Option(
+        "option_a",
+        help="Instance variant split policy selector (currently supports: option_a).",
+    ),
 ) -> None:
     """Run ingest->validate orchestration flow."""
     normalized_profile = _parse_fact_check_profile(fact_check_profile)
@@ -287,10 +339,12 @@ def run_all(
         fact_check_llm_model=fact_check_llm_model,
         max_entity_concurrency=max_entity_concurrency,
         retries_per_stage=retries_per_stage,
+        verbose=verbose,
     )
     typer.echo(
         f"run_id={result['run_id']} validate_passed={result['validate']['passed']} "
-        f"profile={normalized_profile}"
+        f"profile={normalized_profile} retail_only={retail_only} "
+        f"instance_variant_policy={instance_variant_policy}"
     )
 
 

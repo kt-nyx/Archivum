@@ -9,10 +9,14 @@ from typing import Any, cast
 
 from pipeline.coalesce.resolve_entities import run_resolve_entities
 from pipeline.common.run_context import RunContext, append_trace_event, write_stage_manifest
+from pipeline.addon import build_addon_bundle
+from pipeline.discovery import run_discovery_workflow
+from pipeline.discovery.enrich import run_discovery_enrich
 from pipeline.generate.draft_writer import run_draft_writer
 from pipeline.generate.extract_facts import run_extract_facts
 from pipeline.ingest.fetch_wiki import run_fetch_wiki
 from pipeline.ingest.normalize_source import run_normalize_source
+from pipeline.ingest.traverse_wiki import run_traverse_wiki
 from pipeline.linker.linker import run_glossary_linker
 from pipeline.validate.engine import validate_payload
 
@@ -37,6 +41,56 @@ def run_ingest_stage(context: RunContext) -> dict[str, Path]:
         metadata={"record_count": len(manifest_rows), "retrieval_modes": retrieval_modes},
     )
     return {"snapshots_path": snapshots_path, "source_manifest_path": manifest_path}
+
+
+def run_discovery_stage(context: RunContext, source_manifest_path: Path) -> dict[str, Path]:
+    snapshots_path = context.stage_dir("ingest") / "source_snapshots.json"
+    if not snapshots_path.exists():
+        write_stage_manifest(
+            context,
+            "discovery",
+            status="skipped",
+            inputs=[str(source_manifest_path)],
+            outputs=[],
+            metadata={"reason": "missing_source_snapshots"},
+        )
+        return {}
+    outputs = run_discovery_workflow(context, source_manifest_path)
+    write_stage_manifest(
+        context,
+        "discovery",
+        status="ok",
+        inputs=[str(source_manifest_path), str(context.stage_dir("ingest") / "source_snapshots.json")],
+        outputs=[str(path) for path in outputs.values()],
+        metadata={"artifact_count": len(outputs), "phase": "seed"},
+    )
+    return outputs
+
+
+def run_traverse_stage(context: RunContext) -> dict[str, Path]:
+    outputs = run_traverse_wiki(context)
+    write_stage_manifest(
+        context,
+        "traverse",
+        status="ok",
+        inputs=[str(context.stage_dir("ingest") / "source_manifest.json")],
+        outputs=[str(path) for path in outputs.values()],
+        metadata={"fetched_count": sum(1 for row in json.loads(outputs["traversal_report"].read_text(encoding="utf-8")).get("entries", []) if row.get("status") == "fetched")},
+    )
+    return outputs
+
+
+def run_discovery_enrich_stage(context: RunContext, source_manifest_path: Path) -> dict[str, Path]:
+    outputs = run_discovery_enrich(context, source_manifest_path)
+    write_stage_manifest(
+        context,
+        "discovery_enrich",
+        status="ok",
+        inputs=[str(source_manifest_path), str(context.stage_dir("ingest") / "source_snapshots.json")],
+        outputs=[str(path) for path in outputs.values()],
+        metadata={"artifact_count": len(outputs)},
+    )
+    return outputs
 
 
 def run_coalesce_stage(
@@ -165,6 +219,7 @@ def run_draft_stage(
     fact_pack_paths: list[Path],
     *,
     max_entity_concurrency: int = 4,
+    verbose: bool = False,
 ) -> list[Path]:
     draft_entity_ids = [path.stem for path in fact_pack_paths]
     for entity_id in draft_entity_ids:
@@ -179,6 +234,7 @@ def run_draft_stage(
             context,
             fact_pack_paths,
             max_entity_concurrency=max_entity_concurrency,
+            verbose=verbose,
         )
     except Exception as exc:
         for entity_id in draft_entity_ids:
@@ -239,7 +295,7 @@ def run_validate_stage(
     fact_check_web_search: bool = False,
     fact_check_max_web_results: int = 3,
     fact_check_enable_llm: bool | None = None,
-    fact_check_llm_model: str = "gpt-4.1-mini",
+    fact_check_llm_model: str = "gpt-5.5",
     max_entity_concurrency: int = 4,
     no_llm_fact_check: bool = False,
 ) -> dict[str, Any]:
@@ -329,6 +385,34 @@ def run_validate_stage(
     if no_llm_fact_check:
         resolved_enable_llm = False
 
+    questline_decisions_path = context.data_dir / "decisions" / "questline_inclusion_decisions.json"
+    location_decisions_path = context.data_dir / "decisions" / "location_significance_decisions.json"
+    questline_decisions: list[dict[str, Any]] = []
+    location_decisions: list[dict[str, Any]] = []
+    if questline_decisions_path.exists():
+        blob = json.loads(questline_decisions_path.read_text(encoding="utf-8"))
+        if isinstance(blob, list):
+            questline_decisions = [row for row in blob if isinstance(row, dict)]
+    if location_decisions_path.exists():
+        blob = json.loads(location_decisions_path.read_text(encoding="utf-8"))
+        if isinstance(blob, list):
+            location_decisions = [row for row in blob if isinstance(row, dict)]
+
+    def _wiki_first_validation_context(entity_id: str) -> dict[str, Any]:
+        questline_row = next(
+            (row for row in questline_decisions if str(row.get("subject_id", "")) == entity_id),
+            None,
+        )
+        location_include_count = sum(
+            1
+            for row in location_decisions
+            if str(row.get("final_decision", "")) in {"include", "defer"}
+        )
+        return {
+            "questline_expect_include": str((questline_row or {}).get("final_decision", "")) == "include",
+            "location_expect_card_count": location_include_count,
+        }
+
     def _validate_one(draft_path: Path) -> tuple[dict[str, Any], dict[str, Any] | None]:
         raw_payload = json.loads(draft_path.read_text(encoding="utf-8"))
         payload = raw_payload if isinstance(raw_payload, dict) else {}
@@ -363,6 +447,7 @@ def run_validate_stage(
                     # bodies as hard-fail (see similarity rules).
                     "similarity_require_snapshots": normalized_fact_check_profile
                     in {"warn", "strict"},
+                    **_wiki_first_validation_context(entity_id),
                 },
             )
         except Exception as exc:
@@ -519,3 +604,16 @@ def run_validate_stage(
         "fact_check_report_path": fact_check_report_path,
         "fact_check_summary_path": fact_check_summary_path,
     }
+
+
+def run_addon_bundle_stage(context: RunContext) -> Path:
+    output_root = build_addon_bundle(context)
+    write_stage_manifest(
+        context,
+        "addon_bundle",
+        status="ok",
+        inputs=[str(context.data_dir / "drafts")],
+        outputs=[str(output_root)],
+        metadata={},
+    )
+    return output_root

@@ -9,12 +9,18 @@ from pipeline.common.run_context import ensure_run_context
 from pipeline.ingest.normalize_source import run_normalize_source
 from pipeline.orchestrator.stages import (
     run_coalesce_stage,
+    run_discovery_enrich_stage,
+    run_discovery_stage,
     run_draft_stage,
     run_extract_stage,
     run_ingest_stage,
     run_linker_stage,
+    run_traverse_stage,
     run_validate_stage,
 )
+from tests.draft_llm_mocks import fake_draft_chat_by_schema
+
+STORYLINE_HTML = Path("tests/fixtures/storyline/western_plaguelands_storyline.html").read_text(encoding="utf-8")
 
 
 def _seed_manifest(context_root: Path) -> None:
@@ -26,21 +32,53 @@ def _seed_manifest(context_root: Path) -> None:
 
 
 def _mock_generation_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
-    ready_settings = SimpleNamespace(openai_ready=True, openai_model="gpt-4.1-mini")
+    ready_settings = SimpleNamespace(
+        openai_ready=True,
+        openai_model="gpt-5.5",
+        openai_reasoning_effort=None,
+        openai_verbosity=None,
+        openai_draft_reasoning_effort=None,
+        openai_draft_verbosity=None,
+        openai_use_responses_api=False,
+        openai_request_timeout_seconds=600,
+    )
     monkeypatch.setattr(
         "pipeline.coalesce.resolve_entities.load_ai_settings",
         lambda: ready_settings,
     )
-    monkeypatch.setattr(
+    for target in (
         "pipeline.generate.draft_writer.load_ai_settings",
-        lambda: ready_settings,
-    )
+        "pipeline.generate.draft.llm.load_ai_settings",
+    ):
+        monkeypatch.setattr(target, lambda: ready_settings)
 
-    def fake_fetch(url: str, source_class: str) -> tuple[str, str, str]:
+    def fake_fetch(
+        url: str, source_class: str
+    ) -> tuple[str, str, str, list, list, list, str]:
+        if "storyline" in url.lower():
+            return (
+                "Example Zone storyline overview.",
+                "mw:storyline",
+                "section:lead paragraph:1",
+                [{"section_role": "part_1", "text": "Part 1 - The first battle for Andorhal"}],
+                [],
+                [],
+                STORYLINE_HTML,
+            )
+        section_blocks = [
+            {"section_role": "lead", "text": "Lead evidence."},
+            {"section_role": "history", "text": "Historical arc about the capital district and undead forces."},
+            {"section_role": "quests_edit", "text": "Current quest activity around the capital district."},
+            {"section_role": "cataclysm_edit", "text": "Cataclysm recovery efforts continue across the zone."},
+        ]
         return (
             f"{source_class} source evidence for {url} with campaign chronology and factions.",
             "mw:123456",
             "section:lead paragraph:1",
+            section_blocks,
+            ["/wiki/Example_Zone_storyline"],
+            [{"href": "/wiki/Example_Zone_storyline", "section_role": "quests", "label": "storyline"}],
+            "",
         )
 
     def fake_coalesce_chat(*_args: object, **_kwargs: object) -> dict[str, object]:
@@ -51,121 +89,22 @@ def _mock_generation_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
             ]
         }
 
-    def fake_draft_chat(*_args: object, **kwargs: object) -> dict[str, object]:
-        system_prompt = str(kwargs.get("system_prompt", ""))
-        if "zone draft body" in system_prompt:
-            return {
-                "expansion": "retail",
-                "at_a_glance": (
-                    "A contested zone where military campaigns and undead pressure intersect."
-                ),
-                "currently": (
-                    "Current developments center on route security, settlement recovery, and "
-                    "command-level responses to sustained threats."
-                ),
-                "history": (
-                    "Historical arcs track repeated conflict cycles, shifting command priorities, "
-                    "and contested control over strategic ground."
-                ),
-                "major_questlines_alliance": [
-                    {
-                        "id": "ql-zone-alliance-core",
-                        "faction": "alliance",
-                        "title": "Alliance Core Campaign",
-                        "hook": "Alliance forces consolidate strategic positions.",
-                        "start_anchor": "Field Command",
-                        "story_beats": ["Assess", "Stabilize", "Consolidate"],
-                        "inclusion_decision": {
-                            "inclusion_score": 8,
-                            "criteria_breakdown": {
-                                "importance": 2,
-                                "coherence": 2,
-                                "evidence": 2,
-                                "relevance": 2,
-                            },
-                            "include_decision": "include",
-                            "decision_reason": "Evidence-backed core arc.",
-                            "source_refs": [],
-                        },
-                        "depends_on_parent_context": False,
-                    }
-                ],
-                "major_questlines_horde": [],
-                "major_questlines_shared": [],
-                "major_characters": [
-                    {
-                        "id": "character-zone-figure-one",
-                        "name": "Zone Figure One",
-                        "summary": "Leads campaign stabilization efforts.",
-                    },
-                    {
-                        "id": "character-zone-figure-two",
-                        "name": "Zone Figure Two",
-                        "summary": "Coordinates strategic responses.",
-                    },
-                    {
-                        "id": "character-zone-figure-three",
-                        "name": "Zone Figure Three",
-                        "summary": "Documents conflict outcomes.",
-                    },
-                ],
-                "instances": [
-                    {
-                        "id": "instance-zone-associated",
-                        "name": "Associated Instance",
-                        "summary": "Related conflict site tied to campaign outcomes.",
-                    }
-                ],
-                "major_landmarks": [
-                    {
-                        "id": "landmark-zone-site-one",
-                        "name": "Zone Site One",
-                        "summary": "Strategic site under ongoing pressure.",
-                    },
-                    {
-                        "id": "landmark-zone-site-two",
-                        "name": "Zone Site Two",
-                        "summary": "Operational hub for recovery efforts.",
-                    },
-                    {
-                        "id": "landmark-zone-site-three",
-                        "name": "Zone Site Three",
-                        "summary": "Frontline location for active campaigns.",
-                    },
-                ],
-                "glossary": [],
-            }
-        return {
-            "type": "dungeon",
-            "identity_header": "A high-risk instance with concentrated hostile leadership.",
-            "story_context": (
-                "The instance narrative connects strategic command pressure, prolonged conflict, "
-                "and unstable recovery windows."
-            ),
-            "key_characters": [
-                {
-                    "id": "character-instance-key-one",
-                    "name": "Instance Key One",
-                    "summary": "Drives the instance's central conflict trajectory.",
-                },
-                {
-                    "id": "character-instance-key-two",
-                    "name": "Instance Key Two",
-                    "summary": "Shapes the operational stakes within the dungeon.",
-                },
-            ],
-            "glossary": [],
-        }
+    def fake_draft_chat(*args: object, **kwargs: object) -> dict[str, object] | None:
+        result = fake_draft_chat_by_schema(*args, **kwargs)
+        assert result is not None
+        return result
 
     monkeypatch.setattr("pipeline.ingest.fetch_wiki._fetch_url_text", fake_fetch)
+    monkeypatch.setattr("pipeline.ingest.traverse_wiki._fetch_url_text", fake_fetch)
     monkeypatch.setattr(
         "pipeline.coalesce.resolve_entities.chat_json_completion",
         fake_coalesce_chat,
     )
-    monkeypatch.setattr(
+    for target in (
+        "pipeline.generate.draft.llm.chat_json_completion",
         "pipeline.generate.draft_writer.chat_json_completion",
-        fake_draft_chat,
-    )
+    ):
+        monkeypatch.setattr(target, fake_draft_chat)
 
 
 def test_ingest_to_validate_stage_chain_emits_artifacts(
@@ -208,6 +147,45 @@ def test_ingest_to_validate_stage_chain_emits_artifacts(
     coalesce_decisions = json.loads(coalesce_decisions_path.read_text(encoding="utf-8"))
     assert coalesce_decisions
     assert "tie_break_reason" in coalesce_decisions[0]
+
+
+def test_wiki_first_stage_chain_includes_discovery_and_enrich(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _mock_generation_dependencies(monkeypatch)
+    context = ensure_run_context("run-test-discovery-chain", artifacts_root=tmp_path / "runs")
+    _seed_manifest(context.root_dir)
+    ingest_output = run_ingest_stage(context)
+    discovery_outputs = run_discovery_stage(context, ingest_output["source_manifest_path"])
+    assert discovery_outputs
+    questline_seed = json.loads(
+        (context.data_dir / "decisions" / "questline_inclusion_decisions.json").read_text(encoding="utf-8")
+    )
+    assert questline_seed == []
+
+    traverse_outputs = run_traverse_stage(context)
+    assert traverse_outputs["traversal_report"].exists()
+
+    enrich_outputs = run_discovery_enrich_stage(context, ingest_output["source_manifest_path"])
+    assert enrich_outputs["zone_quest_graph_v3"].exists()
+    v3_rows = json.loads(enrich_outputs["zone_quest_graph_v3"].read_text(encoding="utf-8"))
+    quest_titles = {
+        str(row.get("title", "")).lower()
+        for row in v3_rows
+        if row.get("node_type") == "quest"
+    }
+    assert "the endless flow" in quest_titles
+    assert "into the woods" not in quest_titles
+
+    evidence_path = enrich_outputs["evidence_packs"]
+    field_names = set()
+    for line in evidence_path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            field_names.add(json.loads(line).get("field_name"))
+    assert "history_digest" in field_names
+    assert "at_a_glance_input" in field_names
+    assert "currently_input" in field_names
 
 
 def test_validate_stage_strict_fails_with_contradiction_marker(
@@ -345,7 +323,7 @@ def test_validate_stage_accepts_case_variant_profile_with_empty_drafts(tmp_path:
 def test_coalesce_prefers_manifest_priority_for_tie_break(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    ready_settings = SimpleNamespace(openai_ready=True, openai_model="gpt-4.1-mini")
+    ready_settings = SimpleNamespace(openai_ready=True, openai_model="gpt-5.5")
     monkeypatch.setattr(
         "pipeline.coalesce.resolve_entities.load_ai_settings",
         lambda: ready_settings,
@@ -386,7 +364,7 @@ def test_coalesce_prefers_manifest_priority_for_tie_break(
                     "slug": "priority-zone",
                     "name": "Priority Zone",
                     "source_id": "src-low-priority",
-                    "source_class": "wowpedia",
+                    "source_class": "warcraft_wiki",
                     "url": "https://example.test/low",
                     "revision_id": "mw:999",
                     "captured_at": "2026-01-01T00:00:00Z",
