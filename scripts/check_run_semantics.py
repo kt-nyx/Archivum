@@ -133,16 +133,44 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
     cards = [row for row in draft.get("major_questlines", []) if isinstance(row, dict)]
     if len(cards) > _MAX_CLUSTER_CARDS:
         _fail(f"major_questlines exceeds cluster card cap ({len(cards)} > {_MAX_CLUSTER_CARDS})")
+
+    from pipeline.generate.draft.prose_lint import (
+        MAX_HISTORY_SECTIONS,
+        MIN_HISTORY_SECTIONS,
+        lint_at_a_glance,
+        lint_currently,
+        lint_history_sections,
+    )
+
+    at_a_glance = str(draft.get("at_a_glance", "")).strip()
+    if not at_a_glance:
+        _fail("at_a_glance is empty")
+    for issue in lint_at_a_glance(at_a_glance, zone_name=zone_name):
+        _fail(f"at_a_glance quality check failed: {issue}")
+
+    currently = str(draft.get("currently", "")).strip()
+    if not currently:
+        _fail("currently is empty")
+    for issue in lint_currently(currently, zone_name=zone_name):
+        _fail(f"currently quality check failed: {issue}")
+
+    history = draft.get("history_sections") or []
+    if not history:
+        _fail("history_sections is empty")
+    history_issues = lint_history_sections(history, max_sections=MAX_HISTORY_SECTIONS)
+    for issue in history_issues:
+        _fail(f"history_sections quality check failed: {issue}")
+    if len(history) > MAX_HISTORY_SECTIONS:
+        _fail(f"history_sections exceeds cap ({len(history)} > {MAX_HISTORY_SECTIONS})")
+
+    blob = json.dumps(history)
+    if "&#91;" in blob or "History 1" in blob:
+        _fail("history_sections contain raw passthrough markers")
+
     if not draft.get("location_cards"):
         _fail("location_cards is empty")
     if len(draft.get("sources", [])) < 2:
         _fail("expected multiple sources on zone draft")
-    history = draft.get("history_sections") or []
-    if not history:
-        _fail("history_sections is empty")
-    blob = json.dumps(history)
-    if "&#91;" in blob or "History 1" in blob:
-        _fail("history_sections contain raw passthrough markers")
 
     v3_path = run_root / "data" / "discovery" / "zone_quest_graph_v3.json"
     snapshots_path = run_root / "data" / "ingest" / "source_snapshots.json"
@@ -207,6 +235,64 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
                     f"(expected one of {sorted(expected_clusters)}, got {sorted(card_ids)})"
                 )
 
+    evidence_path = run_root / "data" / "evidence" / "evidence_packs.jsonl"
+    if evidence_path.exists():
+        eligible_history_blocks = 0
+        covered_clusters: set[str] = set()
+        glance_items = 0
+        for line in evidence_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            field_name = str(row.get("field_name", ""))
+            build_meta = row.get("build_meta") or {}
+            subject_zone = str(build_meta.get("subject_zone_id", row.get("subject_id", "")))
+            if subject_zone not in {"", resolved_zone_id}:
+                continue
+            if field_name == "history_digest":
+                eligible_history_blocks += len(row.get("evidence_items", []))
+            elif field_name == "quest_cluster_lore":
+                cluster_id = str(build_meta.get("cluster_id", "")).strip()
+                if cluster_id:
+                    covered_clusters.add(cluster_id)
+            elif field_name == "at_a_glance_input":
+                glance_items += len(row.get("evidence_items", []))
+        if eligible_history_blocks >= MIN_HISTORY_SECTIONS and len(history) < MIN_HISTORY_SECTIONS:
+            _fail(
+                f"history_sections count {len(history)} below minimum {MIN_HISTORY_SECTIONS} "
+                f"for {eligible_history_blocks} seed history blocks"
+            )
+        if v3_rows:
+            expected_clusters = _cluster_ids_from_v3(v3_rows, resolved_zone_id)
+            missing = sorted(expected_clusters - covered_clusters)
+            if expected_clusters and missing:
+                _fail(f"clusters missing quest_cluster_lore evidence: {missing}")
+        if glance_items > 50:
+            _fail(f"at_a_glance_input pool exceeds cap: {glance_items}")
+
+        source_kind_by_id: dict[str, str] = {}
+        for line in evidence_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            build_meta = row.get("build_meta") or {}
+            source_id = str(build_meta.get("source_id", "")).strip()
+            source_kind = str(build_meta.get("source_kind", "")).strip()
+            if source_id and source_kind:
+                source_kind_by_id[source_id] = source_kind
+        provenance = draft.get("provenance") or {}
+        for field_name in ("at_a_glance", "currently", "history"):
+            for pointer in provenance.get(field_name, []):
+                if not isinstance(pointer, dict):
+                    continue
+                source_id = str(pointer.get("source_id", "")).strip()
+                source_kind = source_kind_by_id.get(source_id, "")
+                if source_kind and source_kind != "seed":
+                    print(
+                        f"WARN: {field_name} provenance references non-seed source "
+                        f"{source_id!r} (source_kind={source_kind!r})"
+                    )
+
     traversal_path = run_root / "data" / "ingest" / "traversal_report.json"
     if traversal_path.exists():
         traversal_blob = _load_json(traversal_path)
@@ -225,39 +311,6 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
                 valid, reasons = is_valid_quest_graph_link(link, zone_name=zone_name)
                 if not valid:
                     _fail(f"traversal report fetched denylisted quest href: {link!r} ({reasons})")
-
-    evidence_path = run_root / "data" / "evidence" / "evidence_packs.jsonl"
-    if evidence_path.exists() and v3_rows:
-        covered_clusters: set[str] = set()
-        for line in evidence_path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            row = json.loads(line)
-            if row.get("field_name") != "quest_cluster_lore":
-                continue
-            build_meta = row.get("build_meta") or {}
-            if str(build_meta.get("subject_zone_id", row.get("subject_id", ""))) != resolved_zone_id:
-                continue
-            cluster_id = str(build_meta.get("cluster_id", "")).strip()
-            if cluster_id:
-                covered_clusters.add(cluster_id)
-        expected_clusters = _cluster_ids_from_v3(v3_rows, resolved_zone_id)
-        missing = sorted(expected_clusters - covered_clusters)
-        if expected_clusters and missing:
-            _fail(f"clusters missing quest_cluster_lore evidence: {missing}")
-        glance_items = 0
-        for line in evidence_path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            row = json.loads(line)
-            if row.get("field_name") != "at_a_glance_input":
-                continue
-            build_meta = row.get("build_meta") or {}
-            if str(build_meta.get("subject_zone_id", "")) not in {"", resolved_zone_id}:
-                continue
-            glance_items += len(row.get("evidence_items", []))
-        if glance_items > 50:
-            _fail(f"at_a_glance_input pool exceeds cap: {glance_items}")
 
     print(f"PASS: semantic checks ok for {run_root.name} ({resolved_zone_id})")
 

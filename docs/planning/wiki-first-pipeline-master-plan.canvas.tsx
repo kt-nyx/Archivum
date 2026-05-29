@@ -28,7 +28,7 @@ const SLICES = [
   {
     id: "slice-3",
     content: "Slice 3 — Zone prose workers (at-a-glance, currently, history)",
-    status: "pending" as const,
+    status: "completed" as const,
   },
   {
     id: "slice-4",
@@ -73,6 +73,7 @@ export default function WikiFirstPipelineMasterPlan() {
         <Stat label="Active slices" value="8 gated" tone="success" />
         <Stat label="Slice 1" value="Completed" tone="success" />
         <Stat label="Slice 2" value="Completed" tone="success" />
+        <Stat label="Slice 3" value="Completed" tone="success" />
       </Row>
 
       <Callout tone="info" title="Zone-agnostic engineering policy">
@@ -130,15 +131,10 @@ export default function WikiFirstPipelineMasterPlan() {
         ]}
       />
 
-      <CollapsibleSection title="Slice 1 — known deviances (intentional deferrals)" count={2}>
+      <CollapsibleSection title="Slice 1 — known deviances (intentional deferrals)" count={1}>
         <Table
           headers={["Topic", "Current behaviour", "Target slice"]}
           rows={[
-            [
-              "Prose worker quality",
-              "Prompts unchanged; pools fixed only",
-              "3",
-            ],
             [
               "Full validate_passed on PoC run",
               "Instance hard-fails remain",
@@ -249,6 +245,69 @@ export default function WikiFirstPipelineMasterPlan() {
       </CollapsibleSection>
 
       <Divider />
+      <H2>Slice 3 — completed summary</H2>
+      <Table
+        headers={["Deliverable", "Status", "Notes"]}
+        rows={[
+          ["prose_election.py", "Done", "At-a-glance ordering; currently 4-tier ladder; history pool + dynamic cap"],
+          ["prose_lint.py", "Done", "Shared heuristics for draft fallback + check_run_semantics (45-word at-a-glance)"],
+          ["wiki_first_workers upgrades", "Done", "Dedicated prompts; 45/120/dynamic history; precompress at-a-glance"],
+          ["build_zone_page wiring", "Done", "Election → workers → lint/fallback; elected pools for provenance"],
+          ["enrich build_meta.section_role", "Done", "Seed prose packs tagged for election heuristics"],
+          ["Semantic prose checks", "Done", "at_a_glance/currently/history quality + non-seed provenance WARN in check_run_semantics.py"],
+          ["Prose finalize helpers", "Done", "_finalize_* in wiki_first: synthesize → lint → fallback → re-lint → rescue pool"],
+        ]}
+      />
+
+      <CollapsibleSection title="Slice 3 — intentional deviations (documented)" count={4}>
+        <Table
+          headers={["Topic", "Plan / canvas wording", "Actual behaviour", "Rationale"]}
+          rows={[
+            [
+              "at_a_glance validate budget",
+              "Some plans mention tightening budget.py to 45",
+              "validate budget.py still warns up to 70; 45 enforced in prose_lint + semantics only",
+              "User preference: semantics-only enforcement for word cap",
+            ],
+            [
+              "History minimum sections",
+              "Count within [3, 8] when seed blocks ≥ 3",
+              "Draft uses dynamic cap; semantics fails if eligible seed blocks ≥ 3 but draft has fewer than 3 sections",
+              "Avoid forcing padding when evidence is thin",
+            ],
+            [
+              "Currently tier 1",
+              "Expansion-tagged *_edit sections",
+              "Requires era token in section_role (cataclysm, dragonflight, etc.); generic *_edit roles fall to tier 2",
+              "Prevents quests_edit from outranking expansion-era prose",
+            ],
+            [
+              "History pool eligibility",
+              "Seed history_digest blocks only",
+              "select_history_pool drops snippets under 25 words and excluded geography roles",
+              "Filters stub/location-list sections that would produce low-quality history bodies",
+            ],
+          ]}
+        />
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Slice 3 — verification (completed)" count={5}>
+        <Table
+          headers={["Check", "Criterion"]}
+          rows={[
+            ["at_a_glance words", "≤ 45 via prose_lint; no location-list dump heuristic"],
+            ["currently", "Present tense; no geography hub names; no reputation/achievement/player meta"],
+            ["history", "Past-tense framing; section count within dynamic cap; seed history_digest only"],
+            ["Unit tests", "tests/test_prose_election.py, test_zone_prose_draft.py, test_wiki_first_workers.py"],
+            [
+              "Run semantics",
+              "uv run python scripts/check_run_semantics.py artifacts/runs/<run-id> [--zone-id zone-...]",
+            ],
+          ]}
+        />
+      </CollapsibleSection>
+
+      <Divider />
       <H2>Deferred hardcoded cleanup (outside Slice 1 scope)</H2>
       <Text tone="secondary">
         The following still contain pilot-specific names as test data, static glossary seeds, or validation fixtures.
@@ -314,7 +373,7 @@ export default function WikiFirstPipelineMasterPlan() {
             "—",
           ],
           ["2 ✓", "W4, W5", "Quest traverse; lore extract; cluster questline cards", "—"],
-          ["3", "W2", "at-a-glance / currently / history workers + prompts", "Zone prose quality"],
+          ["3 ✓", "W2", "at-a-glance / currently / history workers + election + lint", "—"],
           ["4", "W6", "Faction zone-significance scoring + ranked cards", "Major factions section"],
           ["5", "W7", "Location denylist, relevance, no defer padding", "Landmarks section"],
           ["6", "W8", "Instance LLM workers, boss parse, instance_lore traverse", "Instance pages"],
@@ -324,7 +383,7 @@ export default function WikiFirstPipelineMasterPlan() {
       />
 
       <Divider />
-      <H2>Verification commands (Slice 1–2)</H2>
+      <H2>Verification commands (Slice 1–3)</H2>
       <Table
         headers={["Check", "Command"]}
         rows={[
@@ -395,6 +454,7 @@ export default function WikiFirstPipelineMasterPlan() {
               ["history", "Past tense; section count within dynamic cap; uses seed history blocks only"],
             ]}
           />
+          <Text tone="success">Slice 3 completed — see summary and verification tables above.</Text>
         </Stack>
       </CollapsibleSection>
 
@@ -409,14 +469,14 @@ export default function WikiFirstPipelineMasterPlan() {
           ["discovery / storyline_html", "List-item quest parse only (Slice 1 ✓)"],
           ["discovery / entity_typing", "Denylist taxonomy + zone_name self-check (Slice 1 ✓)"],
           ["discovery / enrich", "Scoped evidence + quest_lore / quest_cluster_lore (Slice 1–2 ✓)"],
-          ["scripts/check_run_semantics.py", "Cluster cards + traversal denylist (Slice 1–2 ✓)"],
-          ["draft / wiki_first", "Cluster questline cards + faction provenance (Slice 2 ✓)"],
+          ["scripts/check_run_semantics.py", "Cluster cards + traversal denylist + prose quality (Slice 1–3 ✓)"],
+          ["draft / wiki_first", "Cluster questline cards + zone prose election/lint (Slice 2–3 ✓)"],
           ["dictionary/", "Run-scoped terms replace static pilot aliases"],
         ]}
       />
 
       <Row gap={8}>
-        <Pill tone="accent">Next: Slice 3</Pill>
+        <Pill tone="accent">Next: Slice 4</Pill>
         <Pill tone="neutral">PoC QA: WPL + Scholomance (data only)</Pill>
         <Pill tone="success">Policy: zone-agnostic code</Pill>
       </Row>

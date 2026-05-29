@@ -7,6 +7,23 @@ import re
 from typing import Any
 
 from pipeline.common.text_normalize import clean_wiki_snippet
+from pipeline.generate.draft.prose_election import (
+    fallback_at_a_glance,
+    fallback_currently,
+    fallback_history_sections,
+    history_section_cap,
+    select_at_a_glance_pool,
+    select_currently_pool,
+    select_history_pool,
+)
+from pipeline.generate.draft.prose_lint import (
+    MAX_AT_A_GLANCE_WORDS,
+    MAX_HISTORY_SECTIONS,
+    MIN_HISTORY_SECTIONS,
+    lint_at_a_glance,
+    lint_currently,
+    lint_history_sections,
+)
 from pipeline.generate.draft.wiki_first_workers import (
     synthesize_at_a_glance,
     synthesize_card_summary,
@@ -37,19 +54,6 @@ _NAME_STOP_WORDS = {
     "Legion",
     "Mists",
 }
-_HISTORICAL_MARKERS = (
-    "formerly",
-    "once",
-    "during the third war",
-    "in the third war",
-    "years ago",
-    "before the cataclysm",
-    "after the fall",
-    "historically",
-    "was founded",
-    "was established",
-    "invasion of",
-)
 
 
 def _clean_snippet(text: str) -> str:
@@ -218,19 +222,82 @@ def _best_snippet_for_term(items: list[dict[str, Any]], term: str, min_words: in
     return best
 
 
-def _history_sections(evidence_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    history_items = _iter_evidence_items(evidence_rows, {"history_digest", "history"})
-    sections: list[dict[str, Any]] = []
-    filtered_items = [item for item in history_items if _word_count(item["snippet"]) >= 25]
-    for index, item in enumerate(filtered_items[:6], start=1):
-        sections.append(
-            {
-                "heading": f"History {index}",
-                "body": item["snippet"],
-                "source_refs": [],
-            }
+def _history_sections_from_pool(
+    history_pool: list[dict[str, Any]],
+    *,
+    evidence_rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    pool = history_pool or select_history_pool(_iter_evidence_items(evidence_rows, {"history_digest"}))
+    cap = history_section_cap(pool) or MIN_HISTORY_SECTIONS
+    sections, used = fallback_history_sections(pool, max_sections=cap)
+    if sections:
+        return sections, used
+    return [], []
+
+
+def _finalize_at_a_glance(
+    *,
+    zone_name: str,
+    at_pool: list[dict[str, Any]],
+    evidence_rows: list[dict[str, Any]],
+) -> tuple[str, list[str]]:
+    text, used = synthesize_at_a_glance(at_pool, max_words=MAX_AT_A_GLANCE_WORDS)
+    if lint_at_a_glance(text, zone_name=zone_name):
+        text, used = fallback_at_a_glance(at_pool)
+        if lint_at_a_glance(text, zone_name=zone_name):
+            text, used = "", []
+    if not text:
+        rescue_pool = at_pool or select_at_a_glance_pool(
+            _iter_evidence_items(evidence_rows, {"at_a_glance_input", "history_digest"})
         )
-    return sections
+        text, used = fallback_at_a_glance(rescue_pool)
+        if lint_at_a_glance(text, zone_name=zone_name):
+            text, used = "", []
+    if not text:
+        text = f"{zone_name} is a retail-era World of Warcraft zone with active conflicts."
+        used = []
+    return text, used
+
+
+def _finalize_currently(
+    *,
+    zone_name: str,
+    currently_pool: list[dict[str, Any]],
+    evidence_rows: list[dict[str, Any]],
+    pools: dict[str, list[dict[str, Any]]],
+) -> tuple[str, list[str]]:
+    text, used = synthesize_currently(currently_pool, max_words=120)
+    if lint_currently(text, zone_name=zone_name):
+        text, used = fallback_currently(currently_pool)
+        if lint_currently(text, zone_name=zone_name):
+            text, used = "", []
+    if not text:
+        rescue_pool = currently_pool or select_currently_pool(pools, zone_name=zone_name)
+        text, used = fallback_currently(rescue_pool)
+        if lint_currently(text, zone_name=zone_name):
+            text, used = "", []
+    if not text:
+        text = f"{zone_name} currently has active quest and faction conflict dynamics."
+        used = []
+    return text, used
+
+
+def _finalize_history_sections(
+    *,
+    history_pool: list[dict[str, Any]],
+    evidence_rows: list[dict[str, Any]],
+    max_history: int,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    section_cap = max_history or MIN_HISTORY_SECTIONS
+    lint_cap = max_history or MAX_HISTORY_SECTIONS
+    sections, used = synthesize_history_sections(history_pool, max_sections=section_cap)
+    if lint_history_sections(sections, max_sections=lint_cap):
+        sections, used = fallback_history_sections(history_pool, max_sections=section_cap)
+        if lint_history_sections(sections, max_sections=lint_cap):
+            sections, used = [], []
+    if not sections:
+        sections, used = _history_sections_from_pool(history_pool, evidence_rows=evidence_rows)
+    return sections, used
 
 
 def _first_snippet(
@@ -433,26 +500,6 @@ def _sized_summary(base: str, min_words: int) -> str:
     return _clean_snippet(f"{text}{suffix}")
 
 
-def _is_historical_snippet(text: str) -> bool:
-    lowered = text.lower()
-    return any(marker in lowered for marker in _HISTORICAL_MARKERS)
-
-
-def _choose_currently_item(
-    pools: dict[str, list[dict[str, Any]]],
-    fallback_item: dict[str, Any] | None,
-) -> dict[str, Any] | None:
-    current_candidates = [
-        item
-        for item in pools.get("currently_pool", [])
-        if not _is_historical_snippet(str(item.get("snippet", "")))
-    ]
-    if current_candidates:
-        ranked = sorted(current_candidates, key=lambda item: _word_count(str(item.get("snippet", ""))), reverse=True)
-        return ranked[0]
-    return fallback_item
-
-
 def _group_v3_clusters(questline_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     clusters: dict[str, dict[str, Any]] = {}
     for row in questline_rows:
@@ -540,41 +587,37 @@ def build_zone_page(
     source_urls = _source_url_map(fact_pack)
     used_source_ids: set[str] = set()
 
-    at_a_glance, at_glance_used = synthesize_at_a_glance(pools["at_a_glance_pool"], max_words=80)
-    if not at_a_glance:
-        at_a_glance_item = _first_item(evidence_rows, {"at_a_glance_input", "history_digest"}, min_words=12)
-        at_a_glance = str(at_a_glance_item["snippet"]) if at_a_glance_item else (
-            f"{name} is a retail-era World of Warcraft zone with active conflicts."
-        )
-        at_glance_used = [str(at_a_glance_item.get("source_id", ""))] if at_a_glance_item else []
+    at_pool = select_at_a_glance_pool(pools["at_a_glance_pool"])
+    currently_pool = select_currently_pool(pools, zone_name=name)
+    history_pool = select_history_pool(pools["history_pool"])
+    max_history = history_section_cap(history_pool)
 
-    currently_candidates = [
-        item
-        for item in pools.get("currently_pool", [])
-        if not _is_historical_snippet(str(item.get("snippet", "")))
-    ]
-    currently, currently_used = synthesize_currently(currently_candidates or pools["currently_pool"], max_words=120)
-    if not currently:
-        currently_item = _choose_currently_item(
-            pools, _first_item(evidence_rows, {"currently_input"}, min_words=24)
-        )
-        currently = str(currently_item["snippet"]) if currently_item else (
-            f"{name} currently has active quest and faction conflict dynamics."
-        )
-        currently_used = [str(currently_item.get("source_id", ""))] if currently_item else []
+    at_a_glance, at_glance_used = _finalize_at_a_glance(
+        zone_name=name,
+        at_pool=at_pool,
+        evidence_rows=evidence_rows,
+    )
 
-    at_a_glance_pointers = _pointers_for_source_ids(pools["at_a_glance_pool"], at_glance_used, revision_map)
+    currently, currently_used = _finalize_currently(
+        zone_name=name,
+        currently_pool=currently_pool,
+        evidence_rows=evidence_rows,
+        pools=pools,
+    )
+
+    at_a_glance_pointers = _pointers_for_source_ids(at_pool or pools["at_a_glance_pool"], at_glance_used, revision_map)
     currently_pointers = _pointers_for_source_ids(
-        currently_candidates or pools["currently_pool"], currently_used, revision_map
+        currently_pool or pools["currently_pool"], currently_used, revision_map
     )
     for pointer in at_a_glance_pointers + currently_pointers:
         used_source_ids.add(pointer["source_id"])
 
-    history_sections, history_used = synthesize_history_sections(pools["history_pool"], max_sections=4)
-    if not history_sections:
-        history_sections = _history_sections(evidence_rows)
-        history_used = [str(item.get("source_id", "")) for item in pools["history_pool"][: len(history_sections)]]
-    history_pointers = _pointers_for_source_ids(pools["history_pool"], history_used, revision_map)
+    history_sections, history_used = _finalize_history_sections(
+        history_pool=history_pool,
+        evidence_rows=evidence_rows,
+        max_history=max_history,
+    )
+    history_pointers = _pointers_for_source_ids(history_pool or pools["history_pool"], history_used, revision_map)
     for pointer in history_pointers:
         used_source_ids.add(pointer["source_id"])
 
@@ -741,13 +784,13 @@ def build_instance_page(
         used_source_ids.add(at_a_glance_pointer["source_id"])
     if overview_pointer:
         used_source_ids.add(overview_pointer["source_id"])
-    history_sections = _history_sections(evidence_rows)
-    history_items = pools["history_pool"][: len(history_sections)]
-    history_pointers = [
-        pointer
-        for index, item in enumerate(history_items, start=1)
-        if (pointer := _pointer_for_item(item, revision_map, index)) is not None
-    ]
+    history_pool = select_history_pool(pools["history_pool"])
+    history_sections, history_used = _history_sections_from_pool(history_pool, evidence_rows=evidence_rows)
+    history_pointers = _pointers_for_source_ids(
+        history_pool or select_history_pool(_iter_evidence_items(evidence_rows, {"history_digest"})),
+        history_used,
+        revision_map,
+    )
     for pointer in history_pointers:
         used_source_ids.add(pointer["source_id"])
     key_enemy_provenance: dict[str, list[dict[str, str]]] = {}

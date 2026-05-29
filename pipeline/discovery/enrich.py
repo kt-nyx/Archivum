@@ -247,6 +247,7 @@ def _build_evidence_packs(
                             "source_kind": source_kind,
                             "auxiliary_role": aux_role,
                             "subject_zone_id": subject_zone_id,
+                            "section_role": role,
                         },
                     }
                 )

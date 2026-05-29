@@ -8,6 +8,8 @@ from typing import Any
 from pipeline.ai.config import load_ai_settings
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.generate.draft.llm import llm_json_with_retry
+from pipeline.generate.draft.prose_election import history_heading_from_role, precompress_at_a_glance_evidence
+from pipeline.generate.draft.prose_lint import MAX_HISTORY_SECTIONS, trim_words, word_count
 
 
 def _format_evidence_block(items: list[dict[str, Any]], *, max_items: int = 8) -> str:
@@ -21,20 +23,14 @@ def _format_evidence_block(items: list[dict[str, Any]], *, max_items: int = 8) -
     return "\n".join(lines)
 
 
-def _trim_words(text: str, max_words: int) -> str:
-    words = text.split()
-    if len(words) <= max_words:
-        return text.strip()
-    return " ".join(words[:max_words]).strip()
-
-
-def synthesize_at_a_glance(items: list[dict[str, Any]], *, max_words: int = 80) -> tuple[str, list[str]]:
+def synthesize_at_a_glance(items: list[dict[str, Any]], *, max_words: int = 45) -> tuple[str, list[str]]:
     if not items:
         return "", []
+    prepared = precompress_at_a_glance_evidence(items)
     settings = load_ai_settings()
     if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
-        best = max(items, key=lambda row: len(str(row.get("snippet", ""))))
-        return _trim_words(clean_wiki_snippet(str(best.get("snippet", ""))), max_words), [
+        best = max(prepared, key=lambda row: word_count(str(row.get("snippet", ""))))
+        return trim_words(clean_wiki_snippet(str(best.get("snippet", ""))), max_words), [
             str(best.get("source_id", ""))
         ]
     result = llm_json_with_retry(
@@ -50,17 +46,18 @@ def synthesize_at_a_glance(items: list[dict[str, Any]], *, max_words: int = 80) 
         },
         system_prompt=(
             "Write a concise zone at-a-glance summary using ONLY the evidence snippets. "
-            f"Maximum {max_words} words. Present tense. No extrapolation."
+            f"Maximum {max_words} words. Use present tense. Cover the full arc through the latest era in evidence. "
+            "Do not list locations, characters, factions, or patch/reputation meta. No extrapolation."
         ),
-        user_prompt=f"Evidence:\n{_format_evidence_block(items)}",
+        user_prompt=f"Evidence:\n{_format_evidence_block(prepared, max_items=12)}",
         response_schema_name="wiki_first_at_a_glance",
         substep="wiki_first_at_a_glance",
     )
-    summary = _trim_words(clean_wiki_snippet(str(result.get("summary", ""))), max_words)
+    summary = trim_words(clean_wiki_snippet(str(result.get("summary", ""))), max_words)
     used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
     if not summary:
-        best = max(items, key=lambda row: len(str(row.get("snippet", ""))))
-        summary = _trim_words(clean_wiki_snippet(str(best.get("snippet", ""))), max_words)
+        best = max(prepared, key=lambda row: word_count(str(row.get("snippet", ""))))
+        summary = trim_words(clean_wiki_snippet(str(best.get("snippet", ""))), max_words)
         used = [str(best.get("source_id", ""))]
     return summary, used
 
@@ -70,8 +67,8 @@ def synthesize_currently(items: list[dict[str, Any]], *, max_words: int = 120) -
         return "", []
     settings = load_ai_settings()
     if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
-        best = max(items, key=lambda row: len(str(row.get("snippet", ""))))
-        return _trim_words(clean_wiki_snippet(str(best.get("snippet", ""))), max_words), [
+        best = max(items, key=lambda row: word_count(str(row.get("snippet", ""))))
+        return trim_words(clean_wiki_snippet(str(best.get("snippet", ""))), max_words), [
             str(best.get("source_id", ""))
         ]
     result = llm_json_with_retry(
@@ -86,24 +83,26 @@ def synthesize_currently(items: list[dict[str, Any]], *, max_words: int = 120) -
             },
         },
         system_prompt=(
-            "Write a present-tense 'currently' zone summary using ONLY evidence snippets. "
-            f"Maximum {max_words} words. Avoid quest walkthrough tone."
+            "Write a present-tense in-universe 'currently' zone summary using ONLY evidence snippets. "
+            f"Maximum {max_words} words. Describe active conflict or state. "
+            "Do not write quest walkthrough steps, reputation/achievement meta, adjacent-zone geography hubs, "
+            "or out-of-universe player instructions."
         ),
         user_prompt=f"Evidence:\n{_format_evidence_block(items)}",
         response_schema_name="wiki_first_currently",
         substep="wiki_first_currently",
     )
-    summary = _trim_words(clean_wiki_snippet(str(result.get("summary", ""))), max_words)
+    summary = trim_words(clean_wiki_snippet(str(result.get("summary", ""))), max_words)
     used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
     if not summary:
-        best = max(items, key=lambda row: len(str(row.get("snippet", ""))))
-        summary = _trim_words(clean_wiki_snippet(str(best.get("snippet", ""))), max_words)
+        best = max(items, key=lambda row: word_count(str(row.get("snippet", ""))))
+        summary = trim_words(clean_wiki_snippet(str(best.get("snippet", ""))), max_words)
         used = [str(best.get("source_id", ""))]
     return summary, used
 
 
 def synthesize_history_sections(
-    items: list[dict[str, Any]], *, max_sections: int = 4
+    items: list[dict[str, Any]], *, max_sections: int = MAX_HISTORY_SECTIONS
 ) -> tuple[list[dict[str, Any]], list[str]]:
     if not items:
         return [], []
@@ -111,11 +110,12 @@ def synthesize_history_sections(
     if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
         sections: list[dict[str, Any]] = []
         used: list[str] = []
-        for index, item in enumerate(items[:max_sections], start=1):
+        for item in items[:max_sections]:
             snippet = clean_wiki_snippet(str(item.get("snippet", "")))
             if not snippet:
                 continue
-            sections.append({"heading": f"Era {index}", "body": snippet, "source_refs": []})
+            heading = history_heading_from_role(str(item.get("section_role", "other")))
+            sections.append({"heading": heading, "body": snippet, "source_refs": []})
             used.append(str(item.get("source_id", "")))
         return sections, used
     result = llm_json_with_retry(
@@ -141,10 +141,11 @@ def synthesize_history_sections(
             },
         },
         system_prompt=(
-            "Produce historical arc sections from evidence only. "
-            f"Up to {max_sections} sections with short headings and concise bodies."
+            "Produce chronological historical arc sections from evidence only. "
+            f"Up to {max_sections} sections with short era headings and concise bodies in past tense. "
+            "Do not list locations or write present-tense framing. Cover through the latest era in evidence."
         ),
-        user_prompt=f"Evidence:\n{_format_evidence_block(items)}",
+        user_prompt=f"Evidence:\n{_format_evidence_block(items, max_items=max_sections)}",
         response_schema_name="wiki_first_history",
         substep="wiki_first_history",
     )
@@ -162,11 +163,12 @@ def synthesize_history_sections(
     if not sections_out:
         sections = []
         used_ids: list[str] = []
-        for index, item in enumerate(items[:max_sections], start=1):
+        for item in items[:max_sections]:
             snippet = clean_wiki_snippet(str(item.get("snippet", "")))
             if not snippet:
                 continue
-            sections.append({"heading": f"Era {index}", "body": snippet, "source_refs": []})
+            heading = history_heading_from_role(str(item.get("section_role", "other")))
+            sections.append({"heading": heading, "body": snippet, "source_refs": []})
             used_ids.append(str(item.get("source_id", "")))
         return sections, used_ids
     return sections_out, used
@@ -182,7 +184,7 @@ def synthesize_card_summary(
         return "", []
     settings = load_ai_settings()
     if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
-        best = _trim_words(
+        best = trim_words(
             clean_wiki_snippet(_format_evidence_block(items, max_items=1).split("]", 1)[-1].strip()),
             max_words,
         )
@@ -205,6 +207,6 @@ def synthesize_card_summary(
         response_schema_name="wiki_first_card_summary",
         substep="wiki_first_card_summary",
     )
-    summary = _trim_words(clean_wiki_snippet(str(result.get("summary", ""))), max_words)
+    summary = trim_words(clean_wiki_snippet(str(result.get("summary", ""))), max_words)
     used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
     return summary, used

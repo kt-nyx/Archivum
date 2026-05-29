@@ -71,11 +71,22 @@ def _valid_draft() -> dict[str, object]:
             }
         ],
         "location_cards": [{"id": "loc-1", "name": "Example Landmark", "summary": "A notable place."}],
+        "at_a_glance": (
+            "Crusaders and druids continue to resist undead forces across the ruined frontier."
+        ),
+        "currently": (
+            "The zone remains a contested frontier where crusaders and druids push back undead forces."
+        ),
         "sources": [
             {"source_id": "src-zone", "url": "https://example.test/zone"},
             {"source_id": "src-quest", "url": "https://example.test/quest"},
         ],
-        "history_sections": [{"heading": "History", "body": "Past events shaped the zone."}],
+        "history_sections": [
+            {
+                "heading": "The Third War",
+                "body": "The region was devastated during the invasion and fell under undead control for decades.",
+            }
+        ],
     }
 
 
@@ -152,4 +163,69 @@ def test_check_run_validates_cluster_alignment_without_snapshots(tmp_path: Path)
         encoding="utf-8",
     )
     with pytest.raises(SemanticCheckError, match="unknown cluster ids"):
+        check_run(run_root, zone_id="zone-example")
+
+
+def test_check_run_fails_when_at_a_glance_exceeds_word_cap(tmp_path: Path) -> None:
+    run_root = tmp_path / "run-glance"
+    run_root.mkdir()
+    draft = _valid_draft()
+    draft["at_a_glance"] = " ".join(["word"] * 50)
+    _write_minimal_run(run_root, draft=draft)
+    with pytest.raises(SemanticCheckError, match="at_a_glance"):
+        check_run(run_root, zone_id="zone-example")
+
+
+def test_check_run_warns_on_non_seed_prose_provenance(tmp_path: Path, capsys) -> None:
+    run_root = tmp_path / "run-provenance"
+    run_root.mkdir()
+    draft = _valid_draft()
+    draft["provenance"] = {
+        "at_a_glance": [{"source_id": "src-aux", "revision_id": "mw:2"}],
+        "currently": [{"source_id": "src-zone", "revision_id": "mw:1"}],
+        "history": [{"source_id": "src-zone", "revision_id": "mw:1"}],
+    }
+    _write_minimal_run(run_root, draft=draft)
+    (run_root / "data" / "evidence" / "evidence_packs.jsonl").write_text(
+        json.dumps(
+            {
+                "subject_id": "zone-example",
+                "field_name": "at_a_glance_input",
+                "build_meta": {
+                    "subject_zone_id": "zone-example",
+                    "source_id": "src-aux",
+                    "source_kind": "auxiliary",
+                },
+                "evidence_items": [{"snippet": "Auxiliary lore snippet."}],
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "subject_id": "zone-example",
+                "field_name": "quest_cluster_lore",
+                "build_meta": {
+                    "subject_zone_id": "zone-example",
+                    "cluster_id": "part-1",
+                    "source_id": "src-zone",
+                    "source_kind": "seed",
+                },
+                "evidence_items": [{"snippet": "Narrative lore about the front lines."}],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    check_run(run_root, zone_id="zone-example")
+    captured = capsys.readouterr()
+    assert "WARN: at_a_glance provenance references non-seed source" in captured.out
+
+
+def test_check_run_fails_when_currently_has_player_meta(tmp_path: Path) -> None:
+    run_root = tmp_path / "run-currently"
+    run_root.mkdir()
+    draft = _valid_draft()
+    draft["currently"] = "Players can earn reputation with the faction while exploring the zone."
+    _write_minimal_run(run_root, draft=draft)
+    with pytest.raises(SemanticCheckError, match="currently"):
         check_run(run_root, zone_id="zone-example")
