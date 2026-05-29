@@ -1,0 +1,8 @@
+## Interface: 110200
+## Title: Lore Companion
+## Notes: Retail wiki-first lore reference
+## Author: Lore Companion
+## Version: 0.1.0
+## SavedVariables: LoreCompanionDB
+
+Core.lua
