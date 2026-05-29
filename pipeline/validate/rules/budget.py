@@ -28,6 +28,8 @@ from pipeline.contracts.models import (
     Instance,
     SubZone,
     Zone,
+    ZonePage,
+    InstancePage,
 )
 from pipeline.validate.types import ValidationIssue, ValidationSeverity
 
@@ -277,6 +279,79 @@ def _validate_sub_zone(sub_zone: SubZone) -> list[ValidationIssue]:
     return issues
 
 
+def _validate_zone_page(zone_page: ZonePage) -> list[ValidationIssue]:
+    issues: list[ValidationIssue] = []
+    for field_name in ("at_a_glance", "currently"):
+        value = getattr(zone_page, field_name)
+        words = _word_count(value)
+        if field_name == "at_a_glance" and not (8 <= words <= 70):
+            issues.append(
+                ValidationIssue(
+                    code="budget.section",
+                    message=f"{field_name} word count {words} is outside budget [8, 70]",
+                    severity=ValidationSeverity.WARN,
+                    path=f"$.{field_name}",
+                )
+            )
+        if field_name == "currently" and not (20 <= words <= 220):
+            issues.append(
+                ValidationIssue(
+                    code="budget.section",
+                    message=f"{field_name} word count {words} is outside budget [20, 220]",
+                    severity=ValidationSeverity.HARD_FAIL,
+                    path=f"$.{field_name}",
+                )
+            )
+    for index, section in enumerate(zone_page.history_sections):
+        words = _word_count(section.body)
+        if not (25 <= words <= 260):
+            issues.append(
+                ValidationIssue(
+                    code="budget.history_section",
+                    message=f"history section word count {words} is outside budget [25, 260]",
+                    severity=ValidationSeverity.HARD_FAIL,
+                    path=f"$.history_sections[{index}].body",
+                )
+            )
+    return issues
+
+
+def _validate_instance_page(instance_page: InstancePage) -> list[ValidationIssue]:
+    issues: list[ValidationIssue] = []
+    at_a_glance_words = _word_count(instance_page.at_a_glance)
+    if not (8 <= at_a_glance_words <= 70):
+        issues.append(
+            ValidationIssue(
+                code="budget.section",
+                message=f"at_a_glance word count {at_a_glance_words} is outside budget [8, 70]",
+                severity=ValidationSeverity.WARN,
+                path="$.at_a_glance",
+            )
+        )
+    overview_words = _word_count(instance_page.overview)
+    if not (20 <= overview_words <= 260):
+        issues.append(
+            ValidationIssue(
+                code="budget.section",
+                message=f"overview word count {overview_words} is outside budget [20, 260]",
+                severity=ValidationSeverity.HARD_FAIL,
+                path="$.overview",
+            )
+        )
+    for index, section in enumerate(instance_page.history_sections):
+        words = _word_count(section.body)
+        if not (25 <= words <= 260):
+            issues.append(
+                ValidationIssue(
+                    code="budget.history_section",
+                    message=f"history section word count {words} is outside budget [25, 260]",
+                    severity=ValidationSeverity.HARD_FAIL,
+                    path=f"$.history_sections[{index}].body",
+                )
+            )
+    return issues
+
+
 def validate_budget_rules(entity_type: str, parsed_entity: BaseModel) -> list[ValidationIssue]:
     """Run budget checks for the parsed entity."""
     if entity_type == "zone":
@@ -306,5 +381,17 @@ def validate_budget_rules(entity_type: str, parsed_entity: BaseModel) -> list[Va
             parsed_entity
             if isinstance(parsed_entity, SubZone)
             else SubZone.model_validate(parsed_entity)
+        )
+    if entity_type == "zone_page":
+        return _validate_zone_page(
+            parsed_entity
+            if isinstance(parsed_entity, ZonePage)
+            else ZonePage.model_validate(parsed_entity)
+        )
+    if entity_type == "instance_page":
+        return _validate_instance_page(
+            parsed_entity
+            if isinstance(parsed_entity, InstancePage)
+            else InstancePage.model_validate(parsed_entity)
         )
     return []

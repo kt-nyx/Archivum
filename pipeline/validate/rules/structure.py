@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from typing import Any
+
 from pydantic import BaseModel
 
 from pipeline.contracts.models import (
@@ -10,14 +13,28 @@ from pipeline.contracts.models import (
     ZONE_MIN_QUESTLINE_INCLUSION_SCORE,
     Faction,
     IncludeDecision,
+    InstancePage,
     SubZone,
     Zone,
+    ZonePage,
 )
 from pipeline.validate.types import ValidationIssue, ValidationSeverity
 
 
 def _non_empty_text(value: str) -> bool:
     return bool(value.strip())
+
+
+def _token_set(value: str) -> set[str]:
+    return {token for token in re.findall(r"[a-z0-9]+", value.lower()) if len(token) >= 4}
+
+
+def _jaccard_overlap(left: str, right: str) -> float:
+    left_tokens = _token_set(left)
+    right_tokens = _token_set(right)
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
 
 
 def _validate_zone(zone: Zone) -> list[ValidationIssue]:
@@ -316,7 +333,155 @@ def _validate_sub_zone(sub_zone: SubZone) -> list[ValidationIssue]:
     return issues
 
 
-def validate_structural_rules(entity_type: str, parsed_entity: BaseModel) -> list[ValidationIssue]:
+def _validate_zone_page(
+    zone_page: ZonePage,
+    *,
+    validation_context: dict[str, Any] | None = None,
+) -> list[ValidationIssue]:
+    issues: list[ValidationIssue] = []
+    if not _non_empty_text(zone_page.at_a_glance):
+        issues.append(
+            ValidationIssue(
+                code="structure.required_section_empty",
+                message="at_a_glance is required and must not be empty",
+                severity=ValidationSeverity.HARD_FAIL,
+                path="$.at_a_glance",
+            )
+        )
+    if not _non_empty_text(zone_page.currently):
+        issues.append(
+            ValidationIssue(
+                code="structure.required_section_empty",
+                message="currently is required and must not be empty",
+                severity=ValidationSeverity.HARD_FAIL,
+                path="$.currently",
+            )
+        )
+    if not zone_page.history_sections:
+        issues.append(
+            ValidationIssue(
+                code="structure.required_section_empty",
+                message="history_sections must include at least one section",
+                severity=ValidationSeverity.HARD_FAIL,
+                path="$.history_sections",
+            )
+        )
+    for index, card in enumerate(zone_page.major_questlines):
+        if card.include_decision != IncludeDecision.INCLUDE:
+            issues.append(
+                ValidationIssue(
+                    code="structure.zone_page_questline_inclusion_threshold",
+                    message="zone_page questline cards must resolve to include",
+                    severity=ValidationSeverity.HARD_FAIL,
+                    path=f"$.major_questlines[{index}].include_decision",
+                )
+            )
+    currently_lower = zone_page.currently.lower()
+    if any(
+        marker in currently_lower
+        for marker in ("years ago", "formerly", "during the third war", "was founded", "was established")
+    ):
+        issues.append(
+            ValidationIssue(
+                code="structure.zone_page_currently_temporal_drift",
+                message="currently appears to contain historical-era framing",
+                severity=ValidationSeverity.WARN,
+                path="$.currently",
+            )
+        )
+    history_blob = " ".join(section.body for section in zone_page.history_sections)
+    overlap = _jaccard_overlap(zone_page.currently, history_blob)
+    if overlap >= 0.6:
+        issues.append(
+            ValidationIssue(
+                code="structure.zone_page_currently_history_overlap",
+                message="currently substantially overlaps with history_sections content",
+                severity=ValidationSeverity.WARN,
+                path="$.currently",
+            )
+        )
+    history_blob_full = history_blob + " " + " ".join(section.heading for section in zone_page.history_sections)
+    if "&#91;" in history_blob_full or "History 1" in history_blob_full:
+        issues.append(
+            ValidationIssue(
+                code="structure.zone_page_history_passthrough_markers",
+                message="history_sections contain raw wiki passthrough markers",
+                severity=ValidationSeverity.HARD_FAIL,
+                path="$.history_sections",
+            )
+        )
+    context = validation_context or {}
+    questline_expect_include = bool(context.get("questline_expect_include"))
+    if questline_expect_include and not zone_page.major_questlines:
+        issues.append(
+            ValidationIssue(
+                code="structure.zone_page_empty_questlines",
+                message="discovery marked questlines for inclusion but major_questlines is empty",
+                severity=ValidationSeverity.HARD_FAIL,
+                path="$.major_questlines",
+            )
+        )
+    location_expect_cards = int(context.get("location_expect_card_count", 0) or 0)
+    if location_expect_cards > 0 and not zone_page.location_cards:
+        issues.append(
+            ValidationIssue(
+                code="structure.zone_page_empty_locations",
+                message="discovery marked locations for inclusion but location_cards is empty",
+                severity=ValidationSeverity.HARD_FAIL,
+                path="$.location_cards",
+            )
+        )
+    faction_summaries = [card.summary.strip().lower() for card in zone_page.major_factions if card.summary.strip()]
+    if len(faction_summaries) != len(set(faction_summaries)) and len(faction_summaries) > 1:
+        issues.append(
+            ValidationIssue(
+                code="structure.zone_page_duplicate_faction_summaries",
+                message="major_factions contains duplicate summaries across distinct factions",
+                severity=ValidationSeverity.WARN,
+                path="$.major_factions",
+            )
+        )
+    return issues
+
+
+def _validate_instance_page(instance_page: InstancePage) -> list[ValidationIssue]:
+    issues: list[ValidationIssue] = []
+    if not _non_empty_text(instance_page.at_a_glance):
+        issues.append(
+            ValidationIssue(
+                code="structure.required_section_empty",
+                message="at_a_glance is required and must not be empty",
+                severity=ValidationSeverity.HARD_FAIL,
+                path="$.at_a_glance",
+            )
+        )
+    if not _non_empty_text(instance_page.overview):
+        issues.append(
+            ValidationIssue(
+                code="structure.required_section_empty",
+                message="overview is required and must not be empty",
+                severity=ValidationSeverity.HARD_FAIL,
+                path="$.overview",
+            )
+        )
+    if not instance_page.history_sections:
+        issues.append(
+            ValidationIssue(
+                code="structure.required_section_empty",
+                message="history_sections must include at least one section",
+                severity=ValidationSeverity.HARD_FAIL,
+                path="$.history_sections",
+            )
+        )
+    return issues
+
+
+def validate_structural_rules(
+    entity_type: str,
+    parsed_entity: BaseModel,
+    *,
+    validation_context: dict[str, Any] | None = None,
+) -> list[ValidationIssue]:
     """Validate rendering and structural contract rules."""
     if entity_type == "zone":
         zone = (
@@ -330,4 +495,18 @@ def validate_structural_rules(entity_type: str, parsed_entity: BaseModel) -> lis
             else SubZone.model_validate(parsed_entity)
         )
         return _validate_sub_zone(sub_zone)
+    if entity_type == "zone_page":
+        zone_page = (
+            parsed_entity
+            if isinstance(parsed_entity, ZonePage)
+            else ZonePage.model_validate(parsed_entity)
+        )
+        return _validate_zone_page(zone_page, validation_context=validation_context)
+    if entity_type == "instance_page":
+        instance_page = (
+            parsed_entity
+            if isinstance(parsed_entity, InstancePage)
+            else InstancePage.model_validate(parsed_entity)
+        )
+        return _validate_instance_page(instance_page)
     return []

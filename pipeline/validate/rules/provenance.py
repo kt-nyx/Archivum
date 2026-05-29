@@ -17,6 +17,8 @@ from pipeline.contracts.models import (
     SourcePointer,
     SubZone,
     Zone,
+    ZonePage,
+    InstancePage,
 )
 from pipeline.validate.types import ValidationIssue, ValidationSeverity
 
@@ -265,6 +267,94 @@ def _validate_zone(zone: Zone) -> list[ValidationIssue]:
     return issues
 
 
+def _validate_zone_page(zone_page: ZonePage) -> list[ValidationIssue]:
+    issues: list[ValidationIssue] = []
+    if not zone_page.sources:
+        issues.append(
+            ValidationIssue(
+                code="provenance.missing_sources_manifest",
+                message="zone_page.sources must include at least one source manifest entry",
+                severity=ValidationSeverity.HARD_FAIL,
+                path="$.sources",
+            )
+        )
+    source_ids = {source.source_id for source in zone_page.sources}
+    source_revisions = _source_revision_map(zone_page.sources)
+    sections = {
+        "at_a_glance": zone_page.at_a_glance,
+        "currently": zone_page.currently,
+    }
+    for section_name, section_text in sections.items():
+        pointers = getattr(zone_page.provenance, section_name)
+        min_count = _required_pointer_count(_word_count(section_text))
+        issues.extend(
+            _validate_pointer_set(
+                pointers,
+                source_ids=source_ids,
+                min_count=min_count,
+                path=f"$.provenance.{section_name}",
+                code="provenance.missing_section_pointers",
+            )
+        )
+        issues.extend(
+            _stale_revision_issues(
+                pointers,
+                source_revisions=source_revisions,
+                path=f"$.provenance.{section_name}",
+            )
+        )
+    if zone_page.history_sections:
+        history_text = " ".join(section.body for section in zone_page.history_sections)
+        history_min_count = _required_pointer_count(_word_count(history_text))
+        issues.extend(
+            _validate_pointer_set(
+                zone_page.provenance.history,
+                source_ids=source_ids,
+                min_count=history_min_count,
+                path="$.provenance.history",
+                code="provenance.missing_section_pointers",
+            )
+        )
+        issues.extend(
+            _stale_revision_issues(
+                zone_page.provenance.history,
+                source_revisions=source_revisions,
+                path="$.provenance.history",
+            )
+        )
+    for card in zone_page.major_questlines:
+        issues.extend(
+            _validate_pointer_set(
+                zone_page.provenance.major_questlines_shared.get(card.id, []),
+                source_ids=source_ids,
+                min_count=1,
+                path=f"$.provenance.major_questlines_shared.{card.id}",
+                code="provenance.missing_card_pointers",
+            )
+        )
+    for card in zone_page.location_cards:
+        issues.extend(
+            _validate_pointer_set(
+                zone_page.provenance.major_landmarks.get(card.id, []),
+                source_ids=source_ids,
+                min_count=1,
+                path=f"$.provenance.major_landmarks.{card.id}",
+                code="provenance.missing_card_pointers",
+            )
+        )
+    for card in zone_page.instance_links:
+        issues.extend(
+            _validate_pointer_set(
+                zone_page.provenance.instances.get(card.id, []),
+                source_ids=source_ids,
+                min_count=1,
+                path=f"$.provenance.instances.{card.id}",
+                code="provenance.missing_card_pointers",
+            )
+        )
+    return issues
+
+
 def _validate_instance(instance: Instance) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
     source_ids = {source.source_id for source in instance.sources}
@@ -301,6 +391,55 @@ def _validate_instance(instance: Instance) -> list[ValidationIssue]:
         issues.extend(
             _validate_pointer_set(
                 instance.provenance.key_characters.get(card.id, []),
+                source_ids=source_ids,
+                min_count=1,
+                path=f"$.provenance.key_characters.{card.id}",
+                code="provenance.missing_card_pointers",
+            )
+        )
+    return issues
+
+
+def _validate_instance_page(instance_page: InstancePage) -> list[ValidationIssue]:
+    issues: list[ValidationIssue] = []
+    if not instance_page.sources:
+        issues.append(
+            ValidationIssue(
+                code="provenance.missing_sources_manifest",
+                message="instance_page.sources must include at least one source manifest entry",
+                severity=ValidationSeverity.HARD_FAIL,
+                path="$.sources",
+            )
+        )
+    source_ids = {source.source_id for source in instance_page.sources}
+    source_revisions = _source_revision_map(instance_page.sources)
+    sections = {
+        "identity_header": instance_page.at_a_glance,
+        "story_context": instance_page.overview,
+    }
+    for section_name, section_text in sections.items():
+        pointers = getattr(instance_page.provenance, section_name)
+        min_count = _required_pointer_count(_word_count(section_text))
+        issues.extend(
+            _validate_pointer_set(
+                pointers,
+                source_ids=source_ids,
+                min_count=min_count,
+                path=f"$.provenance.{section_name}",
+                code="provenance.missing_section_pointers",
+            )
+        )
+        issues.extend(
+            _stale_revision_issues(
+                pointers,
+                source_revisions=source_revisions,
+                path=f"$.provenance.{section_name}",
+            )
+        )
+    for card in instance_page.key_enemies:
+        issues.extend(
+            _validate_pointer_set(
+                instance_page.provenance.key_characters.get(card.id, []),
                 source_ids=source_ids,
                 min_count=1,
                 path=f"$.provenance.key_characters.{card.id}",
@@ -478,12 +617,28 @@ def validate_provenance_rules(
                 else Zone.model_validate(parsed_entity)
             )
         )
+    elif entity_type == "zone_page":
+        issues.extend(
+            _validate_zone_page(
+                parsed_entity
+                if isinstance(parsed_entity, ZonePage)
+                else ZonePage.model_validate(parsed_entity)
+            )
+        )
     elif entity_type == "instance":
         issues.extend(
             _validate_instance(
                 parsed_entity
                 if isinstance(parsed_entity, Instance)
                 else Instance.model_validate(parsed_entity)
+            )
+        )
+    elif entity_type == "instance_page":
+        issues.extend(
+            _validate_instance_page(
+                parsed_entity
+                if isinstance(parsed_entity, InstancePage)
+                else InstancePage.model_validate(parsed_entity)
             )
         )
     elif entity_type == "character":

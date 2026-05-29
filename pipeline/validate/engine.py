@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from pipeline.contracts.models import ENTITY_MODEL_MAP
+from pipeline.contracts.models import ENTITY_MODEL_MAP, WIKI_FIRST_ENTITY_MODEL_MAP
 from pipeline.validate.rules.budget import validate_budget_rules
 from pipeline.validate.rules.fact_check import validate_fact_check_rules
 from pipeline.validate.rules.provenance import validate_provenance_rules
@@ -62,7 +62,7 @@ def validate_payload(
     validation_context: Mapping[str, Any] | None = None,
 ) -> ValidationReport:
     """Validate a payload against canonical schema and policy rules."""
-    model_type = ENTITY_MODEL_MAP.get(entity_type)
+    model_type = ENTITY_MODEL_MAP.get(entity_type) or WIKI_FIRST_ENTITY_MODEL_MAP.get(entity_type)
     if model_type is None:
         unknown_issue = ValidationIssue(
             code="schema.unknown_entity_type",
@@ -79,7 +79,11 @@ def validate_payload(
         return _finalize_report(entity_type, _schema_issues_from_exception(exc))
 
     issues: list[ValidationIssue] = []
-    issues.extend(validate_structural_rules(entity_type, parsed_entity))
+    issues.extend(
+        validate_structural_rules(
+            entity_type, parsed_entity, validation_context=dict(validation_context or {})
+        )
+    )
     issues.extend(validate_budget_rules(entity_type, parsed_entity))
     issues.extend(
         validate_provenance_rules(entity_type, parsed_entity, validation_context=validation_context)

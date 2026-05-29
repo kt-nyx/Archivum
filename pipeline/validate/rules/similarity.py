@@ -43,6 +43,10 @@ def _narrative_section_names(entity_type: str) -> tuple[str, ...]:
         return ("summary", "short_history")
     if entity_type == "glossary_term":
         return ("summary", "brief_history")
+    if entity_type == "zone_page":
+        return ("at_a_glance", "currently")
+    if entity_type == "instance_page":
+        return ("at_a_glance", "overview")
     return ()
 
 
@@ -89,8 +93,9 @@ def validate_similarity_rules(
     validation_context: Mapping[str, Any] | None = None,
 ) -> list[ValidationIssue]:
     """Compare narrative draft sections to ingest bodies linked by provenance."""
-    sections = _narrative_section_names(entity_type)
-    if not sections:
+    scalar_sections = _narrative_section_names(entity_type)
+    has_history_list = entity_type in {"zone_page", "instance_page"}
+    if not scalar_sections and not has_history_list:
         return []
 
     payload = parsed_entity.model_dump(mode="python")
@@ -111,8 +116,10 @@ def validate_similarity_rules(
 
     has_any_narrative = any(
         isinstance(payload.get(name), str) and str(payload.get(name, "")).strip()
-        for name in sections
+        for name in scalar_sections
     )
+    if has_history_list and isinstance(payload.get("history_sections"), list):
+        has_any_narrative = has_any_narrative or bool(payload.get("history_sections"))
     require_snapshots = bool(
         validation_context and validation_context.get("similarity_require_snapshots")
     )
@@ -131,11 +138,31 @@ def validate_similarity_rules(
             )
         return issues
 
-    for section_name in sections:
+    section_entries: list[tuple[str, str, list[str]]] = []
+    for section_name in scalar_sections:
         text_value = payload.get(section_name)
         if not isinstance(text_value, str) or not text_value.strip():
             continue
         source_ids = _section_pointer_source_ids(payload, section_name)
+        if entity_type == "instance_page":
+            if section_name == "at_a_glance":
+                source_ids = _section_pointer_source_ids(payload, "identity_header")
+            elif section_name == "overview":
+                source_ids = _section_pointer_source_ids(payload, "story_context")
+        section_entries.append((section_name, text_value, source_ids))
+    if has_history_list:
+        history_sections = payload.get("history_sections")
+        if isinstance(history_sections, list):
+            history_source_ids = _section_pointer_source_ids(payload, "history")
+            for index, history_row in enumerate(history_sections):
+                if not isinstance(history_row, dict):
+                    continue
+                body = history_row.get("body")
+                if not isinstance(body, str) or not body.strip():
+                    continue
+                section_entries.append((f"history_sections[{index}].body", body, history_source_ids))
+
+    for section_name, text_value, source_ids in section_entries:
         snippets = [body_by_source[sid] for sid in source_ids if sid in body_by_source]
         if not snippets and source_ids:
             issues.append(

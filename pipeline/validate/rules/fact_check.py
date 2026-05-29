@@ -31,6 +31,10 @@ def _section_claims(entity_type: str, payload: dict[str, Any]) -> list[tuple[str
         sections = ("summary", "short_history")
     elif entity_type == "glossary_term":
         sections = ("summary", "brief_history")
+    elif entity_type == "zone_page":
+        sections = ("at_a_glance", "currently")
+    elif entity_type == "instance_page":
+        sections = ("at_a_glance", "overview")
     else:
         sections = ()
     claims: list[tuple[str, str]] = []
@@ -38,6 +42,15 @@ def _section_claims(entity_type: str, payload: dict[str, Any]) -> list[tuple[str
         value = payload.get(section)
         if isinstance(value, str) and value.strip():
             claims.append((section, value))
+    if entity_type in {"zone_page", "instance_page"}:
+        history_sections = payload.get("history_sections")
+        if isinstance(history_sections, list):
+            for index, section_row in enumerate(history_sections):
+                if not isinstance(section_row, dict):
+                    continue
+                body = section_row.get("body")
+                if isinstance(body, str) and body.strip():
+                    claims.append((f"history_sections[{index}].body", body))
     return claims
 
 
@@ -235,7 +248,7 @@ def validate_fact_check_rules(
     llm_model = settings.openai_model
     if validation_context and isinstance(validation_context.get("fact_check_llm_model"), str):
         llm_model = str(validation_context["fact_check_llm_model"])
-    entity_id_value = payload.get("id")
+    entity_id_value = payload.get("id") or payload.get("zone_id") or payload.get("instance_id")
     entity_id = str(entity_id_value) if isinstance(entity_id_value, str) else ""
     target_entity_ids: set[str] = set()
     if validation_context and isinstance(

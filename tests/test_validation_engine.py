@@ -177,6 +177,138 @@ def _valid_asset_payload() -> dict[str, Any]:
     }
 
 
+def _valid_zone_page_payload() -> dict[str, Any]:
+    return {
+        "zone_id": "zone-western-plaguelands",
+        "name": "Western Plaguelands",
+        "wiki_url": "https://warcraft.wiki.gg/wiki/Western_Plaguelands",
+        "parent_continent": "eastern-kingdoms",
+        "expansion_context": "retail",
+        "at_a_glance": (
+            "Blighted farmland now contested by crusaders and undead remnants across Lordaeron."
+        ),
+        "currently": (
+            "Argent operations continue to stabilize roads while hostile forces pressure key routes "
+            "and surrounding settlements."
+        ),
+        "history_sections": [
+            {
+                "heading": "Blight and Recovery",
+                "body": (
+                    "The region suffered catastrophic plague-era collapse before sustained military "
+                    "and druidic campaigns began long-term restoration efforts."
+                ),
+                "source_refs": [],
+            }
+        ],
+        "major_factions": [],
+        "major_questlines": [],
+        "location_cards": [],
+        "instance_links": [],
+        "glossary_refs": [],
+        "sources": [
+            {
+                "source_id": "src-zone",
+                "url": "https://warcraft.wiki.gg/wiki/Western_Plaguelands",
+                "revision_id": "mw:42",
+            }
+        ],
+        "provenance": {
+            "at_a_glance": [
+                {
+                    "source_id": "src-zone",
+                    "locator": "section:lead paragraph:1",
+                    "revision_id": "mw:42",
+                    "excerpt_hash": "sha1:zonepage111111111",
+                }
+            ],
+            "currently": [
+                {
+                    "source_id": "src-zone",
+                    "locator": "section:quests paragraph:1",
+                    "revision_id": "mw:42",
+                    "excerpt_hash": "sha1:zonepage222222222",
+                }
+            ],
+            "history": [
+                {
+                    "source_id": "src-zone",
+                    "locator": "section:history paragraph:1",
+                    "revision_id": "mw:42",
+                    "excerpt_hash": "sha1:zonepage333333333",
+                }
+            ],
+            "major_questlines_alliance": {},
+            "major_questlines_horde": {},
+            "major_questlines_shared": {},
+            "major_characters": {},
+            "instances": {},
+            "major_landmarks": {},
+            "glossary": {},
+        },
+    }
+
+
+def _valid_instance_page_payload() -> dict[str, Any]:
+    return {
+        "instance_id": "instance-scholomance",
+        "name": "Scholomance",
+        "instance_type": "dungeon",
+        "parent_zone_id": "zone-western-plaguelands",
+        "expansion_context": "retail",
+        "wiki_url": "https://warcraft.wiki.gg/wiki/Scholomance",
+        "at_a_glance": "Necromantic stronghold controlled by hostile undead leadership.",
+        "overview": (
+            "Adventurers assault the school to stop Darkmaster Gandling and disrupt ritual control "
+            "over local undead forces."
+        ),
+        "history_sections": [
+            {
+                "heading": "Origins",
+                "body": (
+                    "Scholomance was established as a covert necromantic academy and later became a "
+                    "persistent source of regional threat."
+                ),
+                "source_refs": [],
+            }
+        ],
+        "key_enemies": [],
+        "major_factions": [],
+        "related_quest_chains": [],
+        "lore_source": "instance_page",
+        "lore_source_reason": None,
+        "variant_policy": "standalone",
+        "variant_reason_codes": [],
+        "glossary_refs": [],
+        "sources": [
+            {
+                "source_id": "src-instance",
+                "url": "https://warcraft.wiki.gg/wiki/Scholomance",
+                "revision_id": "mw:99",
+            }
+        ],
+        "provenance": {
+            "identity_header": [
+                {
+                    "source_id": "src-instance",
+                    "locator": "section:lead paragraph:1",
+                    "revision_id": "mw:99",
+                    "excerpt_hash": "sha1:instancepage1111111",
+                }
+            ],
+            "story_context": [
+                {
+                    "source_id": "src-instance",
+                    "locator": "section:overview paragraph:1",
+                    "revision_id": "mw:99",
+                    "excerpt_hash": "sha1:instancepage2222222",
+                }
+            ],
+            "key_characters": {},
+        },
+    }
+
+
 def _valid_sub_zone_payload() -> dict[str, Any]:
     return {
         "id": "subzone-andorhal",
@@ -636,7 +768,7 @@ def test_fact_check_warn_profile_runs_llm_for_low_confidence_supported_claims(
     settings = SimpleNamespace(
         openai_ready=True,
         google_ready=False,
-        openai_model="gpt-4.1-mini",
+        openai_model="gpt-5.5",
         google_api_key="",
         google_cse_id="",
     )
@@ -684,7 +816,7 @@ def test_fact_check_warn_profile_skips_llm_for_non_target_entities(
     settings = SimpleNamespace(
         openai_ready=True,
         google_ready=False,
-        openai_model="gpt-4.1-mini",
+        openai_model="gpt-5.5",
         google_api_key="",
         google_cse_id="",
     )
@@ -824,3 +956,107 @@ def test_similarity_stage_context_strict_profile_unavailable_snapshots_is_hard_f
 def test_similarity_skipped_without_issue_when_snapshots_absent_by_default() -> None:
     report = validate_payload("zone", _load_fixture("happy", "zone_valid.json"))
     assert not any(issue.code.startswith("similarity.") for issue in report.issues)
+
+
+def test_zone_page_structure_requires_history_sections() -> None:
+    payload = _valid_zone_page_payload()
+    payload["history_sections"] = []
+    report = validate_payload("zone_page", payload)
+    assert report.passed is False
+    codes = {issue.code for issue in report.issues}
+    assert "structure.required_section_empty" in codes
+
+
+def test_instance_page_budget_and_provenance_rules_are_applied() -> None:
+    payload = _valid_instance_page_payload()
+    payload["overview"] = "Too short."
+    payload["sources"] = []
+    report = validate_payload("instance_page", payload)
+    assert report.passed is False
+    codes = {issue.code for issue in report.issues}
+    assert "budget.section" in codes
+    assert "provenance.missing_sources_manifest" in codes
+
+
+def test_zone_page_fact_check_uses_zone_id_as_entity_id() -> None:
+    payload = _valid_zone_page_payload()
+    report = validate_payload(
+        "zone_page",
+        payload,
+        validation_context={
+            "fact_check_profile": "warn",
+            "fact_check_source_snapshots": [
+                {
+                    "source_id": "src-zone",
+                    "url": "https://example.test/zone",
+                    "body": (
+                        "Blighted farmland now contested by crusaders and undead remnants across "
+                        "Lordaeron and nearby roads."
+                    ),
+                }
+            ],
+        },
+    )
+    assert report.fact_check_report is not None
+    assert report.fact_check_report["entity_id"] == "zone-western-plaguelands"
+
+
+def test_zone_page_similarity_rules_execute_against_ingest_snapshots() -> None:
+    payload = _valid_zone_page_payload()
+    payload["at_a_glance"] = (
+        "identical overlap block alpha bravo charlie delta echo foxtrot golf hotel india"
+    )
+    report = validate_payload(
+        "zone_page",
+        payload,
+        validation_context={
+            "fact_check_source_snapshots": [
+                {
+                    "source_id": "src-zone",
+                    "url": "https://example.test/zone",
+                    "body": (
+                        "identical overlap block alpha bravo charlie delta echo foxtrot golf "
+                        "hotel india juliet kilo lima mike november oscar papa"
+                    ),
+                }
+            ],
+        },
+    )
+    codes = {issue.code for issue in report.issues}
+    assert any(code.startswith("similarity.verbatim_overlap") for code in codes)
+
+
+def test_zone_page_currently_temporal_drift_and_overlap_warns() -> None:
+    payload = _valid_zone_page_payload()
+    payload["currently"] = (
+        "Formerly, this region was established during the Third War and years ago it fell to blight "
+        "before being contested by crusaders and undead remnants across Lordaeron."
+    )
+    payload["history_sections"][0]["body"] = payload["currently"]
+    report = validate_payload("zone_page", payload)
+    codes = {issue.code for issue in report.issues}
+    assert "structure.zone_page_currently_temporal_drift" in codes
+    assert "structure.zone_page_currently_history_overlap" in codes
+
+
+def test_zone_page_missing_currently_provenance_hard_fails() -> None:
+    payload = _valid_zone_page_payload()
+    payload["provenance"]["currently"] = []
+    report = validate_payload("zone_page", payload)
+    assert report.passed is False
+    assert any(issue.code == "provenance.missing_section_pointers" for issue in report.issues)
+
+
+def test_instance_page_missing_key_enemy_card_provenance_hard_fails() -> None:
+    payload = _valid_instance_page_payload()
+    payload["key_enemies"] = [
+        {
+            "id": "character-darkmaster-gandling",
+            "name": "Darkmaster Gandling",
+            "summary": "Leader of the instance's necromantic hierarchy and primary objective.",
+            "thumbnail_asset_id": None,
+        }
+    ]
+    report = validate_payload("instance_page", payload)
+    assert report.passed is False
+    assert any(issue.code == "provenance.missing_card_pointers" for issue in report.issues)
