@@ -11,12 +11,12 @@ from pipeline.coalesce.resolve_entities import run_resolve_entities
 from pipeline.common.run_context import RunContext, append_trace_event, write_stage_manifest
 from pipeline.addon import build_addon_bundle
 from pipeline.discovery import run_discovery_workflow
-from pipeline.discovery.enrich import run_discovery_enrich
+from pipeline.discovery.enrich import EnrichPhase, run_discovery_enrich
 from pipeline.generate.draft_writer import run_draft_writer
 from pipeline.generate.extract_facts import run_extract_facts
 from pipeline.ingest.fetch_wiki import run_fetch_wiki
 from pipeline.ingest.normalize_source import run_normalize_source
-from pipeline.ingest.traverse_wiki import run_traverse_wiki
+from pipeline.ingest.traverse_wiki import run_traverse_quests, run_traverse_seed
 from pipeline.linker.linker import run_glossary_linker
 from pipeline.validate.engine import validate_payload
 
@@ -67,28 +67,63 @@ def run_discovery_stage(context: RunContext, source_manifest_path: Path) -> dict
     return outputs
 
 
-def run_traverse_stage(context: RunContext) -> dict[str, Path]:
-    outputs = run_traverse_wiki(context)
+def run_traverse_seed_stage(context: RunContext) -> dict[str, Path]:
+    outputs = run_traverse_seed(context)
     write_stage_manifest(
         context,
-        "traverse",
+        "traverse_seed",
         status="ok",
         inputs=[str(context.stage_dir("ingest") / "source_manifest.json")],
         outputs=[str(path) for path in outputs.values()],
-        metadata={"fetched_count": sum(1 for row in json.loads(outputs["traversal_report"].read_text(encoding="utf-8")).get("entries", []) if row.get("status") == "fetched")},
+        metadata={
+            "fetched_count": sum(
+                1
+                for row in json.loads(outputs["traversal_report"].read_text(encoding="utf-8")).get("entries", [])
+                if row.get("status") == "fetched"
+            )
+        },
     )
     return outputs
 
 
-def run_discovery_enrich_stage(context: RunContext, source_manifest_path: Path) -> dict[str, Path]:
-    outputs = run_discovery_enrich(context, source_manifest_path)
+def run_traverse_quests_stage(context: RunContext) -> dict[str, Path]:
+    outputs = run_traverse_quests(context)
+    write_stage_manifest(
+        context,
+        "traverse_quests",
+        status="ok",
+        inputs=[str(context.data_dir / "discovery" / "zone_quest_graph_v3.json")],
+        outputs=[str(path) for path in outputs.values()],
+        metadata={
+            "fetched_count": sum(
+                1
+                for row in json.loads(outputs["traversal_report"].read_text(encoding="utf-8")).get("entries", [])
+                if row.get("status") == "fetched" and row.get("role") == "quest"
+            )
+        },
+    )
+    return outputs
+
+
+def run_traverse_stage(context: RunContext) -> dict[str, Path]:
+    """Backward-compatible alias for seed traverse only."""
+    return run_traverse_seed_stage(context)
+
+
+def run_discovery_enrich_stage(
+    context: RunContext,
+    source_manifest_path: Path,
+    *,
+    phase: EnrichPhase = "full",
+) -> dict[str, Path]:
+    outputs = run_discovery_enrich(context, source_manifest_path, phase=phase)
     write_stage_manifest(
         context,
         "discovery_enrich",
         status="ok",
         inputs=[str(source_manifest_path), str(context.stage_dir("ingest") / "source_snapshots.json")],
         outputs=[str(path) for path in outputs.values()],
-        metadata={"artifact_count": len(outputs)},
+        metadata={"artifact_count": len(outputs), "phase": phase},
     )
     return outputs
 

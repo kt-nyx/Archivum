@@ -108,6 +108,7 @@ def _iter_evidence_items(
                     "section_role": str(item.get("section_role", "")),
                     "source_id": str((row.get("build_meta") or {}).get("source_id", "")),
                     "field_name": str(row.get("field_name", "")),
+                    "cluster_id": str((row.get("build_meta") or {}).get("cluster_id", "")),
                 }
             )
     return items
@@ -180,6 +181,8 @@ def _build_evidence_pools(evidence_rows: list[dict[str, Any]]) -> dict[str, list
     at_a_glance_pool = _iter_evidence_items(evidence_rows, {"at_a_glance_input"})
     currently_pool = _iter_evidence_items(evidence_rows, {"currently_input"})
     questline_pool = _iter_evidence_items(evidence_rows, {"questline_pool"})
+    quest_cluster_lore_pool = _iter_evidence_items(evidence_rows, {"quest_cluster_lore"})
+    quest_lore_pool = _iter_evidence_items(evidence_rows, {"quest_lore"})
     faction_pool = _iter_evidence_items(evidence_rows, {"faction_pool"})
     location_pool_items = _iter_evidence_items(evidence_rows, {"location_pool"})
     instance_pool = _iter_evidence_items(evidence_rows, {"instances_or_dungeons", "history_digest"})
@@ -195,6 +198,8 @@ def _build_evidence_pools(evidence_rows: list[dict[str, Any]]) -> dict[str, list
         "location_pool": location_pool,
         "instance_pool": instance_pool,
         "questline_pool": questline_pool,
+        "quest_cluster_lore_pool": quest_cluster_lore_pool,
+        "quest_lore_pool": quest_lore_pool,
         "faction_pool": faction_pool,
     }
 
@@ -448,6 +453,71 @@ def _choose_currently_item(
     return fallback_item
 
 
+def _group_v3_clusters(questline_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    clusters: dict[str, dict[str, Any]] = {}
+    for row in questline_rows:
+        if str(row.get("node_type", "quest")) != "quest":
+            continue
+        cluster_id = str(row.get("cluster_id", "")).strip() or "cluster-main"
+        bucket = clusters.get(cluster_id)
+        if bucket is None:
+            bucket = {
+                "cluster_id": cluster_id,
+                "cluster_title": str(row.get("cluster_title", "Main storylines")),
+                "cluster_order": int(row.get("cluster_order", 0) or 0),
+                "quests": [],
+            }
+            clusters[cluster_id] = bucket
+        bucket["quests"].append(row)
+    grouped = list(clusters.values())
+    grouped.sort(key=lambda item: (int(item.get("cluster_order", 0)), str(item.get("cluster_id", ""))))
+    for bucket in grouped:
+        bucket["quests"].sort(key=lambda row: int(row.get("order_in_cluster", 0) or 0))
+    return grouped
+
+
+def _majority_faction(bindings: list[str]) -> str:
+    counts: dict[str, int] = {}
+    for binding in bindings:
+        key = binding.strip().lower() or "shared"
+        counts[key] = counts.get(key, 0) + 1
+    if not counts:
+        return "shared"
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    if len(ranked) > 1 and ranked[0][1] == ranked[1][1]:
+        return "shared"
+    winner = ranked[0][0]
+    if winner == "neutral":
+        return "shared"
+    if winner in {"alliance", "horde", "shared"}:
+        return winner
+    return "shared"
+
+
+def _cluster_lore_pool(
+    pools: dict[str, list[dict[str, Any]]],
+    cluster_id: str,
+) -> list[dict[str, Any]]:
+    cluster_items = [
+        item for item in pools.get("quest_cluster_lore_pool", []) if str(item.get("cluster_id", "")) == cluster_id
+    ]
+    if cluster_items:
+        return cluster_items
+    return [
+        item
+        for item in pools.get("quest_lore_pool", [])
+        if str(item.get("cluster_id", "")) == cluster_id
+    ]
+
+
+def _provenance_bucket_for_faction(faction: str) -> str:
+    if faction == "alliance":
+        return "major_questlines_alliance"
+    if faction == "horde":
+        return "major_questlines_horde"
+    return "major_questlines_shared"
+
+
 def build_zone_page(
     fact_pack: dict[str, Any],
     evidence_rows: list[dict[str, Any]],
@@ -509,49 +579,58 @@ def build_zone_page(
         used_source_ids.add(pointer["source_id"])
 
     major_questlines: list[dict[str, Any]] = []
-    questline_provenance_map: dict[str, list[dict[str, str]]] = {}
+    questline_provenance_by_bucket: dict[str, dict[str, list[dict[str, str]]]] = {
+        "major_questlines_alliance": {},
+        "major_questlines_horde": {},
+        "major_questlines_shared": {},
+    }
     questline_decision_value = str((questline_decision or {}).get("final_decision", "")).strip()
     active_questline_rows = questline_rows
     if questline_decision_value not in {"", "include", "defer"}:
         active_questline_rows = []
-    for row in active_questline_rows[:6]:
-        if str(row.get("node_type", "quest")) != "quest":
+    cluster_groups = _group_v3_clusters(active_questline_rows)
+    max_clusters = min(len(cluster_groups), 8)
+    for cluster in cluster_groups[:max_clusters]:
+        cluster_id = str(cluster.get("cluster_id", "cluster-main"))
+        quests = cluster.get("quests", [])
+        if not isinstance(quests, list) or not quests:
             continue
-        title = str(row.get("title", "Unknown questline"))
-        node_id = str(row.get("node_id", row.get("quest_node_id", "quest-unknown")))
-        scoped_pool = [
-            item
-            for item in pools["questline_pool"]
-            if title.lower() in str(item.get("snippet", "")).lower()
-        ] or pools["questline_pool"]
-        cta, cta_used = synthesize_card_summary(scoped_pool, subject=title, max_words=35)
+        cluster_title = str(cluster.get("cluster_title", "Main storylines"))
+        card_id = f"cluster-{cluster_id}"
+        faction = _majority_faction([str(row.get("faction_binding", "shared")) for row in quests if isinstance(row, dict)])
+        first_quest = quests[0] if isinstance(quests[0], dict) else {}
+        start_anchor = str(first_quest.get("title", cluster_title))
+        chain_refs = [str(row.get("node_id", "")) for row in quests if isinstance(row, dict) and row.get("node_id")]
+        wiki_refs = [
+            str(row.get("source_link", ""))
+            for row in quests
+            if isinstance(row, dict) and str(row.get("source_link", "")).strip()
+        ]
+        scoped_pool = _cluster_lore_pool(pools, cluster_id)
+        if not scoped_pool:
+            continue
+        cta, cta_used = synthesize_card_summary(scoped_pool, subject=cluster_title, max_words=35)
         if not cta:
-            cta = _best_snippet_for_term(pools["questline_pool"], title, min_words=8) or (
-                f"Take on the {title} arc and drive this zone's central conflict toward resolution."
+            cta = _best_snippet_for_term(scoped_pool, cluster_title, min_words=8) or (
+                f"Follow the {cluster_title} arc through its linked quests."
             )
-        start_anchor = title
-        if "part" in title.lower():
-            start_anchor = title.split("-", 1)[0].strip()
         major_questlines.append(
             {
-                "id": node_id,
-                "title": title,
-                "faction": str(row.get("faction_binding", "shared")),
+                "id": card_id,
+                "title": cluster_title,
+                "faction": faction,
                 "cta_hook": cta,
                 "start_anchor": start_anchor,
-                "chain_refs": [
-                    node_id,
-                    str(row.get("prev_node_id", "")),
-                    str(row.get("next_node_id", "")),
-                ],
+                "chain_refs": chain_refs,
                 "include_decision": "include",
                 "reason_codes": list((questline_decision or {}).get("reason_codes") or ["graph_depth"]),
-                "wiki_refs": [str(row.get("source_link", ""))],
+                "wiki_refs": wiki_refs,
             }
         )
         pointers = _pointers_for_source_ids(scoped_pool, cta_used, revision_map)
         if pointers:
-            questline_provenance_map[node_id] = pointers
+            bucket = _provenance_bucket_for_faction(faction)
+            questline_provenance_by_bucket[bucket][card_id] = pointers
             for pointer in pointers:
                 used_source_ids.add(pointer["source_id"])
 
@@ -616,9 +695,9 @@ def build_zone_page(
             "at_a_glance": at_a_glance_pointers,
             "currently": currently_pointers,
             "history": history_pointers,
-            "major_questlines_alliance": {},
-            "major_questlines_horde": {},
-            "major_questlines_shared": questline_provenance_map,
+            "major_questlines_alliance": questline_provenance_by_bucket["major_questlines_alliance"],
+            "major_questlines_horde": questline_provenance_by_bucket["major_questlines_horde"],
+            "major_questlines_shared": questline_provenance_by_bucket["major_questlines_shared"],
             "major_characters": {},
             "major_factions": faction_provenance_map,
             "instances": instance_provenance_map,

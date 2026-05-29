@@ -15,7 +15,8 @@ from pipeline.orchestrator.stages import (
     run_extract_stage,
     run_ingest_stage,
     run_linker_stage,
-    run_traverse_stage,
+    run_traverse_quests_stage,
+    run_traverse_seed_stage,
     run_validate_stage,
 )
 from tests.draft_llm_mocks import fake_draft_chat_by_schema
@@ -164,12 +165,21 @@ def test_wiki_first_stage_chain_includes_discovery_and_enrich(
     )
     assert questline_seed == []
 
-    traverse_outputs = run_traverse_stage(context)
-    assert traverse_outputs["traversal_report"].exists()
+    run_traverse_seed_stage(context)
+    coalesced_path = run_coalesce_stage(
+        context,
+        ingest_output["source_manifest_path"],
+        max_entity_concurrency=4,
+    )
+    assert coalesced_path.exists()
 
-    enrich_outputs = run_discovery_enrich_stage(context, ingest_output["source_manifest_path"])
-    assert enrich_outputs["zone_quest_graph_v3"].exists()
-    v3_rows = json.loads(enrich_outputs["zone_quest_graph_v3"].read_text(encoding="utf-8"))
+    enrich_graph = run_discovery_enrich_stage(
+        context,
+        ingest_output["source_manifest_path"],
+        phase="graph_only",
+    )
+    assert enrich_graph["zone_quest_graph_v3"].exists()
+    v3_rows = json.loads(enrich_graph["zone_quest_graph_v3"].read_text(encoding="utf-8"))
     quest_titles = {
         str(row.get("title", "")).lower()
         for row in v3_rows
@@ -178,6 +188,14 @@ def test_wiki_first_stage_chain_includes_discovery_and_enrich(
     assert "the endless flow" in quest_titles
     assert "into the woods" not in quest_titles
 
+    traverse_quest_outputs = run_traverse_quests_stage(context)
+    assert traverse_quest_outputs["traversal_report"].exists()
+
+    enrich_outputs = run_discovery_enrich_stage(
+        context,
+        ingest_output["source_manifest_path"],
+        phase="evidence_merge",
+    )
     evidence_path = enrich_outputs["evidence_packs"]
     field_names = set()
     for line in evidence_path.read_text(encoding="utf-8").splitlines():
@@ -186,6 +204,7 @@ def test_wiki_first_stage_chain_includes_discovery_and_enrich(
     assert "history_digest" in field_names
     assert "at_a_glance_input" in field_names
     assert "currently_input" in field_names
+    assert "quest_cluster_lore" in field_names or "quest_lore" in field_names
 
 
 def test_validate_stage_strict_fails_with_contradiction_marker(

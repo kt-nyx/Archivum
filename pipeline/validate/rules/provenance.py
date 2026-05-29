@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from pipeline.contracts.models import (
     Asset,
     Character,
+    Faction,
     GlossaryTerm,
     Instance,
     SourceManifestEntry,
@@ -267,6 +268,14 @@ def _validate_zone(zone: Zone) -> list[ValidationIssue]:
     return issues
 
 
+def _questline_provenance_bucket(faction: Faction) -> str:
+    if faction == Faction.ALLIANCE:
+        return "major_questlines_alliance"
+    if faction == Faction.HORDE:
+        return "major_questlines_horde"
+    return "major_questlines_shared"
+
+
 def _validate_zone_page(zone_page: ZonePage) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
     if not zone_page.sources:
@@ -323,12 +332,14 @@ def _validate_zone_page(zone_page: ZonePage) -> list[ValidationIssue]:
             )
         )
     for card in zone_page.major_questlines:
+        bucket = _questline_provenance_bucket(card.faction)
+        pointer_map = getattr(zone_page.provenance, bucket)
         issues.extend(
             _validate_pointer_set(
-                zone_page.provenance.major_questlines_shared.get(card.id, []),
+                pointer_map.get(card.id, []),
                 source_ids=source_ids,
                 min_count=1,
-                path=f"$.provenance.major_questlines_shared.{card.id}",
+                path=f"$.provenance.{bucket}.{card.id}",
                 code="provenance.missing_card_pointers",
             )
         )

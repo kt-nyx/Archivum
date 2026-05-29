@@ -967,6 +967,36 @@ def test_zone_page_structure_requires_history_sections() -> None:
     assert "structure.required_section_empty" in codes
 
 
+def test_zone_page_alliance_questline_uses_alliance_provenance_bucket() -> None:
+    payload = _valid_zone_page_payload()
+    payload["major_questlines"] = [
+        {
+            "id": "cluster-part-1",
+            "title": "Part 1 - Example Arc",
+            "faction": "alliance",
+            "cta_hook": "Crusaders push back undead forces along the ruined road.",
+            "start_anchor": "Quest A",
+            "chain_refs": ["quest-a"],
+            "include_decision": "include",
+            "reason_codes": ["graph_depth"],
+            "wiki_refs": ["/wiki/Quest_A"],
+        }
+    ]
+    payload["provenance"]["major_questlines_alliance"] = {
+        "cluster-part-1": [
+            {
+                "source_id": "src-zone",
+                "locator": "section:description paragraph:1",
+                "revision_id": "mw:42",
+                "excerpt_hash": "sha1:questline111111111",
+            }
+        ]
+    }
+    report = validate_payload("zone_page", payload)
+    codes = {issue.code for issue in report.issues}
+    assert "provenance.missing_card_pointers" not in codes
+
+
 def test_instance_page_budget_and_provenance_rules_are_applied() -> None:
     payload = _valid_instance_page_payload()
     payload["overview"] = "Too short."

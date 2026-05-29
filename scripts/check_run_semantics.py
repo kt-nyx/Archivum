@@ -5,16 +5,26 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
+from typing import Any
 
-from pipeline.discovery.entity_typing import is_valid_quest_graph_link
+from pipeline.discovery.entity_typing import is_valid_quest_graph_link, normalize_title
 from pipeline.discovery.storyline_html import parse_storyline_html
+from pipeline.discovery.world_registry import entry_kinds
+
+_GEOGRAPHY_KINDS = frozenset({"zone", "continent", "capital", "region", "instance"})
+_FILLER_RE = re.compile(r"\blocated in\b|\bis a zone\b|\bis located\b", re.IGNORECASE)
+_MAX_CLUSTER_CARDS = 8
+
+
+class SemanticCheckError(Exception):
+    """Raised when a semantic acceptance check fails."""
 
 
 def _fail(message: str) -> None:
-    print(f"FAIL: {message}")
-    sys.exit(1)
+    raise SemanticCheckError(message)
 
 
 def _load_json(path: Path) -> object:
@@ -77,21 +87,52 @@ def _resolve_zone_target(run_root: Path, zone_id: str | None) -> tuple[Path, str
     )
 
 
+def _cluster_ids_from_v3(v3_rows: list[dict[str, Any]], zone_id: str) -> set[str]:
+    return {
+        str(row.get("cluster_id", "")).strip()
+        for row in v3_rows
+        if isinstance(row, dict)
+        and str(row.get("zone_id", "")) == zone_id
+        and str(row.get("node_type", "")) == "quest"
+        and str(row.get("cluster_id", "")).strip()
+    }
+
+
 def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
     draft_path, resolved_zone_id, zone_name = _resolve_zone_target(run_root, zone_id)
     draft = json.loads(draft_path.read_text(encoding="utf-8"))
     if not draft.get("major_questlines"):
         _fail("major_questlines is empty")
+    zone_lower = normalize_title(zone_name)
     for row in draft.get("major_questlines", []):
+        if not isinstance(row, dict):
+            continue
         title = str(row.get("title", "")).strip()
         if not title:
             _fail("major_questlines contains empty title")
-        valid, reasons = is_valid_quest_graph_link(
-            f"/wiki/{title.replace(' ', '_')}",
-            zone_name=zone_name,
-        )
-        if not valid:
-            _fail(f"major_questlines title denied by quest graph classifier: {title!r} ({reasons})")
+        title_kinds = entry_kinds(title)
+        if title_kinds & _GEOGRAPHY_KINDS:
+            _fail(f"major_questlines cluster title is a geography hub: {title!r}")
+        if title.lower().endswith(" quests"):
+            _fail(f"major_questlines cluster title looks like an achievement hub: {title!r}")
+        cta = str(row.get("cta_hook", "")).strip()
+        if zone_lower and zone_lower in normalize_title(cta):
+            _fail(f"major_questlines cta_hook reads like zone-description filler: {cta!r}")
+        if _FILLER_RE.search(cta):
+            _fail(f"major_questlines cta_hook reads like zone-description filler: {cta!r}")
+        wiki_refs = row.get("wiki_refs", [])
+        if not isinstance(wiki_refs, list) or not wiki_refs:
+            _fail(f"major_questlines card missing wiki_refs: {title!r}")
+        for ref in wiki_refs:
+            link = str(ref).strip()
+            if not link.startswith("/wiki/"):
+                link = f"/wiki/{link.replace(' ', '_')}"
+            valid, reasons = is_valid_quest_graph_link(link, zone_name=zone_name)
+            if not valid:
+                _fail(f"major_questlines wiki_ref denied by quest graph classifier: {link!r} ({reasons})")
+    cards = [row for row in draft.get("major_questlines", []) if isinstance(row, dict)]
+    if len(cards) > _MAX_CLUSTER_CARDS:
+        _fail(f"major_questlines exceeds cluster card cap ({len(cards)} > {_MAX_CLUSTER_CARDS})")
     if not draft.get("location_cards"):
         _fail("location_cards is empty")
     if len(draft.get("sources", [])) < 2:
@@ -105,8 +146,13 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
 
     v3_path = run_root / "data" / "discovery" / "zone_quest_graph_v3.json"
     snapshots_path = run_root / "data" / "ingest" / "source_snapshots.json"
-    if v3_path.exists() and snapshots_path.exists():
-        v3_rows = json.loads(v3_path.read_text(encoding="utf-8"))
+    v3_rows: list[dict[str, Any]] = []
+    if v3_path.exists():
+        blob = _load_json(v3_path)
+        if isinstance(blob, list):
+            v3_rows = [row for row in blob if isinstance(row, dict)]
+
+    if v3_rows and snapshots_path.exists():
         v3_titles = {
             str(row.get("title", "")).lower()
             for row in v3_rows
@@ -141,8 +187,64 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
                         f"{sorted(extra)}"
                     )
 
+    if v3_rows:
+        expected_clusters = _cluster_ids_from_v3(v3_rows, resolved_zone_id)
+        card_ids = {
+            str(row.get("id", "")).replace("cluster-", "", 1)
+            for row in cards
+        }
+        if expected_clusters:
+            if not card_ids:
+                _fail("major_questlines has no cluster cards despite v3 quest clusters")
+            if not card_ids.issubset(expected_clusters):
+                _fail(
+                    "major_questlines cards reference unknown cluster ids "
+                    f"(got {sorted(card_ids)}, expected subset of {sorted(expected_clusters)})"
+                )
+            if not card_ids.intersection(expected_clusters):
+                _fail(
+                    "major_questlines cards do not align with v3 cluster ids "
+                    f"(expected one of {sorted(expected_clusters)}, got {sorted(card_ids)})"
+                )
+
+    traversal_path = run_root / "data" / "ingest" / "traversal_report.json"
+    if traversal_path.exists():
+        traversal_blob = _load_json(traversal_path)
+        if isinstance(traversal_blob, dict):
+            for entry in traversal_blob.get("entries", []):
+                if not isinstance(entry, dict):
+                    continue
+                if entry.get("role") != "quest" or entry.get("status") != "fetched":
+                    continue
+                link = str(entry.get("link", "")).strip()
+                if not link:
+                    continue
+                if str(entry.get("traversal_origin", "")).strip() == "hub_resolved":
+                    if not str(entry.get("hub_resolved_from", "")).strip():
+                        _fail(f"hub_resolved quest fetch missing hub_resolved_from: {link!r}")
+                valid, reasons = is_valid_quest_graph_link(link, zone_name=zone_name)
+                if not valid:
+                    _fail(f"traversal report fetched denylisted quest href: {link!r} ({reasons})")
+
     evidence_path = run_root / "data" / "evidence" / "evidence_packs.jsonl"
-    if evidence_path.exists():
+    if evidence_path.exists() and v3_rows:
+        covered_clusters: set[str] = set()
+        for line in evidence_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if row.get("field_name") != "quest_cluster_lore":
+                continue
+            build_meta = row.get("build_meta") or {}
+            if str(build_meta.get("subject_zone_id", row.get("subject_id", ""))) != resolved_zone_id:
+                continue
+            cluster_id = str(build_meta.get("cluster_id", "")).strip()
+            if cluster_id:
+                covered_clusters.add(cluster_id)
+        expected_clusters = _cluster_ids_from_v3(v3_rows, resolved_zone_id)
+        missing = sorted(expected_clusters - covered_clusters)
+        if expected_clusters and missing:
+            _fail(f"clusters missing quest_cluster_lore evidence: {missing}")
         glance_items = 0
         for line in evidence_path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
@@ -169,7 +271,11 @@ def main() -> None:
         help="Zone entity id (e.g. zone-western-plaguelands). Auto-detected when omitted.",
     )
     args = parser.parse_args()
-    check_run(args.run_root, zone_id=args.zone_id)
+    try:
+        check_run(args.run_root, zone_id=args.zone_id)
+    except SemanticCheckError as exc:
+        print(f"FAIL: {exc}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

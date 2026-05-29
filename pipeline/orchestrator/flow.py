@@ -23,7 +23,8 @@ from pipeline.orchestrator.stages import (
     run_extract_stage,
     run_ingest_stage,
     run_linker_stage,
-    run_traverse_stage,
+    run_traverse_quests_stage,
+    run_traverse_seed_stage,
     run_validate_stage,
 )
 
@@ -131,8 +132,8 @@ def run_pipeline_flow(
         verbose=verbose,
     )
     _run_stage_with_retry(
-        "traverse",
-        lambda: run_traverse_stage(context),
+        "traverse_seed",
+        lambda: run_traverse_seed_stage(context),
         retries=retries_per_stage,
         on_fail_manifest_inputs=[str(ingest_output["source_manifest_path"])],
         on_fail_manifest_outputs=[],
@@ -154,7 +155,33 @@ def run_pipeline_flow(
     )
     _run_stage_with_retry(
         "discovery_enrich",
-        lambda: run_discovery_enrich_stage(context, ingest_output["source_manifest_path"]),
+        lambda: run_discovery_enrich_stage(
+            context,
+            ingest_output["source_manifest_path"],
+            phase="graph_only",
+        ),
+        retries=retries_per_stage,
+        on_fail_manifest_inputs=[str(coalesced_path)],
+        on_fail_manifest_outputs=[],
+        run_id=context.run_id,
+        verbose=verbose,
+    )
+    _run_stage_with_retry(
+        "traverse_quests",
+        lambda: run_traverse_quests_stage(context),
+        retries=retries_per_stage,
+        on_fail_manifest_inputs=[str(context.data_dir / "discovery" / "zone_quest_graph_v3.json")],
+        on_fail_manifest_outputs=[],
+        run_id=context.run_id,
+        verbose=verbose,
+    )
+    _run_stage_with_retry(
+        "discovery_enrich",
+        lambda: run_discovery_enrich_stage(
+            context,
+            ingest_output["source_manifest_path"],
+            phase="evidence_merge",
+        ),
         retries=retries_per_stage,
         on_fail_manifest_inputs=[str(coalesced_path)],
         on_fail_manifest_outputs=[],

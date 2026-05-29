@@ -23,7 +23,7 @@ const SLICES = [
   {
     id: "slice-2",
     content: "Slice 2 — Quest traversal, lore extraction, questline card synthesis",
-    status: "pending" as const,
+    status: "completed" as const,
   },
   {
     id: "slice-3",
@@ -72,6 +72,7 @@ export default function WikiFirstPipelineMasterPlan() {
         <Stat label="PoC run (manual QA)" value="run-western-plaguelands" tone="success" />
         <Stat label="Active slices" value="8 gated" tone="success" />
         <Stat label="Slice 1" value="Completed" tone="success" />
+        <Stat label="Slice 2" value="Completed" tone="success" />
       </Row>
 
       <Callout tone="info" title="Zone-agnostic engineering policy">
@@ -129,20 +130,10 @@ export default function WikiFirstPipelineMasterPlan() {
         ]}
       />
 
-      <CollapsibleSection title="Slice 1 — known deviances (intentional deferrals)" count={4}>
+      <CollapsibleSection title="Slice 1 — known deviances (intentional deferrals)" count={2}>
         <Table
           headers={["Topic", "Current behaviour", "Target slice"]}
           rows={[
-            [
-              "Quest traverse cap",
-              "Cap 12 in traverse_wiki; v3 may list more nodes",
-              "2",
-            ],
-            [
-              "major_questlines cards",
-              "Draft still uses legacy graph projection; cluster cards not synthesized",
-              "2",
-            ],
             [
               "Prose worker quality",
               "Prompts unchanged; pools fixed only",
@@ -153,6 +144,106 @@ export default function WikiFirstPipelineMasterPlan() {
               "Instance hard-fails remain",
               "6 + 8",
             ],
+          ]}
+        />
+      </CollapsibleSection>
+
+      <Divider />
+      <H2>Slice 2 — completed summary</H2>
+      <Table
+        headers={["Deliverable", "Status", "Notes"]}
+        rows={[
+          ["Split traverse (seed vs quests)", "Done", "traverse_seed → coalesce → graph enrich → traverse_quests → evidence merge"],
+          ["V3-driven quest fetch", "Done", "Cap 25/zone; traversal_origin=v3_graph; denylist/registry guards"],
+          ["Quest lore extractor", "Done", "pipeline/discovery/quest_lore.py — narrative roles only (no non-narrative fallback)"],
+          ["Hub page resolver", "Done", "Structure-based, 1 hop max; uses parse_html, wiki_links, or structured_links"],
+          ["Cluster evidence fields", "Done", "quest_lore + quest_cluster_lore in evidence_packs.jsonl"],
+          ["Cluster questline cards", "Done", "One card per cluster_id; faction provenance buckets; neutral → shared"],
+          ["Semantic checks", "Done", "wiki_refs, cluster evidence, cap-8, hub_resolved_from, traversal denylist"],
+        ]}
+      />
+
+      <CollapsibleSection title="Slice 2 — intentional deviations (documented)" count={10}>
+        <Table
+          headers={["Topic", "Plan / canvas wording", "Actual behaviour", "Rationale"]}
+          rows={[
+            [
+              "Hub child cap",
+              "Follow top 1–2 sub-quest links",
+              "Hard cap of 2 children per hub (`quest_hub._MAX_HUB_CHILDREN`)",
+              "Limits burst fetches; still 1 hop depth only",
+            ],
+            [
+              "Hub link sources",
+              "Structure-based resolver",
+              "Prefers parse_html list-item questlinks; falls back to structured_links, then wiki_links, then href in section_blocks",
+              "Quest snapshots omit parse_html for size; wiki_links from fetch_wiki carry hub candidates",
+            ],
+            [
+              "CLI stepwise runs",
+              "Verification commands imply staged pipeline",
+              "`traverse` = seed only; no `traverse-quests` subcommand; `discovery-enrich` defaults to `phase=full`",
+              "Backward-compatible CLI; full Slice 2 order only via `lore-pipeline run` or stage APIs",
+            ],
+            [
+              "evidence_merge naming",
+              "Second enrich pass merges quest evidence",
+              "Rebuilds entire `evidence_packs.jsonl` from all snapshots + v3 on disk",
+              "Deterministic idempotency; cheaper than partial patch logic",
+            ],
+            [
+              "graph_only evidence",
+              "First enrich after seed traverse",
+              "Writes seed/storyline pools immediately; quest/cluster lore absent until `evidence_merge`",
+              "Consumers must not assume complete quest evidence mid-pipeline",
+            ],
+            [
+              "Coalesce placement",
+              "Coalesce before graph enrich",
+              "Quest pages fetched after coalesce; quest bodies live in evidence/draft, not `entities.jsonl`",
+              "Entity resolution uses manifest rows only; quest lore is evidence-path",
+            ],
+            [
+              "Duplicate guard scope",
+              "Key on subject_id + field_name + source_id + cluster_id",
+              "Dedup only when rolling up `quest_cluster_lore`; key adds quest_node_id + snippet prefix; `quest_lore` rows not deduped",
+              "Rebuild is deterministic; per-snippet quest_lore packs are intentional for provenance granularity",
+            ],
+            [
+              "Trace stage names",
+              "Two enrich passes",
+              "Both passes log as `discovery_enrich` in flow retries/manifests",
+              "Phase is in stage function args, not trace event name (Slice 8 hardening candidate)",
+            ],
+            [
+              "Cluster card cap",
+              "Dynamic cap vs v3 cluster count",
+              "`min(len(clusters), 8)` in wiki_first; clusters without quest lore evidence are skipped; subset check in check_run_semantics",
+              "UI budget; draft omits evidence-empty clusters",
+            ],
+            [
+              "Neutral faction binding",
+              "Faction buckets alliance / horde / shared",
+              "v3 `neutral` majority maps to `shared` card faction before emit",
+              "Keeps QuestlineCardV2 within Faction enum without Slice 8 contract change",
+            ],
+          ]}
+        />
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Slice 2 — post-review fixes (completed)" count={9}>
+        <Table
+          headers={["Fix", "Status", "Notes"]}
+          rows={[
+            ["Hub resolver uses wiki_links / structured_links", "Done", "traverse_quests passes snapshot links into quest_hub"],
+            ["neutral → shared faction mapping", "Done", "wiki_first._majority_faction"],
+            ["ZonePage provenance by faction bucket", "Done", "validate/rules/provenance.py _validate_zone_page"],
+            ["Quest lore: narrative roles only", "Done", "Removed non-narrative fallback in extract_quest_lore"],
+            ["Semantic checks tightened + unit tests", "Done", "Cap-8, hub_resolved_from, quest-only cluster ids; tests/test_check_run_semantics.py"],
+            ["Hub traverse integration test", "Done", "tests/test_traverse_wiki.py hub_resolved_from + wiki_links path"],
+            ["Cluster alignment without snapshots", "Done", "check_run_semantics validates v3/card subset when only v3 + draft exist"],
+            ["Orchestrator enrich phase order test", "Done", "tests/test_orchestrator_flow.py graph_only → quests → evidence_merge"],
+            ["Skip evidence-empty cluster cards", "Done", "wiki_first uses cluster-scoped lore only; omits clusters with no lore pool"],
           ]}
         />
       </CollapsibleSection>
@@ -222,7 +313,7 @@ export default function WikiFirstPipelineMasterPlan() {
             "Scoped evidence pools; storyline HTML parser; zone_quest_graph_v3; denylist taxonomy",
             "—",
           ],
-          ["2", "W4, W5", "Quest traverse; lore extract; cluster questline cards", "Currently, quest section"],
+          ["2 ✓", "W4, W5", "Quest traverse; lore extract; cluster questline cards", "—"],
           ["3", "W2", "at-a-glance / currently / history workers + prompts", "Zone prose quality"],
           ["4", "W6", "Faction zone-significance scoring + ranked cards", "Major factions section"],
           ["5", "W7", "Location denylist, relevance, no defer padding", "Landmarks section"],
@@ -233,7 +324,7 @@ export default function WikiFirstPipelineMasterPlan() {
       />
 
       <Divider />
-      <H2>Verification commands (Slice 1+)</H2>
+      <H2>Verification commands (Slice 1–2)</H2>
       <Table
         headers={["Check", "Command"]}
         rows={[
@@ -253,7 +344,23 @@ export default function WikiFirstPipelineMasterPlan() {
         ]}
       />
 
-      <CollapsibleSection title="Slice 2 — Quest traversal + lore extraction + questline cards" count={3}>
+      <CollapsibleSection title="Slice 2 — verification (completed)" count={5}>
+        <Table
+          headers={["Check", "Criterion"]}
+          rows={[
+            ["Cluster card wiki_refs", "Each ref passes is_valid_quest_graph_link; titles are cluster headings"],
+            ["Card count", "Card cluster ids ⊆ v3 quest cluster_ids; max 8 enforced in draft and check_run_semantics"],
+            ["Traversal report", "No denylisted geography hrefs as role=quest; hub rows have hub_resolved_from"],
+            ["Quest evidence", "Each included cluster has ≥1 quest_cluster_lore snippet in evidence_packs.jsonl"],
+            [
+              "PoC spot-check (optional)",
+              "LORE_PILOT_RUN_ROOT run: narrative cta_hook; no zone-description filler heuristics",
+            ],
+          ]}
+        />
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Slice 2 — goals (reference)" count={3}>
         <Stack gap={12}>
           <H3>Goals</H3>
           <Text>
@@ -297,18 +404,19 @@ export default function WikiFirstPipelineMasterPlan() {
         headers={["Stage", "Changes across slices"]}
         rows={[
           ["ingest / fetch_wiki", "Storyline URLs tagged auxiliary_role + parse_html (Slice 1 ✓)"],
-          ["traverse_wiki", "Quest URLs from v3 only; location denylist; instance_lore"],
+          ["traverse_seed", "Storyline + faction + location only (Slice 2 ✓)"],
+          ["traverse_quests", "Quest URLs from v3 only; cap 25; hub resolver (Slice 2 ✓)"],
           ["discovery / storyline_html", "List-item quest parse only (Slice 1 ✓)"],
           ["discovery / entity_typing", "Denylist taxonomy + zone_name self-check (Slice 1 ✓)"],
-          ["discovery / enrich", "Scoped evidence field_names (Slice 1 ✓)"],
-          ["scripts/check_run_semantics.py", "Zone-agnostic acceptance (Slice 1 ✓)"],
-          ["draft / wiki_first", "All section builders; instance parity"],
+          ["discovery / enrich", "Scoped evidence + quest_lore / quest_cluster_lore (Slice 1–2 ✓)"],
+          ["scripts/check_run_semantics.py", "Cluster cards + traversal denylist (Slice 1–2 ✓)"],
+          ["draft / wiki_first", "Cluster questline cards + faction provenance (Slice 2 ✓)"],
           ["dictionary/", "Run-scoped terms replace static pilot aliases"],
         ]}
       />
 
       <Row gap={8}>
-        <Pill tone="accent">Next: Slice 2</Pill>
+        <Pill tone="accent">Next: Slice 3</Pill>
         <Pill tone="neutral">PoC QA: WPL + Scholomance (data only)</Pill>
         <Pill tone="success">Policy: zone-agnostic code</Pill>
       </Row>

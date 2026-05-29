@@ -86,6 +86,26 @@ def _example_zone_snapshots() -> list[dict]:
 
             "name": ZONE_NAME,
 
+            "source_id": "src-storyline",
+
+            "url": "https://warcraft.wiki.gg/wiki/Example_Zone_storyline",
+
+            "section_blocks": [{"section_role": "part_1", "text": "Storyline overview for the zone arc."}],
+
+            "auxiliary_role": "storyline",
+
+            "page_title": "Example Zone storyline",
+
+        },
+
+        {
+
+            "entity_id": ZONE_ID,
+
+            "entity_type": "zone",
+
+            "name": ZONE_NAME,
+
             "source_id": "src-quest-1",
 
             "url": "https://warcraft.wiki.gg/wiki/Quest_Alpha",
@@ -154,6 +174,20 @@ def test_scoped_evidence_pools_exclude_auxiliary_other_from_prose_fields() -> No
 
     assert not any("Auxiliary noise snippet" in snippet for snippet in history_snippets)
 
+    questline_packs = [row for row in packs if row.get("field_name") == "questline_pool"]
+
+    questline_snippets = [
+
+        item["snippet"]
+
+        for row in questline_packs
+
+        for item in row.get("evidence_items", [])
+
+    ]
+
+    assert not any("Auxiliary noise snippet" in snippet for snippet in questline_snippets)
+
 
 
     glance_packs = [row for row in packs if row.get("field_name") == "at_a_glance_input"]
@@ -199,4 +233,37 @@ def test_at_a_glance_pool_scoped() -> None:
     """Canvas Slice 1 alias: at_a_glance_input stays seed-scoped and capped."""
 
     test_scoped_evidence_pools_exclude_auxiliary_other_from_prose_fields()
+
+
+def test_quest_lore_evidence_fields() -> None:
+    snapshots = [
+        {
+            "entity_id": ZONE_ID,
+            "entity_type": "zone",
+            "name": ZONE_NAME,
+            "source_id": "src-quest-a",
+            "url": "https://warcraft.wiki.gg/wiki/Quest_Alpha",
+            "auxiliary_role": "quest",
+            "page_title": "Quest Alpha",
+            "cluster_id": "cluster-alpha",
+            "quest_node_id": "quest-alpha",
+            "quest_lore_blocks": [
+                {"section_role": "description", "text": "Alpha quest narrative about reclaiming the district."}
+            ],
+            "section_blocks": [],
+        }
+    ]
+    v3_rows = [
+        {
+            "zone_id": ZONE_ID,
+            "node_type": "quest",
+            "cluster_id": "cluster-alpha",
+            "node_id": "quest-alpha",
+            "source_link": "/wiki/Quest_Alpha",
+        }
+    ]
+    packs = _build_evidence_packs(snapshots, "run-test", v3_rows=v3_rows)
+    field_names = {str(row.get("field_name", "")) for row in packs}
+    assert "quest_lore" in field_names
+    assert "quest_cluster_lore" in field_names
 

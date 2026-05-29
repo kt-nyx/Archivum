@@ -7,7 +7,6 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
 
 from pipeline.common.run_context import RunContext
 from pipeline.common.text_normalize import clean_wiki_snippet
@@ -16,7 +15,8 @@ from pipeline.discovery.entity_typing import (
     is_valid_quest_graph_link,
     should_skip_registry_traversal,
 )
-from pipeline.discovery.storyline_html import parse_storyline_html
+from pipeline.discovery.quest_hub import resolve_hub_child_links
+from pipeline.discovery.quest_lore import build_quest_lore_record
 from pipeline.discovery.storyline_parser import _to_entity_id, _wiki_title
 from pipeline.ingest.fetch_wiki import (
     _fetch_url_text,
@@ -27,7 +27,7 @@ from pipeline.ingest.normalize_source import run_normalize_source
 
 _WARCRAFT_WIKI_ORIGIN = "https://warcraft.wiki.gg"
 _MAX_STORYLINE = 1
-_MAX_QUEST = 12
+_MAX_QUEST = 25
 _MAX_FACTION = 6
 _MAX_LOCATION = 8
 
@@ -87,8 +87,10 @@ def _build_manifest_row(
     traversal_origin: str,
     page_title: str,
     priority: int = 5,
+    cluster_id: str = "",
+    quest_node_id: str = "",
 ) -> dict[str, Any]:
-    return {
+    row = {
         "entity_id": str(zone_snapshot.get("entity_id", "")),
         "entity_type": "zone",
         "slug": str(zone_snapshot.get("slug", "")),
@@ -107,6 +109,11 @@ def _build_manifest_row(
         "traversal_origin": traversal_origin,
         "page_title": page_title,
     }
+    if cluster_id:
+        row["cluster_id"] = cluster_id
+    if quest_node_id:
+        row["quest_node_id"] = quest_node_id
+    return row
 
 
 def _snapshot_from_fetch(
@@ -121,6 +128,7 @@ def _snapshot_from_fetch(
     captured_at: str,
     parse_html: str = "",
     parse_html_truncated: bool = False,
+    quest_lore_blocks: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     cleaned_blocks: list[dict[str, str]] = []
     for block in section_blocks:
@@ -161,6 +169,12 @@ def _snapshot_from_fetch(
         snapshot["parse_html"] = parse_html
     if parse_html_truncated:
         snapshot["parse_html_truncated"] = True
+    if manifest_row.get("cluster_id"):
+        snapshot["cluster_id"] = manifest_row["cluster_id"]
+    if manifest_row.get("quest_node_id"):
+        snapshot["quest_node_id"] = manifest_row["quest_node_id"]
+    if quest_lore_blocks:
+        snapshot["quest_lore_blocks"] = quest_lore_blocks
     return snapshot
 
 
@@ -243,6 +257,9 @@ def _fetch_and_append(
     captured_at: str,
     report_rows: list[dict[str, Any]],
     allowed_instance_titles: frozenset[str] | None = None,
+    cluster_id: str = "",
+    quest_node_id: str = "",
+    hub_resolved_from: str = "",
 ) -> dict[str, Any] | None:
     if is_bogus_traversal_link(link):
         report_rows.append({"status": "skipped", "link": link, "reason": "bogus_link", "role": auxiliary_role})
@@ -264,6 +281,18 @@ def _fetch_and_append(
             }
         )
         return None
+    if auxiliary_role == "quest":
+        valid, reasons = is_valid_quest_graph_link(link, zone_name=zone_name)
+        if not valid:
+            report_rows.append(
+                {
+                    "status": "skipped",
+                    "link": link,
+                    "reason": reasons[0] if reasons else "invalid_quest_link",
+                    "role": auxiliary_role,
+                }
+            )
+            return None
     url = _absolute_wiki_url(link)
     if url.lower() in existing_urls:
         if auxiliary_role == "storyline":
@@ -291,6 +320,8 @@ def _fetch_and_append(
         auxiliary_target_id=auxiliary_target_id,
         traversal_origin=traversal_origin,
         page_title=page_title,
+        cluster_id=cluster_id,
+        quest_node_id=quest_node_id,
     )
     try:
         body, revision_id, locator, section_blocks, wiki_links, structured_from_fetch, raw_html = _fetch_url_text(
@@ -305,6 +336,17 @@ def _fetch_and_append(
         parse_html_truncated = len(raw_html) > 524288
         parse_html = raw_html[:524288]
     structured_links = structured_from_fetch or build_structured_links_from_sections(section_blocks, wiki_links)
+    quest_lore_blocks: list[dict[str, str]] | None = None
+    if auxiliary_role == "quest":
+        lore_record = build_quest_lore_record(
+            zone_id=str(zone_snapshot.get("entity_id", "")),
+            cluster_id=cluster_id,
+            node_id=quest_node_id or auxiliary_target_id,
+            quest_title=page_title,
+            source_link=link,
+            section_blocks=section_blocks,
+        )
+        quest_lore_blocks = lore_record.get("snippets", [])
     snapshot = _snapshot_from_fetch(
         manifest_row=manifest_row,
         body=body,
@@ -316,36 +358,109 @@ def _fetch_and_append(
         captured_at=captured_at,
         parse_html=parse_html,
         parse_html_truncated=parse_html_truncated,
+        quest_lore_blocks=quest_lore_blocks if isinstance(quest_lore_blocks, list) else None,
     )
     snapshots.append(snapshot)
     manifest_rows.append(manifest_row)
     existing_source_ids.add(source_id)
     existing_urls.add(url.lower())
-    report_rows.append({"status": "fetched", "link": link, "source_id": source_id, "role": auxiliary_role})
+    entry: dict[str, Any] = {
+        "status": "fetched",
+        "link": link,
+        "source_id": source_id,
+        "role": auxiliary_role,
+        "traversal_origin": traversal_origin,
+    }
+    if hub_resolved_from:
+        entry["hub_resolved_from"] = hub_resolved_from
+    report_rows.append(entry)
     return snapshot
 
 
-def run_traverse_wiki(context: RunContext) -> dict[str, Path]:
-    """Fetch auxiliary wiki pages and append to ingest snapshots/manifest."""
+def _load_traverse_state(context: RunContext) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    set[str],
+    set[str],
+    list[dict[str, Any]],
+    frozenset[str],
+]:
     ingest_dir = context.stage_dir("ingest")
     snapshots_path = ingest_dir / "source_snapshots.json"
     manifest_path = ingest_dir / "source_manifest.json"
     if not snapshots_path.exists() or not manifest_path.exists():
         raise RuntimeError("traverse requires ingest snapshots and source_manifest.json")
-
     snapshots_blob = _load_json(snapshots_path)
     manifest_blob = _load_json(manifest_path)
     if not isinstance(snapshots_blob, list) or not isinstance(manifest_blob, list):
         raise RuntimeError("ingest artifacts must be JSON arrays")
-
     snapshots: list[dict[str, Any]] = [row for row in snapshots_blob if isinstance(row, dict)]
     manifest_rows: list[dict[str, Any]] = [row for row in manifest_blob if isinstance(row, dict)]
-    existing_source_ids = _existing_source_ids(snapshots)
-    existing_urls = _existing_urls(snapshots)
-    captured_at = datetime.now(UTC).isoformat()
+    report_path = context.data_dir / "ingest" / "traversal_report.json"
     report_rows: list[dict[str, Any]] = []
-    allowed_instance_titles = _manifest_instance_titles(manifest_rows)
+    if report_path.exists():
+        blob = _load_json(report_path)
+        if isinstance(blob, dict) and isinstance(blob.get("entries"), list):
+            report_rows = [row for row in blob["entries"] if isinstance(row, dict)]
+    return (
+        snapshots,
+        manifest_rows,
+        _existing_source_ids(snapshots),
+        _existing_urls(snapshots),
+        report_rows,
+        _manifest_instance_titles(manifest_rows),
+    )
 
+
+def _persist_traverse_state(
+    context: RunContext,
+    *,
+    snapshots: list[dict[str, Any]],
+    manifest_rows: list[dict[str, Any]],
+    report_rows: list[dict[str, Any]],
+) -> dict[str, Path]:
+    ingest_dir = context.stage_dir("ingest")
+    snapshots_path = ingest_dir / "source_snapshots.json"
+    manifest_path = ingest_dir / "source_manifest.json"
+    snapshots_path.write_text(json.dumps(snapshots, indent=2), encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest_rows, indent=2), encoding="utf-8")
+    _validate_manifest_schema(manifest_rows)
+    run_normalize_source(context, snapshots_path)
+    report_path = context.data_dir / "ingest" / "traversal_report.json"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        json.dumps({"run_id": context.run_id, "entries": report_rows}, indent=2),
+        encoding="utf-8",
+    )
+    return {"traversal_report": report_path, "source_snapshots": snapshots_path, "source_manifest": manifest_path}
+
+
+def _ordered_v3_quest_nodes(v3_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    quests = [row for row in v3_rows if isinstance(row, dict) and row.get("node_type") == "quest"]
+    quests.sort(
+        key=lambda row: (
+            str(row.get("zone_id", "")),
+            int(row.get("cluster_order", 0) or 0),
+            int(row.get("order_in_cluster", 0) or 0),
+        )
+    )
+    seen_links: set[str] = set()
+    ordered: list[dict[str, Any]] = []
+    for row in quests:
+        link = str(row.get("source_link", "")).strip()
+        if not link or link in seen_links:
+            continue
+        seen_links.add(link)
+        ordered.append(row)
+    return ordered
+
+
+def run_traverse_seed(context: RunContext) -> dict[str, Path]:
+    """Fetch storyline, faction, and location auxiliary pages (no quest pages)."""
+    snapshots, manifest_rows, existing_source_ids, existing_urls, report_rows, allowed_instance_titles = (
+        _load_traverse_state(context)
+    )
+    captured_at = datetime.now(UTC).isoformat()
     discovery_dir = context.data_dir / "discovery"
     faction_targets = _load_json(discovery_dir / "faction_profile_targets.json")
     location_targets = _load_json(discovery_dir / "location_profile_targets.json")
@@ -405,37 +520,6 @@ def run_traverse_wiki(context: RunContext) -> dict[str, Path]:
                 continue
             seen_storyline_by_zone.add(zone_id)
             _increment(zone_id, "storyline")
-            zone_name = str(zone_snap.get("name", zone_id))
-            v3_rows = parse_storyline_html(
-                str(snapshot.get("parse_html", "")),
-                zone_id=zone_id,
-                zone_name=zone_name,
-            )
-            for node in v3_rows:
-                if str(node.get("node_type", "")) != "quest":
-                    continue
-                quest_link = str(node.get("source_link", "")).strip()
-                if not quest_link or not _within_cap(zone_id, "quest", _MAX_QUEST):
-                    continue
-                valid, _reasons = is_valid_quest_graph_link(quest_link, zone_name=zone_name)
-                if not valid:
-                    continue
-                _fetch_and_append(
-                    zone_snapshot=zone_snap,
-                    link=quest_link,
-                    auxiliary_role="quest",
-                    auxiliary_target_id=str(node.get("node_id", "")),
-                    traversal_origin="storyline_parser",
-                    page_title=str(node.get("title", "")),
-                    snapshots=snapshots,
-                    manifest_rows=manifest_rows,
-                    existing_source_ids=existing_source_ids,
-                    existing_urls=existing_urls,
-                    captured_at=captured_at,
-                    report_rows=report_rows,
-                    allowed_instance_titles=allowed_instance_titles,
-                )
-                _increment(zone_id, "quest")
 
     if isinstance(faction_targets, list):
         seen_faction: set[tuple[str, str]] = set()
@@ -508,15 +592,104 @@ def run_traverse_wiki(context: RunContext) -> dict[str, Path]:
                 seen_location.add(key)
                 _increment(zone_id, "location_profile")
 
-    snapshots_path.write_text(json.dumps(snapshots, indent=2), encoding="utf-8")
-    manifest_path.write_text(json.dumps(manifest_rows, indent=2), encoding="utf-8")
-    _validate_manifest_schema(manifest_rows)
-    run_normalize_source(context, snapshots_path)
-
-    report_path = context.data_dir / "ingest" / "traversal_report.json"
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(
-        json.dumps({"run_id": context.run_id, "entries": report_rows}, indent=2),
-        encoding="utf-8",
+    return _persist_traverse_state(
+        context,
+        snapshots=snapshots,
+        manifest_rows=manifest_rows,
+        report_rows=report_rows,
     )
-    return {"traversal_report": report_path, "source_snapshots": snapshots_path, "source_manifest": manifest_path}
+
+
+def run_traverse_quests(context: RunContext) -> dict[str, Path]:
+    """Fetch quest pages listed in zone_quest_graph_v3.json, with optional hub resolution."""
+    snapshots, manifest_rows, existing_source_ids, existing_urls, report_rows, allowed_instance_titles = (
+        _load_traverse_state(context)
+    )
+    captured_at = datetime.now(UTC).isoformat()
+    v3_path = context.data_dir / "discovery" / "zone_quest_graph_v3.json"
+    v3_blob = _load_json(v3_path)
+    if not isinstance(v3_blob, list):
+        raise RuntimeError("zone_quest_graph_v3.json must exist and be a JSON array before quest traverse")
+
+    counts_by_zone_role: dict[tuple[str, str], int] = {}
+
+    def _within_cap(zone_id: str, role: str, cap: int) -> bool:
+        return counts_by_zone_role.get((zone_id, role), 0) < cap
+
+    def _increment(zone_id: str, role: str) -> None:
+        key = (zone_id, role)
+        counts_by_zone_role[key] = counts_by_zone_role.get(key, 0) + 1
+
+    for node in _ordered_v3_quest_nodes(v3_blob):
+        zone_id = str(node.get("zone_id", "")).strip()
+        quest_link = str(node.get("source_link", "")).strip()
+        if not zone_id or not quest_link:
+            continue
+        if not _within_cap(zone_id, "quest", _MAX_QUEST):
+            continue
+        zone_snap = _zone_seed_snapshot(snapshots, zone_id)
+        if zone_snap is None:
+            continue
+        zone_name = str(zone_snap.get("name", zone_id))
+        snapshot = _fetch_and_append(
+            zone_snapshot=zone_snap,
+            link=quest_link,
+            auxiliary_role="quest",
+            auxiliary_target_id=str(node.get("node_id", "")),
+            traversal_origin="v3_graph",
+            page_title=str(node.get("title", "")),
+            snapshots=snapshots,
+            manifest_rows=manifest_rows,
+            existing_source_ids=existing_source_ids,
+            existing_urls=existing_urls,
+            captured_at=captured_at,
+            report_rows=report_rows,
+            allowed_instance_titles=allowed_instance_titles,
+            cluster_id=str(node.get("cluster_id", "")),
+            quest_node_id=str(node.get("node_id", "")),
+        )
+        if snapshot is None:
+            continue
+        _increment(zone_id, "quest")
+        child_links = resolve_hub_child_links(
+            snapshot.get("section_blocks", []),
+            parse_html=str(snapshot.get("parse_html", "")),
+            wiki_links=list(snapshot.get("wiki_links", []) or []),
+            structured_links=list(snapshot.get("structured_links", []) or []),
+            zone_name=zone_name,
+        )
+        for child_link in child_links:
+            if not _within_cap(zone_id, "quest", _MAX_QUEST):
+                break
+            child_snapshot = _fetch_and_append(
+                zone_snapshot=zone_snap,
+                link=child_link,
+                auxiliary_role="quest",
+                auxiliary_target_id=_to_entity_id("quest", _wiki_title(child_link)),
+                traversal_origin="hub_resolved",
+                page_title=_wiki_title(child_link),
+                snapshots=snapshots,
+                manifest_rows=manifest_rows,
+                existing_source_ids=existing_source_ids,
+                existing_urls=existing_urls,
+                captured_at=captured_at,
+                report_rows=report_rows,
+                allowed_instance_titles=allowed_instance_titles,
+                cluster_id=str(node.get("cluster_id", "")),
+                quest_node_id=_to_entity_id("quest", _wiki_title(child_link)),
+                hub_resolved_from=quest_link,
+            )
+            if child_snapshot is not None:
+                _increment(zone_id, "quest")
+
+    return _persist_traverse_state(
+        context,
+        snapshots=snapshots,
+        manifest_rows=manifest_rows,
+        report_rows=report_rows,
+    )
+
+
+def run_traverse_wiki(context: RunContext) -> dict[str, Path]:
+    """Backward-compatible alias: seed traverse only."""
+    return run_traverse_seed(context)

@@ -4,19 +4,21 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pipeline.common.run_context import RunContext
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.contracts.models import DecisionArtifact, EvidencePack
+from pipeline.discovery.quest_lore import extract_quest_lore
 from pipeline.discovery.storyline_html import parse_storyline_html, v3_to_legacy_v1
-from pipeline.discovery.storyline_parser import _to_entity_id
 from pipeline.discovery.workflow import (
     _HARD_REJECT_MARKERS,
     _LOCATION_INCLUDE_SECTION_WEIGHTS,
     _load_json,
     _section_role,
 )
+
+EnrichPhase = Literal["full", "graph_only", "evidence_merge"]
 
 _HISTORY_DIGEST_EXCLUDED = frozenset(
     {
@@ -65,7 +67,6 @@ def _is_currently_input_role(section_role: str) -> bool:
 
 
 def _seed_field_names(section_role: str, *, lead_emitted: int) -> list[str]:
-    """Return scoped prose field names for a zone seed section block."""
     lowered = section_role.lower()
     names: list[str] = []
     if lowered in {"lead", "introduction"} and lead_emitted < 2:
@@ -78,9 +79,57 @@ def _seed_field_names(section_role: str, *, lead_emitted: int) -> list[str]:
     return names
 
 
-def _build_evidence_packs(snapshots: list[dict[str, Any]], run_id: str) -> list[dict[str, Any]]:
+def _pack_key(row: dict[str, Any]) -> tuple[str, ...]:
+    meta = row.get("build_meta") or {}
+    return (
+        str(row.get("subject_id", "")),
+        str(row.get("field_name", "")),
+        str(meta.get("source_id", "")),
+        str(meta.get("cluster_id", "")),
+        str(meta.get("quest_node_id", "")),
+        str((row.get("evidence_items") or [{}])[0].get("snippet", ""))[:80],
+    )
+
+
+def _normalize_wiki_link_key(url_or_link: str) -> str:
+    value = str(url_or_link).strip().lower().split("#", 1)[0]
+    if "/wiki/" in value:
+        return value[value.index("/wiki/") :]
+    return value
+
+
+def _v3_cluster_index(v3_rows: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
+    index: dict[str, dict[str, str]] = {}
+    for row in v3_rows:
+        if not isinstance(row, dict) or row.get("node_type") != "quest":
+            continue
+        zone_id = str(row.get("zone_id", "")).strip()
+        source_link = _normalize_wiki_link_key(str(row.get("source_link", "")))
+        node_id = str(row.get("node_id", "")).strip()
+        cluster_id = str(row.get("cluster_id", "")).strip()
+        if zone_id and source_link:
+            index[f"{zone_id}|{source_link}"] = {
+                "cluster_id": cluster_id,
+                "quest_node_id": node_id,
+            }
+        if zone_id and node_id:
+            index[f"{zone_id}|node|{node_id}"] = {
+                "cluster_id": cluster_id,
+                "quest_node_id": node_id,
+            }
+    return index
+
+
+def _build_evidence_packs(
+    snapshots: list[dict[str, Any]],
+    run_id: str,
+    *,
+    v3_rows: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     packs: list[dict[str, Any]] = []
     lead_counts: dict[str, int] = {}
+    cluster_index = _v3_cluster_index(v3_rows or [])
+    cluster_snippets: dict[tuple[str, str], list[dict[str, Any]]] = {}
 
     for snapshot in snapshots:
         if not isinstance(snapshot, dict):
@@ -98,6 +147,54 @@ def _build_evidence_packs(snapshots: list[dict[str, Any]], run_id: str) -> list[
         section_blocks = snapshot.get("section_blocks", [])
         if not isinstance(section_blocks, list):
             section_blocks = []
+
+        if aux_role == "quest":
+            lore_blocks = snapshot.get("quest_lore_blocks", [])
+            if not isinstance(lore_blocks, list) or not lore_blocks:
+                lore_blocks = extract_quest_lore(section_blocks)
+            cluster_id = str(snapshot.get("cluster_id", "")).strip()
+            quest_node_id = str(snapshot.get("quest_node_id", snapshot.get("auxiliary_target_id", ""))).strip()
+            if not cluster_id:
+                link_key = f"{subject_id}|{_normalize_wiki_link_key(wiki_url)}"
+                meta = cluster_index.get(link_key) or cluster_index.get(f"{subject_id}|node|{quest_node_id}", {})
+                cluster_id = str(meta.get("cluster_id", "")).strip()
+                quest_node_id = quest_node_id or str(meta.get("quest_node_id", "")).strip()
+            for snippet_row in lore_blocks:
+                if not isinstance(snippet_row, dict):
+                    continue
+                snippet = clean_wiki_snippet(str(snippet_row.get("text", "")))
+                if not snippet:
+                    continue
+                pack = {
+                    "subject_id": subject_id,
+                    "subject_type": entity_type,
+                    "field_name": "quest_lore",
+                    "evidence_items": [
+                        {
+                            "source_url": wiki_url,
+                            "source_title": page_title or entity_name,
+                            "snippet": snippet,
+                            "section_role": _section_role(str(snippet_row.get("section_role", "other"))),
+                            "confidence": 1.0,
+                        }
+                    ],
+                    "constraints": {"max_tokens": 1200, "forbidden_extrapolation": True},
+                    "build_meta": {
+                        "run_id": run_id,
+                        "source_id": source_id,
+                        "phase": "enrich",
+                        "source_kind": source_kind,
+                        "auxiliary_role": aux_role,
+                        "subject_zone_id": subject_zone_id,
+                        "cluster_id": cluster_id,
+                        "quest_node_id": quest_node_id,
+                        "page_title": page_title,
+                    },
+                }
+                packs.append(pack)
+                if cluster_id:
+                    cluster_snippets.setdefault((subject_id, cluster_id), []).append(pack)
+            continue
 
         for block in section_blocks:
             if not isinstance(block, dict):
@@ -124,8 +221,6 @@ def _build_evidence_packs(snapshots: list[dict[str, Any]], run_id: str) -> list[
                 field_names = ["faction_pool"]
             elif aux_role == "location_profile":
                 field_names = ["location_pool"]
-            elif aux_role == "quest":
-                field_names = ["questline_pool"]
             else:
                 continue
 
@@ -155,6 +250,26 @@ def _build_evidence_packs(snapshots: list[dict[str, Any]], run_id: str) -> list[
                         },
                     }
                 )
+
+    seen_cluster_keys: set[tuple[str, ...]] = set()
+    for (subject_id, cluster_id), cluster_packs in sorted(cluster_snippets.items()):
+        for pack in cluster_packs:
+            key = _pack_key(pack)
+            if key in seen_cluster_keys:
+                continue
+            seen_cluster_keys.add(key)
+            cluster_pack = {
+                "subject_id": subject_id,
+                "subject_type": "zone",
+                "field_name": "quest_cluster_lore",
+                "evidence_items": list(pack.get("evidence_items", [])),
+                "constraints": pack.get("constraints", {}),
+                "build_meta": {
+                    **(pack.get("build_meta") or {}),
+                    "cluster_id": cluster_id,
+                },
+            }
+            packs.append(cluster_pack)
     return packs
 
 
@@ -171,7 +286,34 @@ def _storyline_snapshots_by_zone(snapshots: list[dict[str, Any]]) -> dict[str, d
     return by_zone
 
 
-def run_discovery_enrich(context: RunContext, source_manifest_path: Path) -> dict[str, Path]:
+def _cluster_evidence_metrics(
+    v3_rows: list[dict[str, Any]],
+    evidence_packs: list[dict[str, Any]],
+) -> tuple[int, list[str]]:
+    clusters = {
+        (str(row.get("zone_id", "")), str(row.get("cluster_id", "")))
+        for row in v3_rows
+        if isinstance(row, dict) and row.get("cluster_id")
+    }
+    covered: set[tuple[str, str]] = set()
+    for pack in evidence_packs:
+        if pack.get("field_name") != "quest_cluster_lore":
+            continue
+        meta = pack.get("build_meta") or {}
+        zone_id = str(meta.get("subject_zone_id", pack.get("subject_id", ""))).strip()
+        cluster_id = str(meta.get("cluster_id", "")).strip()
+        if zone_id and cluster_id:
+            covered.add((zone_id, cluster_id))
+    missing = [cluster_id for zone_id, cluster_id in sorted(clusters) if (zone_id, cluster_id) not in covered]
+    return len(covered), missing
+
+
+def run_discovery_enrich(
+    context: RunContext,
+    source_manifest_path: Path,
+    *,
+    phase: EnrichPhase = "full",
+) -> dict[str, Path]:
     """Rebuild quest graphs, inclusion decisions, and evidence from full snapshot set."""
     _ = source_manifest_path
     snapshots_path = context.stage_dir("ingest") / "source_snapshots.json"
@@ -185,6 +327,40 @@ def run_discovery_enrich(context: RunContext, source_manifest_path: Path) -> dic
     discovery_dir.mkdir(parents=True, exist_ok=True)
     decisions_dir.mkdir(parents=True, exist_ok=True)
     evidence_dir.mkdir(parents=True, exist_ok=True)
+
+    outputs = {
+        "zone_quest_graph": discovery_dir / "zone_quest_graph.json",
+        "zone_quest_graph_v3": discovery_dir / "zone_quest_graph_v3.json",
+        "location_significance_decisions": decisions_dir / "location_significance_decisions.json",
+        "questline_inclusion_decisions": decisions_dir / "questline_inclusion_decisions.json",
+        "evidence_packs": evidence_dir / "evidence_packs.jsonl",
+        "enrich_report": discovery_dir / "discovery_enrich_report.json",
+    }
+
+    if phase == "evidence_merge":
+        v3_blob = _load_json(outputs["zone_quest_graph_v3"])
+        questline_graph_v3 = v3_blob if isinstance(v3_blob, list) else []
+        evidence_packs = _build_evidence_packs(snapshots, context.run_id, v3_rows=questline_graph_v3)
+        clusters_with_evidence, clusters_missing = _cluster_evidence_metrics(questline_graph_v3, evidence_packs)
+        prior_report = _load_json(outputs["enrich_report"])
+        report_payload = prior_report if isinstance(prior_report, dict) else {}
+        report_payload.update(
+            {
+                "run_id": context.run_id,
+                "enrich_phase": phase,
+                "snapshot_count": len(snapshots),
+                "evidence_pack_count": len(evidence_packs),
+                "clusters_with_quest_evidence": clusters_with_evidence,
+                "clusters_missing_evidence": clusters_missing,
+            }
+        )
+        outputs["evidence_packs"].write_text(
+            "\n".join(json.dumps(row) for row in evidence_packs) + "\n", encoding="utf-8"
+        )
+        outputs["enrich_report"].write_text(json.dumps(report_payload, indent=2), encoding="utf-8")
+        for row in evidence_packs:
+            EvidencePack.model_validate(row)
+        return outputs
 
     location_candidates = _load_json(discovery_dir / "zone_location_candidates.json")
     if not isinstance(location_candidates, list):
@@ -322,7 +498,9 @@ def run_discovery_enrich(context: RunContext, source_manifest_path: Path) -> dic
             if isinstance(row, dict) and str(row.get("subject_id", "")) not in enriched_zone_ids:
                 questline_decisions.append(row)
 
-    evidence_packs = _build_evidence_packs(snapshots, context.run_id)
+    evidence_packs: list[dict[str, Any]] = []
+    if phase in {"full", "graph_only"}:
+        evidence_packs = _build_evidence_packs(snapshots, context.run_id, v3_rows=questline_graph_v3)
     history_digest_count = sum(1 for row in evidence_packs if row.get("field_name") == "history_digest")
     v3_quest_count = sum(1 for row in questline_graph_v3 if row.get("node_type") == "quest")
     v3_cluster_count = len(
@@ -332,15 +510,8 @@ def run_discovery_enrich(context: RunContext, source_manifest_path: Path) -> dic
             if row.get("cluster_id")
         }
     )
+    clusters_with_evidence, clusters_missing = _cluster_evidence_metrics(questline_graph_v3, evidence_packs)
 
-    outputs = {
-        "zone_quest_graph": discovery_dir / "zone_quest_graph.json",
-        "zone_quest_graph_v3": discovery_dir / "zone_quest_graph_v3.json",
-        "location_significance_decisions": decisions_dir / "location_significance_decisions.json",
-        "questline_inclusion_decisions": decisions_dir / "questline_inclusion_decisions.json",
-        "evidence_packs": evidence_dir / "evidence_packs.jsonl",
-        "enrich_report": discovery_dir / "discovery_enrich_report.json",
-    }
     outputs["zone_quest_graph"].write_text(json.dumps(quest_graph, indent=2), encoding="utf-8")
     outputs["zone_quest_graph_v3"].write_text(json.dumps(questline_graph_v3, indent=2), encoding="utf-8")
     outputs["location_significance_decisions"].write_text(
@@ -349,13 +520,15 @@ def run_discovery_enrich(context: RunContext, source_manifest_path: Path) -> dic
     outputs["questline_inclusion_decisions"].write_text(
         json.dumps(questline_decisions, indent=2), encoding="utf-8"
     )
-    outputs["evidence_packs"].write_text(
-        "\n".join(json.dumps(row) for row in evidence_packs) + "\n", encoding="utf-8"
-    )
+    if phase in {"full", "graph_only"}:
+        outputs["evidence_packs"].write_text(
+            "\n".join(json.dumps(row) for row in evidence_packs) + "\n", encoding="utf-8"
+        )
     outputs["enrich_report"].write_text(
         json.dumps(
             {
                 "run_id": context.run_id,
+                "enrich_phase": phase,
                 "snapshot_count": len(snapshots),
                 "evidence_pack_count": len(evidence_packs),
                 "quest_graph_nodes": len(questline_graph_v3),
@@ -364,6 +537,8 @@ def run_discovery_enrich(context: RunContext, source_manifest_path: Path) -> dic
                 "history_digest_block_count": history_digest_count,
                 "storyline_parse_status": storyline_parse_status,
                 "storyline_zones": sorted(storyline_by_zone.keys()),
+                "clusters_with_quest_evidence": clusters_with_evidence,
+                "clusters_missing_evidence": clusters_missing,
             },
             indent=2,
         ),
