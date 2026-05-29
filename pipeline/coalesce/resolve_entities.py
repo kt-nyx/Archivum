@@ -104,9 +104,7 @@ def _source_selection_for_claim(
         source_class = str(row.get("source_class", "")).strip().lower()
         if source_class == "warcraft_wiki":
             return 0
-        if source_class == "wowpedia":
-            return 1
-        return 2
+        return 1
 
     tied_rows = sorted(
         tied_rows,
@@ -165,6 +163,9 @@ def _ai_coalesce_claims(
         f"Sources:\n{joined_sources}"
     )
     errors: list[str] = []
+    # OpenAI structured outputs (strict json_schema) accept only a subset of JSON Schema.
+    # Do not use minItems/maxItems/minLength here — those reject the request with HTTP 400.
+    # Length and non-empty checks are enforced in Python below (and claims capped at 6).
     claims_schema = {
         "type": "object",
         "required": ["claims"],
@@ -172,9 +173,7 @@ def _ai_coalesce_claims(
         "properties": {
             "claims": {
                 "type": "array",
-                "items": {"type": "string", "minLength": 1},
-                "minItems": 1,
-                "maxItems": 6,
+                "items": {"type": "string"},
             }
         },
     }

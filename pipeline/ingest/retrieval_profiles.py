@@ -30,19 +30,8 @@ WARCRAFT_WIKI_PROFILE = RetrievalProfile(
     retry_backoff_seconds=0.5,
 )
 
-WOWPEDIA_PROFILE = RetrievalProfile(
-    name="wowpedia",
-    timeout_seconds=18,
-    max_chars=8000,
-    retries=2,
-    retry_backoff_seconds=0.75,
-)
-
-
 def profile_for_source_class(source_class: str) -> RetrievalProfile:
     normalized = source_class.strip().lower()
     if normalized == "warcraft_wiki":
         return WARCRAFT_WIKI_PROFILE
-    if normalized == "wowpedia":
-        return WOWPEDIA_PROFILE
     return DEFAULT_RETRIEVAL_PROFILE

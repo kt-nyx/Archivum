@@ -5,6 +5,7 @@ import pytest
 
 from pipeline.common.run_context import ensure_run_context
 from pipeline.linker.linker import run_glossary_linker
+from pipeline.validate.engine import validate_payload
 
 
 def test_linker_adds_glossary_links_and_zone_provenance(tmp_path: Path) -> None:
@@ -546,3 +547,189 @@ def test_linker_ambiguity_is_evaluated_per_section(
         if row.get("reason") == "ambiguous alias candidates require disambiguation"
     ]
     assert len(ambiguous_rows) >= 2
+
+
+def test_linker_keeps_instance_page_schema_valid_with_glossary_refs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = ensure_run_context("run-test-linker-instance-page", artifacts_root=tmp_path / "runs")
+    draft_dir = context.data_dir / "drafts" / "instance_page"
+    draft_dir.mkdir(parents=True, exist_ok=True)
+    draft_path = draft_dir / "instance-scholomance.json"
+    draft_path.write_text(
+        json.dumps(
+            {
+                "instance_id": "instance-scholomance",
+                "name": "Scholomance",
+                "instance_type": "dungeon",
+                "parent_zone_id": "zone-western-plaguelands",
+                "expansion_context": "retail",
+                "wiki_url": "https://warcraft.wiki.gg/wiki/Scholomance",
+                "at_a_glance": (
+                    "Scholomance remains a major Scourge stronghold in Lordaeron where players "
+                    "push through necromantic wings, disrupt rituals, and dismantle leadership "
+                    "cells tied to the wider Scourge war effort."
+                ),
+                "overview": (
+                    "Players assault the necromantic school to break Darkmaster Gandling's control, "
+                    "disrupt ritual chambers, and prevent wider Scourge reinforcement plans from "
+                    "spilling into neighboring regions."
+                ),
+                "history_sections": [
+                    {
+                        "heading": "Necromantic Ascendancy",
+                        "body": (
+                            "Scholomance evolved into a fortified academy where necromancers trained "
+                            "forces, coordinated plague operations, and sustained recurring pressure "
+                            "on surrounding settlements while expanding ritual networks, recruiting "
+                            "new adepts, and reinforcing commanders who projected threats into nearby "
+                            "territories over repeated campaign cycles."
+                        ),
+                        "source_refs": [],
+                    }
+                ],
+                "key_enemies": [],
+                "major_factions": [],
+                "related_quest_chains": [],
+                "lore_source": "instance_page",
+                "lore_source_reason": None,
+                "variant_policy": "standalone",
+                "variant_reason_codes": [],
+                "glossary_refs": [],
+                "sources": [
+                    {
+                        "source_id": "src-instance",
+                        "url": "https://warcraft.wiki.gg/wiki/Scholomance",
+                        "revision_id": "mw:123",
+                    }
+                ],
+                "provenance": {
+                    "identity_header": [
+                        {
+                            "source_id": "src-instance",
+                            "locator": "section:lead paragraph:1",
+                            "revision_id": "mw:123",
+                            "excerpt_hash": "sha1:instance111111111",
+                        }
+                    ],
+                    "story_context": [
+                        {
+                            "source_id": "src-instance",
+                            "locator": "section:overview paragraph:1",
+                            "revision_id": "mw:123",
+                            "excerpt_hash": "sha1:instance222222222",
+                        }
+                    ],
+                    "key_characters": {},
+                },
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "pipeline.linker.linker._load_alias_dictionary",
+        lambda: [
+            {
+                "term_id": "term-scourge",
+                "alias": "Scourge",
+                "alias_type": "canonical",
+                "case_rule": "insensitive",
+                "category": "faction",
+            }
+        ],
+    )
+
+    run_glossary_linker(context, [draft_path], max_entity_concurrency=1)
+    updated_draft = json.loads(draft_path.read_text(encoding="utf-8"))
+
+    assert updated_draft["glossary_refs"]
+    report = validate_payload("instance_page", updated_draft)
+    assert report.passed is True
+    assert not any(issue.code == "schema.invalid" for issue in report.issues)
+
+
+def test_linker_scans_wiki_first_history_sections(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    context = ensure_run_context("run-test-linker-history-sections", artifacts_root=tmp_path / "runs")
+    draft_dir = context.data_dir / "drafts" / "zone_page"
+    draft_dir.mkdir(parents=True, exist_ok=True)
+    draft_path = draft_dir / "zone-western-plaguelands.json"
+    draft_path.write_text(
+        json.dumps(
+            {
+                "zone_id": "zone-western-plaguelands",
+                "name": "Western Plaguelands",
+                "wiki_url": "https://warcraft.wiki.gg/wiki/Western_Plaguelands",
+                "parent_continent": "eastern-kingdoms",
+                "expansion_context": "retail",
+                "at_a_glance": (
+                    "Contested farmland recovering from blight while patrol networks reconnect roads, "
+                    "secure villages, and hold strategic crossings threatened by undead incursions."
+                ),
+                "currently": (
+                    "Crusaders continue pressuring Scourge holdouts across fortified positions as "
+                    "supply escorts and field commanders coordinate response operations."
+                ),
+                "history_sections": [
+                    {
+                        "heading": "Blight and conflict",
+                        "body": (
+                            "Scourge offensives reshaped the region for generations, forcing repeated "
+                            "campaigns to reclaim farmland, stabilize roads, and restore defensive "
+                            "infrastructure after prolonged devastation."
+                        ),
+                        "source_refs": [],
+                    }
+                ],
+                "major_factions": [],
+                "major_questlines": [],
+                "location_cards": [],
+                "instance_links": [],
+                "glossary_refs": [],
+                "sources": [
+                    {
+                        "source_id": "src-zone",
+                        "url": "https://warcraft.wiki.gg/wiki/Western_Plaguelands",
+                        "revision_id": "mw:123",
+                    }
+                ],
+                "provenance": {
+                    "at_a_glance": [
+                        {
+                            "source_id": "src-zone",
+                            "locator": "section:lead paragraph:1",
+                            "revision_id": "mw:123",
+                            "excerpt_hash": "sha1:zone1111111111111",
+                        }
+                    ],
+                    "currently": [],
+                    "history": [],
+                    "major_questlines_alliance": {},
+                    "major_questlines_horde": {},
+                    "major_questlines_shared": {},
+                    "major_characters": {},
+                    "instances": {},
+                    "major_landmarks": {},
+                    "glossary": {},
+                },
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "pipeline.linker.linker._load_alias_dictionary",
+        lambda: [
+            {
+                "term_id": "term-scourge",
+                "alias": "Scourge",
+                "alias_type": "canonical",
+                "case_rule": "insensitive",
+                "category": "faction",
+            }
+        ],
+    )
+    run_glossary_linker(context, [draft_path], max_entity_concurrency=1)
+    updated_draft = json.loads(draft_path.read_text(encoding="utf-8"))
+    assert any(row["term_id"] == "term-scourge" for row in updated_draft["glossary_refs"])

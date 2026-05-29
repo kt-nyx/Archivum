@@ -182,15 +182,26 @@ def _matching_sections(draft: dict[str, Any]) -> list[tuple[str, str]]:
         "history",
         "identity_header",
         "story_context",
+        "overview",
         "summary",
         "brief_history",
         "short_history",
     )
-    return [
+    sections: list[tuple[str, str]] = [
         (field, str(draft.get(field, "")))
         for field in fields
         if isinstance(draft.get(field), str) and str(draft.get(field, "")).strip()
     ]
+    history_sections = draft.get("history_sections")
+    if isinstance(history_sections, list):
+        for index, section in enumerate(history_sections, start=1):
+            if not isinstance(section, dict):
+                continue
+            body = str(section.get("body", "")).strip()
+            if not body:
+                continue
+            sections.append((f"history_sections[{index}]", body))
+    return sections
 
 
 def _first_match_index(haystack: str, alias: str, *, case_rule: str) -> int | None:
@@ -322,7 +333,7 @@ def run_glossary_linker(
         preferred_categories = set(category_preferences.get(entity_type, []))
         local_manual_candidates: list[dict[str, object]] = []
         local_rejects: list[dict[str, object]] = []
-        existing_glossary = draft.get("glossary", [])
+        existing_glossary = draft.get("glossary", draft.get("glossary_refs", []))
         output: list[str] = []
         if isinstance(existing_glossary, list):
             for glossary_link in existing_glossary:
@@ -515,7 +526,11 @@ def run_glossary_linker(
                     }
                 )
         density = (len(output) * 100.0 / words) if words else 0.0
-        draft["glossary"] = [{"term_id": term_id} for term_id in output]
+        glossary_payload = [{"term_id": term_id} for term_id in output]
+        if entity_type in {"zone_page", "instance_page"}:
+            draft["glossary_refs"] = glossary_payload
+        else:
+            draft["glossary"] = glossary_payload
         if entity_type in {"zone", "sub_zone"}:
             provenance = draft.get("provenance")
             if isinstance(provenance, dict):
