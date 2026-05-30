@@ -9,6 +9,12 @@ from pipeline.discovery.entity_typing import is_valid_quest_graph_link
 from pipeline.discovery.storyline_parser import _to_entity_id, _wiki_title
 
 _HEADING_RE = re.compile(r"<h([23])[^>]*>(.*?)</h\1>", re.IGNORECASE | re.DOTALL)
+_TABLE_HEADING_RE = re.compile(r"<th[^>]*>(.*?)</th>", re.IGNORECASE | re.DOTALL)
+_BOLD_HEADING_RE = re.compile(r"<b[^>]*>(.*?)</b>", re.IGNORECASE | re.DOTALL)
+_THUMB_CAPTION_RE = re.compile(
+    r'<div[^>]*class="[^"]*thumbcaption[^"]*"[^>]*>(.*?)</div>',
+    re.IGNORECASE | re.DOTALL,
+)
 _TAG_RE = re.compile(r"<[^>]+>")
 _LEVEL_RE = re.compile(r"\[[0-9]+(?:-[0-9]+)?\]")
 _LIST_ITEM_RE = re.compile(r"<li[^>]*>(.*?)</li>", re.IGNORECASE | re.DOTALL)
@@ -32,6 +38,36 @@ def _slugify(text: str) -> str:
 
 def _clean_text(raw: str) -> str:
     return " ".join(_TAG_RE.sub(" ", raw).split()).strip()
+
+
+def _collect_headings(html: str) -> list[tuple[int, str, str, int]]:
+    """Return (offset, slug, title, heading_level) sorted by document order."""
+    events: list[tuple[int, str, str, int]] = []
+    for match in _HEADING_RE.finditer(html):
+        title = _clean_text(match.group(2))
+        if title:
+            events.append((match.start(), _slugify(title), title, int(match.group(1))))
+    for match in _TABLE_HEADING_RE.finditer(html):
+        title = _clean_text(match.group(1))
+        if title and len(title.split()) >= 2:
+            events.append((match.start(), _slugify(title), title, 4))
+    for match in _THUMB_CAPTION_RE.finditer(html):
+        title = _clean_text(match.group(1))
+        if title and len(title.split()) >= 2:
+            events.append((match.start(), _slugify(title), title, 5))
+    for match in _BOLD_HEADING_RE.finditer(html):
+        title = _clean_text(match.group(1))
+        if title and 2 <= len(title.split()) <= 8 and title[0].isupper():
+            events.append((match.start(), _slugify(title), title, 6))
+    events.sort(key=lambda row: row[0])
+    deduped: list[tuple[int, str, str, int]] = []
+    seen_slugs: set[str] = set()
+    for event in events:
+        if event[1] in seen_slugs:
+            continue
+        seen_slugs.add(event[1])
+        deduped.append(event)
+    return deduped
 
 
 def _faction_from_icon_chunk(icon_chunk: str, anchor_chunk: str = "") -> str:
@@ -69,29 +105,25 @@ def parse_storyline_html(
         return []
 
     rows: list[dict[str, Any]] = []
-    cluster_id = "cluster-main"
-    cluster_title = "Main storylines"
-    order_in_cluster = 0
+    default_cluster_id = "cluster-main"
+    default_cluster_title = "Main storylines"
+    cluster_order_counters: dict[str, int] = {}
     seen_hrefs: set[str] = set()
 
-    headings: list[tuple[int, str, str]] = []
-    for match in _HEADING_RE.finditer(html):
-        title = _clean_text(match.group(2))
-        if title:
-            headings.append((match.start(), _slugify(title), title))
+    headings = _collect_headings(html)
 
-    def cluster_for_offset(offset: int) -> tuple[str, str, int]:
+    def cluster_for_offset(offset: int) -> tuple[str, str, int, int]:
         if not headings:
-            return cluster_id, cluster_title, 1
+            return default_cluster_id, default_cluster_title, 1, 2
         active = headings[0]
         for heading in headings:
             if heading[0] <= offset:
                 active = heading
             else:
                 break
-        slug, title = active[1], active[2]
+        slug, title, heading_level = active[1], active[2], active[3]
         order = next((index + 1 for index, item in enumerate(headings) if item[1] == slug), 1)
-        return slug, title, order
+        return slug, title, order, heading_level
 
     for absolute_offset, quest_match in _iter_list_item_quest_matches(html):
         icon_chunk = quest_match.group(1)
@@ -106,8 +138,9 @@ def parse_storyline_html(
         if not title:
             continue
         seen_hrefs.add(normalized_href)
-        cid, ctitle, corder = cluster_for_offset(absolute_offset)
-        order_in_cluster += 1
+        cid, ctitle, corder, heading_level = cluster_for_offset(absolute_offset)
+        cluster_order_counters[cid] = cluster_order_counters.get(cid, 0) + 1
+        order_in_cluster = cluster_order_counters[cid]
         block = quest_match.group(0)
         rows.append(
             {
@@ -115,6 +148,7 @@ def parse_storyline_html(
                 "cluster_id": cid,
                 "cluster_title": ctitle,
                 "cluster_order": corder,
+                "heading_level": heading_level,
                 "node_id": _to_entity_id("quest", title),
                 "title": title,
                 "node_type": "quest",

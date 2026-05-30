@@ -84,11 +84,11 @@ def _minimal_prose_evidence(zone_id: str) -> list[dict[str, object]]:
 
 def _faction_evidence(zone_id: str) -> list[dict[str, object]]:
     argent_snippet = (
-        "The Argent Crusade maintains fortified outposts across the contested frontier, "
-        "coordinating reclamation efforts against undead forces throughout the ruined zone."
+        "The Argent Crusade maintains fortified outposts across Example Zone, "
+        "coordinating reclamation efforts against undead forces throughout the ruined frontier."
     )
     cenarion_snippet = (
-        "The Cenarion Circle sends druids to heal blighted soil and push back corruption "
+        "The Cenarion Circle sends druids to heal blighted soil in Example Zone and push back corruption "
         "along the frontier while supporting crusader campaigns across the region."
     )
     return [
@@ -186,8 +186,8 @@ def test_build_zone_page_alliance_included_with_quest_bindings(monkeypatch) -> N
     zone_id = "zone-example"
     evidence = _minimal_prose_evidence(zone_id)
     alliance_snippet = (
-        "Alliance forces coordinate reclamation patrols along the main road while securing "
-        "supply lines and outposts across the contested frontier throughout the zone."
+        "Alliance forces coordinate reclamation patrols along the main road in Example Zone while securing "
+        "supply lines and outposts across the contested frontier throughout the region."
     )
     evidence.append(
         {

@@ -342,8 +342,8 @@ def test_check_run_warns_alliance_without_quest_bindings(tmp_path: Path, capsys)
             "id": "faction-alliance",
             "name": "Alliance",
             "summary": (
-                "Alliance forces coordinate reclamation patrols along the main road while securing "
-                "supply lines across the contested frontier throughout the zone."
+                "Alliance forces coordinate reclamation patrols along the main road in Example Zone while securing "
+                "supply lines across the contested frontier throughout the region."
             ),
             "wiki_url": "https://warcraft.wiki.gg/wiki/Alliance",
         }

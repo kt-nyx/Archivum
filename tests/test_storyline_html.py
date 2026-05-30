@@ -79,6 +79,39 @@ def test_parse_storyline_html_wpl_prose_questlink_is_excluded() -> None:
     assert "into the woods" not in titles
 
 
+def test_parse_storyline_html_wpl_assigns_distinct_cluster_ids() -> None:
+    html = WPL_FIXTURE.read_text(encoding="utf-8")
+    rows = parse_storyline_html(
+        html,
+        zone_id="zone-western-plaguelands",
+        zone_name="Western Plaguelands",
+    )
+    cluster_ids = {row["cluster_id"] for row in rows if row["node_type"] == "quest"}
+    assert len(cluster_ids) >= 2
+    orders_by_cluster: dict[str, list[int]] = {}
+    for row in rows:
+        if row["node_type"] != "quest":
+            continue
+        orders_by_cluster.setdefault(row["cluster_id"], []).append(row["order_in_cluster"])
+    for orders in orders_by_cluster.values():
+        assert orders == list(range(1, len(orders) + 1))
+
+
+def test_parse_storyline_html_wikitable_heading_assigns_cluster() -> None:
+    html = """
+<table>
+<tr><th>Chapter One - Ruined Outpost</th></tr>
+</table>
+<ul>
+<li><span class="questlink"><span class="questlong-prefix linkicon"><img alt="A" src="/images/Alliance_15.png" width="15" height="15" />&#160;[15-30]&#160;</span><a href="/wiki/Quest_Alpha" title="Quest Alpha"><span class="ajaxttlink questlink">Quest Alpha</span></a></span></li>
+</ul>
+"""
+    rows = parse_storyline_html(html, zone_id="zone-example", zone_name="Example Zone")
+    assert len(rows) == 1
+    assert rows[0]["cluster_id"] == "chapter-one-ruined-outpost"
+    assert rows[0]["order_in_cluster"] == 1
+
+
 def test_parse_storyline_html_empty_when_no_questlink_rows() -> None:
     html = "<html><body><p>No quest table here.</p></body></html>"
     rows = parse_storyline_html(

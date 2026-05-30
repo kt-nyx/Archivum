@@ -10,6 +10,7 @@ from pipeline.generate.draft.prose_lint import (
     trim_words,
     word_count,
 )
+from pipeline.generate.draft.location_scoring import extract_subregion_tokens
 
 MIN_FACTION_SUMMARY_WORDS = 12
 MAX_FACTION_SUMMARY_WORDS = 40
@@ -55,7 +56,24 @@ def has_zone_role_framing(text: str) -> bool:
     return bool(_PRESENT_ROLE_RE.search(text)) or has_historical_framing(text)
 
 
-def lint_faction_summary(text: str, *, zone_name: str = "") -> list[str]:
+def summary_has_zone_anchor(text: str, *, zone_name: str, subregion_tokens: list[str]) -> bool:
+    cleaned = text.strip()
+    if not cleaned:
+        return False
+    if zone_name and zone_name.lower() in cleaned.lower():
+        return True
+    for token in subregion_tokens:
+        if token and token.lower() in cleaned.lower():
+            return True
+    return False
+
+
+def lint_faction_summary(
+    text: str,
+    *,
+    zone_name: str = "",
+    subregion_tokens: list[str] | None = None,
+) -> list[str]:
     issues: list[str] = []
     cleaned = text.strip()
     if not cleaned:
@@ -76,4 +94,11 @@ def lint_faction_summary(text: str, *, zone_name: str = "") -> list[str]:
         issues.append("faction summary reads like bare zone-description filler")
     if words >= MIN_FACTION_SUMMARY_WORDS and not has_zone_role_framing(cleaned):
         issues.append("faction summary lacks zone role framing")
+    tokens = subregion_tokens or []
+    if zone_name and words >= MIN_FACTION_SUMMARY_WORDS and not summary_has_zone_anchor(
+        cleaned,
+        zone_name=zone_name,
+        subregion_tokens=tokens,
+    ):
+        issues.append("faction summary lacks zone or subregion anchor")
     return issues

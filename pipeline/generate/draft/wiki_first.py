@@ -37,6 +37,7 @@ from pipeline.generate.draft.location_scoring import (
     _decision_reason_codes,
     candidates_for_finalize as location_candidates_for_finalize,
     collect_location_candidates,
+    extract_subregion_tokens,
     finalize_evidence_pools as finalize_location_evidence_pools,
 )
 from pipeline.generate.draft.location_lint import fallback_location_summary
@@ -58,6 +59,7 @@ from pipeline.generate.draft.prose_lint import (
     lint_currently,
     lint_history_sections,
 )
+from pipeline.generate.draft.card_lint import finalize_cta_hook, lint_cta_hook
 from pipeline.generate.draft.provenance import build_revision_index, collect_sources_manifest
 from pipeline.generate.draft.wiki_first_workers import (
     synthesize_at_a_glance,
@@ -138,6 +140,7 @@ def _iter_evidence_items(
                     "source_id": str(build_meta.get("source_id", "")),
                     "field_name": str(row.get("field_name", "")),
                     "cluster_id": str(build_meta.get("cluster_id", "")),
+                    "quest_node_id": str(build_meta.get("quest_node_id", "")),
                     "faction_id": str(build_meta.get("faction_id", "")),
                     "faction_name": str(build_meta.get("faction_name", "")),
                     "location_id": str(build_meta.get("location_id", "")),
@@ -669,6 +672,7 @@ def _finalize_faction_card(
     candidate: FactionCandidate,
     *,
     zone_name: str,
+    subregion_tokens: list[str],
 ) -> tuple[dict[str, Any] | None, list[str], list[dict[str, Any]]]:
     pools_to_try = finalize_evidence_pools(candidate)
     if not pools_to_try:
@@ -680,9 +684,10 @@ def _finalize_faction_card(
             faction_name=candidate.name,
             zone_name=zone_name,
             max_words=40,
+            subregion_tokens=subregion_tokens,
         )
         summary = ensure_sentence_terminator(summary)
-        if not lint_faction_summary(summary, zone_name=zone_name):
+        if not lint_faction_summary(summary, zone_name=zone_name, subregion_tokens=subregion_tokens):
             return (
                 {
                     "id": candidate.faction_id,
@@ -693,9 +698,13 @@ def _finalize_faction_card(
                 used,
                 pool,
             )
-        summary, used = fallback_faction_summary(pool)
+        summary, used = fallback_faction_summary(
+            pool,
+            zone_name=zone_name,
+            subregion_tokens=subregion_tokens,
+        )
         summary = ensure_sentence_terminator(summary)
-        if not lint_faction_summary(summary, zone_name=zone_name):
+        if not lint_faction_summary(summary, zone_name=zone_name, subregion_tokens=subregion_tokens):
             return (
                 {
                     "id": candidate.faction_id,
@@ -719,6 +728,7 @@ def build_major_factions(
     revision_map: dict[str, str],
     faction_profile_targets: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, str]]]]:
+    subregion_tokens = extract_subregion_tokens(pools.get("location_seed_pool", []), zone_name=zone_name)
     candidates = collect_faction_candidates(
         zone_id=zone_id,
         evidence_rows=evidence_rows,
@@ -726,13 +736,21 @@ def build_major_factions(
         faction_profile_targets=faction_profile_targets,
         v3_rows=questline_rows,
     )
-    target_count, queue = candidates_for_finalize(candidates)
+    target_count, queue = candidates_for_finalize(
+        candidates,
+        zone_name=zone_name,
+        subregion_tokens=subregion_tokens,
+    )
     cards: list[dict[str, Any]] = []
     provenance_map: dict[str, list[dict[str, str]]] = {}
     for candidate in queue:
         if len(cards) >= MAX_FACTION_CARDS:
             break
-        card, used, pool = _finalize_faction_card(candidate, zone_name=zone_name)
+        card, used, pool = _finalize_faction_card(
+            candidate,
+            zone_name=zone_name,
+            subregion_tokens=subregion_tokens,
+        )
         if card is None:
             continue
         cards.append(card)
@@ -876,6 +894,90 @@ def _instance_link_candidates(
             }
         )
     return candidates[:8]
+
+
+_MAX_CLUSTER_CARDS = 8
+_MAX_CHAIN_REFS = 12
+
+
+def _faction_scoped_lore_pool(
+    pool: list[dict[str, Any]],
+    quests: list[dict[str, Any]],
+    faction: str,
+) -> list[dict[str, Any]]:
+    if faction not in {"alliance", "horde"}:
+        return pool
+    quest_node_ids = {
+        str(row.get("node_id", "")).strip()
+        for row in quests
+        if isinstance(row, dict)
+        and str(row.get("faction_binding", "shared")).strip().lower() == faction
+    }
+    if not quest_node_ids:
+        return pool
+    scoped = [
+        item
+        for item in pool
+        if str(item.get("quest_node_id", "")).strip() in quest_node_ids
+        or str(item.get("quest_node_id", "")).strip() == ""
+    ]
+    return scoped or pool
+
+
+def _split_chain_refs(chain_refs: list[str]) -> tuple[list[str], list[str]]:
+    if len(chain_refs) <= _MAX_CHAIN_REFS:
+        return chain_refs, []
+    return chain_refs[:_MAX_CHAIN_REFS], chain_refs[_MAX_CHAIN_REFS:]
+
+
+def _append_questline_card(
+    *,
+    major_questlines: list[dict[str, Any]],
+    questline_provenance_by_bucket: dict[str, dict[str, list[dict[str, str]]]],
+    cluster_id: str,
+    cluster_title: str,
+    faction: str,
+    start_anchor: str,
+    chain_refs: list[str],
+    wiki_refs: list[str],
+    cta: str,
+    scoped_pool: list[dict[str, Any]],
+    cta_used: list[str],
+    revision_map: dict[str, str],
+    questline_decision: dict[str, Any] | None,
+    used_source_ids: set[str],
+    card_suffix: str = "",
+) -> None:
+    card_id = f"cluster-{cluster_id}{card_suffix}"
+    cta = finalize_cta_hook(cta)
+    major_questlines.append(
+        {
+            "id": card_id,
+            "title": cluster_title,
+            "faction": faction,
+            "cta_hook": cta,
+            "start_anchor": start_anchor,
+            "chain_refs": chain_refs,
+            "include_decision": "include",
+            "reason_codes": list((questline_decision or {}).get("reason_codes") or ["graph_depth"]),
+            "wiki_refs": wiki_refs,
+        }
+    )
+    pointers = _cap_card_pointers(_pointers_for_source_ids(scoped_pool, cta_used, revision_map))
+    if not pointers:
+        pointers = _cap_card_pointers(
+            _ensure_pointer_count(
+                [],
+                pool=scoped_pool,
+                revision_map=revision_map,
+                min_count=1,
+            )
+        )
+    if pointers:
+        bucket = _provenance_bucket_for_faction(faction)
+        questline_provenance_by_bucket[bucket][card_id] = pointers
+        for pointer in pointers:
+            used_source_ids.add(pointer["source_id"])
 
 
 def _group_v3_clusters(questline_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1035,6 +1137,7 @@ def build_zone_page(
         used_source_ids.add(pointer["source_id"])
 
     major_questlines: list[dict[str, Any]] = []
+    questline_overflow_decisions: list[dict[str, Any]] = []
     questline_provenance_by_bucket: dict[str, dict[str, list[dict[str, str]]]] = {
         "major_questlines_alliance": {},
         "major_questlines_horde": {},
@@ -1045,14 +1148,23 @@ def build_zone_page(
     if questline_decision_value not in {"", "include", "defer"}:
         active_questline_rows = []
     cluster_groups = _group_v3_clusters(active_questline_rows)
-    max_clusters = min(len(cluster_groups), 8)
-    for cluster in cluster_groups[:max_clusters]:
+    emitted_cards = 0
+    for cluster in cluster_groups:
+        if emitted_cards >= _MAX_CLUSTER_CARDS:
+            questline_overflow_decisions.append(
+                {
+                    "entity_id": zone_id,
+                    "entity_type": "questline_cluster",
+                    "cluster_id": str(cluster.get("cluster_id", "")),
+                    "reason": "questline_cluster_cap",
+                }
+            )
+            continue
         cluster_id = str(cluster.get("cluster_id", "cluster-main"))
         quests = cluster.get("quests", [])
         if not isinstance(quests, list) or not quests:
             continue
         cluster_title = str(cluster.get("cluster_title", "Main storylines"))
-        card_id = f"cluster-{cluster_id}"
         faction = _majority_faction([str(row.get("faction_binding", "shared")) for row in quests if isinstance(row, dict)])
         first_quest = quests[0] if isinstance(quests[0], dict) else {}
         start_anchor = str(first_quest.get("title", cluster_title))
@@ -1063,41 +1175,88 @@ def build_zone_page(
             if isinstance(row, dict) and str(row.get("source_link", "")).strip()
         ]
         scoped_pool = _cluster_lore_pool(pools, cluster_id)
+        scoped_pool = _faction_scoped_lore_pool(scoped_pool, quests, faction)
         if not scoped_pool:
             continue
-        cta, cta_used = synthesize_card_summary(scoped_pool, subject=cluster_title, max_words=35)
+        cta, cta_used = synthesize_card_summary(
+            scoped_pool,
+            subject=cluster_title,
+            max_words=35,
+            faction=faction,
+        )
         if not cta:
             cta = _best_snippet_for_term(scoped_pool, cluster_title, min_words=8) or (
                 f"Follow the {cluster_title} arc through its linked quests."
             )
-        major_questlines.append(
-            {
-                "id": card_id,
-                "title": cluster_title,
-                "faction": faction,
-                "cta_hook": cta,
-                "start_anchor": start_anchor,
-                "chain_refs": chain_refs,
-                "include_decision": "include",
-                "reason_codes": list((questline_decision or {}).get("reason_codes") or ["graph_depth"]),
-                "wiki_refs": wiki_refs,
-            }
+        primary_refs, overflow_refs = _split_chain_refs(chain_refs)
+        primary_wiki_refs = wiki_refs[: len(primary_refs)] if wiki_refs else []
+        _append_questline_card(
+            major_questlines=major_questlines,
+            questline_provenance_by_bucket=questline_provenance_by_bucket,
+            cluster_id=cluster_id,
+            cluster_title=cluster_title,
+            faction=faction,
+            start_anchor=start_anchor,
+            chain_refs=primary_refs,
+            wiki_refs=primary_wiki_refs or wiki_refs[:1],
+            cta=cta,
+            scoped_pool=scoped_pool,
+            cta_used=cta_used,
+            revision_map=revision_map,
+            questline_decision=questline_decision,
+            used_source_ids=used_source_ids,
         )
-        pointers = _cap_card_pointers(_pointers_for_source_ids(scoped_pool, cta_used, revision_map))
-        if not pointers:
-            pointers = _cap_card_pointers(
-                _ensure_pointer_count(
-                    [],
-                    pool=scoped_pool,
-                    revision_map=revision_map,
-                    min_count=1,
-                )
+        emitted_cards += 1
+        if overflow_refs:
+            overflow_pool = _cluster_lore_pool(pools, cluster_id)
+            overflow_pool = _faction_scoped_lore_pool(overflow_pool, quests, faction)
+            overflow_cta, overflow_used = synthesize_card_summary(
+                overflow_pool,
+                subject=f"{cluster_title} (continued)",
+                max_words=35,
+                faction=faction,
             )
-        if pointers:
-            bucket = _provenance_bucket_for_faction(faction)
-            questline_provenance_by_bucket[bucket][card_id] = pointers
-            for pointer in pointers:
-                used_source_ids.add(pointer["source_id"])
+            if not overflow_cta:
+                overflow_cta = f"Continue the {cluster_title} arc through its remaining linked quests."
+            if emitted_cards < _MAX_CLUSTER_CARDS and overflow_pool:
+                overflow_wiki = wiki_refs[len(primary_refs) :] if wiki_refs else []
+                _append_questline_card(
+                    major_questlines=major_questlines,
+                    questline_provenance_by_bucket=questline_provenance_by_bucket,
+                    cluster_id=cluster_id,
+                    cluster_title=f"{cluster_title} (continued)",
+                    faction=faction,
+                    start_anchor=str(
+                        next(
+                            (
+                                row.get("title", start_anchor)
+                                for row in quests[len(primary_refs) :]
+                                if isinstance(row, dict)
+                            ),
+                            start_anchor,
+                        )
+                    ),
+                    chain_refs=overflow_refs[:_MAX_CHAIN_REFS],
+                    wiki_refs=overflow_wiki or wiki_refs[-1:],
+                    cta=overflow_cta,
+                    scoped_pool=overflow_pool,
+                    cta_used=overflow_used,
+                    revision_map=revision_map,
+                    questline_decision=questline_decision,
+                    used_source_ids=used_source_ids,
+                    card_suffix="-continued",
+                )
+                emitted_cards += 1
+            else:
+                questline_overflow_decisions.append(
+                    {
+                        "entity_id": zone_id,
+                        "entity_type": "questline_cluster",
+                        "cluster_id": cluster_id,
+                        "reason": "questline_chain_refs_cap",
+                        "overflow_chain_refs": overflow_refs,
+                    }
+                )
 
     location_cards, landmark_provenance_map = build_location_cards(
         zone_id=zone_id,
@@ -1186,6 +1345,8 @@ def build_zone_page(
     }
     sources = collect_sources_manifest(page_entity, revision_map, source_urls)
     page_entity["sources"] = sources or _source_entries(fact_pack)
+    if questline_overflow_decisions:
+        page_entity["draft_overflow_decisions"] = questline_overflow_decisions
     return page_entity
 
 

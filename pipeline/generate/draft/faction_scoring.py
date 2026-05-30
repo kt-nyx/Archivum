@@ -278,9 +278,15 @@ def _alliance_horde_conflict_met(candidate: FactionCandidate) -> bool:
     )
 
 
-def score_faction_candidate(candidate: FactionCandidate) -> FactionCandidate:
+def score_faction_candidate(
+    candidate: FactionCandidate,
+    *,
+    zone_name: str = "",
+    subregion_tokens: list[str] | None = None,
+) -> FactionCandidate:
     score = 0.0
     has_high = False
+    tokens = subregion_tokens or []
 
     for item in candidate.seed_mentions:
         snippet = str(item.get("snippet", ""))
@@ -288,16 +294,22 @@ def score_faction_candidate(candidate: FactionCandidate) -> FactionCandidate:
             continue
         role = _normalize_role(str(item.get("section_role", "")))
         field_name = str(item.get("field_name", ""))
+        zone_hit = _name_in_text(zone_name, snippet) or any(_name_in_text(token, snippet) for token in tokens)
         if _is_high_weight_seed_item(item):
-            score += 3.0
+            score += 3.0 + (1.5 if zone_hit else 0.0)
             has_high = True
         elif field_name in {"currently_input", "history_digest"} or role.startswith("history"):
-            score += 1.5
+            score += 1.5 + (1.0 if zone_hit else 0.0)
         else:
-            score += 0.75
+            score += 0.75 + (0.5 if zone_hit else 0.0)
 
     if candidate.profile_items:
-        score += 2.0
+        profile_zone_hit = any(
+            _name_in_text(zone_name, str(item.get("snippet", "")))
+            or any(_name_in_text(token, str(item.get("snippet", ""))) for token in tokens)
+            for item in candidate.profile_items
+        )
+        score += 2.0 if profile_zone_hit else 1.0
 
     if candidate.quest_binding_count:
         score += min(candidate.quest_binding_count * 1.5, 4.5)
@@ -306,8 +318,14 @@ def score_faction_candidate(candidate: FactionCandidate) -> FactionCandidate:
     candidate.lede_only = _is_lede_only_profile(candidate)
 
     if candidate.lede_only and not candidate.seed_mentions and candidate.quest_binding_count == 0:
-        candidate.score = 0.0
-        return candidate
+        lede_has_zone = any(
+            _name_in_text(zone_name, str(item.get("snippet", "")))
+            or any(_name_in_text(token, str(item.get("snippet", ""))) for token in tokens)
+            for item in candidate.profile_items
+        )
+        if not lede_has_zone:
+            candidate.score = 0.0
+            return candidate
 
     if candidate.faction_id in _ALLIANCE_HORDE_IDS and not _alliance_horde_conflict_met(candidate):
         candidate.score = min(score, 1.0)
@@ -317,8 +335,16 @@ def score_faction_candidate(candidate: FactionCandidate) -> FactionCandidate:
     return candidate
 
 
-def rank_faction_candidates(candidates: list[FactionCandidate]) -> list[FactionCandidate]:
-    scored = [score_faction_candidate(candidate) for candidate in candidates]
+def rank_faction_candidates(
+    candidates: list[FactionCandidate],
+    *,
+    zone_name: str = "",
+    subregion_tokens: list[str] | None = None,
+) -> list[FactionCandidate]:
+    scored = [
+        score_faction_candidate(candidate, zone_name=zone_name, subregion_tokens=subregion_tokens)
+        for candidate in candidates
+    ]
     return sorted(
         scored,
         key=lambda row: (
@@ -329,8 +355,13 @@ def rank_faction_candidates(candidates: list[FactionCandidate]) -> list[FactionC
     )
 
 
-def select_major_factions(candidates: list[FactionCandidate]) -> list[FactionCandidate]:
-    ranked = rank_faction_candidates(candidates)
+def select_major_factions(
+    candidates: list[FactionCandidate],
+    *,
+    zone_name: str = "",
+    subregion_tokens: list[str] | None = None,
+) -> list[FactionCandidate]:
+    ranked = rank_faction_candidates(candidates, zone_name=zone_name, subregion_tokens=subregion_tokens)
     eligible = [candidate for candidate in ranked if candidate.score >= MIN_SCORE and not candidate.lede_only]
     if not eligible:
         thin = [candidate for candidate in ranked if _candidate_is_finalize_eligible(candidate)]
@@ -340,9 +371,14 @@ def select_major_factions(candidates: list[FactionCandidate]) -> list[FactionCan
     return eligible[:MAX_FACTION_CARDS]
 
 
-def candidates_for_finalize(candidates: list[FactionCandidate]) -> tuple[int, list[FactionCandidate]]:
-    ranked = rank_faction_candidates(candidates)
-    target_count = len(select_major_factions(candidates))
+def candidates_for_finalize(
+    candidates: list[FactionCandidate],
+    *,
+    zone_name: str = "",
+    subregion_tokens: list[str] | None = None,
+) -> tuple[int, list[FactionCandidate]]:
+    ranked = rank_faction_candidates(candidates, zone_name=zone_name, subregion_tokens=subregion_tokens)
+    target_count = len(select_major_factions(candidates, zone_name=zone_name, subregion_tokens=subregion_tokens))
     has_eligible = any(
         candidate.score >= MIN_SCORE and not candidate.lede_only for candidate in ranked
     )
@@ -374,10 +410,19 @@ def fallback_faction_summary(
     items: list[dict[str, Any]],
     *,
     max_words: int = MAX_FACTION_SUMMARY_WORDS,
+    zone_name: str = "",
+    subregion_tokens: list[str] | None = None,
 ) -> tuple[str, list[str]]:
     if not items:
         return "", []
-    ranked = sorted(items, key=lambda row: word_count(str(row.get("snippet", ""))), reverse=True)
+    tokens = subregion_tokens or []
+
+    def _zone_rank(item: dict[str, Any]) -> tuple[int, int]:
+        snippet = str(item.get("snippet", ""))
+        zone_hit = _name_in_text(zone_name, snippet) or any(_name_in_text(token, snippet) for token in tokens)
+        return (1 if zone_hit else 0, word_count(snippet))
+
+    ranked = sorted(items, key=_zone_rank, reverse=True)
     for item in ranked:
         snippet = str(item.get("snippet", "")).strip()
         if has_currently_meta(snippet):

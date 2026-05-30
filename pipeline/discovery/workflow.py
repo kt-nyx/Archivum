@@ -12,10 +12,17 @@ from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.common.run_context import RunContext
 from pipeline.contracts.models import DecisionArtifact
 from pipeline.discovery.entity_typing import should_reject_location_title
+from pipeline.discovery.location_discovery import (
+    HARD_REJECT_MARKERS,
+    build_location_decision_row,
+    build_zone_seed_text,
+    classify_location_candidate,
+    hard_reject_markers,
+)
 
 _CLASSIC_ONLY_MARKERS = ("classic", "classic-only", "vanilla")
 _NON_RETAIL_MARKERS = ("warcraft iii", "removed", "undisplayed", "lore location")
-_HARD_REJECT_MARKERS = ("undisplayed", "lore", "removed", "warcraft iii", "other game")
+_HARD_REJECT_MARKERS = HARD_REJECT_MARKERS
 _SECTION_ROLE_PATTERNS: dict[str, tuple[str, ...]] = {
     "maps_subregions": ("subregion", "sub-region", "maps", "geography"),
     "instances_or_dungeons": ("instance", "dungeon", "raid"),
@@ -497,17 +504,18 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
         deduped_candidates.append(candidate)
     location_candidates = deduped_candidates
 
+    zone_seed_text_by_id = {
+        str(snapshot.get("entity_id", "")).strip(): build_zone_seed_text(snapshots, str(snapshot.get("entity_id", "")).strip())
+        for snapshot in snapshots
+        if isinstance(snapshot, dict)
+        and str(snapshot.get("entity_type", "")).strip() == "zone"
+        and not str(snapshot.get("auxiliary_role", "")).strip()
+    }
+
     for candidate in location_candidates:
         name_lowered = str(candidate.get("name", "")).lower()
-        hard_reject_reasons = [m for m in _HARD_REJECT_MARKERS if m in name_lowered]
-        if hard_reject_reasons:
-            location_class = "reject"
-        elif "city" in name_lowered:
-            location_class = "city"
-        elif "starter" in name_lowered:
-            location_class = "starter_area"
-        else:
-            location_class = "major_location_candidate"
+        hard_reject_reasons = hard_reject_markers(str(candidate.get("name", "")))
+        location_class = classify_location_candidate(str(candidate.get("name", "")), hard_reject_reasons=hard_reject_reasons)
         location_classification.append(
             {
                 "zone_id": candidate["zone_id"],
@@ -522,49 +530,14 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
                 },
             }
         )
-        source_section_role = str(candidate.get("source_section_role", "other"))
-        base_score = 0.15
-        if location_class in {"city", "starter_area"}:
-            base_score += 0.6
-        else:
-            base_score += 0.25
-        base_score += _LOCATION_INCLUDE_SECTION_WEIGHTS.get(source_section_role, 0.0)
-        if any(marker in name_lowered for marker in ("classic", "warcraft rpg", "novel", "novella")):
-            base_score -= 0.35
-        if len(name_lowered.split()) <= 1:
-            base_score -= 0.1
-        score = max(0.0, min(1.0, base_score))
-        borderline = 0.45 <= score <= 0.65
+        zone_id = str(candidate.get("zone_id", "")).strip()
         location_decisions.append(
-            {
-                "subject_id": candidate["location_id"],
-                "subject_type": "location",
-                "run_id": context.run_id,
-                "algorithm_version": "v1",
-                "features": {
-                    "keyword_density": 1 if score > 0.6 else 0,
-                    "has_hard_reject": bool(hard_reject_reasons),
-                    "source_section_role": source_section_role,
-                },
-                "hard_reject": bool(hard_reject_reasons),
-                "hard_reject_reasons": hard_reject_reasons,
-                "score": score,
-                "thresholds": {"include_min": 0.7, "borderline_min": 0.45, "borderline_max": 0.65},
-                "borderline_adjudication": (
-                    {
-                        "prompt_class": "location_significance_borderline",
-                        "ruling": "include" if score >= 0.5 else "exclude",
-                    }
-                    if borderline
-                    else None
-                ),
-                "final_decision": "exclude" if hard_reject_reasons else ("include" if score >= 0.7 else "defer"),
-                "reason_codes": (
-                    ["hard_reject"]
-                    if hard_reject_reasons
-                    else ["score_based", f"source_role:{source_section_role}"]
-                ),
-            }
+            build_location_decision_row(
+                candidate,
+                run_id=context.run_id,
+                algorithm_version="v1",
+                seed_text=zone_seed_text_by_id.get(zone_id, ""),
+            )
         )
 
     deduped_instances: list[dict[str, Any]] = []

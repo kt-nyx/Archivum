@@ -215,6 +215,7 @@ def run_draft_writer(
             entity_dir = stage_dir / f"{entity_type}_page"
             entity_dir.mkdir(parents=True, exist_ok=True)
             out_path = entity_dir / f"{entity_id}.json"
+            overflow = draft.pop("draft_overflow_decisions", None)
             out_path.write_text(json.dumps(draft, indent=2), encoding="utf-8")
             decision = {
                 "entity_id": entity_id,
@@ -223,6 +224,8 @@ def run_draft_writer(
                 "schema_repair_applied": "no",
                 "prompt_profile": "wiki_first_v1",
             }
+            if isinstance(overflow, list):
+                decision["questline_overflow"] = overflow
             return out_path, decision
         settings = load_ai_settings()
         trace = DraftTraceContext(
@@ -278,6 +281,19 @@ def run_draft_writer(
                 outputs.append(output_path)
             if decision is not None:
                 decisions.append(decision)
+                overflow = decision.pop("questline_overflow", None)
+                if isinstance(overflow, list):
+                    for row in overflow:
+                        if isinstance(row, dict):
+                            decisions.append(
+                                {
+                                    "entity_id": str(row.get("entity_id", decision.get("entity_id", ""))),
+                                    "entity_type": str(row.get("entity_type", "questline_cluster")),
+                                    "generation_mode": "deterministic_evidence_pack",
+                                    "reason": str(row.get("reason", "questline_overflow")),
+                                    "cluster_id": str(row.get("cluster_id", "")),
+                                }
+                            )
     (stage_dir / "draft_decisions.json").write_text(
         json.dumps(decisions, indent=2),
         encoding="utf-8",

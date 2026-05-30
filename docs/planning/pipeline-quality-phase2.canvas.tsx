@@ -33,7 +33,7 @@ const SLICES = [
   {
     id: "slice-12",
     content: "Slice 12 — Cards & clustering (questlines, locations, faction zone-anchors)",
-    status: "pending" as const,
+    status: "complete" as const,
   },
   {
     id: "slice-13",
@@ -183,7 +183,8 @@ export default function PipelineQualityPhase2Plan() {
         <Stat label="Slice 9" value="Complete" tone="success" />
         <Stat label="Slice 10" value="Complete" tone="success" />
         <Stat label="Slice 11" value="Complete" tone="success" />
-        <Stat label="Next" value="Slice 12" tone="accent" />
+        <Stat label="Slice 12" value="Complete" tone="success" />
+        <Stat label="Next" value="Slice 13" tone="accent" />
       </Row>
 
       <Callout tone="info" title="Locked decisions (2026-05-30)">
@@ -940,7 +941,7 @@ export default function PipelineQualityPhase2Plan() {
       </Callout>
 
       <Row gap={8}>
-        <Pill tone="accent">Next: Slice 12</Pill>
+        <Pill tone="accent">Next: Slice 13</Pill>
         <Pill tone="neutral">Legacy: docs/planning/legacy/</Pill>
         <Pill tone="success">Compendium Voice locked</Pill>
       </Row>

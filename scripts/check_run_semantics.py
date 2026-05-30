@@ -23,6 +23,7 @@ from pipeline.discovery.world_registry import entry_kinds
 _GEOGRAPHY_KINDS = frozenset({"zone", "continent", "capital", "region", "instance"})
 _FILLER_RE = re.compile(r"\blocated in\b|\bis a zone\b|\bis located\b", re.IGNORECASE)
 _MAX_CLUSTER_CARDS = 8
+_MAX_CHAIN_REFS = 12
 
 
 class SemanticCheckError(Exception):
@@ -104,6 +105,13 @@ def _cluster_ids_from_v3(v3_rows: list[dict[str, Any]], zone_id: str) -> set[str
     }
 
 
+def _cluster_id_from_card_id(card_id: str) -> str:
+    normalized = str(card_id).replace("cluster-", "", 1)
+    if normalized.endswith("-continued"):
+        return normalized[: -len("-continued")]
+    return normalized
+
+
 def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
     draft_path, resolved_zone_id, zone_name = _resolve_zone_target(run_root, zone_id)
     draft = json.loads(draft_path.read_text(encoding="utf-8"))
@@ -126,6 +134,16 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
             _fail(f"major_questlines cta_hook reads like zone-description filler: {cta!r}")
         if _FILLER_RE.search(cta):
             _fail(f"major_questlines cta_hook reads like zone-description filler: {cta!r}")
+        from pipeline.generate.draft.card_lint import lint_cta_hook
+
+        for issue in lint_cta_hook(cta):
+            _fail(f"major_questlines cta_hook quality check failed for {title!r}: {issue}")
+        chain_refs = row.get("chain_refs", [])
+        if isinstance(chain_refs, list) and len(chain_refs) > _MAX_CHAIN_REFS:
+            _fail(
+                f"major_questlines chain_refs exceeds cap for {title!r} "
+                f"({len(chain_refs)} > {_MAX_CHAIN_REFS})"
+            )
         wiki_refs = row.get("wiki_refs", [])
         if not isinstance(wiki_refs, list) or not wiki_refs:
             _fail(f"major_questlines card missing wiki_refs: {title!r}")
@@ -139,6 +157,9 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
     cards = [row for row in draft.get("major_questlines", []) if isinstance(row, dict)]
     if len(cards) > _MAX_CLUSTER_CARDS:
         _fail(f"major_questlines exceeds cluster card cap ({len(cards)} > {_MAX_CLUSTER_CARDS})")
+    card_titles = [str(row.get("title", "")).strip() for row in cards]
+    if len(cards) >= 2 and all(title.lower() == "main storylines" for title in card_titles if title):
+        _fail("major_questlines cards all use generic Main storylines title")
 
     from pipeline.generate.draft.prose_lint import (
         MAX_HISTORY_SECTIONS,
@@ -173,12 +194,41 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
     if "&#91;" in blob or "History 1" in blob:
         _fail("history_sections contain raw passthrough markers")
 
-    from pipeline.generate.draft.faction_lint import lint_faction_summary
+    from pipeline.generate.draft.faction_lint import lint_faction_summary, summary_has_zone_anchor
     from pipeline.generate.draft.faction_scoring import (
         MAX_FACTION_CARDS,
         MIN_FACTION_CARDS,
         alliance_horde_conflict_met,
     )
+    from pipeline.generate.draft.location_scoring import extract_subregion_tokens
+
+    subregion_tokens: list[str] = []
+    evidence_path_early = run_root / "data" / "evidence" / "evidence_packs.jsonl"
+    if evidence_path_early.exists():
+        seed_pool: list[dict[str, Any]] = []
+        for line in evidence_path_early.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("field_name", "")) not in {"geography_input", "history_digest", "currently_input"}:
+                continue
+            build_meta = row.get("build_meta") or {}
+            if str(build_meta.get("subject_zone_id", row.get("subject_id", ""))).strip() not in {
+                "",
+                resolved_zone_id,
+            }:
+                continue
+            for item in row.get("evidence_items") or []:
+                if isinstance(item, dict):
+                    seed_pool.append(
+                        {
+                            "snippet": str(item.get("snippet", "")),
+                            "section_role": str(item.get("section_role", "")),
+                        }
+                    )
+        subregion_tokens = extract_subregion_tokens(seed_pool, zone_name=zone_name)
 
     major_factions = draft.get("major_factions") or []
     faction_cards = [row for row in major_factions if isinstance(row, dict)]
@@ -189,23 +239,32 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
         summary = str(card.get("summary", "")).strip()
         if not summary:
             _fail(f"major_factions card missing summary: {card_id!r}")
-        for issue in lint_faction_summary(summary, zone_name=zone_name):
+        for issue in lint_faction_summary(
+            summary,
+            zone_name=zone_name,
+            subregion_tokens=subregion_tokens,
+        ):
             _fail(f"major_factions quality check failed for {card_id!r}: {issue}")
+        if card_id in {"faction-alliance", "faction-horde"} and not summary_has_zone_anchor(
+            summary,
+            zone_name=zone_name,
+            subregion_tokens=subregion_tokens,
+        ):
+            _fail(f"major_factions Alliance/Horde summary lacks zone anchor for {card_id!r}")
     if len(faction_cards) > MAX_FACTION_CARDS:
         _fail(f"major_factions exceeds cap ({len(faction_cards)} > {MAX_FACTION_CARDS})")
 
-    if not draft.get("location_cards"):
+    from pipeline.generate.draft.location_scoring import (
+        MAX_LOCATION_CARDS,
+        MIN_LOCATION_CARDS,
+    )
+
+    location_cards = [row for row in draft.get("location_cards") or [] if isinstance(row, dict)]
+    if not location_cards:
         _fail("location_cards is empty")
 
     from pipeline.discovery.entity_typing import should_reject_location_title
     from pipeline.generate.draft.location_lint import lint_location_summary
-    from pipeline.generate.draft.location_scoring import (
-        MAX_LOCATION_CARDS,
-        MIN_LOCATION_CARDS,
-        extract_subregion_tokens,
-    )
-
-    location_cards = [row for row in draft.get("location_cards") or [] if isinstance(row, dict)]
     for card in location_cards:
         card_id = str(card.get("id", "")).strip()
         if not (card_id.startswith("location-") or card_id.startswith("loc-")):
@@ -286,6 +345,23 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
         if isinstance(blob, list):
             v3_rows = [row for row in blob if isinstance(row, dict)]
 
+    if (
+        len(cards) == 1
+        and card_titles
+        and card_titles[0].lower() == "main storylines"
+        and v3_rows
+    ):
+        distinct_titles = {
+            str(row.get("cluster_title", "")).strip()
+            for row in v3_rows
+            if str(row.get("zone_id", "")) == resolved_zone_id
+            and str(row.get("node_type", "")) == "quest"
+            and str(row.get("cluster_title", "")).strip()
+            and str(row.get("cluster_title", "")).strip().lower() != "main storylines"
+        }
+        if len(distinct_titles) >= 2:
+            _fail("major_questlines single card uses Main storylines despite distinct v3 cluster titles")
+
     if v3_rows and snapshots_path.exists():
         v3_titles = {
             str(row.get("title", "")).lower()
@@ -324,12 +400,17 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
     if v3_rows:
         expected_clusters = _cluster_ids_from_v3(v3_rows, resolved_zone_id)
         card_ids = {
-            str(row.get("id", "")).replace("cluster-", "", 1)
+            _cluster_id_from_card_id(str(row.get("id", "")))
             for row in cards
         }
         if expected_clusters:
             if not card_ids:
                 _fail("major_questlines has no cluster cards despite v3 quest clusters")
+            if len(expected_clusters) >= 2 and len(card_ids) < 2:
+                _fail(
+                    f"major_questlines has fewer than 2 cluster cards "
+                    f"({len(card_ids)}) despite {len(expected_clusters)} v3 clusters"
+                )
             if not card_ids.issubset(expected_clusters):
                 _fail(
                     "major_questlines cards reference unknown cluster ids "

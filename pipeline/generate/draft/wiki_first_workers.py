@@ -201,20 +201,20 @@ def synthesize_faction_summary(
     faction_name: str,
     zone_name: str,
     max_words: int = 40,
+    subregion_tokens: list[str] | None = None,
 ) -> tuple[str, list[str]]:
     if not items:
         return "", []
     settings = load_ai_settings()
     if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
-        ranked = sorted(items, key=lambda row: word_count(str(row.get("snippet", ""))), reverse=True)
-        for item in ranked:
-            snippet = clean_wiki_snippet(str(item.get("snippet", "")))
-            if not snippet:
-                continue
-            summary = trim_faction_summary(snippet, max_words)
-            if summary:
-                return summary, [str(item.get("source_id", ""))]
-        return "", []
+        from pipeline.generate.draft.faction_scoring import fallback_faction_summary
+
+        return fallback_faction_summary(
+            items,
+            max_words=max_words,
+            zone_name=zone_name,
+            subregion_tokens=subregion_tokens,
+        )
     result = llm_json_with_retry(
         required_keys=("summary", "used_evidence_ids"),
         response_json_schema={
@@ -239,11 +239,14 @@ def synthesize_faction_summary(
     summary = trim_faction_summary(clean_wiki_snippet(str(result.get("summary", ""))), max_words)
     used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
     if not summary:
-        ranked = sorted(items, key=lambda row: word_count(str(row.get("snippet", ""))), reverse=True)
-        for item in ranked:
-            snippet = trim_faction_summary(clean_wiki_snippet(str(item.get("snippet", ""))), max_words)
-            if snippet:
-                return snippet, [str(item.get("source_id", ""))]
+        from pipeline.generate.draft.faction_scoring import fallback_faction_summary
+
+        return fallback_faction_summary(
+            items,
+            max_words=max_words,
+            zone_name=zone_name,
+            subregion_tokens=subregion_tokens,
+        )
     return summary, used
 
 
@@ -308,9 +311,15 @@ def synthesize_card_summary(
     *,
     subject: str,
     max_words: int = 40,
+    faction: str = "shared",
 ) -> tuple[str, list[str]]:
     if not items:
         return "", []
+    faction_addendum = ""
+    if faction == "alliance":
+        faction_addendum = " Use an imperative verb and name the Horde as the opposing faction when evidence supports it."
+    elif faction == "horde":
+        faction_addendum = " Use an imperative verb and name the Alliance as the opposing faction when evidence supports it."
     settings = load_ai_settings()
     if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
         best = trim_words(
@@ -331,6 +340,7 @@ def synthesize_card_summary(
         },
         system_prompt=(
             f"Write a 1-2 sentence summary for '{subject}' using ONLY evidence. Max {max_words} words."
+            f"{faction_addendum}"
         ),
         user_prompt=f"Evidence:\n{_format_evidence_block(items)}",
         response_schema_name="wiki_first_card_summary",

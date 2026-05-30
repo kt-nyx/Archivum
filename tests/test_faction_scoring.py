@@ -193,13 +193,13 @@ def test_select_major_factions_ranks_by_score() -> None:
                 "faction-argent-crusade",
                 (
                     "The Argent Crusade maintains fortified outposts and coordinates "
-                    "reclamation efforts against undead forces throughout the zone."
+                    "reclamation efforts against undead forces throughout Example Zone."
                 ),
             ),
             _profile_item(
                 "faction-cenarion-circle",
                 (
-                    "The Cenarion Circle sends druids to heal blighted soil and push back corruption "
+                    "The Cenarion Circle sends druids to heal blighted soil in Example Zone and push back corruption "
                     "along the frontier while supporting crusader campaigns across the region."
                 ),
                 section_role="history",
@@ -222,7 +222,7 @@ def test_select_major_factions_ranks_by_score() -> None:
         pools=pools,
         faction_profile_targets=targets,
     )
-    elected = select_major_factions(candidates)
+    elected = select_major_factions(candidates, zone_name="Example Zone")
     assert len(elected) >= 2
     assert elected[0].faction_id == "faction-argent-crusade"
     assert elected[0].score >= elected[1].score

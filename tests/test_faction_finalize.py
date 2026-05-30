@@ -55,13 +55,17 @@ def test_finalize_faction_card_rescues_from_seed_when_profile_fails_lint(monkeyp
                 "source_id": "src-zone",
                 "snippet": (
                     "Argent Crusade patrols continue to push back undead forces along the main road "
-                    "while coordinating reclamation efforts across the contested frontier throughout the zone."
+                    "while coordinating reclamation efforts across Example Zone throughout the frontier."
                 ),
                 "section_role": "quests_edit",
             }
         ],
     )
-    card, used, pool = _finalize_faction_card(candidate, zone_name="Example Zone")
+    card, used, pool = _finalize_faction_card(
+        candidate,
+        zone_name="Example Zone",
+        subregion_tokens=[],
+    )
     assert card is not None
     assert used == ["src-zone"]
     assert pool == candidate.seed_mentions

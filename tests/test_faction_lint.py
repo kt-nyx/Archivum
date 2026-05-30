@@ -21,8 +21,8 @@ def test_ensure_sentence_terminator_preserves_existing_punctuation() -> None:
 
 def test_lint_faction_summary_accepts_zone_role_prose() -> None:
     summary = (
-        "The Argent Crusade maintains fortified outposts across the contested frontier, "
-        "coordinating reclamation efforts against undead forces throughout the ruined zone."
+        "The Argent Crusade maintains fortified outposts across the contested frontier in Example Zone, "
+        "coordinating reclamation efforts against undead forces throughout the ruined farmland."
     )
     assert not lint_faction_summary(summary, zone_name="Example Zone")
 

@@ -60,6 +60,20 @@ _META_PAGE_DENYLIST = frozenset(
     }
 )
 
+_LOCATION_META_TITLES = frozenset({"lore", "adp"})
+
+_FACTION_AS_LOCATION_DENYLIST = frozenset(
+    {
+        "argent dawn",
+        "scourge",
+        "alliance",
+        "horde",
+        "forsaken",
+        "cult of the damned",
+        "crusade",
+    }
+)
+
 _QUEST_GRAPH_REGISTRY_KINDS = frozenset(
     {"zone", "continent", "capital", "region", "instance", "person", "place"}
 )
@@ -185,6 +199,10 @@ def should_reject_location_title(
         return True, ["empty_title"]
     if lowered in _META_PAGE_DENYLIST:
         return True, ["meta_page"]
+    if lowered in _LOCATION_META_TITLES:
+        return True, ["meta_page"]
+    if lowered in _FACTION_AS_LOCATION_DENYLIST:
+        return True, ["faction_title"]
     if lowered in _RACE_SPECIES_DENYLIST:
         return True, ["race_or_species"]
     curated = load_curated_denylist()

@@ -11,13 +11,13 @@ from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.common.wiki_evidence_filters import should_exclude_from_history
 from pipeline.contracts.models import DecisionArtifact, EvidencePack
 from pipeline.discovery.quest_lore import extract_quest_lore
-from pipeline.discovery.storyline_html import parse_storyline_html, v3_to_legacy_v1
-from pipeline.discovery.workflow import (
-    _HARD_REJECT_MARKERS,
-    _LOCATION_INCLUDE_SECTION_WEIGHTS,
-    _load_json,
-    _section_role,
+from pipeline.discovery.location_discovery import (
+    build_location_decision_row,
+    build_zone_seed_text,
 )
+from pipeline.discovery.questline_clustering import apply_cluster_layers
+from pipeline.discovery.storyline_html import parse_storyline_html, v3_to_legacy_v1
+from pipeline.discovery.workflow import _load_json, _section_role
 
 EnrichPhase = Literal["full", "graph_only", "evidence_merge"]
 
@@ -199,13 +199,15 @@ def _build_evidence_packs(
             lore_blocks = snapshot.get("quest_lore_blocks", [])
             if not isinstance(lore_blocks, list) or not lore_blocks:
                 lore_blocks = extract_quest_lore(section_blocks)
-            cluster_id = str(snapshot.get("cluster_id", "")).strip()
             quest_node_id = str(snapshot.get("quest_node_id", snapshot.get("auxiliary_target_id", ""))).strip()
+            link_key = f"{subject_id}|{_normalize_wiki_link_key(wiki_url)}"
+            index_meta = cluster_index.get(link_key) or cluster_index.get(
+                f"{subject_id}|node|{quest_node_id}", {}
+            )
+            cluster_id = str(index_meta.get("cluster_id", "")).strip()
             if not cluster_id:
-                link_key = f"{subject_id}|{_normalize_wiki_link_key(wiki_url)}"
-                meta = cluster_index.get(link_key) or cluster_index.get(f"{subject_id}|node|{quest_node_id}", {})
-                cluster_id = str(meta.get("cluster_id", "")).strip()
-                quest_node_id = quest_node_id or str(meta.get("quest_node_id", "")).strip()
+                cluster_id = str(snapshot.get("cluster_id", "")).strip()
+            quest_node_id = quest_node_id or str(index_meta.get("quest_node_id", "")).strip()
             for snippet_row in lore_blocks:
                 if not isinstance(snippet_row, dict):
                     continue
@@ -477,6 +479,8 @@ def run_discovery_enrich(
         zone_name = zone_names.get(zone_id, "")
         v3_rows = parse_storyline_html(parse_html, zone_id=zone_id, zone_name=zone_name)
         if v3_rows:
+            v3_rows = apply_cluster_layers(v3_rows, html=parse_html)
+        if v3_rows:
             storyline_parse_status[zone_id] = "ok"
         elif parse_html.strip():
             storyline_parse_status[zone_id] = "empty"
@@ -486,62 +490,21 @@ def run_discovery_enrich(
 
     quest_graph = v3_to_legacy_v1(questline_graph_v3)
 
+    zone_seed_text_by_id = {
+        zone_id: build_zone_seed_text(snapshots, zone_id)
+        for zone_id in sorted(zone_names)
+    }
     for candidate in location_candidates:
         if not isinstance(candidate, dict):
             continue
-        name_lowered = str(candidate.get("name", "")).lower()
-        hard_reject_reasons = [m for m in _HARD_REJECT_MARKERS if m in name_lowered]
-        source_section_role = str(candidate.get("source_section_role", "other"))
-        if hard_reject_reasons:
-            location_class = "reject"
-        elif "city" in name_lowered:
-            location_class = "city"
-        elif "starter" in name_lowered:
-            location_class = "starter_area"
-        else:
-            location_class = "major_location_candidate"
-        base_score = 0.15
-        if location_class in {"city", "starter_area"}:
-            base_score += 0.6
-        else:
-            base_score += 0.25
-        base_score += _LOCATION_INCLUDE_SECTION_WEIGHTS.get(source_section_role, 0.0)
-        if any(marker in name_lowered for marker in ("classic", "warcraft rpg", "novel", "novella")):
-            base_score -= 0.35
-        if len(name_lowered.split()) <= 1:
-            base_score -= 0.1
-        score = max(0.0, min(1.0, base_score))
-        borderline = 0.45 <= score <= 0.65
+        zone_id = str(candidate.get("zone_id", "")).strip()
         location_decisions.append(
-            {
-                "subject_id": candidate["location_id"],
-                "subject_type": "location",
-                "run_id": context.run_id,
-                "algorithm_version": "v2-enrich",
-                "features": {
-                    "keyword_density": 1 if score > 0.6 else 0,
-                    "has_hard_reject": bool(hard_reject_reasons),
-                    "source_section_role": source_section_role,
-                },
-                "hard_reject": bool(hard_reject_reasons),
-                "hard_reject_reasons": hard_reject_reasons,
-                "score": score,
-                "thresholds": {"include_min": 0.7, "borderline_min": 0.45, "borderline_max": 0.65},
-                "borderline_adjudication": (
-                    {
-                        "prompt_class": "location_significance_borderline",
-                        "ruling": "include" if score >= 0.5 else "exclude",
-                    }
-                    if borderline
-                    else None
-                ),
-                "final_decision": "exclude" if hard_reject_reasons else ("include" if score >= 0.7 else "defer"),
-                "reason_codes": (
-                    ["hard_reject"]
-                    if hard_reject_reasons
-                    else ["score_based", f"source_role:{source_section_role}"]
-                ),
-            }
+            build_location_decision_row(
+                candidate,
+                run_id=context.run_id,
+                algorithm_version="v2-enrich",
+                seed_text=zone_seed_text_by_id.get(zone_id, ""),
+            )
         )
 
     for zone_id in sorted(set(zone_names) | set(storyline_by_zone)):
