@@ -394,6 +394,16 @@
           "title": "Major Characters",
           "type": "object"
         },
+        "major_factions": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/SourcePointer"
+            },
+            "type": "array"
+          },
+          "title": "Major Factions",
+          "type": "object"
+        },
         "major_landmarks": {
           "additionalProperties": {
             "items": {

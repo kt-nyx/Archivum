@@ -130,7 +130,7 @@ def test_glossary_pipeline_terms_link_validate_bundle(tmp_path: Path, monkeypatc
                 "zone_id": "zone-example",
                 "name": "Example Zone",
                 "wiki_url": "https://warcraft.wiki.gg/wiki/Example_Zone",
-                "parent_continent": "unknown",
+                "parent_continent": "eastern-kingdoms",
                 "expansion_context": "retail",
                 "at_a_glance": (
                     "Scourge patrols continue to threaten Example Zone while crusader commanders "
@@ -145,7 +145,8 @@ def test_glossary_pipeline_terms_link_validate_bundle(tmp_path: Path, monkeypatc
                         "heading": "Conflict",
                         "body": (
                             "Scourge offensives reshaped Example Zone for generations, forcing repeated "
-                            "campaigns to reclaim farmland and restore defensive infrastructure."
+                            "campaigns to reclaim farmland, restore defensive infrastructure, and hold "
+                            "strategic crossings against renewed undead incursions across the frontier."
                         ),
                     }
                 ],
@@ -200,6 +201,16 @@ def test_glossary_pipeline_terms_link_validate_bundle(tmp_path: Path, monkeypatc
                     "major_questlines_horde": {},
                     "major_questlines_shared": {},
                     "major_characters": {},
+                    "major_factions": {
+                        "faction-scourge": [
+                            {
+                                "source_id": "src-zone",
+                                "locator": "section:faction paragraph:1",
+                                "revision_id": "mw:1",
+                                "excerpt_hash": "sha1:faction1111111111",
+                            }
+                        ]
+                    },
                     "instances": {},
                     "major_landmarks": {},
                     "glossary": {},
@@ -214,6 +225,9 @@ def test_glossary_pipeline_terms_link_validate_bundle(tmp_path: Path, monkeypatc
     updated = json.loads(draft_path.read_text(encoding="utf-8"))
     report = validate_payload("zone_page", updated)
     assert updated["glossary_refs"]
+    assert updated["provenance"]["glossary"]
+    for term_id in {ref["term_id"] for ref in updated["glossary_refs"]}:
+        assert term_id in updated["provenance"]["glossary"]
     glossary_issues = [
         issue
         for issue in report.issues

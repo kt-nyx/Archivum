@@ -73,6 +73,7 @@ def _valid_draft() -> dict[str, object]:
     return {
         "zone_id": "zone-example",
         "name": "Example Zone",
+        "parent_continent": "eastern-kingdoms",
         "major_questlines": [
             {
                 "id": "cluster-part-1",
@@ -112,6 +113,44 @@ def _valid_draft() -> dict[str, object]:
             }
         ],
     }
+
+
+def test_check_run_fails_on_unresolved_parent_continent(tmp_path: Path) -> None:
+    run_root = tmp_path / "run-parent-continent"
+    run_root.mkdir()
+    draft = _valid_draft()
+    draft["parent_continent"] = "unknown"
+    _write_minimal_run(run_root, draft=draft)
+    with pytest.raises(SemanticCheckError, match="parent_continent unresolved"):
+        check_run(run_root, zone_id="zone-example")
+
+
+def test_check_run_fails_on_generic_instance_link_summary(tmp_path: Path) -> None:
+    run_root = tmp_path / "run-instance-link-stub"
+    run_root.mkdir()
+    draft = _valid_draft()
+    draft["instance_links"] = [
+        {
+            "id": "instance-example",
+            "name": "Example Instance",
+            "summary": "Example Instance anchors a key conflict thread linked to this zone.",
+            "thumbnail_asset_id": None,
+        }
+    ]
+    draft.setdefault("provenance", {})
+    draft["provenance"]["instances"] = {
+        "instance-example": [
+            {
+                "source_id": "src-zone",
+                "locator": "section:instances paragraph:1",
+                "revision_id": "mw:1",
+                "excerpt_hash": "sha256:instance111111111",
+            }
+        ]
+    }
+    _write_minimal_run(run_root, draft=draft)
+    with pytest.raises(SemanticCheckError, match="generic stub"):
+        check_run(run_root, zone_id="zone-example")
 
 
 def test_check_run_passes_minimal_valid_run(tmp_path: Path) -> None:
@@ -456,6 +495,25 @@ def test_check_run_validates_linked_glossary_refs(tmp_path: Path, capsys, monkey
             "wiki_url": "https://example.test/scourge",
         },
     ]
+    draft.setdefault("provenance", {})
+    draft["provenance"]["glossary"] = {
+        "term-example-zone": [
+            {
+                "source_id": "src-zone",
+                "locator": "section:lead paragraph:1",
+                "revision_id": "mw:1",
+                "excerpt_hash": "sha256:glossary111111111",
+            }
+        ],
+        "term-scourge": [
+            {
+                "source_id": "src-zone",
+                "locator": "section:history paragraph:1",
+                "revision_id": "mw:1",
+                "excerpt_hash": "sha256:glossary222222222",
+            }
+        ],
+    }
     draft_path.write_text(json.dumps(draft, indent=2), encoding="utf-8")
     glossary_path = run_root / "data" / "glossary" / "run_terms.jsonl"
     glossary_path.write_text(

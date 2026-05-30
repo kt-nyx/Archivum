@@ -53,7 +53,7 @@ const SLICES = [
   {
     id: "slice-8",
     content: "Slice 8 — Provenance anchors, validation hardening, stub removal",
-    status: "pending" as const,
+    status: "completed" as const,
   },
 ];
 
@@ -78,6 +78,7 @@ export default function WikiFirstPipelineMasterPlan() {
         <Stat label="Slice 5" value="Completed" tone="success" />
         <Stat label="Slice 6" value="Completed" tone="success" />
         <Stat label="Slice 7" value="Completed" tone="success" />
+        <Stat label="Slice 8" value="Completed" tone="success" />
       </Row>
 
       <Callout tone="info" title="Zone-agnostic engineering policy">
@@ -333,8 +334,8 @@ export default function WikiFirstPipelineMasterPlan() {
             [
               "related_quest_chains",
               "Instance page field",
-              "Still empty [] on instance drafts",
-              "Deferred to Slice 8 per master plan",
+              "Removed from contracts/schemas — questlines are zone-only",
+              "Removed in Slice 8 per product decision",
             ],
             [
               "Zone instance_links card quality",
@@ -384,6 +385,64 @@ export default function WikiFirstPipelineMasterPlan() {
             [
               "Run semantics",
               "uv run python scripts/check_run_semantics.py artifacts/runs/<run-id> (instance section auto-runs)",
+            ],
+          ]}
+        />
+      </CollapsibleSection>
+
+      <Divider />
+      <H2>Slice 8 — completed summary</H2>
+      <Table
+        headers={["Deliverable", "Status", "Notes"]}
+        rows={[
+          ["ZoneProvenance.major_factions", "Done", "Contract + schema parity; validate + semantics enforce card pointers"],
+          ["InstanceProvenance major_factions + glossary", "Done", "Draft wiring + linker glossary provenance on page entities"],
+          ["parent_continent resolver", "Done", "pipeline/discovery/geography.py from seed evidence + continent titles"],
+          ["Instance-link stub removal", "Done", "No generic fallback; instance_link_lint + validate/semantics gates"],
+          ["related_quest_chains removal", "Done", "Dropped from InstancePage — questlines remain zone-only"],
+          ["Provenance pointer cap", "Done", "WARN default; HARD_FAIL under release_gate (>3 pointers per card/section)"],
+          ["Validate hardening", "Done", "provenance.py, structure.py (parent_continent, instance-link stubs), budget.py card budgets"],
+          ["Semantics alignment", "Done", "instance_links, glossary provenance, instance faction provenance, parent_continent"],
+          ["Test factories", "Done", "tests/factories/wiki_first_pages.py + geography/provenance/lint tests"],
+        ]}
+      />
+
+      <CollapsibleSection title="Slice 8 — intentional deviations (documented)" count={3}>
+        <Table
+          headers={["Topic", "Plan / canvas wording", "Actual behaviour", "Rationale"]}
+          rows={[
+            [
+              "location_cards vs major_landmarks",
+              "Naming unification",
+              "Draft field location_cards; provenance map major_landmarks unchanged",
+              "Deferred — no addon contract change required",
+            ],
+            [
+              "history_sections.source_refs",
+              "Per-section anchor population",
+              "Aggregate provenance.history still validated; per-section source_refs optional P2",
+              "Release gate met without inline section refs",
+            ],
+            [
+              "Static glossary fallback",
+              "Tests-only",
+              "linker/bundle still load glossary_aliases.v1.json when run_terms.jsonl absent",
+              "Backward-compatible dev/CI; production runs use run-scoped terms",
+            ],
+          ]}
+        />
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Slice 8 — verification (completed)" count={4}>
+        <Table
+          headers={["Check", "Criterion"]}
+          rows={[
+            ["Unit tests", "uv run pytest (includes test_provenance_page_entities, test_geography, test_instance_link_lint)"],
+            ["parent_continent", "Resolved slug or validate/semantics fail on unknown"],
+            ["Glossary provenance", "Each linked term_id has provenance.glossary entry post-linker"],
+            [
+              "Run semantics",
+              "uv run python scripts/check_run_semantics.py artifacts/runs/<run-id> (instance_links + glossary provenance)",
             ],
           ]}
         />
@@ -701,7 +760,7 @@ export default function WikiFirstPipelineMasterPlan() {
           ["5 ✓", "W7", "Location denylist, relevance, no defer padding", "Landmarks section"],
           ["6 ✓", "W8", "Instance LLM workers, boss parse, instance_lore traverse", "Instance pages"],
           ["7 ✓", "W9", "Run-scoped glossary terms; linker; wiki_url on refs", "Click-to-wiki UX"],
-          ["8", "W10, W11", "Provenance anchors; validation; remove remaining stubs", "Release quality"],
+          ["8 ✓", "W10, W11", "Provenance anchors; validation; remove remaining stubs", "Release quality"],
         ]}
       />
 
@@ -822,16 +881,17 @@ export default function WikiFirstPipelineMasterPlan() {
           ["discovery / storyline_html", "List-item quest parse only (Slice 1 ✓)"],
           ["discovery / entity_typing", "Denylist taxonomy + zone_name self-check (Slice 1 ✓)"],
           ["discovery / enrich", "Scoped evidence + quest_lore / instance seed boss_pool / instance_lore_pool (Slice 1–6 ✓)"],
-          ["scripts/check_run_semantics.py", "Cluster cards + prose + faction + location + instance + glossary quality (Slice 1–7 ✓)"],
-          ["draft / wiki_first", "Zone prose + major_factions + location_cards + instance finalize path (Slice 2–6 ✓)"],
+          ["scripts/check_run_semantics.py", "Cluster cards + prose + faction + location + instance + glossary + provenance quality (Slice 1–8 ✓)"],
+          ["draft / wiki_first", "Zone prose + major_factions + location_cards + instance finalize + parent_continent (Slice 2–8 ✓)"],
           ["glossary / run_terms", "Run-scoped terms from drafts + canonical map (Slice 7 ✓)"],
-          ["linker", "Run dictionary + enriched glossary_refs with wiki_url (Slice 7 ✓)"],
+          ["linker", "Run dictionary + enriched glossary_refs + page-entity glossary provenance (Slice 7–8 ✓)"],
+          ["validate / provenance", "major_factions + glossary maps, pointer cap, parent_continent (Slice 8 ✓)"],
           ["dictionary/", "Run-scoped terms replace static pilot aliases in pipeline runs (Slice 7 ✓)"],
         ]}
       />
 
       <Row gap={8}>
-        <Pill tone="accent">Next: Slice 8</Pill>
+        <Pill tone="success">All 8 slices complete</Pill>
         <Pill tone="neutral">PoC QA: WPL + Scholomance (data only)</Pill>
         <Pill tone="success">Policy: zone-agnostic code</Pill>
       </Row>

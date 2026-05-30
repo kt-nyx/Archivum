@@ -146,6 +146,16 @@
           "title": "Identity Header",
           "type": "array"
         },
+        "glossary": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/SourcePointer"
+            },
+            "type": "array"
+          },
+          "title": "Glossary",
+          "type": "object"
+        },
         "key_characters": {
           "additionalProperties": {
             "items": {
@@ -154,6 +164,16 @@
             "type": "array"
           },
           "title": "Key Characters",
+          "type": "object"
+        },
+        "major_factions": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/SourcePointer"
+            },
+            "type": "array"
+          },
+          "title": "Major Factions",
           "type": "object"
         },
         "story_context": {
@@ -385,13 +405,6 @@
     },
     "provenance": {
       "$ref": "#/$defs/InstanceProvenance"
-    },
-    "related_quest_chains": {
-      "items": {
-        "$ref": "#/$defs/QuestlineCardV2"
-      },
-      "title": "Related Quest Chains",
-      "type": "array"
     },
     "sources": {
       "items": {

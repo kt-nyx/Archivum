@@ -18,6 +18,7 @@ from pipeline.contracts.models import (
     Zone,
     ZonePage,
 )
+from pipeline.generate.draft.instance_link_lint import is_generic_instance_link_summary
 from pipeline.validate.types import ValidationIssue, ValidationSeverity
 
 
@@ -479,6 +480,26 @@ def _validate_zone_page(
             path_prefix="$.glossary_refs",
         )
     )
+    if zone_page.parent_continent.strip().lower() in {"", "unknown"}:
+        issues.append(
+            ValidationIssue(
+                code="structure.zone_page_parent_continent_unresolved",
+                message="parent_continent must be resolved from seed geography evidence",
+                severity=ValidationSeverity.HARD_FAIL,
+                path="$.parent_continent",
+            )
+        )
+    for index, card in enumerate(zone_page.instance_links):
+        summary = card.summary.strip()
+        if summary and is_generic_instance_link_summary(summary):
+            issues.append(
+                ValidationIssue(
+                    code="structure.zone_page_generic_instance_link",
+                    message="instance_links summary reads like generic stub filler",
+                    severity=ValidationSeverity.HARD_FAIL,
+                    path=f"$.instance_links[{index}].summary",
+                )
+            )
     return issues
 
 

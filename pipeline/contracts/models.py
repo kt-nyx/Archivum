@@ -264,6 +264,7 @@ class ZoneProvenance(BaseModel):
     major_questlines_horde: dict[str, list[SourcePointer]] = Field(default_factory=dict)
     major_questlines_shared: dict[str, list[SourcePointer]] = Field(default_factory=dict)
     major_characters: dict[str, list[SourcePointer]] = Field(default_factory=dict)
+    major_factions: dict[str, list[SourcePointer]] = Field(default_factory=dict)
     instances: dict[str, list[SourcePointer]] = Field(default_factory=dict)
     major_landmarks: dict[str, list[SourcePointer]] = Field(default_factory=dict)
     glossary: dict[str, list[SourcePointer]] = Field(default_factory=dict)
@@ -366,6 +367,8 @@ class InstanceProvenance(BaseModel):
     identity_header: list[SourcePointer] = Field(default_factory=list)
     story_context: list[SourcePointer] = Field(default_factory=list)
     key_characters: dict[str, list[SourcePointer]] = Field(default_factory=dict)
+    major_factions: dict[str, list[SourcePointer]] = Field(default_factory=dict)
+    glossary: dict[str, list[SourcePointer]] = Field(default_factory=dict)
 
 
 class InstancePage(BaseModel):
@@ -382,7 +385,6 @@ class InstancePage(BaseModel):
     history_sections: list[HistorySection] = Field(default_factory=list)
     key_enemies: list[CharacterCard] = Field(default_factory=list)
     major_factions: list[FactionCard] = Field(default_factory=list)
-    related_quest_chains: list[QuestlineCardV2] = Field(default_factory=list)
     lore_source: Literal["instance_page", "linked_lore_page"] = "instance_page"
     lore_source_reason: str | None = None
     variant_policy: Literal["standalone", "merged_variant"] = "standalone"

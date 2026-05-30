@@ -228,6 +228,50 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
     if len(draft.get("sources", [])) < 2:
         _fail("expected multiple sources on zone draft")
 
+    parent_continent = str(draft.get("parent_continent", "")).strip().lower()
+    if not parent_continent or parent_continent == "unknown":
+        _fail(f"parent_continent unresolved for zone {resolved_zone_id!r}")
+
+    from pipeline.generate.draft.instance_link_lint import (
+        is_generic_instance_link_summary,
+        lint_instance_link_summary,
+    )
+
+    instance_links = [row for row in draft.get("instance_links") or [] if isinstance(row, dict)]
+    instance_registry_path = run_root / "data" / "discovery" / "zone_instance_registry.json"
+    expected_instance_ids: set[str] = set()
+    if instance_registry_path.exists():
+        registry_blob = _load_json(instance_registry_path)
+        if isinstance(registry_blob, list):
+            expected_instance_ids = {
+                str(row.get("instance_id", "")).strip()
+                for row in registry_blob
+                if isinstance(row, dict) and str(row.get("source_zone_id", "")).strip() == resolved_zone_id
+            }
+            expected_instance_ids = {instance_id for instance_id in expected_instance_ids if instance_id}
+    instance_provenance = (draft.get("provenance") or {}).get("instances") or {}
+    for card in instance_links:
+        card_id = str(card.get("id", "")).strip()
+        instance_name = str(card.get("name", "")).strip()
+        summary = str(card.get("summary", "")).strip()
+        if not summary:
+            _fail(f"instance_links card missing summary: {card_id!r}")
+        if is_generic_instance_link_summary(summary):
+            _fail(f"instance_links summary reads like generic stub: {card_id!r}")
+        for issue in lint_instance_link_summary(
+            summary,
+            instance_name=instance_name,
+            zone_name=zone_name,
+        ):
+            _fail(f"instance_links quality check failed for {card_id!r}: {issue}")
+        if card_id and card_id not in instance_provenance:
+            _fail(f"instance_links card missing provenance: {card_id!r}")
+    if expected_instance_ids and not instance_links:
+        _fail(
+            f"instance_links empty despite {len(expected_instance_ids)} registered instances "
+            f"for zone {resolved_zone_id!r}"
+        )
+
     v3_path = run_root / "data" / "discovery" / "zone_quest_graph_v3.json"
     snapshots_path = run_root / "data" / "ingest" / "source_snapshots.json"
     v3_rows: list[dict[str, Any]] = []
@@ -681,6 +725,26 @@ def _check_glossary(run_root: Path) -> None:
     if zone_name_terms and not zone_name_terms.intersection(linked_labels):
         _fail("glossary links missing zone name term coverage")
 
+    draft_root = run_root / "data" / "drafts"
+    for draft_dir_name in ("zone_page", "instance_page"):
+        draft_dir = draft_root / draft_dir_name
+        if not draft_dir.exists():
+            continue
+        for draft_path in sorted(draft_dir.glob("*.json")):
+            draft = _load_json(draft_path)
+            if not isinstance(draft, dict):
+                continue
+            glossary_map = (draft.get("provenance") or {}).get("glossary") or {}
+            for ref in draft.get("glossary_refs") or []:
+                if not isinstance(ref, dict):
+                    continue
+                term_id = str(ref.get("term_id", "")).strip()
+                if term_id and term_id not in glossary_map:
+                    _fail(
+                        f"glossary ref {term_id!r} missing provenance.glossary entry "
+                        f"in {draft_path.name}"
+                    )
+
     print(f"PASS: glossary semantic checks ok for {run_root.name}")
 
 
@@ -754,6 +818,27 @@ def _check_instance_drafts(run_root: Path) -> None:
         instance_evidence = [
             row for row in evidence_rows if str(row.get("subject_id", "")).strip() == instance_id
         ]
+        faction_ids_with_profile: set[str] = set()
+        for row in instance_evidence:
+            if str(row.get("field_name", "")) != "faction_pool":
+                continue
+            build_meta = row.get("build_meta") or {}
+            faction_id = str(build_meta.get("faction_id", "")).strip()
+            if faction_id:
+                faction_ids_with_profile.add(faction_id)
+        if parent_zone_id:
+            targets_path = run_root / "data" / "discovery" / "faction_profile_targets.json"
+            if targets_path.exists():
+                targets_blob = _load_json(targets_path)
+                if isinstance(targets_blob, list):
+                    for row in targets_blob:
+                        if not isinstance(row, dict):
+                            continue
+                        if str(row.get("zone_id", "")).strip() != parent_zone_id:
+                            continue
+                        faction_id = str(row.get("faction_id", "")).strip()
+                        if faction_id:
+                            faction_ids_with_profile.add(faction_id)
 
         at_a_glance = str(draft.get("at_a_glance", "")).strip()
         if not at_a_glance:
@@ -843,10 +928,16 @@ def _check_instance_drafts(run_root: Path) -> None:
                 _fail(f"instance key_enemy missing provenance: {card_id!r}")
 
         faction_cards = [row for row in draft.get("major_factions") or [] if isinstance(row, dict)]
+        faction_provenance = provenance.get("major_factions") or {}
         for card in faction_cards:
+            card_id = str(card.get("id", "")).strip()
             summary = str(card.get("summary", "")).strip()
             for issue in lint_faction_summary(summary, zone_name=parent_zone_name):
                 _fail(f"instance major_factions quality check failed for {instance_id!r}: {issue}")
+            if card_id in faction_ids_with_profile and card_id not in faction_provenance:
+                _fail(
+                    f"instance major_factions card missing provenance despite profile evidence: {card_id!r}"
+                )
 
         print(f"PASS: instance semantic checks ok for {instance_id}")
 

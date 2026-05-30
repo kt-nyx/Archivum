@@ -242,6 +242,7 @@ def _valid_zone_page_payload() -> dict[str, Any]:
             "major_questlines_horde": {},
             "major_questlines_shared": {},
             "major_characters": {},
+            "major_factions": {},
             "instances": {},
             "major_landmarks": {},
             "glossary": {},
@@ -274,7 +275,6 @@ def _valid_instance_page_payload() -> dict[str, Any]:
         ],
         "key_enemies": [],
         "major_factions": [],
-        "related_quest_chains": [],
         "lore_source": "instance_page",
         "lore_source_reason": None,
         "variant_policy": "standalone",
@@ -305,6 +305,8 @@ def _valid_instance_page_payload() -> dict[str, Any]:
                 }
             ],
             "key_characters": {},
+            "major_factions": {},
+            "glossary": {},
         },
     }
 
@@ -1108,6 +1110,44 @@ def test_instance_page_missing_key_enemy_card_provenance_hard_fails() -> None:
     report = validate_payload("instance_page", payload)
     assert report.passed is False
     assert any(issue.code == "provenance.missing_card_pointers" for issue in report.issues)
+
+
+def test_zone_page_generic_instance_link_hard_fails() -> None:
+    payload = _valid_zone_page_payload()
+    payload["instance_links"] = [
+        {
+            "id": "instance-example",
+            "name": "Example Instance",
+            "summary": "Example Instance anchors a key conflict thread linked to this zone.",
+            "thumbnail_asset_id": None,
+        }
+    ]
+    report = validate_payload("zone_page", payload)
+    assert report.passed is False
+    assert any(issue.code == "structure.zone_page_generic_instance_link" for issue in report.issues)
+
+
+def test_zone_page_pointer_cap_hard_fails_under_release_gate() -> None:
+    payload = _valid_zone_page_payload()
+    payload["provenance"]["at_a_glance"] = [
+        {
+            "source_id": "src-zone",
+            "locator": f"section:lead paragraph:{index}",
+            "revision_id": "mw:42",
+            "excerpt_hash": f"sha256:cap{index:012d}",
+        }
+        for index in range(4)
+    ]
+    report = validate_payload("zone_page", payload, validation_context={"release_gate": True})
+    assert any(issue.code == "provenance.pointer_cap_exceeded" for issue in report.issues)
+
+
+def test_zone_page_parent_continent_unknown_hard_fails() -> None:
+    payload = _valid_zone_page_payload()
+    payload["parent_continent"] = "unknown"
+    report = validate_payload("zone_page", payload)
+    assert report.passed is False
+    assert any(issue.code == "structure.zone_page_parent_continent_unresolved" for issue in report.issues)
 
 
 def test_zone_page_glossary_ref_missing_wiki_url_hard_fails() -> None:

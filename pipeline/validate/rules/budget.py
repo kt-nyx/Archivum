@@ -313,6 +313,28 @@ def _validate_zone_page(zone_page: ZonePage) -> list[ValidationIssue]:
                     path=f"$.history_sections[{index}].body",
                 )
             )
+    for index, card in enumerate(zone_page.major_factions):
+        words = _word_count(card.summary)
+        if words < 12:
+            issues.append(
+                ValidationIssue(
+                    code="budget.faction_card",
+                    message=f"major_factions summary word count {words} is below minimum 12",
+                    severity=ValidationSeverity.WARN,
+                    path=f"$.major_factions[{index}].summary",
+                )
+            )
+    for index, card in enumerate(zone_page.instance_links):
+        words = _word_count(card.summary)
+        if words and not (10 <= words <= 35):
+            issues.append(
+                ValidationIssue(
+                    code="budget.instance_link_card",
+                    message=f"instance_links summary word count {words} is outside budget [10, 35]",
+                    severity=ValidationSeverity.WARN,
+                    path=f"$.instance_links[{index}].summary",
+                )
+            )
     return issues
 
 

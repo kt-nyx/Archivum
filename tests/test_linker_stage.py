@@ -52,6 +52,7 @@ def test_linker_adds_glossary_links_and_zone_provenance(tmp_path: Path) -> None:
                     "major_questlines_horde": {},
                     "major_questlines_shared": {},
                     "major_characters": {},
+                    "major_factions": {},
                     "instances": {},
                     "major_landmarks": {},
                     "glossary": {},
@@ -112,6 +113,7 @@ def test_linker_routes_ambiguous_alias_to_manual_review(
                     "major_questlines_horde": {},
                     "major_questlines_shared": {},
                     "major_characters": {},
+                    "major_factions": {},
                     "instances": {},
                     "major_landmarks": {},
                     "glossary": {},
@@ -191,6 +193,7 @@ def test_linker_routes_review_band_confidence_to_manual_review(
                     "major_questlines_horde": {},
                     "major_questlines_shared": {},
                     "major_characters": {},
+                    "major_factions": {},
                     "instances": {},
                     "major_landmarks": {},
                     "glossary": {},
@@ -262,6 +265,7 @@ def test_linker_prefers_section_pointer_for_new_glossary_provenance(tmp_path: Pa
                     "major_questlines_horde": {},
                     "major_questlines_shared": {},
                     "major_characters": {},
+                    "major_factions": {},
                     "instances": {},
                     "major_landmarks": {},
                     "glossary": {},
@@ -328,6 +332,7 @@ def test_linker_enforces_density_cap_on_final_links(
                     "major_questlines_horde": {},
                     "major_questlines_shared": {},
                     "major_characters": {},
+                    "major_factions": {},
                     "instances": {},
                     "major_landmarks": {},
                     "glossary": {},
@@ -434,6 +439,7 @@ def test_linker_short_drafts_do_not_exceed_density_cap(
                     "major_questlines_horde": {},
                     "major_questlines_shared": {},
                     "major_characters": {},
+                    "major_factions": {},
                     "instances": {},
                     "major_landmarks": {},
                     "glossary": {},
@@ -511,6 +517,7 @@ def test_linker_ambiguity_is_evaluated_per_section(
                     "major_questlines_horde": {},
                     "major_questlines_shared": {},
                     "major_characters": {},
+                    "major_factions": {},
                     "instances": {},
                     "major_landmarks": {},
                     "glossary": {},
@@ -600,7 +607,6 @@ def test_linker_keeps_instance_page_schema_valid_with_glossary_refs(
                 ],
                 "key_enemies": [],
                 "major_factions": [],
-                "related_quest_chains": [],
                 "lore_source": "instance_page",
                 "lore_source_reason": None,
                 "variant_policy": "standalone",
@@ -637,6 +643,8 @@ def test_linker_keeps_instance_page_schema_valid_with_glossary_refs(
                         },
                     ],
                     "key_characters": {},
+                    "major_factions": {},
+                    "glossary": {},
                 },
             },
             indent=2,
@@ -660,6 +668,9 @@ def test_linker_keeps_instance_page_schema_valid_with_glossary_refs(
     updated_draft = json.loads(draft_path.read_text(encoding="utf-8"))
 
     assert updated_draft["glossary_refs"]
+    assert updated_draft["provenance"]["glossary"]
+    first_term = updated_draft["glossary_refs"][0]["term_id"]
+    assert updated_draft["provenance"]["glossary"][first_term]
     report = validate_payload("instance_page", updated_draft)
     assert report.passed is True
     assert not any(issue.code == "schema.invalid" for issue in report.issues)
@@ -727,6 +738,7 @@ def test_linker_scans_wiki_first_history_sections(tmp_path: Path, monkeypatch: p
                     "major_questlines_horde": {},
                     "major_questlines_shared": {},
                     "major_characters": {},
+                    "major_factions": {},
                     "instances": {},
                     "major_landmarks": {},
                     "glossary": {},
@@ -821,6 +833,7 @@ def test_linker_enriches_refs_from_run_terms(tmp_path: Path) -> None:
                     "major_questlines_horde": {},
                     "major_questlines_shared": {},
                     "major_characters": {},
+                    "major_factions": {},
                     "instances": {},
                     "major_landmarks": {},
                     "glossary": {},
@@ -898,6 +911,7 @@ def test_linker_scans_major_faction_card_text(tmp_path: Path) -> None:
                     "major_questlines_horde": {},
                     "major_questlines_shared": {},
                     "major_characters": {},
+                    "major_factions": {},
                     "instances": {},
                     "major_landmarks": {},
                     "glossary": {},

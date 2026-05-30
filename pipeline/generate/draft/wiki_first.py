@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from pipeline.common.text_normalize import clean_wiki_snippet
+from pipeline.generate.draft.instance_link_lint import trim_instance_link_summary
 from pipeline.generate.draft.instance_lint import (
     fallback_instance_overview,
     fallback_key_enemy_summary,
@@ -14,6 +15,7 @@ from pipeline.generate.draft.instance_lint import (
     lint_key_enemy_summary,
     lint_overview,
 )
+from pipeline.discovery.geography import resolve_parent_continent
 from pipeline.discovery.instance_bosses import BossCandidate, collect_boss_candidates
 from pipeline.contracts.models import INSTANCE_MAX_KEY_CHARACTERS
 from pipeline.generate.draft.faction_lint import ensure_sentence_terminator, lint_faction_summary
@@ -193,6 +195,13 @@ def _pointer_for_item(
         "revision_id": revision_id,
         "excerpt_hash": f"sha256:{digest}",
     }
+
+
+def _cap_card_pointers(
+    pointers: list[dict[str, str]],
+    max_count: int = 3,
+) -> list[dict[str, str]]:
+    return pointers[:max_count]
 
 
 def _pointer_count_for_words(word_count: int) -> int:
@@ -411,9 +420,9 @@ def _finalize_key_enemies(
                 )
             if lint_key_enemy_summary(summary, boss_name=candidate.name, instance_name=instance_name):
                 continue
-            pointers = _pointers_for_source_ids(pool, used, revision_map)
+            pointers = _cap_card_pointers(_pointers_for_source_ids(pool, used, revision_map))
             if not pointers and boss_pool is not pool:
-                pointers = _pointers_for_source_ids(boss_pool, used, revision_map)
+                pointers = _cap_card_pointers(_pointers_for_source_ids(boss_pool, used, revision_map))
             if not pointers:
                 continue
             card = {
@@ -669,7 +678,7 @@ def build_major_factions(
         if card is None:
             continue
         cards.append(card)
-        pointers = _pointers_for_source_ids(pool, used, revision_map)
+        pointers = _cap_card_pointers(_pointers_for_source_ids(pool, used, revision_map))
         if pointers:
             provenance_map[str(card["id"])] = pointers
         if target_count and len(cards) >= target_count:
@@ -781,7 +790,7 @@ def build_location_cards(
             "provenance": [],
         }
         cards.append(card)
-        pointers = _pointers_for_source_ids(source_pool, used_ids, revision_map)
+        pointers = _cap_card_pointers(_pointers_for_source_ids(source_pool, used_ids, revision_map))
         if pointers:
             provenance_map[candidate.location_id] = pointers
         if len(cards) >= target_count and target_count > 0:
@@ -789,12 +798,11 @@ def build_location_cards(
     return cards, provenance_map
 
 
-def _build_instance_links(
+def _instance_link_candidates(
     zone_id: str,
     instance_rows: list[dict[str, Any]],
-    instance_pool: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    links: list[dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
     for row in instance_rows:
         if str(row.get("source_zone_id", "")) != zone_id:
             continue
@@ -802,18 +810,14 @@ def _build_instance_links(
         instance_id = str(row.get("instance_id", "")).strip()
         if not name or not instance_id:
             continue
-        summary = _best_snippet_for_term(instance_pool, name, min_words=10)
-        if not summary:
-            summary = f"{name} anchors a key conflict thread linked to this zone."
-        links.append(
+        candidates.append(
             {
                 "id": instance_id,
                 "name": name,
-                "summary": summary,
                 "thumbnail_asset_id": None,
             }
         )
-    return links[:8]
+    return candidates[:8]
 
 
 def _group_v3_clusters(questline_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -989,7 +993,7 @@ def build_zone_page(
                 "wiki_refs": wiki_refs,
             }
         )
-        pointers = _pointers_for_source_ids(scoped_pool, cta_used, revision_map)
+        pointers = _cap_card_pointers(_pointers_for_source_ids(scoped_pool, cta_used, revision_map))
         if pointers:
             bucket = _provenance_bucket_for_faction(faction)
             questline_provenance_by_bucket[bucket][card_id] = pointers
@@ -1010,14 +1014,31 @@ def build_zone_page(
         for pointer in pointers:
             used_source_ids.add(pointer["source_id"])
 
-    instance_links = _build_instance_links(zone_id, instance_rows, pools["instance_pool"])
+    instance_links: list[dict[str, Any]] = []
     instance_provenance_map: dict[str, list[dict[str, str]]] = {}
-    for card in instance_links:
-        scoped = [item for item in pools["instance_pool"] if str(card.get("name", "")).lower() in str(item.get("snippet", "")).lower()] or pools["instance_pool"]
-        summary, used_ids = synthesize_card_summary(scoped, subject=str(card.get("name", "")), max_words=35)
-        if summary:
-            card["summary"] = summary
-        pointers = _pointers_for_source_ids(scoped, used_ids, revision_map)
+    for candidate in _instance_link_candidates(zone_id, instance_rows):
+        instance_name = str(candidate.get("name", "")).strip()
+        scoped = [
+            item
+            for item in pools["instance_pool"]
+            if instance_name.lower() in str(item.get("snippet", "")).lower()
+        ] or pools["instance_pool"]
+        summary, used_ids = synthesize_card_summary(scoped, subject=instance_name, max_words=35)
+        if not summary:
+            summary = _best_snippet_for_term(scoped, instance_name, min_words=10)
+            if summary:
+                used_ids = [
+                    str(item.get("source_id", "")).strip()
+                    for item in scoped
+                    if instance_name.lower() in str(item.get("snippet", "")).lower()
+                    and str(item.get("source_id", "")).strip()
+                ]
+        if not summary:
+            continue
+        summary = trim_instance_link_summary(summary)
+        card = {**candidate, "summary": summary}
+        instance_links.append(card)
+        pointers = _cap_card_pointers(_pointers_for_source_ids(scoped, used_ids, revision_map))
         if pointers:
             instance_provenance_map[str(card["id"])] = pointers
             for pointer in pointers:
@@ -1035,6 +1056,7 @@ def build_zone_page(
     for pointers in faction_provenance_map.values():
         for pointer in pointers:
             used_source_ids.add(pointer["source_id"])
+    parent_continent = resolve_parent_continent(evidence_rows) or "unknown"
     sources = [
         {"source_id": source_id, "url": source_urls[source_id], "revision_id": revision_map.get(source_id)}
         for source_id in sorted(used_source_ids)
@@ -1044,7 +1066,7 @@ def build_zone_page(
         "zone_id": zone_id,
         "name": name,
         "wiki_url": source_url or "https://warcraft.wiki.gg/",
-        "parent_continent": "unknown",
+        "parent_continent": parent_continent,
         "expansion_context": "retail",
         "at_a_glance": at_a_glance,
         "currently": currently,
@@ -1191,7 +1213,6 @@ def build_instance_page(
         "history_sections": history_sections,
         "key_enemies": key_enemies,
         "major_factions": major_factions,
-        "related_quest_chains": [],
         "lore_source": str((lore_source or {}).get("lore_source", "instance_page")),
         "lore_source_reason": (lore_source or {}).get("fallback_reason"),
         "variant_policy": "standalone",
@@ -1202,5 +1223,7 @@ def build_instance_page(
             "identity_header": at_pointers,
             "story_context": overview_pointers,
             "key_characters": key_enemy_provenance,
+            "major_factions": faction_provenance,
+            "glossary": {},
         },
     }

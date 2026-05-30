@@ -206,6 +206,69 @@ def _validate_asset(asset: Asset) -> list[ValidationIssue]:
     return issues
 
 
+def _pointer_cap_issues(
+    pointers: list[SourcePointer],
+    *,
+    path: str,
+    validation_context: Mapping[str, Any] | None,
+    max_count: int = 3,
+) -> list[ValidationIssue]:
+    if len(pointers) <= max_count:
+        return []
+    severity = ValidationSeverity.WARN
+    if validation_context and bool(validation_context.get("release_gate", False)):
+        severity = ValidationSeverity.HARD_FAIL
+    return [
+        ValidationIssue(
+            code="provenance.pointer_cap_exceeded",
+            message=(
+                f"provenance pointer count {len(pointers)} exceeds recommended cap of {max_count}"
+            ),
+            severity=severity,
+            path=path,
+        )
+    ]
+
+
+def _validate_card_pointer_map(
+    pointer_map: dict[str, list[SourcePointer]],
+    card_ids: list[str],
+    *,
+    map_name: str,
+    source_ids: set[str],
+    source_revisions: dict[str, str],
+    validation_context: Mapping[str, Any] | None,
+) -> list[ValidationIssue]:
+    issues: list[ValidationIssue] = []
+    for card_id in card_ids:
+        pointers = pointer_map.get(card_id, [])
+        path = f"$.provenance.{map_name}.{card_id}"
+        issues.extend(
+            _validate_pointer_set(
+                pointers,
+                source_ids=source_ids,
+                min_count=1,
+                path=path,
+                code="provenance.missing_card_pointers",
+            )
+        )
+        issues.extend(
+            _stale_revision_issues(
+                pointers,
+                source_revisions=source_revisions,
+                path=path,
+            )
+        )
+        issues.extend(
+            _pointer_cap_issues(
+                pointers,
+                path=path,
+                validation_context=validation_context,
+            )
+        )
+    return issues
+
+
 def _validate_zone(zone: Zone) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
     source_ids = {source.source_id for source in zone.sources}
@@ -276,7 +339,10 @@ def _questline_provenance_bucket(faction: Faction) -> str:
     return "major_questlines_shared"
 
 
-def _validate_zone_page(zone_page: ZonePage) -> list[ValidationIssue]:
+def _validate_zone_page(
+    zone_page: ZonePage,
+    validation_context: Mapping[str, Any] | None = None,
+) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
     if not zone_page.sources:
         issues.append(
@@ -312,6 +378,13 @@ def _validate_zone_page(zone_page: ZonePage) -> list[ValidationIssue]:
                 path=f"$.provenance.{section_name}",
             )
         )
+        issues.extend(
+            _pointer_cap_issues(
+                pointers,
+                path=f"$.provenance.{section_name}",
+                validation_context=validation_context,
+            )
+        )
     if zone_page.history_sections:
         history_text = " ".join(section.body for section in zone_page.history_sections)
         history_min_count = _required_pointer_count(_word_count(history_text))
@@ -331,38 +404,74 @@ def _validate_zone_page(zone_page: ZonePage) -> list[ValidationIssue]:
                 path="$.provenance.history",
             )
         )
+        issues.extend(
+            _pointer_cap_issues(
+                zone_page.provenance.history,
+                path="$.provenance.history",
+                validation_context=validation_context,
+            )
+        )
     for card in zone_page.major_questlines:
         bucket = _questline_provenance_bucket(card.faction)
         pointer_map = getattr(zone_page.provenance, bucket)
+        path = f"$.provenance.{bucket}.{card.id}"
+        pointers = pointer_map.get(card.id, [])
         issues.extend(
             _validate_pointer_set(
-                pointer_map.get(card.id, []),
+                pointers,
                 source_ids=source_ids,
                 min_count=1,
-                path=f"$.provenance.{bucket}.{card.id}",
+                path=path,
                 code="provenance.missing_card_pointers",
             )
         )
-    for card in zone_page.location_cards:
         issues.extend(
-            _validate_pointer_set(
-                zone_page.provenance.major_landmarks.get(card.id, []),
-                source_ids=source_ids,
-                min_count=1,
-                path=f"$.provenance.major_landmarks.{card.id}",
-                code="provenance.missing_card_pointers",
+            _pointer_cap_issues(
+                pointers,
+                path=path,
+                validation_context=validation_context,
             )
         )
-    for card in zone_page.instance_links:
-        issues.extend(
-            _validate_pointer_set(
-                zone_page.provenance.instances.get(card.id, []),
-                source_ids=source_ids,
-                min_count=1,
-                path=f"$.provenance.instances.{card.id}",
-                code="provenance.missing_card_pointers",
-            )
+    issues.extend(
+        _validate_card_pointer_map(
+            zone_page.provenance.major_factions,
+            [card.id for card in zone_page.major_factions],
+            map_name="major_factions",
+            source_ids=source_ids,
+            source_revisions=source_revisions,
+            validation_context=validation_context,
         )
+    )
+    issues.extend(
+        _validate_card_pointer_map(
+            zone_page.provenance.major_landmarks,
+            [card.id for card in zone_page.location_cards],
+            map_name="major_landmarks",
+            source_ids=source_ids,
+            source_revisions=source_revisions,
+            validation_context=validation_context,
+        )
+    )
+    issues.extend(
+        _validate_card_pointer_map(
+            zone_page.provenance.instances,
+            [card.id for card in zone_page.instance_links],
+            map_name="instances",
+            source_ids=source_ids,
+            source_revisions=source_revisions,
+            validation_context=validation_context,
+        )
+    )
+    issues.extend(
+        _validate_card_pointer_map(
+            zone_page.provenance.glossary,
+            [link.term_id for link in zone_page.glossary_refs],
+            map_name="glossary",
+            source_ids=source_ids,
+            source_revisions=source_revisions,
+            validation_context=validation_context,
+        )
+    )
     return issues
 
 
@@ -411,7 +520,10 @@ def _validate_instance(instance: Instance) -> list[ValidationIssue]:
     return issues
 
 
-def _validate_instance_page(instance_page: InstancePage) -> list[ValidationIssue]:
+def _validate_instance_page(
+    instance_page: InstancePage,
+    validation_context: Mapping[str, Any] | None = None,
+) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
     if not instance_page.sources:
         issues.append(
@@ -447,16 +559,43 @@ def _validate_instance_page(instance_page: InstancePage) -> list[ValidationIssue
                 path=f"$.provenance.{section_name}",
             )
         )
-    for card in instance_page.key_enemies:
         issues.extend(
-            _validate_pointer_set(
-                instance_page.provenance.key_characters.get(card.id, []),
-                source_ids=source_ids,
-                min_count=1,
-                path=f"$.provenance.key_characters.{card.id}",
-                code="provenance.missing_card_pointers",
+            _pointer_cap_issues(
+                pointers,
+                path=f"$.provenance.{section_name}",
+                validation_context=validation_context,
             )
         )
+    issues.extend(
+        _validate_card_pointer_map(
+            instance_page.provenance.key_characters,
+            [card.id for card in instance_page.key_enemies],
+            map_name="key_characters",
+            source_ids=source_ids,
+            source_revisions=source_revisions,
+            validation_context=validation_context,
+        )
+    )
+    issues.extend(
+        _validate_card_pointer_map(
+            instance_page.provenance.major_factions,
+            [card.id for card in instance_page.major_factions],
+            map_name="major_factions",
+            source_ids=source_ids,
+            source_revisions=source_revisions,
+            validation_context=validation_context,
+        )
+    )
+    issues.extend(
+        _validate_card_pointer_map(
+            instance_page.provenance.glossary,
+            [link.term_id for link in instance_page.glossary_refs],
+            map_name="glossary",
+            source_ids=source_ids,
+            source_revisions=source_revisions,
+            validation_context=validation_context,
+        )
+    )
     return issues
 
 
@@ -633,7 +772,8 @@ def validate_provenance_rules(
             _validate_zone_page(
                 parsed_entity
                 if isinstance(parsed_entity, ZonePage)
-                else ZonePage.model_validate(parsed_entity)
+                else ZonePage.model_validate(parsed_entity),
+                validation_context,
             )
         )
     elif entity_type == "instance":
@@ -649,7 +789,8 @@ def validate_provenance_rules(
             _validate_instance_page(
                 parsed_entity
                 if isinstance(parsed_entity, InstancePage)
-                else InstancePage.model_validate(parsed_entity)
+                else InstancePage.model_validate(parsed_entity),
+                validation_context,
             )
         )
     elif entity_type == "character":

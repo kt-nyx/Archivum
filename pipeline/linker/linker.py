@@ -615,7 +615,7 @@ def run_glossary_linker(
             draft["glossary_refs"] = glossary_payload
         else:
             draft["glossary"] = glossary_payload
-        if entity_type in {"zone", "sub_zone"}:
+        if entity_type in {"zone", "sub_zone", "zone_page", "instance_page"}:
             provenance = draft.get("provenance")
             if isinstance(provenance, dict):
                 glossary_map = provenance.get("glossary")
