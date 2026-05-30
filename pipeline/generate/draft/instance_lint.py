@@ -10,6 +10,9 @@ from pipeline.generate.draft.prose_lint import (
     trim_words,
     word_count,
 )
+from pipeline.common.text_normalize import clean_wiki_snippet
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 MIN_AT_A_GLANCE_WORDS = 10
 MAX_AT_A_GLANCE_WORDS = 45
@@ -182,7 +185,8 @@ def fallback_key_enemy_summary(
         )
         return trim_key_enemy_summary(text, max_words=max_words), []
     best = max(items, key=lambda row: word_count(str(row.get("snippet", ""))))
-    snippet = str(best.get("snippet", "")).strip()
+    snippet = clean_wiki_snippet(_HTML_TAG_RE.sub(" ", str(best.get("snippet", "")))).strip()
+    snippet = trim_words(snippet, 24, ensure_terminal_punct=False)
     text = trim_key_enemy_summary(
         f"{boss_name} features prominently in {instance_name}: {snippet}",
         max_words=max_words,

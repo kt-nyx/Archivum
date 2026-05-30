@@ -862,7 +862,7 @@ def _check_instance_drafts(run_root: Path) -> None:
         return
 
     from pipeline.contracts.models import INSTANCE_MAX_KEY_CHARACTERS, INSTANCE_MIN_KEY_CHARACTERS
-    from pipeline.discovery.instance_bosses import collect_boss_candidates
+    from pipeline.discovery.instance_bosses import collect_boss_candidates, valid_boss_names_from_pool_items
     from pipeline.generate.draft.faction_lint import lint_faction_summary
     from pipeline.generate.draft.instance_lint import (
         is_generic_at_a_glance,
@@ -981,6 +981,15 @@ def _check_instance_drafts(run_root: Path) -> None:
         )
 
         key_enemies = [row for row in draft.get("key_enemies") or [] if isinstance(row, dict)]
+        valid_boss_pool_names = valid_boss_names_from_pool_items(
+            boss_pool_items,
+            instance_name=instance_name,
+        )
+        if len(valid_boss_pool_names) >= 1 and len(key_enemies) == 0:
+            _fail(
+                f"instance key_enemies empty despite {len(valid_boss_pool_names)} valid boss_pool name(s) "
+                f"for {instance_id!r}"
+            )
         if len(key_enemies) > INSTANCE_MAX_KEY_CHARACTERS:
             _fail(
                 f"instance key_enemies exceeds cap for {instance_id!r} "
@@ -1004,9 +1013,21 @@ def _check_instance_drafts(run_root: Path) -> None:
                 _fail(f"instance key_enemy quality check failed for {boss_name!r}: {issue}")
 
         provenance = draft.get("provenance") or {}
-        if at_a_glance and not provenance.get("identity_header"):
+        identity_header = provenance.get("identity_header") or []
+        story_context = provenance.get("story_context") or []
+        if len(identity_header) > 3:
+            _fail(
+                f"instance identity_header provenance exceeds cap ({len(identity_header)} > 3) "
+                f"for {instance_id!r}"
+            )
+        if len(story_context) > 3:
+            _fail(
+                f"instance story_context provenance exceeds cap ({len(story_context)} > 3) "
+                f"for {instance_id!r}"
+            )
+        if at_a_glance and not identity_header:
             _fail(f"instance at_a_glance missing identity_header provenance: {instance_id!r}")
-        if overview and not provenance.get("story_context"):
+        if overview and not story_context:
             _fail(f"instance overview missing story_context provenance: {instance_id!r}")
         key_char_provenance = provenance.get("key_characters") or {}
         for card in key_enemies:

@@ -469,9 +469,26 @@ def _finalize_key_enemies(
                 )
             if lint_key_enemy_summary(summary, boss_name=candidate.name, instance_name=instance_name):
                 continue
-            pointers = _cap_card_pointers(_pointers_for_source_ids(pool, used, revision_map))
+            pointers = _cap_card_pointers(
+                _pointers_for_source_ids(pool, used, revision_map),
+                max_count=3,
+            )
             if not pointers and boss_pool is not pool:
-                pointers = _cap_card_pointers(_pointers_for_source_ids(boss_pool, used, revision_map))
+                pointers = _cap_card_pointers(
+                    _pointers_for_source_ids(boss_pool, used, revision_map),
+                    max_count=3,
+                )
+            if not pointers:
+                best_pool = pool if pool else boss_pool
+                pointers = _cap_card_pointers(
+                    _ensure_pointer_count(
+                        [],
+                        pool=best_pool,
+                        revision_map=revision_map,
+                        min_count=1,
+                    ),
+                    max_count=3,
+                )
             if not pointers:
                 continue
             card = {
@@ -1387,11 +1404,14 @@ def build_instance_page(
         evidence_rows=evidence_rows,
     )
     at_pointers = _pointers_for_source_ids(at_producing_pool, at_used, revision_map)
-    at_pointers = _ensure_pointer_count(
-        at_pointers,
-        pool=at_producing_pool,
-        revision_map=revision_map,
-        min_count=_pointer_count_for_words(_word_count(at_a_glance)),
+    at_pointers = _cap_card_pointers(
+        _ensure_pointer_count(
+            at_pointers,
+            pool=at_producing_pool,
+            revision_map=revision_map,
+            min_count=_pointer_count_for_words(_word_count(at_a_glance)),
+        ),
+        max_count=3,
     )
     used_source_ids.update(pointer["source_id"] for pointer in at_pointers)
 
@@ -1401,11 +1421,14 @@ def build_instance_page(
         zone_mention_pool=pools["zone_mention_pool"],
     )
     overview_pointers = _pointers_for_source_ids(overview_pool, overview_used, revision_map)
-    overview_pointers = _ensure_pointer_count(
-        overview_pointers,
-        pool=overview_pool,
-        revision_map=revision_map,
-        min_count=_pointer_count_for_words(_word_count(overview)),
+    overview_pointers = _cap_card_pointers(
+        _ensure_pointer_count(
+            overview_pointers,
+            pool=overview_pool,
+            revision_map=revision_map,
+            min_count=_pointer_count_for_words(_word_count(overview)),
+        ),
+        max_count=3,
     )
     used_source_ids.update(pointer["source_id"] for pointer in overview_pointers)
 

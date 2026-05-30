@@ -8,9 +8,31 @@ from typing import Any
 
 from pipeline.discovery.entity_typing import _DATING_CONVENTION_TITLE_RE, normalize_title
 from pipeline.discovery.world_registry import entry_kinds
+from pipeline.common.text_normalize import clean_wiki_snippet
 
-_WIKI_LINK_RE = re.compile(r"/wiki/([^|\s\]#<>]+)")
-_BOSS_SECTION_TOKENS = ("adventurer", "encounter", "boss", "dungeon", "adventure_guide", "walkthrough")
+_WIKI_LINK_RE = re.compile(r"/wiki/([^|\s\]#<>\"']+)")
+_WIKITEXT_LINK_RE = re.compile(r"\[\[([^|\]#]+)(?:\|[^\]]+)?\]\]")
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_BOSS_SECTION_TOKENS = (
+    "adventurer",
+    "encounter",
+    "boss",
+    "dungeon",
+    "adventure_guide",
+    "walkthrough",
+    "faculty",
+    "denizen",
+    "dungeon_journal",
+    "adventurers_guide",
+    "layout",
+)
+_BOSS_SECTION_EXACT = frozenset(
+    {
+        "bosses",
+        "denizens",
+        "scholomance_faculty",
+    }
+)
 _GEOGRAPHY_KINDS = frozenset({"zone", "continent", "capital", "region", "instance"})
 _REJECT_TITLES = frozenset(
     {
@@ -44,8 +66,18 @@ def _normalize_role(section_role: str) -> str:
 
 
 def is_boss_section_role(section_role: str) -> bool:
+    """Return True when a wiki section role should contribute boss_pool / encounter evidence."""
     lowered = _normalize_role(section_role)
+    if lowered in _BOSS_SECTION_EXACT:
+        return True
+    if lowered.startswith("dungeon_"):
+        return True
     return any(token in lowered for token in _BOSS_SECTION_TOKENS)
+
+
+def boss_section_role_matches(section_role: str) -> bool:
+    """Alias for is_boss_section_role (shared enrich + draft entry point)."""
+    return is_boss_section_role(section_role)
 
 
 def _title_from_wiki_path(path: str) -> str:
@@ -73,19 +105,57 @@ def should_reject_boss_title(title: str, *, instance_name: str = "") -> bool:
     return False
 
 
+def _append_wiki_link(
+    results: list[tuple[str, str]],
+    seen: set[str],
+    *,
+    path: str,
+) -> None:
+    path = path.split("#", 1)[0].strip()
+    if not path:
+        return
+    title = _title_from_wiki_path(path)
+    key = normalize_title(title)
+    if not key or key in seen:
+        return
+    seen.add(key)
+    url = f"https://warcraft.wiki.gg/wiki/{path}"
+    results.append((title, url))
+
+
 def _extract_wiki_links(text: str) -> list[tuple[str, str]]:
     results: list[tuple[str, str]] = []
     seen: set[str] = set()
     for match in _WIKI_LINK_RE.finditer(text):
-        path = match.group(1).split("#", 1)[0]
-        title = _title_from_wiki_path(path)
-        key = normalize_title(title)
-        if not key or key in seen:
+        _append_wiki_link(results, seen, path=match.group(1))
+    for match in _WIKITEXT_LINK_RE.finditer(text):
+        raw = match.group(1).strip()
+        if raw.startswith("/wiki/"):
+            _append_wiki_link(results, seen, path=raw.removeprefix("/wiki/"))
             continue
-        seen.add(key)
-        url = f"https://warcraft.wiki.gg/wiki/{path}"
-        results.append((title, url))
+        if raw.startswith("http") or "://" in raw:
+            continue
+        _append_wiki_link(results, seen, path=raw.replace(" ", "_"))
     return results
+
+
+def valid_boss_names_from_pool_items(
+    boss_pool_items: list[dict[str, Any]],
+    *,
+    instance_name: str = "",
+) -> set[str]:
+    """Derive normalized boss names from boss_pool evidence snippets."""
+    names: set[str] = set()
+    for item in boss_pool_items:
+        for title, _url in _extract_wiki_links(str(item.get("snippet", ""))):
+            if should_reject_boss_title(title, instance_name=instance_name):
+                continue
+            names.add(normalize_title(title))
+    return names
+
+
+def _plain_snippet(text: str) -> str:
+    return clean_wiki_snippet(_HTML_TAG_RE.sub(" ", text))
 
 
 def _profile_pool_for_boss(
@@ -102,14 +172,20 @@ def _profile_pool_for_boss(
     default_source_id = str(boss_pool_items[0].get("source_id", "")).strip() if boss_pool_items else ""
     pool: list[dict[str, Any]] = []
     for item in boss_pool_items:
-        snippet = str(item.get("snippet", ""))
-        if pattern.search(snippet) or slug_pattern.search(snippet):
-            pool.append(item)
+        raw_snippet = str(item.get("snippet", ""))
+        snippet = _plain_snippet(raw_snippet)
+        if pattern.search(snippet) or slug_pattern.search(snippet) or slug_pattern.search(raw_snippet):
+            pool.append({**item, "snippet": snippet})
     for block in section_blocks:
         if not isinstance(block, dict):
             continue
-        text = str(block.get("text", ""))
-        if not (pattern.search(text) or slug_pattern.search(text)):
+        raw_text = str(block.get("text", ""))
+        text = _plain_snippet(raw_text)
+        if not (
+            pattern.search(text)
+            or slug_pattern.search(text)
+            or slug_pattern.search(raw_text)
+        ):
             continue
         role = str(block.get("section_role", "other"))
         pool.append(

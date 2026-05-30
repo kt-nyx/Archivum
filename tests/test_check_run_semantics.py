@@ -479,6 +479,240 @@ def test_check_run_validates_instance_draft(tmp_path: Path, capsys) -> None:
     assert "PASS: instance semantic checks ok" in captured.out
 
 
+def _write_instance_semantics_run(
+    tmp_path: Path,
+    *,
+    instance_draft: dict[str, object],
+    boss_pool_snippet: str = "/wiki/Darkmaster_Gandling",
+    section_blocks: list[dict[str, object]] | None = None,
+) -> Path:
+    run_root = tmp_path / "run-instance-semantics"
+    zone_id = "zone-western-plaguelands"
+    instance_id = str(instance_draft.get("instance_id", "instance-scholomance"))
+    (run_root / "data" / "drafts" / "zone_page").mkdir(parents=True)
+    (run_root / "data" / "drafts" / "instance_page").mkdir(parents=True)
+    (run_root / "data" / "discovery").mkdir(parents=True)
+    (run_root / "data" / "evidence").mkdir(parents=True)
+    (run_root / "data" / "ingest").mkdir(parents=True)
+    (run_root / "data" / "glossary").mkdir(parents=True)
+    zone_draft = _valid_draft()
+    zone_draft["zone_id"] = zone_id
+    (run_root / "data" / "drafts" / "zone_page" / f"{zone_id}.json").write_text(
+        json.dumps(zone_draft, indent=2),
+        encoding="utf-8",
+    )
+    (run_root / "data" / "drafts" / "instance_page" / f"{instance_id}.json").write_text(
+        json.dumps(instance_draft, indent=2),
+        encoding="utf-8",
+    )
+    (run_root / "data" / "discovery" / "zone_quest_graph_v3.json").write_text("[]", encoding="utf-8")
+    (run_root / "data" / "glossary" / "run_terms.jsonl").write_text(
+        json.dumps(
+            {
+                "term_id": "term-example-zone",
+                "label": "Example Zone",
+                "wiki_url": "https://example.test/zone",
+                "category": "place",
+                "aliases": ["example zone"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (run_root / "data" / "evidence" / "evidence_packs.jsonl").write_text(
+        json.dumps(
+            {
+                "subject_id": instance_id,
+                "field_name": "boss_pool",
+                "build_meta": {"source_id": "src-instance"},
+                "evidence_items": [{"snippet": boss_pool_snippet, "section_role": "scholomance_faculty"}],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    if section_blocks is not None:
+        (run_root / "data" / "ingest" / "source_snapshots.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "entity_id": instance_id,
+                        "entity_type": "instance",
+                        "section_blocks": section_blocks,
+                    }
+                ],
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+    return run_root
+
+
+def _minimal_instance_draft(**overrides: object) -> dict[str, object]:
+    overview = " ".join(
+        [
+            "Scholomance was founded as a school for battle-mages who studied forbidden necromancy",
+            "after the kingdom fell to plague and civil war across the blighted countryside.",
+        ]
+        * 10
+    )
+    draft: dict[str, object] = {
+        "instance_id": "instance-scholomance",
+        "name": "Scholomance",
+        "at_a_glance": "Scholomance is a necromantic academy where hostile faculty still train recruits.",
+        "overview": overview,
+        "history_sections": [
+            {"heading": "Founding", "body": "The academy was built to safeguard forbidden rituals after the great war."}
+        ],
+        "key_enemies": [],
+        "sources": [{"source_id": "src-instance", "url": "https://example.test/scholomance"}],
+        "provenance": {
+            "identity_header": [{"source_id": "src-instance", "locator": "section:lead paragraph:1"}],
+            "story_context": [{"source_id": "src-instance", "locator": "section:history paragraph:1"}],
+            "key_characters": {},
+        },
+    }
+    draft.update(overrides)
+    return draft
+
+
+def test_check_run_fails_when_boss_pool_present_but_key_enemies_empty(tmp_path: Path) -> None:
+    run_root = _write_instance_semantics_run(tmp_path, instance_draft=_minimal_instance_draft())
+    with pytest.raises(SemanticCheckError, match="key_enemies empty despite"):
+        check_run(run_root, zone_id="zone-western-plaguelands")
+
+
+def test_check_run_passes_with_single_key_enemy_when_only_one_boss_name(tmp_path: Path, capsys) -> None:
+    draft = _minimal_instance_draft(
+        key_enemies=[
+            {
+                "id": "character-darkmaster-gandling",
+                "name": "Darkmaster Gandling",
+                "summary": (
+                    "Darkmaster Gandling commands Scholomance faculty and anchors the instance's "
+                    "necromantic hierarchy within its haunted halls, directing hostile instructors "
+                    "and preserving grim curricula."
+                ),
+            }
+        ],
+        provenance={
+            "identity_header": [{"source_id": "src-instance", "locator": "section:lead paragraph:1"}],
+            "story_context": [{"source_id": "src-instance", "locator": "section:history paragraph:1"}],
+            "key_characters": {
+                "character-darkmaster-gandling": [
+                    {"source_id": "src-instance", "locator": "section:scholomance_faculty paragraph:1"}
+                ]
+            },
+        },
+    )
+    run_root = _write_instance_semantics_run(tmp_path, instance_draft=draft)
+    check_run(run_root, zone_id="zone-western-plaguelands")
+    captured = capsys.readouterr()
+    assert "PASS: instance semantic checks ok" in captured.out
+
+
+def test_check_run_fails_when_instance_story_context_pointer_cap_exceeded(tmp_path: Path) -> None:
+    draft = _minimal_instance_draft(
+        key_enemies=[
+            {
+                "id": "character-darkmaster-gandling",
+                "name": "Darkmaster Gandling",
+                "summary": (
+                    "Darkmaster Gandling commands Scholomance faculty and anchors the instance's "
+                    "necromantic hierarchy within its haunted halls, directing hostile instructors "
+                    "and preserving grim curricula."
+                ),
+            }
+        ],
+        provenance={
+            "identity_header": [{"source_id": "src-instance", "locator": "section:lead paragraph:1"}],
+            "story_context": [
+                {"source_id": "src-instance", "locator": f"section:history paragraph:{index}"}
+                for index in range(1, 5)
+            ],
+            "key_characters": {
+                "character-darkmaster-gandling": [
+                    {"source_id": "src-instance", "locator": "section:scholomance_faculty paragraph:1"}
+                ]
+            },
+        },
+    )
+    run_root = _write_instance_semantics_run(tmp_path, instance_draft=draft)
+    with pytest.raises(SemanticCheckError, match="story_context provenance exceeds cap"):
+        check_run(run_root, zone_id="zone-western-plaguelands")
+
+
+def test_check_run_fails_when_instance_identity_header_pointer_cap_exceeded(tmp_path: Path) -> None:
+    draft = _minimal_instance_draft(
+        key_enemies=[
+            {
+                "id": "character-darkmaster-gandling",
+                "name": "Darkmaster Gandling",
+                "summary": (
+                    "Darkmaster Gandling commands Scholomance faculty and anchors the instance's "
+                    "necromantic hierarchy within its haunted halls, directing hostile instructors "
+                    "and preserving grim curricula."
+                ),
+            }
+        ],
+        provenance={
+            "identity_header": [
+                {"source_id": "src-instance", "locator": f"section:lead paragraph:{index}"}
+                for index in range(1, 5)
+            ],
+            "story_context": [{"source_id": "src-instance", "locator": "section:history paragraph:1"}],
+            "key_characters": {
+                "character-darkmaster-gandling": [
+                    {"source_id": "src-instance", "locator": "section:scholomance_faculty paragraph:1"}
+                ]
+            },
+        },
+    )
+    run_root = _write_instance_semantics_run(tmp_path, instance_draft=draft)
+    with pytest.raises(SemanticCheckError, match="identity_header provenance exceeds cap"):
+        check_run(run_root, zone_id="zone-western-plaguelands")
+
+
+def test_check_run_fails_when_two_boss_candidates_but_one_key_enemy(tmp_path: Path) -> None:
+    draft = _minimal_instance_draft(
+        key_enemies=[
+            {
+                "id": "character-darkmaster-gandling",
+                "name": "Darkmaster Gandling",
+                "summary": (
+                    "Darkmaster Gandling commands Scholomance faculty and anchors the instance's "
+                    "necromantic hierarchy within its haunted halls, directing hostile instructors "
+                    "and preserving grim curricula."
+                ),
+            }
+        ],
+        provenance={
+            "identity_header": [{"source_id": "src-instance", "locator": "section:lead paragraph:1"}],
+            "story_context": [{"source_id": "src-instance", "locator": "section:history paragraph:1"}],
+            "key_characters": {
+                "character-darkmaster-gandling": [
+                    {"source_id": "src-instance", "locator": "section:scholomance_faculty paragraph:1"}
+                ]
+            },
+        },
+    )
+    run_root = _write_instance_semantics_run(
+        tmp_path,
+        instance_draft=draft,
+        boss_pool_snippet=(
+            "Bosses include /wiki/Darkmaster_Gandling and /wiki/Jandice_Barov within Scholomance."
+        ),
+        section_blocks=[
+            {
+                "section_role": "adventurers",
+                "text": "Bosses include /wiki/Darkmaster_Gandling and /wiki/Jandice_Barov.",
+            }
+        ],
+    )
+    with pytest.raises(SemanticCheckError, match="below minimum 2"):
+        check_run(run_root, zone_id="zone-western-plaguelands")
+
+
 def test_check_run_validates_linked_glossary_refs(tmp_path: Path, capsys, monkeypatch) -> None:
     monkeypatch.setenv("LORE_GLOSSARY_MIN_TERMS", "2")
     run_root = tmp_path / "run-glossary"

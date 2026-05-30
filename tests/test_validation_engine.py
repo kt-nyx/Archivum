@@ -1028,6 +1028,42 @@ def test_instance_page_overview_within_story_context_budget_passes() -> None:
     assert not overview_issues
 
 
+def test_instance_page_story_context_pointer_cap_warns_when_exceeded() -> None:
+    payload = _valid_instance_page_payload()
+    payload["provenance"]["story_context"] = [
+        {
+            "source_id": "src-instance",
+            "locator": f"section:overview paragraph:{index}",
+            "revision_id": "mw:99",
+            "excerpt_hash": f"sha1:instancepage{index:07d}",
+        }
+        for index in range(1, 5)
+    ]
+    report = validate_payload("instance_page", payload)
+    assert any(
+        issue.code == "provenance.pointer_cap_exceeded" and issue.path == "$.provenance.story_context"
+        for issue in report.issues
+    )
+
+
+def test_instance_page_story_context_pointer_cap_passes_at_three() -> None:
+    payload = _valid_instance_page_payload()
+    payload["provenance"]["story_context"] = [
+        {
+            "source_id": "src-instance",
+            "locator": f"section:overview paragraph:{index}",
+            "revision_id": "mw:99",
+            "excerpt_hash": f"sha1:instancepage{index:07d}",
+        }
+        for index in range(1, 4)
+    ]
+    report = validate_payload("instance_page", payload)
+    assert not any(
+        issue.code == "provenance.pointer_cap_exceeded" and issue.path == "$.provenance.story_context"
+        for issue in report.issues
+    )
+
+
 def test_zone_page_fact_check_uses_zone_id_as_entity_id() -> None:
     payload = _valid_zone_page_payload()
     report = validate_payload(

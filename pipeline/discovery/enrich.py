@@ -15,6 +15,7 @@ from pipeline.discovery.location_discovery import (
     build_location_decision_row,
     build_zone_seed_text,
 )
+from pipeline.discovery.instance_bosses import is_boss_section_role
 from pipeline.discovery.questline_clustering import apply_cluster_layers
 from pipeline.discovery.storyline_html import parse_storyline_html, v3_to_legacy_v1
 from pipeline.discovery.workflow import _load_json, _section_role
@@ -52,12 +53,6 @@ def _is_instance_seed_snapshot(snapshot: dict[str, Any]) -> bool:
     )
 
 
-def _is_boss_pool_role(section_role: str) -> bool:
-    lowered = section_role.lower()
-    tokens = ("adventurers", "encounter", "boss", "dungeon", "adventure_guide")
-    return any(token in lowered for token in tokens)
-
-
 def _instance_seed_field_names(section_role: str, *, lead_emitted: int) -> list[str]:
     lowered = section_role.lower()
     names: list[str] = []
@@ -66,7 +61,7 @@ def _instance_seed_field_names(section_role: str, *, lead_emitted: int) -> list[
     if _is_history_digest_role(lowered):
         names.append("history_digest")
         names.append("at_a_glance_input")
-    if _is_boss_pool_role(lowered):
+    if is_boss_section_role(section_role):
         names.append("boss_pool")
     return names
 

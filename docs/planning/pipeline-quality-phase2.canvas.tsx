@@ -38,7 +38,7 @@ const SLICES = [
   {
     id: "slice-13",
     content: "Slice 13 — Instance page completeness (key_enemies, boss roles, provenance cap)",
-    status: "pending" as const,
+    status: "complete" as const,
   },
   {
     id: "slice-14",
@@ -184,7 +184,8 @@ export default function PipelineQualityPhase2Plan() {
         <Stat label="Slice 10" value="Complete" tone="success" />
         <Stat label="Slice 11" value="Complete" tone="success" />
         <Stat label="Slice 12" value="Complete" tone="success" />
-        <Stat label="Next" value="Slice 13" tone="accent" />
+        <Stat label="Slice 13" value="Complete" tone="success" />
+        <Stat label="Next" value="Slice 14" tone="accent" />
       </Row>
 
       <Callout tone="info" title="Locked decisions (2026-05-30)">
@@ -815,8 +816,11 @@ export default function PipelineQualityPhase2Plan() {
           <Table
             headers={["Check", "Criterion"]}
             rows={[
-              ["instance draft", "key_enemies.length ≥ 1 for Scholomance"],
+              ["instance draft", "key_enemies.length ≥ 1 for Scholomance (pytest fixture)"],
+              ["graduated min", "Semantics FAIL when boss_pool valid names ≥ 1 and key_enemies = 0; MIN=2 when ≥ 2 candidates"],
+              ["provenance cap", "identity_header and story_context ≤ 3 pointers; semantics FAIL if exceeded"],
               ["validate", "instance entity still passes; story_context pointer cap warn cleared or ≤3"],
+              ["live pilot", "Deferred to Slice 14 — test-run-wpl-1 re-run + validate_passed promotion"],
             ]}
           />
         </Stack>
@@ -941,7 +945,7 @@ export default function PipelineQualityPhase2Plan() {
       </Callout>
 
       <Row gap={8}>
-        <Pill tone="accent">Next: Slice 13</Pill>
+        <Pill tone="accent">Next: Slice 14</Pill>
         <Pill tone="neutral">Legacy: docs/planning/legacy/</Pill>
         <Pill tone="success">Compendium Voice locked</Pill>
       </Row>
