@@ -1008,6 +1008,24 @@ def test_instance_page_budget_and_provenance_rules_are_applied() -> None:
     assert "provenance.missing_sources_manifest" in codes
 
 
+def test_instance_page_overview_within_story_context_budget_passes() -> None:
+    payload = _valid_instance_page_payload()
+    payload["overview"] = " ".join(
+        [
+            "The Archive Vault was founded as a school for battle-mages who studied forbidden necromancy",
+            "after the kingdom fell to plague and civil war across the blighted countryside.",
+        ]
+        * 10
+    )
+    report = validate_payload("instance_page", payload)
+    overview_issues = [
+        issue
+        for issue in report.issues
+        if issue.path == "$.overview" and issue.code == "budget.section"
+    ]
+    assert not overview_issues
+
+
 def test_zone_page_fact_check_uses_zone_id_as_entity_id() -> None:
     payload = _valid_zone_page_payload()
     report = validate_payload(

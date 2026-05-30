@@ -7,6 +7,15 @@ import re
 from typing import Any
 
 from pipeline.common.text_normalize import clean_wiki_snippet
+from pipeline.generate.draft.instance_lint import (
+    fallback_instance_overview,
+    fallback_key_enemy_summary,
+    lint_at_a_glance as lint_instance_at_a_glance,
+    lint_key_enemy_summary,
+    lint_overview,
+)
+from pipeline.discovery.instance_bosses import BossCandidate, collect_boss_candidates
+from pipeline.contracts.models import INSTANCE_MAX_KEY_CHARACTERS
 from pipeline.generate.draft.faction_lint import ensure_sentence_terminator, lint_faction_summary
 from pipeline.generate.draft.faction_scoring import (
     FactionCandidate,
@@ -52,22 +61,10 @@ from pipeline.generate.draft.wiki_first_workers import (
     synthesize_currently,
     synthesize_faction_summary,
     synthesize_history_sections,
+    synthesize_instance_overview,
+    synthesize_key_enemy_summary,
     synthesize_location_summary,
 )
-
-
-_NAME_STOP_WORDS = {
-    "The",
-    "This",
-    "That",
-    "From",
-    "World",
-    "Warcraft",
-    "Section",
-    "Cataclysm",
-    "Legion",
-    "Mists",
-}
 
 
 def _clean_snippet(text: str) -> str:
@@ -198,6 +195,41 @@ def _pointer_for_item(
     }
 
 
+def _pointer_count_for_words(word_count: int) -> int:
+    if word_count <= 120:
+        return 1
+    if word_count <= 240:
+        return 2
+    return 3
+
+
+def _ensure_pointer_count(
+    pointers: list[dict[str, str]],
+    *,
+    pool: list[dict[str, Any]],
+    revision_map: dict[str, str],
+    min_count: int,
+) -> list[dict[str, str]]:
+    if min_count <= 0 or len(pointers) >= min_count:
+        return pointers
+    supplemented = list(pointers)
+    seen = {(pointer["source_id"], pointer["locator"]) for pointer in supplemented}
+    locator_index = len(supplemented) + 1
+    for item in pool:
+        if len(supplemented) >= min_count:
+            break
+        pointer = _pointer_for_item(item, revision_map, locator_index)
+        if pointer is None:
+            continue
+        key = (pointer["source_id"], pointer["locator"])
+        if key in seen:
+            continue
+        supplemented.append(pointer)
+        seen.add(key)
+        locator_index += 1
+    return supplemented
+
+
 def _normalize_section_role(section_role: str) -> str:
     return re.sub(r"\s+", " ", section_role.strip()).lower().replace(" ", "_")
 
@@ -245,6 +277,204 @@ def _build_evidence_pools(evidence_rows: list[dict[str, Any]]) -> dict[str, list
         "quest_lore_pool": quest_lore_pool,
         "faction_pool": faction_pool,
     }
+
+
+def _build_zone_mention_pool(
+    instance_name: str,
+    parent_zone_evidence_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not instance_name.strip() or not parent_zone_evidence_rows:
+        return []
+    pattern = re.compile(rf"\b{re.escape(instance_name.strip())}\b", re.IGNORECASE)
+    items: list[dict[str, Any]] = []
+    for item in _iter_evidence_items(
+        parent_zone_evidence_rows,
+        {"history_digest", "at_a_glance_input", "currently_input", "instances_or_dungeons"},
+    ):
+        if pattern.search(str(item.get("snippet", ""))):
+            items.append(item)
+    return items
+
+
+def _build_instance_evidence_pools(
+    evidence_rows: list[dict[str, Any]],
+    *,
+    instance_name: str = "",
+    parent_zone_evidence_rows: list[dict[str, Any]] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    history_pool = _iter_evidence_items(evidence_rows, {"history_digest"})
+    at_a_glance_pool = _iter_evidence_items(evidence_rows, {"at_a_glance_input"})
+    boss_pool = _iter_evidence_items(evidence_rows, {"boss_pool"})
+    instance_lore_pool = _iter_evidence_items(evidence_rows, {"instance_lore_pool"})
+    overview_pool = history_pool + instance_lore_pool
+    zone_mention_pool = _build_zone_mention_pool(instance_name, parent_zone_evidence_rows or [])
+    faction_pool = _iter_evidence_items(evidence_rows, {"faction_pool"})
+    faction_role_pool = _iter_evidence_items(
+        evidence_rows,
+        {"history_digest", "instance_lore_pool", "at_a_glance_input", "boss_pool"},
+    )
+    return {
+        "at_a_glance_pool": at_a_glance_pool,
+        "history_pool": history_pool,
+        "overview_pool": overview_pool,
+        "boss_pool": boss_pool,
+        "instance_lore_pool": instance_lore_pool,
+        "zone_mention_pool": zone_mention_pool,
+        "faction_pool": faction_pool,
+        "faction_role_pool": faction_role_pool,
+    }
+
+
+def _finalize_instance_at_a_glance(
+    *,
+    instance_name: str,
+    at_pool: list[dict[str, Any]],
+    evidence_rows: list[dict[str, Any]],
+) -> tuple[str, list[str], list[dict[str, Any]]]:
+    text, used = synthesize_at_a_glance(at_pool, max_words=MAX_AT_A_GLANCE_WORDS)
+    producing_pool = at_pool
+    if lint_instance_at_a_glance(text, instance_name=instance_name):
+        text, used = fallback_at_a_glance(at_pool)
+        if lint_instance_at_a_glance(text, instance_name=instance_name):
+            text, used = "", []
+    if not text:
+        rescue_pool = at_pool or select_at_a_glance_pool(
+            _iter_evidence_items(evidence_rows, {"at_a_glance_input", "history_digest"})
+        )
+        producing_pool = rescue_pool
+        text, used = fallback_at_a_glance(rescue_pool)
+        if lint_instance_at_a_glance(text, instance_name=instance_name):
+            text, used = "", []
+            producing_pool = []
+    return text, used, producing_pool
+
+
+def _finalize_instance_overview(
+    *,
+    instance_name: str,
+    overview_pool: list[dict[str, Any]],
+    zone_mention_pool: list[dict[str, Any]],
+) -> tuple[str, list[str], list[dict[str, Any]]]:
+    pools_to_try: list[list[dict[str, Any]]] = []
+    if overview_pool:
+        pools_to_try.append(overview_pool)
+    if zone_mention_pool:
+        rescue_pool = overview_pool + zone_mention_pool
+        if rescue_pool not in pools_to_try:
+            pools_to_try.append(rescue_pool)
+
+    for pool in pools_to_try:
+        text, used = synthesize_instance_overview(pool, instance_name=instance_name)
+        if not lint_overview(text, instance_name=instance_name):
+            return text, used, pool
+        text, used = fallback_instance_overview(pool, instance_name=instance_name)
+        if not lint_overview(text, instance_name=instance_name):
+            return text, used, pool
+    return "", [], []
+
+
+def _finalize_key_enemies(
+    *,
+    instance_name: str,
+    boss_candidates: list[BossCandidate],
+    boss_pool: list[dict[str, Any]],
+    revision_map: dict[str, str],
+) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, str]]], set[str]]:
+    cards: list[dict[str, Any]] = []
+    provenance_map: dict[str, list[dict[str, str]]] = {}
+    used_source_ids: set[str] = set()
+    if not boss_candidates:
+        return cards, provenance_map, used_source_ids
+
+    for candidate in boss_candidates[:INSTANCE_MAX_KEY_CHARACTERS]:
+        pools_to_try: list[list[dict[str, Any]]] = []
+        if candidate.profile_pool:
+            pools_to_try.append(candidate.profile_pool)
+        if boss_pool and boss_pool not in pools_to_try:
+            pools_to_try.append(boss_pool)
+        if not pools_to_try:
+            continue
+
+        card: dict[str, Any] | None = None
+        card_pointers: list[dict[str, str]] = []
+        for pool in pools_to_try:
+            summary, used = synthesize_key_enemy_summary(
+                pool,
+                boss_name=candidate.name,
+                instance_name=instance_name,
+            )
+            if lint_key_enemy_summary(summary, boss_name=candidate.name, instance_name=instance_name):
+                summary, used = fallback_key_enemy_summary(
+                    pool,
+                    boss_name=candidate.name,
+                    instance_name=instance_name,
+                )
+            if lint_key_enemy_summary(summary, boss_name=candidate.name, instance_name=instance_name):
+                continue
+            pointers = _pointers_for_source_ids(pool, used, revision_map)
+            if not pointers and boss_pool is not pool:
+                pointers = _pointers_for_source_ids(boss_pool, used, revision_map)
+            if not pointers:
+                continue
+            card = {
+                "id": candidate.boss_id,
+                "name": candidate.name,
+                "summary": summary,
+                "thumbnail_asset_id": None,
+            }
+            card_pointers = pointers
+            break
+        if card is None:
+            continue
+        cards.append(card)
+        provenance_map[str(card["id"])] = card_pointers
+        used_source_ids.update(str(pointer["source_id"]) for pointer in card_pointers)
+        if len(cards) >= INSTANCE_MAX_KEY_CHARACTERS:
+            break
+    return cards, provenance_map, used_source_ids
+
+
+def build_instance_major_factions(
+    *,
+    instance_id: str,
+    instance_name: str,
+    parent_zone_id: str,
+    parent_zone_name: str,
+    evidence_rows: list[dict[str, Any]],
+    pools: dict[str, list[dict[str, Any]]],
+    revision_map: dict[str, str],
+    faction_profile_targets: list[dict[str, Any]] | None = None,
+    parent_zone_evidence_rows: list[dict[str, Any]] | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, str]]]]:
+    scoped_targets = [
+        row
+        for row in (faction_profile_targets or [])
+        if str(row.get("zone_id", "")).strip() == parent_zone_id
+    ]
+    merged_evidence = list(evidence_rows)
+    if parent_zone_evidence_rows:
+        merged_evidence.extend(
+            row
+            for row in parent_zone_evidence_rows
+            if str(row.get("field_name", "")).strip() == "faction_pool"
+        )
+    zone_name = parent_zone_name.strip() or instance_name
+    return build_major_factions(
+        zone_id=parent_zone_id or instance_id,
+        zone_name=zone_name,
+        evidence_rows=merged_evidence,
+        pools={
+            **pools,
+            "questline_pool": [],
+            "quest_cluster_lore_pool": [],
+            "quest_lore_pool": [],
+            "currently_pool": pools.get("faction_role_pool", []),
+            "history_pool": pools.get("faction_role_pool", []),
+        },
+        questline_rows=[],
+        revision_map=revision_map,
+        faction_profile_targets=scoped_targets,
+    )
 
 
 def _best_snippet_for_term(items: list[dict[str, Any]], term: str, min_words: int = 8) -> str:
@@ -586,51 +816,6 @@ def _build_instance_links(
     return links[:8]
 
 
-def _extract_key_enemy_names(evidence_rows: list[dict[str, Any]]) -> list[str]:
-    text_blob = " ".join(item["snippet"] for item in _iter_evidence_items(evidence_rows))
-    names: list[str] = []
-    for match in re.finditer(r"\b[A-Z][a-z'`-]+(?:\s+[A-Z][a-z'`-]+){0,2}\b", text_blob):
-        name = match.group(0).strip()
-        if not name or name.split()[0] in _NAME_STOP_WORDS:
-            continue
-        if len(name) < 4:
-            continue
-        if name in names:
-            continue
-        names.append(name)
-        if len(names) >= 8:
-            break
-    return names
-
-
-def _build_key_enemies(evidence_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    enemies: list[dict[str, Any]] = []
-    for name in _extract_key_enemy_names(evidence_rows):
-        enemy_id = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-        if not enemy_id:
-            continue
-        enemies.append(
-            {
-                "id": f"character-{enemy_id}",
-                "name": name,
-                "summary": f"{name} is a key enemy presence tied to the instance narrative.",
-                "thumbnail_asset_id": None,
-            }
-        )
-    return enemies[:6]
-
-
-def _sized_summary(base: str, min_words: int) -> str:
-    text = _clean_snippet(base)
-    if _word_count(text) >= min_words:
-        return text
-    suffix = (
-        " This entry focuses on core conflict stakes, major actors, and why this location remains "
-        "important to ongoing narrative context."
-    )
-    return _clean_snippet(f"{text}{suffix}")
-
-
 def _group_v3_clusters(questline_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     clusters: dict[str, dict[str, Any]] = {}
     for row in questline_rows:
@@ -890,9 +1075,14 @@ def build_instance_page(
     fact_pack: dict[str, Any],
     evidence_rows: list[dict[str, Any]],
     lore_source: dict[str, Any] | None,
+    *,
+    parent_zone_evidence_rows: list[dict[str, Any]] | None = None,
+    faction_profile_targets: list[dict[str, Any]] | None = None,
+    section_blocks: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     instance_id = str(fact_pack.get("entity_id", "instance-unknown"))
     name = str(fact_pack.get("name", instance_id))
+    parent_zone_id = str(fact_pack.get("parent_zone_id", "zone-unknown"))
     source_url = ""
     for source_id, url in (fact_pack.get("source_urls") or {}).items():
         if source_id and url:
@@ -902,41 +1092,88 @@ def build_instance_page(
     lower_claims = " ".join(str(claim) for claim in fact_pack.get("claims", [])).lower()
     if "raid" in lower_claims:
         inferred_type = "raid"
-    pools = _build_evidence_pools(evidence_rows)
+
+    pools = _build_instance_evidence_pools(
+        evidence_rows,
+        instance_name=name,
+        parent_zone_evidence_rows=parent_zone_evidence_rows,
+    )
     revision_map = _source_revision_map(fact_pack)
     source_urls = _source_url_map(fact_pack)
     used_source_ids: set[str] = set()
-    at_a_glance_item = _first_item(
-        evidence_rows, {"history_digest", "instances_or_dungeons", "other"}, min_words=10
+
+    at_a_glance, at_used, at_producing_pool = _finalize_instance_at_a_glance(
+        instance_name=name,
+        at_pool=select_at_a_glance_pool(pools["at_a_glance_pool"]),
+        evidence_rows=evidence_rows,
     )
-    overview_item = _first_item(
-        evidence_rows, {"history_digest", "history", "other", "instances_or_dungeons"}, min_words=20
+    at_pointers = _pointers_for_source_ids(at_producing_pool, at_used, revision_map)
+    at_pointers = _ensure_pointer_count(
+        at_pointers,
+        pool=at_producing_pool,
+        revision_map=revision_map,
+        min_count=_pointer_count_for_words(_word_count(at_a_glance)),
     )
-    at_a_glance_pointer = (
-        _pointer_for_item(at_a_glance_item, revision_map, 1) if at_a_glance_item else None
+    used_source_ids.update(pointer["source_id"] for pointer in at_pointers)
+
+    overview, overview_used, overview_pool = _finalize_instance_overview(
+        instance_name=name,
+        overview_pool=pools["overview_pool"],
+        zone_mention_pool=pools["zone_mention_pool"],
     )
-    overview_pointer = _pointer_for_item(overview_item, revision_map, 1) if overview_item else None
-    if at_a_glance_pointer:
-        used_source_ids.add(at_a_glance_pointer["source_id"])
-    if overview_pointer:
-        used_source_ids.add(overview_pointer["source_id"])
+    overview_pointers = _pointers_for_source_ids(overview_pool, overview_used, revision_map)
+    overview_pointers = _ensure_pointer_count(
+        overview_pointers,
+        pool=overview_pool,
+        revision_map=revision_map,
+        min_count=_pointer_count_for_words(_word_count(overview)),
+    )
+    used_source_ids.update(pointer["source_id"] for pointer in overview_pointers)
+
     history_pool = select_history_pool(pools["history_pool"])
-    history_sections, history_used = _history_sections_from_pool(history_pool, evidence_rows=evidence_rows)
+    history_sections, history_used = _finalize_history_sections(
+        history_pool=history_pool,
+        evidence_rows=evidence_rows,
+        max_history=MAX_HISTORY_SECTIONS,
+    )
     history_pointers = _pointers_for_source_ids(
         history_pool or select_history_pool(_iter_evidence_items(evidence_rows, {"history_digest"})),
         history_used,
         revision_map,
     )
-    for pointer in history_pointers:
-        used_source_ids.add(pointer["source_id"])
-    key_enemy_provenance: dict[str, list[dict[str, str]]] = {}
-    key_enemies = _build_key_enemies(evidence_rows)
-    enemy_pointer = overview_pointer or at_a_glance_pointer or (history_pointers[0] if history_pointers else None)
-    if enemy_pointer:
-        for card in key_enemies:
-            key_enemy_provenance[str(card["id"])] = [enemy_pointer]
-    for source_id in source_urls:
-        used_source_ids.add(source_id)
+    used_source_ids.update(pointer["source_id"] for pointer in history_pointers)
+
+    blocks = section_blocks if section_blocks is not None else fact_pack.get("section_blocks", [])
+    if not isinstance(blocks, list):
+        blocks = []
+    boss_candidates = collect_boss_candidates(
+        section_blocks=blocks,
+        instance_name=name,
+        boss_pool_items=pools["boss_pool"],
+    )
+    key_enemies, key_enemy_provenance, enemy_used = _finalize_key_enemies(
+        instance_name=name,
+        boss_candidates=boss_candidates,
+        boss_pool=pools["boss_pool"],
+        revision_map=revision_map,
+    )
+    used_source_ids.update(enemy_used)
+
+    major_factions, faction_provenance = build_instance_major_factions(
+        instance_id=instance_id,
+        instance_name=name,
+        parent_zone_id=parent_zone_id,
+        parent_zone_name=str(fact_pack.get("parent_zone_name", "")).strip(),
+        evidence_rows=evidence_rows,
+        pools=pools,
+        revision_map=revision_map,
+        faction_profile_targets=faction_profile_targets,
+        parent_zone_evidence_rows=parent_zone_evidence_rows,
+    )
+    for pointers in faction_provenance.values():
+        for pointer in pointers:
+            used_source_ids.add(pointer["source_id"])
+
     sources = [
         {"source_id": source_id, "url": source_urls[source_id], "revision_id": revision_map.get(source_id)}
         for source_id in sorted(used_source_ids)
@@ -946,23 +1183,14 @@ def build_instance_page(
         "instance_id": instance_id,
         "name": name,
         "instance_type": inferred_type,
-        "parent_zone_id": str(fact_pack.get("parent_zone_id", "zone-unknown")),
+        "parent_zone_id": parent_zone_id,
         "expansion_context": "retail",
         "wiki_url": source_url or "https://warcraft.wiki.gg/",
-        "at_a_glance": (
-            str(at_a_glance_item["snippet"])
-            if at_a_glance_item
-            else f"{name} is a lore-significant retail instance."
-        ),
-        "overview": _sized_summary(
-            str(overview_item["snippet"])
-            if overview_item
-            else f"{name} contains key enemies and encounter stakes captured from Warcraft Wiki.",
-            20,
-        ),
+        "at_a_glance": at_a_glance,
+        "overview": overview,
         "history_sections": history_sections,
         "key_enemies": key_enemies,
-        "major_factions": [],
+        "major_factions": major_factions,
         "related_quest_chains": [],
         "lore_source": str((lore_source or {}).get("lore_source", "instance_page")),
         "lore_source_reason": (lore_source or {}).get("fallback_reason"),
@@ -971,8 +1199,8 @@ def build_instance_page(
         "glossary_refs": [],
         "sources": sources or _source_entries(fact_pack),
         "provenance": {
-            "identity_header": [at_a_glance_pointer] if at_a_glance_pointer else [],
-            "story_context": [overview_pointer] if overview_pointer else history_pointers,
+            "identity_header": at_pointers,
+            "story_context": overview_pointers,
             "key_characters": key_enemy_provenance,
         },
     }

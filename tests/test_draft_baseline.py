@@ -81,7 +81,11 @@ def test_zone_draft_baseline_validates(
         assert plan_path.is_file()
 
 
-def test_wiki_first_draft_writer_populates_sections_from_evidence(tmp_path: Path) -> None:
+def test_wiki_first_draft_writer_populates_sections_from_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
     context = ensure_run_context(
         "run-test-wiki-first-draft-writer",
         artifacts_root=tmp_path / "runs",
@@ -211,23 +215,66 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(tmp_path: Path
         {
             "subject_id": "instance-scholomance",
             "subject_type": "instance",
+            "field_name": "at_a_glance_input",
+            "evidence_items": [
+                {
+                    "source_url": "https://warcraft.wiki.gg/wiki/Scholomance",
+                    "source_title": "Scholomance",
+                    "snippet": (
+                        "Scholomance is a haunted academy where necromancers and hostile instructors "
+                        "still train recruits beneath blighted lecture halls."
+                    ),
+                    "section_role": "lead",
+                    "confidence": 1.0,
+                }
+            ],
+            "constraints": {"max_tokens": 1200, "forbidden_extrapolation": True},
+            "build_meta": {"run_id": context.run_id, "source_id": "src-instance", "source_kind": "seed"},
+        },
+        {
+            "subject_id": "instance-scholomance",
+            "subject_type": "instance",
             "field_name": "history_digest",
             "evidence_items": [
                 {
                     "source_url": "https://warcraft.wiki.gg/wiki/Scholomance",
                     "source_title": "Scholomance",
                     "snippet": (
-                        "Darkmaster Gandling continues directing necromancers within Scholomance, "
-                        "maintaining ritual control, coordinating hostile instructors, and keeping "
-                        "the academy a persistent threat to surrounding regions through repeated "
-                        "recruitment, experimentation, and battlefield reinforcement cycles."
+                        "Scholomance was founded as a school for battle-mages who studied forbidden necromancy "
+                        "after Lordaeron fell to plague and civil war. Its founders claimed they could control "
+                        "death itself, training students in rituals that bound spirits to stone halls and shadowed "
+                        "lecture chambers beneath the Western Plaguelands. Over decades the institution became a "
+                        "stronghold for hostile instructors, rival cabals, and experiments that threatened every "
+                        "nearby settlement. Crusader patrols, adventurers, and local militias repeatedly assaulted "
+                        "the academy yet its inner vaults endured, guarded by fanatical wardens and archivists who "
+                        "preserved grim curricula. Each campaign left deeper scars across the region while survivors "
+                        "warned that the institution's leaders still coordinate recruitment, battlefield reinforcement, "
+                        "and ritual escalation beyond its crumbling gates."
                     ),
                     "section_role": "history",
                     "confidence": 1.0,
                 }
             ],
             "constraints": {"max_tokens": 1200, "forbidden_extrapolation": True},
-            "build_meta": {"run_id": context.run_id, "source_id": "src-instance"},
+            "build_meta": {"run_id": context.run_id, "source_id": "src-instance", "source_kind": "seed"},
+        },
+        {
+            "subject_id": "instance-scholomance",
+            "subject_type": "instance",
+            "field_name": "boss_pool",
+            "evidence_items": [
+                {
+                    "source_url": "https://warcraft.wiki.gg/wiki/Scholomance",
+                    "source_title": "Scholomance",
+                    "snippet": (
+                        "Bosses include /wiki/Darkmaster_Gandling and /wiki/Instructor_Malicia within Scholomance."
+                    ),
+                    "section_role": "adventurers",
+                    "confidence": 1.0,
+                }
+            ],
+            "constraints": {"max_tokens": 1200, "forbidden_extrapolation": True},
+            "build_meta": {"run_id": context.run_id, "source_id": "src-instance", "source_kind": "seed"},
         },
     ]
     (evidence_dir / "evidence_packs.jsonl").write_text(
@@ -380,3 +427,6 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(tmp_path: Path
     assert instance_draft["history_sections"]
     assert instance_draft["key_enemies"]
     assert instance_draft["sources"]
+    assert len(str(instance_draft.get("overview", "")).split()) >= 170
+    enemy_names = {row["name"] for row in instance_draft["key_enemies"]}
+    assert "Darkmaster Gandling" in enemy_names

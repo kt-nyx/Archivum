@@ -566,6 +566,174 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
                     _fail(f"traversal report fetched denylisted quest href: {link!r} ({reasons})")
 
     print(f"PASS: semantic checks ok for {run_root.name} ({resolved_zone_id})")
+    _check_instance_drafts(run_root)
+
+
+def _instance_seed_section_blocks(run_root: Path, instance_id: str) -> list[dict[str, Any]]:
+    snapshots_path = run_root / "data" / "ingest" / "source_snapshots.json"
+    if not snapshots_path.exists():
+        return []
+    blob = _load_json(snapshots_path)
+    if not isinstance(blob, list):
+        return []
+    for snapshot in blob:
+        if not isinstance(snapshot, dict):
+            continue
+        if (
+            str(snapshot.get("entity_id", "")).strip() == instance_id
+            and str(snapshot.get("entity_type", "")).strip() == "instance"
+            and not str(snapshot.get("auxiliary_role", "")).strip()
+        ):
+            blocks = snapshot.get("section_blocks", [])
+            if isinstance(blocks, list):
+                return [row for row in blocks if isinstance(row, dict)]
+    return []
+
+
+def _check_instance_drafts(run_root: Path) -> None:
+    draft_dir = run_root / "data" / "drafts" / "instance_page"
+    if not draft_dir.exists():
+        return
+
+    from pipeline.contracts.models import INSTANCE_MAX_KEY_CHARACTERS, INSTANCE_MIN_KEY_CHARACTERS
+    from pipeline.discovery.instance_bosses import collect_boss_candidates
+    from pipeline.generate.draft.faction_lint import lint_faction_summary
+    from pipeline.generate.draft.instance_lint import (
+        is_generic_at_a_glance,
+        is_generic_key_enemy_summary,
+        is_generic_overview,
+        lint_at_a_glance as lint_instance_at_a_glance,
+        lint_key_enemy_summary,
+        lint_overview,
+    )
+    from pipeline.generate.draft.prose_lint import (
+        lint_history_sections,
+        MAX_HISTORY_SECTIONS,
+        MIN_HISTORY_SECTIONS,
+    )
+
+    evidence_rows: list[dict[str, Any]] = []
+    evidence_path = run_root / "data" / "evidence" / "evidence_packs.jsonl"
+    if evidence_path.exists():
+        for line in evidence_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if isinstance(row, dict):
+                evidence_rows.append(row)
+
+    for draft_path in sorted(draft_dir.glob("instance-*.json")):
+        draft = _load_json(draft_path)
+        if not isinstance(draft, dict):
+            _fail(f"instance draft is not a JSON object: {draft_path}")
+        instance_id = draft_path.stem
+        instance_name = str(draft.get("name", instance_id)).strip() or instance_id
+        parent_zone_id = str(draft.get("parent_zone_id", "")).strip()
+        parent_zone_name = instance_name
+        if parent_zone_id:
+            parent_draft_path = run_root / "data" / "drafts" / "zone_page" / f"{parent_zone_id}.json"
+            if parent_draft_path.exists():
+                parent_draft = _load_json(parent_draft_path)
+                if isinstance(parent_draft, dict):
+                    parent_zone_name = str(parent_draft.get("name", parent_zone_id)).strip() or parent_zone_id
+        instance_evidence = [
+            row for row in evidence_rows if str(row.get("subject_id", "")).strip() == instance_id
+        ]
+
+        at_a_glance = str(draft.get("at_a_glance", "")).strip()
+        if not at_a_glance:
+            _fail(f"instance at_a_glance is empty: {instance_id!r}")
+        if is_generic_at_a_glance(at_a_glance):
+            _fail(f"instance at_a_glance reads like generic stub: {instance_id!r}")
+        for issue in lint_instance_at_a_glance(at_a_glance, instance_name=instance_name):
+            _fail(f"instance at_a_glance quality check failed for {instance_id!r}: {issue}")
+
+        overview = str(draft.get("overview", "")).strip()
+        if not overview:
+            _fail(f"instance overview is empty: {instance_id!r}")
+        if is_generic_overview(overview):
+            _fail(f"instance overview reads like generic stub: {instance_id!r}")
+        for issue in lint_overview(overview, instance_name=instance_name):
+            _fail(f"instance overview quality check failed for {instance_id!r}: {issue}")
+
+        history = draft.get("history_sections") or []
+        for issue in lint_history_sections(history, max_sections=MAX_HISTORY_SECTIONS):
+            _fail(f"instance history_sections quality check failed for {instance_id!r}: {issue}")
+
+        eligible_history_blocks = sum(
+            len(row.get("evidence_items", []))
+            for row in instance_evidence
+            if str(row.get("field_name", "")) == "history_digest"
+            and str((row.get("build_meta") or {}).get("source_kind", "")) == "seed"
+        )
+        if eligible_history_blocks >= MIN_HISTORY_SECTIONS and len(history) < MIN_HISTORY_SECTIONS:
+            _fail(
+                f"instance history_sections count {len(history)} below minimum {MIN_HISTORY_SECTIONS} "
+                f"for {eligible_history_blocks} seed history blocks ({instance_id!r})"
+            )
+
+        boss_pool_items = []
+        for row in instance_evidence:
+            if str(row.get("field_name", "")) != "boss_pool":
+                continue
+            build_meta = row.get("build_meta") or {}
+            for item in row.get("evidence_items", []):
+                if not isinstance(item, dict):
+                    continue
+                boss_pool_items.append(
+                    {
+                        "snippet": str(item.get("snippet", "")),
+                        "section_role": str(item.get("section_role", "boss_pool")),
+                        "source_id": str(build_meta.get("source_id", "")),
+                    }
+                )
+        boss_candidates = collect_boss_candidates(
+            section_blocks=_instance_seed_section_blocks(run_root, instance_id),
+            instance_name=instance_name,
+            boss_pool_items=boss_pool_items,
+        )
+
+        key_enemies = [row for row in draft.get("key_enemies") or [] if isinstance(row, dict)]
+        if len(key_enemies) > INSTANCE_MAX_KEY_CHARACTERS:
+            _fail(
+                f"instance key_enemies exceeds cap for {instance_id!r} "
+                f"({len(key_enemies)} > {INSTANCE_MAX_KEY_CHARACTERS})"
+            )
+        if len(boss_candidates) >= INSTANCE_MIN_KEY_CHARACTERS and len(key_enemies) < INSTANCE_MIN_KEY_CHARACTERS:
+            _fail(
+                f"instance key_enemies count {len(key_enemies)} below minimum {INSTANCE_MIN_KEY_CHARACTERS} "
+                f"despite {len(boss_candidates)} boss candidates for {instance_id!r}"
+            )
+        for card in key_enemies:
+            summary = str(card.get("summary", "")).strip()
+            boss_name = str(card.get("name", "")).strip()
+            if is_generic_key_enemy_summary(summary):
+                _fail(f"instance key_enemy summary reads like generic stub: {boss_name!r}")
+            for issue in lint_key_enemy_summary(
+                summary,
+                boss_name=boss_name,
+                instance_name=instance_name,
+            ):
+                _fail(f"instance key_enemy quality check failed for {boss_name!r}: {issue}")
+
+        provenance = draft.get("provenance") or {}
+        if at_a_glance and not provenance.get("identity_header"):
+            _fail(f"instance at_a_glance missing identity_header provenance: {instance_id!r}")
+        if overview and not provenance.get("story_context"):
+            _fail(f"instance overview missing story_context provenance: {instance_id!r}")
+        key_char_provenance = provenance.get("key_characters") or {}
+        for card in key_enemies:
+            card_id = str(card.get("id", "")).strip()
+            if card_id and card_id not in key_char_provenance:
+                _fail(f"instance key_enemy missing provenance: {card_id!r}")
+
+        faction_cards = [row for row in draft.get("major_factions") or [] if isinstance(row, dict)]
+        for card in faction_cards:
+            summary = str(card.get("summary", "")).strip()
+            for issue in lint_faction_summary(summary, zone_name=parent_zone_name):
+                _fail(f"instance major_factions quality check failed for {instance_id!r}: {issue}")
+
+        print(f"PASS: instance semantic checks ok for {instance_id}")
 
 
 def main() -> None:

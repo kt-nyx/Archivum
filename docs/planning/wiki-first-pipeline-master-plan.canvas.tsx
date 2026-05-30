@@ -43,7 +43,7 @@ const SLICES = [
   {
     id: "slice-6",
     content: "Slice 6 — Instance parity (LLM workers, bosses, traverse)",
-    status: "pending" as const,
+    status: "completed" as const,
   },
   {
     id: "slice-7",
@@ -76,6 +76,7 @@ export default function WikiFirstPipelineMasterPlan() {
         <Stat label="Slice 3" value="Completed" tone="success" />
         <Stat label="Slice 4" value="Completed" tone="success" />
         <Stat label="Slice 5" value="Completed" tone="success" />
+        <Stat label="Slice 6" value="Completed" tone="success" />
       </Row>
 
       <Callout tone="info" title="Zone-agnostic engineering policy">
@@ -310,6 +311,84 @@ export default function WikiFirstPipelineMasterPlan() {
       </CollapsibleSection>
 
       <Divider />
+      <H2>Slice 6 — completed summary</H2>
+      <Table
+        headers={["Deliverable", "Status", "Notes"]}
+        rows={[
+          ["Instance seed enrich", "Done", "at_a_glance_input, history_digest, boss_pool from instance seed snapshots"],
+          ["instance_lore traverse", "Done", "linked_lore_page fetch from instance_lore_source_map; routes to instance_lore_pool"],
+          ["instance_bosses.py", "Done", "Structural encounter-section parse; wiki link extraction; denylist via entity typing"],
+          ["instance_lint.py + workers", "Done", "synthesize_instance_overview + synthesize_key_enemy_summary; NO_LLM fallbacks"],
+          ["_build_instance_evidence_pools", "Done", "Scoped pools + optional zone_mention rescue from parent zone evidence"],
+          ["build_instance_page finalize", "Done", "Workers → lint → per-pool fallback; per-card provenance; major_factions wired"],
+          ["Semantic instance checks", "Done", "Overview budget, boss quality, stub detection, provenance WARNs in check_run_semantics.py"],
+        ]}
+      />
+
+      <CollapsibleSection title="Slice 6 — intentional deviations (documented)" count={6}>
+        <Table
+          headers={["Topic", "Plan / canvas wording", "Actual behaviour", "Rationale"]}
+          rows={[
+            [
+              "related_quest_chains",
+              "Instance page field",
+              "Still empty [] on instance drafts",
+              "Deferred to Slice 8 per master plan",
+            ],
+            [
+              "Zone instance_links card quality",
+              "Zone-side instance card worker",
+              "Unchanged from Slice 2 baseline",
+              "Deferred to Slice 8 or follow-up",
+            ],
+            [
+              "major_factions on instance",
+              "Instance-scoped faction cards",
+              "Uses parent-zone faction_profile_targets + merged faction_pool evidence",
+              "Faction profiles remain zone-auxiliary; instance history provides role context",
+            ],
+            [
+              "major_factions provenance",
+              "Per-card provenance on instance drafts",
+              "Cards emitted; pointers tracked in sources only (InstanceProvenance schema has no major_factions map)",
+              "Schema parity with validate rules deferred to Slice 8 provenance anchor refactor",
+            ],
+            [
+              "Overview thin pages",
+              "170-word hard-fail budget",
+              "zone_mention_pool + instance_lore_pool rescue before fallback padding",
+              "Semantics distinguishes thin evidence vs broken synthesis",
+            ],
+            [
+              "Provenance excerpt cap",
+              "Full anchor refactor",
+              "Per-field/card pointers from used_evidence_ids only",
+              "Full excerpt cap refactor deferred to Slice 8",
+            ],
+          ]}
+        />
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Slice 6 — verification (completed)" count={5}>
+        <Table
+          headers={["Check", "Criterion"]}
+          rows={[
+            ["overview words", "170–320 via instance_lint; no generic stub strings"],
+            ["key_enemies", "2–10 when boss_pool evidence exists; structural boss names; per-card lint"],
+            ["Provenance", "identity_header, story_context, key_characters from producing pools"],
+            [
+              "Unit tests",
+              "tests/test_instance_bosses.py, test_instance_page_draft.py, test_instance_lint.py, test_evidence_pools.py",
+            ],
+            [
+              "Run semantics",
+              "uv run python scripts/check_run_semantics.py artifacts/runs/<run-id> (instance section auto-runs)",
+            ],
+          ]}
+        />
+      </CollapsibleSection>
+
+      <Divider />
       <H2>Slice 5 — completed summary</H2>
       <Table
         headers={["Deliverable", "Status", "Notes"]}
@@ -417,7 +496,7 @@ export default function WikiFirstPipelineMasterPlan() {
           ["build_major_factions", "Done", "Replaces _FACTION_HINTS / _extract_factions in build_zone_page"],
           ["draft_writer wiring", "Done", "Loads faction_profile_targets.json per zone"],
           ["Semantic faction checks", "Done", "Card count, lint, provenance, Alliance/Horde WARN in check_run_semantics.py"],
-          ["Instance major_factions", "Deferred", "build_instance_page returns [] until Slice 6"],
+            ["Instance major_factions", "Done", "build_instance_page wires build_instance_major_factions (Slice 6)"],
         ]}
       />
 
@@ -680,19 +759,19 @@ export default function WikiFirstPipelineMasterPlan() {
         headers={["Stage", "Changes across slices"]}
         rows={[
           ["ingest / fetch_wiki", "Storyline URLs tagged auxiliary_role + parse_html (Slice 1 ✓)"],
-          ["traverse_seed", "Storyline + faction + location (include-only) (Slice 2–5 ✓)"],
+          ["traverse_seed", "Storyline + faction + location (include-only) + instance_lore (Slice 2–6 ✓)"],
           ["traverse_quests", "Quest URLs from v3 only; cap 25; hub resolver (Slice 2 ✓)"],
           ["discovery / storyline_html", "List-item quest parse only (Slice 1 ✓)"],
           ["discovery / entity_typing", "Denylist taxonomy + zone_name self-check (Slice 1 ✓)"],
-          ["discovery / enrich", "Scoped evidence + quest_lore / quest_cluster_lore (Slice 1–2 ✓)"],
-          ["scripts/check_run_semantics.py", "Cluster cards + traversal denylist + prose + faction + location quality (Slice 1–5 ✓)"],
-          ["draft / wiki_first", "Cluster questline cards + zone prose + major_factions + location_cards election/lint (Slice 2–5 ✓)"],
+          ["discovery / enrich", "Scoped evidence + quest_lore / instance seed boss_pool / instance_lore_pool (Slice 1–6 ✓)"],
+          ["scripts/check_run_semantics.py", "Cluster cards + prose + faction + location + instance quality (Slice 1–6 ✓)"],
+          ["draft / wiki_first", "Zone prose + major_factions + location_cards + instance finalize path (Slice 2–6 ✓)"],
           ["dictionary/", "Run-scoped terms replace static pilot aliases"],
         ]}
       />
 
       <Row gap={8}>
-        <Pill tone="accent">Next: Slice 6</Pill>
+        <Pill tone="accent">Next: Slice 7</Pill>
         <Pill tone="neutral">PoC QA: WPL + Scholomance (data only)</Pill>
         <Pill tone="success">Policy: zone-agnostic code</Pill>
       </Row>

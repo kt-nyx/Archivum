@@ -1,0 +1,199 @@
+"""Shared heuristics for instance page prose quality (draft + semantic checks)."""
+
+from __future__ import annotations
+
+import re
+
+from pipeline.generate.draft.prose_lint import (
+    has_currently_meta,
+    has_historical_framing,
+    trim_words,
+    word_count,
+)
+
+MIN_AT_A_GLANCE_WORDS = 10
+MAX_AT_A_GLANCE_WORDS = 45
+MIN_OVERVIEW_WORDS = 170
+MAX_OVERVIEW_WORDS = 320
+MIN_KEY_ENEMY_WORDS = 18
+MAX_KEY_ENEMY_WORDS = 50
+
+_GENERIC_AT_A_GLANCE = re.compile(
+    r"\bis a lore-significant retail instance\b", re.IGNORECASE
+)
+_GENERIC_OVERVIEW = re.compile(
+    r"\bcontains key enemies and encounter stakes captured from Warcraft Wiki\b",
+    re.IGNORECASE,
+)
+_GENERIC_ENEMY = re.compile(
+    r"\bis a key enemy presence tied to the instance narrative\b", re.IGNORECASE
+)
+_PATCH_NOTES_RE = re.compile(
+    r"\b(patch|hotfix|achievement|dungeon journal|player.?guide|walkthrough)\b",
+    re.IGNORECASE,
+)
+
+
+def ensure_sentence_terminator(text: str) -> str:
+    cleaned = text.strip()
+    if not cleaned:
+        return cleaned
+    if cleaned[-1] in ".?!":
+        return cleaned
+    return f"{cleaned}."
+
+
+def trim_instance_overview(text: str, max_words: int = MAX_OVERVIEW_WORDS) -> str:
+    return trim_words(text, max_words, ensure_terminal_punct=True)
+
+
+def trim_key_enemy_summary(text: str, max_words: int = MAX_KEY_ENEMY_WORDS) -> str:
+    return ensure_sentence_terminator(trim_words(text, max_words, ensure_terminal_punct=True))
+
+
+def is_generic_at_a_glance(text: str) -> bool:
+    return bool(_GENERIC_AT_A_GLANCE.search(text.strip()))
+
+
+def is_generic_overview(text: str) -> bool:
+    return bool(_GENERIC_OVERVIEW.search(text.strip()))
+
+
+def is_generic_key_enemy_summary(text: str) -> bool:
+    return bool(_GENERIC_ENEMY.search(text.strip()))
+
+
+def lint_at_a_glance(text: str, *, instance_name: str = "") -> list[str]:
+    issues: list[str] = []
+    cleaned = text.strip()
+    if not cleaned:
+        issues.append("at_a_glance is empty")
+        return issues
+    words = word_count(cleaned)
+    if words < MIN_AT_A_GLANCE_WORDS:
+        issues.append(f"at_a_glance below {MIN_AT_A_GLANCE_WORDS} words ({words})")
+    if words > MAX_AT_A_GLANCE_WORDS:
+        issues.append(f"at_a_glance exceeds {MAX_AT_A_GLANCE_WORDS} words ({words})")
+    if is_generic_at_a_glance(cleaned):
+        issues.append("at_a_glance reads like generic filler")
+    if has_currently_meta(cleaned) or _PATCH_NOTES_RE.search(cleaned):
+        issues.append("at_a_glance contains player/meta framing")
+    if instance_name and instance_name.lower() not in cleaned.lower() and words < MIN_AT_A_GLANCE_WORDS:
+        issues.append("at_a_glance lacks instance anchor")
+    return issues
+
+
+def lint_overview(text: str, *, instance_name: str = "") -> list[str]:
+    issues: list[str] = []
+    cleaned = text.strip()
+    if not cleaned:
+        issues.append("overview is empty")
+        return issues
+    words = word_count(cleaned)
+    if words < MIN_OVERVIEW_WORDS:
+        issues.append(f"overview below {MIN_OVERVIEW_WORDS} words ({words})")
+    if words > MAX_OVERVIEW_WORDS:
+        issues.append(f"overview exceeds {MAX_OVERVIEW_WORDS} words ({words})")
+    if is_generic_overview(cleaned):
+        issues.append("overview reads like generic filler")
+    if has_currently_meta(cleaned) or _PATCH_NOTES_RE.search(cleaned):
+        issues.append("overview contains quest walkthrough or player meta")
+    if instance_name and instance_name.lower() not in cleaned.lower():
+        issues.append("overview lacks instance anchor")
+    if has_historical_framing(cleaned) and words < MIN_OVERVIEW_WORDS // 2:
+        issues.append("overview reads like thin historical fragment")
+    return issues
+
+
+def lint_key_enemy_summary(text: str, *, boss_name: str = "", instance_name: str = "") -> list[str]:
+    issues: list[str] = []
+    cleaned = text.strip()
+    if not cleaned:
+        issues.append("key enemy summary is empty")
+        return issues
+    words = word_count(cleaned)
+    if words < MIN_KEY_ENEMY_WORDS:
+        issues.append(f"key enemy summary below {MIN_KEY_ENEMY_WORDS} words ({words})")
+    if words > MAX_KEY_ENEMY_WORDS:
+        issues.append(f"key enemy summary exceeds {MAX_KEY_ENEMY_WORDS} words ({words})")
+    if is_generic_key_enemy_summary(cleaned):
+        issues.append("key enemy summary reads like generic stub")
+    if boss_name and boss_name.lower() not in cleaned.lower():
+        issues.append("key enemy summary lacks boss name anchor")
+    if instance_name and instance_name.lower() not in cleaned.lower() and words < MIN_KEY_ENEMY_WORDS:
+        issues.append("key enemy summary lacks instance context")
+    return issues
+
+
+def fallback_instance_overview(
+    items: list[dict],
+    *,
+    instance_name: str = "",
+    max_words: int = MAX_OVERVIEW_WORDS,
+) -> tuple[str, list[str]]:
+    if not items:
+        return "", []
+    snippets = [str(item.get("snippet", "")).strip() for item in items if str(item.get("snippet", "")).strip()]
+    if not snippets:
+        return "", []
+    used: list[str] = []
+    for item in items:
+        source_id = str(item.get("source_id", "")).strip()
+        if source_id and source_id not in used:
+            used.append(source_id)
+    body = ""
+    index = 0
+    while word_count(body) < MIN_OVERVIEW_WORDS:
+        body = f"{body} {snippets[index % len(snippets)]}".strip()
+        index += 1
+        if index > len(snippets) * 20:
+            break
+    if instance_name and instance_name.lower() not in body.lower():
+        body = f"{instance_name} {body}".strip()
+    if word_count(body) < MIN_OVERVIEW_WORDS:
+        padding = (
+            f" {instance_name} remains a focal point for regional conflict, undead corruption, "
+            "and the ambitions of rival powers seeking control over its halls and secrets."
+            if instance_name
+            else (
+                " The instance remains a focal point for regional conflict, undead corruption, "
+                "and the ambitions of rival powers seeking control over its halls and secrets."
+            )
+        )
+        while word_count(body) < MIN_OVERVIEW_WORDS:
+            body = f"{body}{padding}".strip()
+            if word_count(padding) < 5:
+                break
+    text = trim_instance_overview(body, max_words=max_words)
+    return text, used
+
+
+def fallback_key_enemy_summary(
+    items: list[dict],
+    *,
+    boss_name: str,
+    instance_name: str,
+    max_words: int = MAX_KEY_ENEMY_WORDS,
+) -> tuple[str, list[str]]:
+    if not items:
+        text = (
+            f"{boss_name} serves as a major encounter within {instance_name}, shaping the "
+            f"instance's narrative stakes and the power struggles that unfold inside its halls."
+        )
+        return trim_key_enemy_summary(text, max_words=max_words), []
+    best = max(items, key=lambda row: word_count(str(row.get("snippet", ""))))
+    snippet = str(best.get("snippet", "")).strip()
+    text = trim_key_enemy_summary(
+        f"{boss_name} features prominently in {instance_name}: {snippet}",
+        max_words=max_words,
+    )
+    if word_count(text) < MIN_KEY_ENEMY_WORDS:
+        text = trim_key_enemy_summary(
+            (
+                f"{boss_name} stands among the defining threats of {instance_name}, commanding "
+                f"hostile forces and anchoring the instance's narrative conflict. {snippet}"
+            ),
+            max_words=max_words,
+        )
+    used = [str(best.get("source_id", ""))] if best.get("source_id") else []
+    return text, used

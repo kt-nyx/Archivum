@@ -319,3 +319,94 @@ def synthesize_card_summary(
     summary = trim_words(clean_wiki_snippet(str(result.get("summary", ""))), max_words)
     used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
     return summary, used
+
+
+def synthesize_instance_overview(
+    items: list[dict[str, Any]],
+    *,
+    instance_name: str,
+    max_words: int = 320,
+) -> tuple[str, list[str]]:
+    if not items:
+        return "", []
+    from pipeline.generate.draft.instance_lint import fallback_instance_overview, trim_instance_overview
+
+    settings = load_ai_settings()
+    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
+        return fallback_instance_overview(items, instance_name=instance_name, max_words=max_words)
+    result = llm_json_with_retry(
+        required_keys=("summary", "used_evidence_ids"),
+        response_json_schema={
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["summary", "used_evidence_ids"],
+            "properties": {
+                "summary": {"type": "string"},
+                "used_evidence_ids": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+        system_prompt=(
+            f"Write an in-universe story-context overview for instance '{instance_name}' using ONLY evidence. "
+            f"Target 170-{max_words} words. Explain significance, stakes, and narrative role. "
+            "Do not write quest walkthrough steps, loot tables, achievement meta, or player instructions."
+        ),
+        user_prompt=f"Evidence:\n{_format_evidence_block(items, max_items=12)}",
+        response_schema_name="wiki_first_instance_overview",
+        substep="wiki_first_instance_overview",
+    )
+    summary = trim_instance_overview(clean_wiki_snippet(str(result.get("summary", ""))), max_words=max_words)
+    used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
+    if not summary:
+        return fallback_instance_overview(items, instance_name=instance_name, max_words=max_words)
+    return summary, used
+
+
+def synthesize_key_enemy_summary(
+    items: list[dict[str, Any]],
+    *,
+    boss_name: str,
+    instance_name: str,
+    max_words: int = 50,
+) -> tuple[str, list[str]]:
+    if not items:
+        return "", []
+    from pipeline.generate.draft.instance_lint import fallback_key_enemy_summary, trim_key_enemy_summary
+
+    settings = load_ai_settings()
+    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
+        return fallback_key_enemy_summary(
+            items,
+            boss_name=boss_name,
+            instance_name=instance_name,
+            max_words=max_words,
+        )
+    result = llm_json_with_retry(
+        required_keys=("summary", "used_evidence_ids"),
+        response_json_schema={
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["summary", "used_evidence_ids"],
+            "properties": {
+                "summary": {"type": "string"},
+                "used_evidence_ids": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+        system_prompt=(
+            f"Write a key-enemy card summary for boss '{boss_name}' in instance '{instance_name}' "
+            f"using ONLY evidence. Maximum {max_words} words. Describe narrative role and threat in this instance. "
+            "No generic stubs, loot, or player tactics."
+        ),
+        user_prompt=f"Evidence:\n{_format_evidence_block(items)}",
+        response_schema_name="wiki_first_key_enemy_summary",
+        substep="wiki_first_key_enemy_summary",
+    )
+    summary = trim_key_enemy_summary(clean_wiki_snippet(str(result.get("summary", ""))), max_words=max_words)
+    used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
+    if not summary:
+        return fallback_key_enemy_summary(
+            items,
+            boss_name=boss_name,
+            instance_name=instance_name,
+            max_words=max_words,
+        )
+    return summary, used

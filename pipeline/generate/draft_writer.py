@@ -168,7 +168,47 @@ def run_draft_writer(
                     (row for row in instance_lore_rows if str(row.get("instance_id", "")).strip() == entity_id),
                     None,
                 )
-                draft = build_instance_page(fact_pack, scoped_evidence, lore_source)
+                parent_zone_id = str(fact_pack.get("parent_zone_id", "")).strip()
+                parent_zone_evidence = [
+                    row
+                    for row in evidence_rows
+                    if str(row.get("subject_id", "")).strip() == parent_zone_id
+                ] if parent_zone_id else []
+                parent_zone_name = ""
+                if parent_zone_id:
+                    parent_fact_path = path.parent / f"{parent_zone_id}.json"
+                    if parent_fact_path.exists():
+                        parent_fact = json.loads(parent_fact_path.read_text(encoding="utf-8"))
+                        parent_zone_name = str(parent_fact.get("name", "")).strip()
+                enriched_fact_pack = {
+                    **fact_pack,
+                    "parent_zone_name": parent_zone_name,
+                }
+                instance_section_blocks: list[dict[str, Any]] | None = None
+                snapshots_path = context.data_dir / "ingest" / "source_snapshots.json"
+                if snapshots_path.exists():
+                    snapshots_blob = json.loads(snapshots_path.read_text(encoding="utf-8"))
+                    if isinstance(snapshots_blob, list):
+                        for snapshot in snapshots_blob:
+                            if not isinstance(snapshot, dict):
+                                continue
+                            if (
+                                str(snapshot.get("entity_id", "")).strip() == entity_id
+                                and str(snapshot.get("entity_type", "")).strip() == "instance"
+                                and not str(snapshot.get("auxiliary_role", "")).strip()
+                            ):
+                                blocks = snapshot.get("section_blocks", [])
+                                if isinstance(blocks, list):
+                                    instance_section_blocks = [row for row in blocks if isinstance(row, dict)]
+                                break
+                draft = build_instance_page(
+                    enriched_fact_pack,
+                    scoped_evidence,
+                    lore_source,
+                    parent_zone_evidence_rows=parent_zone_evidence,
+                    faction_profile_targets=faction_profile_targets,
+                    section_blocks=instance_section_blocks,
+                )
             entity_dir = stage_dir / f"{entity_type}_page"
             entity_dir.mkdir(parents=True, exist_ok=True)
             out_path = entity_dir / f"{entity_id}.json"

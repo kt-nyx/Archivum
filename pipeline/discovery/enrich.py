@@ -44,6 +44,32 @@ def _is_seed_snapshot(snapshot: dict[str, Any]) -> bool:
     )
 
 
+def _is_instance_seed_snapshot(snapshot: dict[str, Any]) -> bool:
+    return (
+        str(snapshot.get("entity_type", "")) == "instance"
+        and not str(snapshot.get("auxiliary_role", "")).strip()
+    )
+
+
+def _is_boss_pool_role(section_role: str) -> bool:
+    lowered = section_role.lower()
+    tokens = ("adventurers", "encounter", "boss", "dungeon", "adventure_guide")
+    return any(token in lowered for token in tokens)
+
+
+def _instance_seed_field_names(section_role: str, *, lead_emitted: int) -> list[str]:
+    lowered = section_role.lower()
+    names: list[str] = []
+    if lowered in {"lead", "introduction"} and lead_emitted < 2:
+        names.append("at_a_glance_input")
+    if _is_history_digest_role(lowered):
+        names.append("history_digest")
+        names.append("at_a_glance_input")
+    if _is_boss_pool_role(lowered):
+        names.append("boss_pool")
+    return names
+
+
 def _is_history_digest_role(section_role: str) -> bool:
     lowered = section_role.lower()
     if lowered in _HISTORY_DIGEST_EXCLUDED:
@@ -141,7 +167,9 @@ def _build_evidence_packs(
         entity_name = str(snapshot.get("name", "")).strip()
         aux_role = str(snapshot.get("auxiliary_role", "")).strip()
         page_title = str(snapshot.get("page_title", entity_name)).strip()
-        is_seed = _is_seed_snapshot(snapshot)
+        is_zone_seed = _is_seed_snapshot(snapshot)
+        is_instance_seed = _is_instance_seed_snapshot(snapshot)
+        is_seed = is_zone_seed or is_instance_seed
         source_kind = "seed" if is_seed else "auxiliary"
         subject_zone_id = subject_id
         section_blocks = snapshot.get("section_blocks", [])
@@ -205,9 +233,19 @@ def _build_evidence_packs(
             if not snippet:
                 continue
 
-            if is_seed:
+            if is_zone_seed:
                 lead_emitted = lead_counts.get(subject_id, 0)
                 field_names = _seed_field_names(raw_section, lead_emitted=lead_emitted)
+                if "at_a_glance_input" in field_names and raw_section.lower() in {
+                    "lead",
+                    "introduction",
+                }:
+                    lead_counts[subject_id] = lead_emitted + 1
+                if not field_names:
+                    continue
+            elif is_instance_seed:
+                lead_emitted = lead_counts.get(subject_id, 0)
+                field_names = _instance_seed_field_names(raw_section, lead_emitted=lead_emitted)
                 if "at_a_glance_input" in field_names and raw_section.lower() in {
                     "lead",
                     "introduction",
@@ -221,6 +259,8 @@ def _build_evidence_packs(
                 field_names = ["faction_pool"]
             elif aux_role == "location_profile":
                 field_names = ["location_pool"]
+            elif aux_role == "instance_lore":
+                field_names = ["instance_lore_pool"]
             else:
                 continue
 
@@ -240,6 +280,8 @@ def _build_evidence_packs(
                 if aux_role == "location_profile":
                     build_meta["location_id"] = str(snapshot.get("auxiliary_target_id", "")).strip()
                     build_meta["location_name"] = page_title or entity_name
+                if aux_role == "instance_lore":
+                    build_meta["instance_id"] = str(snapshot.get("auxiliary_target_id", subject_id)).strip()
                 packs.append(
                     {
                         "subject_id": subject_id,

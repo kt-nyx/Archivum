@@ -329,3 +329,59 @@ def test_location_profile_pack_includes_location_id_in_build_meta() -> None:
     assert build_meta.get("location_name") == "Hearthglen"
     assert build_meta.get("subject_zone_id") == ZONE_ID
 
+
+INSTANCE_ID = "instance-example"
+INSTANCE_NAME = "Example Instance"
+
+
+def test_instance_seed_evidence_fields() -> None:
+    snapshots = [
+        {
+            "entity_id": INSTANCE_ID,
+            "entity_type": "instance",
+            "name": INSTANCE_NAME,
+            "source_id": "src-instance",
+            "url": "https://warcraft.wiki.gg/wiki/Example_Instance",
+            "section_blocks": [
+                {"section_role": "lead", "text": "Example Instance lead paragraph for at-a-glance."},
+                {"section_role": "history", "text": "Historical arc about the academy beneath the blighted hills."},
+                {
+                    "section_role": "adventurers",
+                    "text": "Bosses include /wiki/Archivist_Maelor and /wiki/Warden_Voss.",
+                },
+            ],
+            "auxiliary_role": "",
+        }
+    ]
+    packs = _build_evidence_packs(snapshots, "run-test")
+    field_names = {str(row.get("field_name", "")) for row in packs}
+    assert "at_a_glance_input" in field_names
+    assert "history_digest" in field_names
+    assert "boss_pool" in field_names
+    boss_packs = [row for row in packs if row.get("field_name") == "boss_pool"]
+    assert boss_packs
+    assert all((row.get("build_meta") or {}).get("source_kind") == "seed" for row in boss_packs)
+
+
+def test_instance_lore_routes_to_instance_lore_pool() -> None:
+    snapshots = [
+        {
+            "entity_id": INSTANCE_ID,
+            "entity_type": "instance",
+            "name": INSTANCE_NAME,
+            "source_id": "src-instance-lore",
+            "url": "https://warcraft.wiki.gg/wiki/Example_Instance_(lore)",
+            "section_blocks": [
+                {"section_role": "history", "text": "Lore page history about the academy's founding era."}
+            ],
+            "auxiliary_role": "instance_lore",
+            "auxiliary_target_id": INSTANCE_ID,
+            "page_title": "Example Instance (lore)",
+        }
+    ]
+    packs = _build_evidence_packs(snapshots, "run-test")
+    lore_packs = [row for row in packs if row.get("field_name") == "instance_lore_pool"]
+    assert lore_packs
+    build_meta = lore_packs[0].get("build_meta") or {}
+    assert build_meta.get("instance_id") == INSTANCE_ID
+

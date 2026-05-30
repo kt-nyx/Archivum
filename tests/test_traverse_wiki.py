@@ -280,3 +280,140 @@ def test_traverse_skips_defer_location_targets(
 
     assert any("Include_Hold" in url for url in fetched_urls)
     assert not any("Defer_Hold" in url for url in fetched_urls)
+
+
+def test_traverse_fetches_linked_lore_page_not_instance_page_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = ensure_run_context("run-test-instance-lore", artifacts_root=tmp_path / "runs")
+    ingest_dir = context.stage_dir("ingest")
+    instance_id = "instance-example-dungeon"
+    snapshots = [
+        {
+            "entity_id": ZONE_ID,
+            "entity_type": "zone",
+            "slug": "example-zone",
+            "name": ZONE_NAME,
+            "source_id": "src-zone",
+            "source_class": "warcraft_wiki",
+            "url": "https://warcraft.wiki.gg/wiki/Example_Zone",
+            "revision_id": "mw:1",
+            "captured_at": "2026-01-01T00:00:00Z",
+            "locator": "section:lead paragraph:1",
+            "body": "Zone body",
+            "section_blocks": [],
+            "wiki_links": [],
+            "structured_links": [],
+            "retrieval_mode": "live",
+            "selection_version": "v1",
+            "policy_version": "v1",
+            "manifest_run_id": "run-v1",
+            "parent_zone_id": "",
+            "requested_revision_id": "",
+            "priority": 1,
+        },
+        {
+            "entity_id": instance_id,
+            "entity_type": "instance",
+            "slug": "example-dungeon",
+            "name": "Example Dungeon",
+            "source_id": "src-instance",
+            "source_class": "warcraft_wiki",
+            "url": "https://warcraft.wiki.gg/wiki/Example_Dungeon",
+            "revision_id": "mw:2",
+            "captured_at": "2026-01-01T00:00:00Z",
+            "locator": "section:lead paragraph:1",
+            "body": "Instance body",
+            "section_blocks": [],
+            "wiki_links": [],
+            "structured_links": [],
+            "retrieval_mode": "live",
+            "selection_version": "v1",
+            "policy_version": "v1",
+            "manifest_run_id": "run-v1",
+            "parent_zone_id": ZONE_ID,
+            "requested_revision_id": "",
+            "priority": 1,
+        },
+    ]
+    manifest = [
+        {
+            "entity_id": ZONE_ID,
+            "entity_type": "zone",
+            "slug": "example-zone",
+            "name": ZONE_NAME,
+            "source_id": "src-zone",
+            "source_url": "https://warcraft.wiki.gg/wiki/Example_Zone",
+            "source_class": "warcraft_wiki",
+            "selection_version": "v1",
+            "policy_version": "v1",
+            "manifest_run_id": "run-v1",
+        },
+        {
+            "entity_id": instance_id,
+            "entity_type": "instance",
+            "slug": "example-dungeon",
+            "name": "Example Dungeon",
+            "source_id": "src-instance",
+            "source_url": "https://warcraft.wiki.gg/wiki/Example_Dungeon",
+            "source_class": "warcraft_wiki",
+            "selection_version": "v1",
+            "policy_version": "v1",
+            "manifest_run_id": "run-v1",
+            "parent_zone_id": ZONE_ID,
+        },
+    ]
+    (ingest_dir / "source_snapshots.json").write_text(json.dumps(snapshots, indent=2), encoding="utf-8")
+    (ingest_dir / "source_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    discovery_dir = context.data_dir / "discovery"
+    discovery_dir.mkdir(parents=True, exist_ok=True)
+    (discovery_dir / "instance_lore_source_map.json").write_text(
+        json.dumps(
+            [
+                {
+                    "instance_id": instance_id,
+                    "lore_source": "linked_lore_page",
+                    "source_link": "/wiki/Example_Dungeon_(lore)",
+                },
+                {
+                    "instance_id": "instance-skip-page",
+                    "lore_source": "instance_page",
+                    "source_link": "/wiki/Example_Dungeon",
+                },
+            ],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (discovery_dir / "faction_profile_targets.json").write_text("[]", encoding="utf-8")
+    (discovery_dir / "location_profile_targets.json").write_text("[]", encoding="utf-8")
+    (discovery_dir / "storyline_traversal_targets.json").write_text("[]", encoding="utf-8")
+    (context.data_dir / "decisions" / "location_significance_decisions.json").parent.mkdir(
+        parents=True, exist_ok=True
+    )
+    (context.data_dir / "decisions" / "location_significance_decisions.json").write_text("[]", encoding="utf-8")
+
+    fetched_urls: list[str] = []
+
+    def fake_fetch(url: str, source_class: str):
+        fetched_urls.append(url)
+        return (
+            "Lore page body with extended narrative history.",
+            "mw:300",
+            "section:lead paragraph:1",
+            [{"section_role": "history", "text": "Extended lore history about the dungeon."}],
+            [],
+            [],
+            "",
+        )
+
+    monkeypatch.setattr("pipeline.ingest.traverse_wiki._fetch_url_text", fake_fetch)
+    run_traverse_seed(context)
+
+    assert any("Example_Dungeon_(lore)" in url for url in fetched_urls)
+    assert not any(url.endswith("/Example_Dungeon") for url in fetched_urls if "(lore)" not in url)
+    merged = json.loads((ingest_dir / "source_snapshots.json").read_text(encoding="utf-8"))
+    lore_rows = [row for row in merged if row.get("auxiliary_role") == "instance_lore"]
+    assert len(lore_rows) == 1
+    assert lore_rows[0].get("entity_id") == instance_id

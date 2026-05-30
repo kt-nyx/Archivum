@@ -298,3 +298,115 @@ def test_check_run_warns_alliance_without_quest_bindings(tmp_path: Path, capsys)
     captured = capsys.readouterr()
     assert "WARN: 'faction-alliance' present in major_factions without strong conflict signal" in captured.out
 
+
+def test_check_run_validates_instance_draft(tmp_path: Path, capsys) -> None:
+    run_root = tmp_path / "run-instance"
+    zone_id = "zone-example"
+    instance_id = "instance-archive-vault"
+    (run_root / "data" / "drafts" / "zone_page").mkdir(parents=True)
+    (run_root / "data" / "drafts" / "instance_page").mkdir(parents=True)
+    (run_root / "data" / "discovery").mkdir(parents=True)
+    (run_root / "data" / "evidence").mkdir(parents=True)
+
+    zone_draft = _valid_draft()
+    (run_root / "data" / "drafts" / "zone_page" / f"{zone_id}.json").write_text(
+        json.dumps(zone_draft, indent=2),
+        encoding="utf-8",
+    )
+    overview = " ".join(
+        [
+            "Archive Vault was founded as a school for battle-mages who studied forbidden necromancy",
+            "after the kingdom fell to plague and civil war across the blighted countryside.",
+        ]
+        * 10
+    )
+    instance_draft = {
+        "instance_id": instance_id,
+        "name": "Archive Vault",
+        "at_a_glance": (
+            "Archive Vault is a blighted academy where necromancers still train recruits beneath haunted halls."
+        ),
+        "overview": overview,
+        "history_sections": [
+            {"heading": "Founding", "body": "The vault was built to safeguard forbidden relics after the great war."}
+        ],
+        "key_enemies": [
+            {
+                "id": "character-archivist-maelor",
+                "name": "Archivist Maelor",
+                "summary": (
+                    "Archivist Maelor guards the forbidden stacks within Archive Vault, directing hostile "
+                    "instructors and preserving grim curricula that threaten nearby settlements."
+                ),
+            },
+            {
+                "id": "character-warden-voss",
+                "name": "Warden Voss",
+                "summary": (
+                    "Warden Voss patrols the inner vaults of Archive Vault, enforcing ritual discipline "
+                    "among hostile instructors and blocking every attempt to reclaim the academy's secrets."
+                ),
+            },
+        ],
+        "sources": [{"source_id": "src-instance", "url": "https://example.test/instance"}],
+        "provenance": {
+            "identity_header": [{"source_id": "src-instance", "locator": "section:lead paragraph:1"}],
+            "story_context": [{"source_id": "src-instance", "locator": "section:history paragraph:1"}],
+            "key_characters": {
+                "character-archivist-maelor": [
+                    {"source_id": "src-instance", "locator": "section:adventurers paragraph:1"}
+                ],
+                "character-warden-voss": [
+                    {"source_id": "src-instance", "locator": "section:adventurers paragraph:2"}
+                ],
+            },
+        },
+    }
+    (run_root / "data" / "drafts" / "instance_page" / f"{instance_id}.json").write_text(
+        json.dumps(instance_draft, indent=2),
+        encoding="utf-8",
+    )
+    (run_root / "data" / "discovery" / "zone_quest_graph_v3.json").write_text(
+        json.dumps(
+            [
+                {
+                    "zone_id": zone_id,
+                    "node_type": "quest",
+                    "cluster_id": "part-1",
+                    "title": "Quest A",
+                    "source_link": "/wiki/Quest_A",
+                }
+            ],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (run_root / "data" / "evidence" / "evidence_packs.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "subject_id": zone_id,
+                        "field_name": "quest_cluster_lore",
+                        "build_meta": {"subject_zone_id": zone_id, "cluster_id": "part-1"},
+                        "evidence_items": [{"snippet": "Narrative lore about the front lines."}],
+                    }
+                ),
+                json.dumps(
+                    {
+                        "subject_id": instance_id,
+                        "field_name": "boss_pool",
+                        "evidence_items": [{"snippet": "Bosses include /wiki/Archivist_Maelor."}],
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    check_run(run_root, zone_id=zone_id)
+    captured = capsys.readouterr()
+    assert "PASS: instance semantic checks ok" in captured.out
+
+

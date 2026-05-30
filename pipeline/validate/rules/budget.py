@@ -318,26 +318,48 @@ def _validate_zone_page(zone_page: ZonePage) -> list[ValidationIssue]:
 
 def _validate_instance_page(instance_page: InstancePage) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
-    at_a_glance_words = _word_count(instance_page.at_a_glance)
-    if not (8 <= at_a_glance_words <= 70):
+    if (
+        not INSTANCE_MIN_KEY_CHARACTERS
+        <= len(instance_page.key_enemies)
+        <= INSTANCE_MAX_KEY_CHARACTERS
+        and instance_page.key_enemies
+    ):
         issues.append(
             ValidationIssue(
-                code="budget.section",
-                message=f"at_a_glance word count {at_a_glance_words} is outside budget [8, 70]",
+                code="budget.instance_key_characters_count",
+                message=(
+                    f"instance_page.key_enemies must contain {INSTANCE_MIN_KEY_CHARACTERS}-"
+                    f"{INSTANCE_MAX_KEY_CHARACTERS} cards when present"
+                ),
                 severity=ValidationSeverity.WARN,
-                path="$.at_a_glance",
+                path="$.key_enemies",
             )
         )
-    overview_words = _word_count(instance_page.overview)
-    if not (20 <= overview_words <= 260):
-        issues.append(
-            ValidationIssue(
-                code="budget.section",
-                message=f"overview word count {overview_words} is outside budget [20, 260]",
-                severity=ValidationSeverity.HARD_FAIL,
-                path="$.overview",
-            )
+
+    section_rules = {
+        "at_a_glance": INSTANCE_BUDGET_RULES["identity_header"],
+        "overview": INSTANCE_BUDGET_RULES["story_context"],
+    }
+    for field_name, rule in section_rules.items():
+        issue = _rule_issue_count(
+            rule,
+            _word_count(str(getattr(instance_page, field_name, ""))),
+            f"$.{field_name}",
+            "budget.section",
         )
+        if issue:
+            issues.append(issue)
+
+    for index, card in enumerate(instance_page.key_enemies):
+        issue = _rule_issue_count(
+            INSTANCE_BUDGET_RULES["key_characters_card_summary"],
+            _word_count(card.summary),
+            f"$.key_enemies[{index}].summary",
+            "budget.character_card",
+        )
+        if issue:
+            issues.append(issue)
+
     for index, section in enumerate(instance_page.history_sections):
         words = _word_count(section.body)
         if not (25 <= words <= 260):

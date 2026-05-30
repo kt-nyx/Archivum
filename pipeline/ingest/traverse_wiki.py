@@ -78,6 +78,16 @@ def _zone_seed_snapshot(snapshots: list[dict[str, Any]], zone_id: str) -> dict[s
     return None
 
 
+def _instance_seed_snapshot(snapshots: list[dict[str, Any]], instance_id: str) -> dict[str, Any] | None:
+    for row in snapshots:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("entity_id", "")) == instance_id and str(row.get("entity_type", "")) == "instance":
+            if not str(row.get("auxiliary_role", "")).strip():
+                return row
+    return None
+
+
 def _build_manifest_row(
     *,
     zone_snapshot: dict[str, Any],
@@ -91,9 +101,13 @@ def _build_manifest_row(
     cluster_id: str = "",
     quest_node_id: str = "",
 ) -> dict[str, Any]:
+    entity_type = str(zone_snapshot.get("entity_type", "zone")).strip() or "zone"
+    parent_zone_id = str(zone_snapshot.get("parent_zone_id", "")).strip()
+    if entity_type != "instance" and not parent_zone_id:
+        parent_zone_id = str(zone_snapshot.get("entity_id", ""))
     row = {
         "entity_id": str(zone_snapshot.get("entity_id", "")),
-        "entity_type": "zone",
+        "entity_type": entity_type,
         "slug": str(zone_snapshot.get("slug", "")),
         "name": str(zone_snapshot.get("name", "")),
         "source_id": source_id,
@@ -104,7 +118,7 @@ def _build_manifest_row(
         "selection_version": str(zone_snapshot.get("selection_version", "traversal-v1")),
         "policy_version": str(zone_snapshot.get("policy_version", "wiki-first-v1")),
         "manifest_run_id": str(zone_snapshot.get("manifest_run_id", "unknown")),
-        "parent_zone_id": str(zone_snapshot.get("entity_id", "")),
+        "parent_zone_id": parent_zone_id,
         "auxiliary_role": auxiliary_role,
         "auxiliary_target_id": auxiliary_target_id,
         "traversal_origin": traversal_origin,
@@ -611,6 +625,39 @@ def run_traverse_seed(context: RunContext) -> dict[str, Path]:
             ):
                 seen_location.add(key)
                 _increment(zone_id, "location_profile")
+
+    instance_lore_map = _load_json(discovery_dir / "instance_lore_source_map.json")
+    if isinstance(instance_lore_map, list):
+        seen_instance_lore: set[str] = set()
+        for row in instance_lore_map:
+            if not isinstance(row, dict):
+                continue
+            instance_id = str(row.get("instance_id", "")).strip()
+            lore_source = str(row.get("lore_source", "")).strip()
+            link = str(row.get("source_link", "")).strip()
+            if lore_source != "linked_lore_page" or not instance_id or not link:
+                continue
+            if instance_id in seen_instance_lore:
+                continue
+            instance_snap = _instance_seed_snapshot(snapshots, instance_id)
+            if instance_snap is None:
+                continue
+            if _fetch_and_append(
+                zone_snapshot=instance_snap,
+                link=link,
+                auxiliary_role="instance_lore",
+                auxiliary_target_id=instance_id,
+                traversal_origin="instance_lore_source_map",
+                page_title=_wiki_title(link),
+                snapshots=snapshots,
+                manifest_rows=manifest_rows,
+                existing_source_ids=existing_source_ids,
+                existing_urls=existing_urls,
+                captured_at=captured_at,
+                report_rows=report_rows,
+                allowed_instance_titles=allowed_instance_titles,
+            ):
+                seen_instance_lore.add(instance_id)
 
     return _persist_traverse_state(
         context,

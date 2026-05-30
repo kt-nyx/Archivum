@@ -567,14 +567,23 @@ def test_linker_keeps_instance_page_schema_valid_with_glossary_refs(
                 "expansion_context": "retail",
                 "wiki_url": "https://warcraft.wiki.gg/wiki/Scholomance",
                 "at_a_glance": (
-                    "Scholomance remains a major Scourge stronghold in Lordaeron where players "
-                    "push through necromantic wings, disrupt rituals, and dismantle leadership "
-                    "cells tied to the wider Scourge war effort."
+                    "Scholomance remains a major Scourge stronghold in Lordaeron where necromancers "
+                    "train adepts, coordinate plague operations, and project ritual pressure across "
+                    "the surrounding blighted countryside."
                 ),
-                "overview": (
-                    "Players assault the necromantic school to break Darkmaster Gandling's control, "
-                    "disrupt ritual chambers, and prevent wider Scourge reinforcement plans from "
-                    "spilling into neighboring regions."
+                "overview": " ".join(
+                    [
+                        "Scholomance was founded as a school for battle-mages who studied forbidden necromancy "
+                        "after Lordaeron fell to plague and civil war. Its founders claimed they could control "
+                        "death itself, training students in rituals that bound spirits to stone halls and shadowed "
+                        "lecture chambers beneath the Western Plaguelands. Over decades the institution became a "
+                        "stronghold for hostile instructors, rival cabals, and experiments that threatened every "
+                        "nearby settlement. Crusader patrols and local militias repeatedly assaulted the academy "
+                        "yet its inner vaults endured, guarded by fanatical wardens and archivists who preserved "
+                        "grim curricula. Darkmaster Gandling and his circle still coordinate recruitment, "
+                        "battlefield reinforcement, and ritual escalation beyond Scholomance's crumbling gates.",
+                    ]
+                    * 2
                 ),
                 "history_sections": [
                     {
@@ -619,7 +628,13 @@ def test_linker_keeps_instance_page_schema_valid_with_glossary_refs(
                             "locator": "section:overview paragraph:1",
                             "revision_id": "mw:123",
                             "excerpt_hash": "sha1:instance222222222",
-                        }
+                        },
+                        {
+                            "source_id": "src-instance",
+                            "locator": "section:history paragraph:2",
+                            "revision_id": "mw:123",
+                            "excerpt_hash": "sha1:instance333333333",
+                        },
                     ],
                     "key_characters": {},
                 },
