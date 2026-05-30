@@ -58,6 +58,7 @@ from pipeline.generate.draft.prose_lint import (
     lint_currently,
     lint_history_sections,
 )
+from pipeline.generate.draft.provenance import build_revision_index, collect_sources_manifest
 from pipeline.generate.draft.wiki_first_workers import (
     synthesize_at_a_glance,
     synthesize_card_summary,
@@ -146,23 +147,6 @@ def _iter_evidence_items(
     return items
 
 
-def _source_revision_map(fact_pack: dict[str, Any]) -> dict[str, str]:
-    source_ids = [str(source_id) for source_id in (fact_pack.get("source_ids") or []) if str(source_id).strip()]
-    revision_ids = [str(revision_id) for revision_id in (fact_pack.get("revision_ids") or [])]
-    return {
-        source_id: revision_ids[index]
-        for index, source_id in enumerate(source_ids)
-        if index < len(revision_ids) and revision_ids[index]
-    }
-
-
-def _source_url_map(fact_pack: dict[str, Any]) -> dict[str, str]:
-    urls = fact_pack.get("source_urls") or {}
-    if not isinstance(urls, dict):
-        return {}
-    return {str(source_id): str(url) for source_id, url in urls.items() if str(source_id) and str(url)}
-
-
 def _items_for_source_ids(
     items: list[dict[str, Any]],
     source_ids: list[str],
@@ -248,6 +232,57 @@ def _ensure_pointer_count(
         seen.add(key)
         locator_index += 1
     return supplemented
+
+
+def _attach_history_source_refs(
+    sections: list[dict[str, Any]],
+    history_pool: list[dict[str, Any]],
+    revision_map: dict[str, str],
+) -> list[dict[str, Any]]:
+    if not sections:
+        return sections
+    pool = history_pool or []
+    updated: list[dict[str, Any]] = []
+    for index, section in enumerate(sections):
+        if not isinstance(section, dict):
+            continue
+        section_out = dict(section)
+        existing_refs = section_out.get("source_refs")
+        if isinstance(existing_refs, list) and existing_refs:
+            updated.append(section_out)
+            continue
+        pointer: dict[str, str] | None = None
+        if index < len(pool):
+            pointer = _pointer_for_item(pool[index], revision_map, index + 1)
+        if pointer is None and pool:
+            pointer = _pointer_for_item(pool[0], revision_map, index + 1)
+        section_out["source_refs"] = [pointer] if pointer else []
+        updated.append(section_out)
+    return updated
+
+
+def _history_pointers_from_sections(sections: list[dict[str, Any]]) -> list[dict[str, str]]:
+    pointers: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+        refs = section.get("source_refs")
+        if not isinstance(refs, list):
+            continue
+        for ref in refs:
+            if not isinstance(ref, dict):
+                continue
+            source_id = str(ref.get("source_id", "")).strip()
+            locator = str(ref.get("locator", "")).strip()
+            if not source_id or not locator:
+                continue
+            key = (source_id, locator)
+            if key in seen:
+                continue
+            seen.add(key)
+            pointers.append(ref)
+    return pointers
 
 
 def _normalize_section_role(section_role: str) -> str:
@@ -920,17 +955,17 @@ def build_zone_page(
     *,
     faction_profile_targets: list[dict[str, Any]] | None = None,
     location_profile_targets: list[dict[str, Any]] | None = None,
+    snapshots: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     zone_id = str(fact_pack.get("entity_id", "zone-unknown"))
     name = str(fact_pack.get("name", zone_id))
+    revision_map, source_urls = build_revision_index(fact_pack, snapshots)
     source_url = ""
-    for source_id, url in (fact_pack.get("source_urls") or {}).items():
+    for source_id, url in source_urls.items():
         if source_id and url:
             source_url = str(url)
             break
     pools = _build_evidence_pools(evidence_rows)
-    revision_map = _source_revision_map(fact_pack)
-    source_urls = _source_url_map(fact_pack)
     used_source_ids: set[str] = set()
 
     at_pool = select_at_a_glance_pool(pools["at_a_glance_pool"])
@@ -952,9 +987,21 @@ def build_zone_page(
         pools=pools,
     )
 
-    at_a_glance_pointers = _pointers_for_source_ids(at_pool or pools["at_a_glance_pool"], at_glance_used, revision_map)
-    currently_pointers = _pointers_for_source_ids(
-        currently_pool or pools["currently_pool"], currently_used, revision_map
+    at_glance_pool = at_pool or pools["at_a_glance_pool"]
+    at_a_glance_pointers = _pointers_for_source_ids(at_glance_pool, at_glance_used, revision_map)
+    at_a_glance_pointers = _ensure_pointer_count(
+        at_a_glance_pointers,
+        pool=at_glance_pool,
+        revision_map=revision_map,
+        min_count=_pointer_count_for_words(_word_count(at_a_glance)),
+    )
+    currently_pointer_pool = currently_pool or pools["currently_pool"]
+    currently_pointers = _pointers_for_source_ids(currently_pointer_pool, currently_used, revision_map)
+    currently_pointers = _ensure_pointer_count(
+        currently_pointers,
+        pool=currently_pointer_pool,
+        revision_map=revision_map,
+        min_count=_pointer_count_for_words(_word_count(currently)),
     )
     for pointer in at_a_glance_pointers + currently_pointers:
         used_source_ids.add(pointer["source_id"])
@@ -964,8 +1011,25 @@ def build_zone_page(
         evidence_rows=evidence_rows,
         max_history=max_history,
     )
-    history_pointers = _pointers_for_source_ids(
-        draft_history_pool or history_pool or pools["history_pool"], history_used, revision_map
+    history_sections = _attach_history_source_refs(
+        history_sections,
+        draft_history_pool or history_pool or pools["history_pool"],
+        revision_map,
+    )
+    history_pointer_pool = draft_history_pool or history_pool or pools["history_pool"]
+    history_pointers = _pointers_for_source_ids(history_pointer_pool, history_used, revision_map)
+    if not history_pointers:
+        history_pointers = _history_pointers_from_sections(history_sections)
+    history_text = " ".join(
+        str(section.get("body", "")).strip()
+        for section in history_sections
+        if isinstance(section, dict)
+    )
+    history_pointers = _ensure_pointer_count(
+        history_pointers,
+        pool=history_pointer_pool,
+        revision_map=revision_map,
+        min_count=_pointer_count_for_words(_word_count(history_text)),
     )
     for pointer in history_pointers:
         used_source_ids.add(pointer["source_id"])
@@ -1020,6 +1084,15 @@ def build_zone_page(
             }
         )
         pointers = _cap_card_pointers(_pointers_for_source_ids(scoped_pool, cta_used, revision_map))
+        if not pointers:
+            pointers = _cap_card_pointers(
+                _ensure_pointer_count(
+                    [],
+                    pool=scoped_pool,
+                    revision_map=revision_map,
+                    min_count=1,
+                )
+            )
         if pointers:
             bucket = _provenance_bucket_for_faction(faction)
             questline_provenance_by_bucket[bucket][card_id] = pointers
@@ -1083,12 +1156,7 @@ def build_zone_page(
         for pointer in pointers:
             used_source_ids.add(pointer["source_id"])
     parent_continent = resolve_parent_continent(evidence_rows) or "unknown"
-    sources = [
-        {"source_id": source_id, "url": source_urls[source_id], "revision_id": revision_map.get(source_id)}
-        for source_id in sorted(used_source_ids)
-        if source_id in source_urls
-    ]
-    return {
+    page_entity = {
         "zone_id": zone_id,
         "name": name,
         "wiki_url": source_url or "https://warcraft.wiki.gg/",
@@ -1102,7 +1170,6 @@ def build_zone_page(
         "location_cards": location_cards,
         "instance_links": instance_links,
         "glossary_refs": [],
-        "sources": sources or _source_entries(fact_pack),
         "provenance": {
             "at_a_glance": at_a_glance_pointers,
             "currently": currently_pointers,
@@ -1117,6 +1184,9 @@ def build_zone_page(
             "glossary": {},
         },
     }
+    sources = collect_sources_manifest(page_entity, revision_map, source_urls)
+    page_entity["sources"] = sources or _source_entries(fact_pack)
+    return page_entity
 
 
 def build_instance_page(
@@ -1127,12 +1197,14 @@ def build_instance_page(
     parent_zone_evidence_rows: list[dict[str, Any]] | None = None,
     faction_profile_targets: list[dict[str, Any]] | None = None,
     section_blocks: list[dict[str, Any]] | None = None,
+    snapshots: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     instance_id = str(fact_pack.get("entity_id", "instance-unknown"))
     name = str(fact_pack.get("name", instance_id))
     parent_zone_id = str(fact_pack.get("parent_zone_id", "zone-unknown"))
+    revision_map, source_urls = build_revision_index(fact_pack, snapshots)
     source_url = ""
-    for source_id, url in (fact_pack.get("source_urls") or {}).items():
+    for source_id, url in source_urls.items():
         if source_id and url:
             source_url = str(url)
             break
@@ -1146,8 +1218,6 @@ def build_instance_page(
         instance_name=name,
         parent_zone_evidence_rows=parent_zone_evidence_rows,
     )
-    revision_map = _source_revision_map(fact_pack)
-    source_urls = _source_url_map(fact_pack)
     used_source_ids: set[str] = set()
 
     at_a_glance, at_used, at_producing_pool = _finalize_instance_at_a_glance(
@@ -1187,10 +1257,29 @@ def build_instance_page(
         evidence_rows=evidence_rows,
         max_history=instance_history_cap,
     )
-    history_pointers = _pointers_for_source_ids(
-        draft_history_pool or history_pool or select_history_pool(_iter_evidence_items(evidence_rows, {"history_digest"})),
-        history_used,
+    history_sections = _attach_history_source_refs(
+        history_sections,
+        draft_history_pool or history_pool or pools["history_pool"],
         revision_map,
+    )
+    history_pointer_pool = (
+        draft_history_pool
+        or history_pool
+        or select_history_pool(_iter_evidence_items(evidence_rows, {"history_digest"}))
+    )
+    history_pointers = _pointers_for_source_ids(history_pointer_pool, history_used, revision_map)
+    if not history_pointers:
+        history_pointers = _history_pointers_from_sections(history_sections)
+    history_text = " ".join(
+        str(section.get("body", "")).strip()
+        for section in history_sections
+        if isinstance(section, dict)
+    )
+    history_pointers = _ensure_pointer_count(
+        history_pointers,
+        pool=history_pointer_pool,
+        revision_map=revision_map,
+        min_count=_pointer_count_for_words(_word_count(history_text)),
     )
     used_source_ids.update(pointer["source_id"] for pointer in history_pointers)
 
@@ -1225,12 +1314,7 @@ def build_instance_page(
         for pointer in pointers:
             used_source_ids.add(pointer["source_id"])
 
-    sources = [
-        {"source_id": source_id, "url": source_urls[source_id], "revision_id": revision_map.get(source_id)}
-        for source_id in sorted(used_source_ids)
-        if source_id in source_urls
-    ]
-    return {
+    page_entity = {
         "instance_id": instance_id,
         "name": name,
         "instance_type": inferred_type,
@@ -1247,7 +1331,6 @@ def build_instance_page(
         "variant_policy": "standalone",
         "variant_reason_codes": [],
         "glossary_refs": [],
-        "sources": sources or _source_entries(fact_pack),
         "provenance": {
             "identity_header": at_pointers,
             "story_context": overview_pointers,
@@ -1256,3 +1339,6 @@ def build_instance_page(
             "glossary": {},
         },
     }
+    sources = collect_sources_manifest(page_entity, revision_map, source_urls)
+    page_entity["sources"] = sources or _source_entries(fact_pack)
+    return page_entity

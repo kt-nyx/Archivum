@@ -708,7 +708,14 @@ def test_linker_scans_wiki_first_history_sections(tmp_path: Path, monkeypatch: p
                             "campaigns to reclaim farmland, stabilize roads, and restore defensive "
                             "infrastructure after prolonged devastation."
                         ),
-                        "source_refs": [],
+                        "source_refs": [
+                            {
+                                "source_id": "src-zone",
+                                "locator": "section:history paragraph:1",
+                                "revision_id": "mw:123",
+                                "excerpt_hash": "sha1:zonehist111111111",
+                            }
+                        ],
                     }
                 ],
                 "major_factions": [],
@@ -810,6 +817,14 @@ def test_linker_enriches_refs_from_run_terms(tmp_path: Path) -> None:
                             "campaigns to reclaim farmland, stabilize roads, and restore defensive "
                             "infrastructure after prolonged devastation across the frontier."
                         ),
+                        "source_refs": [
+                            {
+                                "source_id": "src-zone",
+                                "locator": "section:history paragraph:1",
+                                "revision_id": "mw:1",
+                                "excerpt_hash": "sha1:zone1111111111111",
+                            }
+                        ],
                     }
                 ],
                 "major_factions": [],
@@ -850,6 +865,226 @@ def test_linker_enriches_refs_from_run_terms(tmp_path: Path) -> None:
     assert ref["term_id"] == "term-scourge"
     assert ref["label"] == "Scourge"
     assert ref["wiki_url"] == "https://warcraft.wiki.gg/wiki/Scourge"
+
+
+def test_linker_uses_distinct_section_pointers_without_global_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = ensure_run_context(
+        "run-test-linker-distinct-pointers",
+        artifacts_root=tmp_path / "runs",
+    )
+    draft_dir = context.data_dir / "drafts" / "zone_page"
+    draft_dir.mkdir(parents=True, exist_ok=True)
+    draft_path = draft_dir / "zone-distinct-pointers.json"
+    draft_path.write_text(
+        json.dumps(
+            {
+                "zone_id": "zone-distinct-pointers",
+                "name": "Distinct Pointers Zone",
+                "at_a_glance": "Alpha patrols secure the northern frontier.",
+                "currently": "Beta detachments reinforce the southern corridor.",
+                "history_sections": [
+                    {
+                        "heading": "Conflict",
+                        "body": "Gamma campaigns reshaped the region for generations.",
+                        "source_refs": [
+                            {
+                                "source_id": "src-history",
+                                "locator": "section:history paragraph:1",
+                                "revision_id": "mw:3",
+                                "excerpt_hash": "sha1:history3333333333",
+                            }
+                        ],
+                    }
+                ],
+                "major_factions": [],
+                "major_questlines": [],
+                "location_cards": [],
+                "instance_links": [],
+                "glossary_refs": [],
+                "sources": [
+                    {
+                        "source_id": "src-at",
+                        "url": "https://example.test/at",
+                        "revision_id": "mw:1",
+                    },
+                    {
+                        "source_id": "src-currently",
+                        "url": "https://example.test/currently",
+                        "revision_id": "mw:2",
+                    },
+                    {
+                        "source_id": "src-history",
+                        "url": "https://example.test/history",
+                        "revision_id": "mw:3",
+                    },
+                ],
+                "provenance": {
+                    "at_a_glance": [
+                        {
+                            "source_id": "src-at",
+                            "locator": "section:at_a_glance paragraph:1",
+                            "revision_id": "mw:1",
+                            "excerpt_hash": "sha1:aaaaaaaaaaaaaaaa",
+                        }
+                    ],
+                    "currently": [
+                        {
+                            "source_id": "src-currently",
+                            "locator": "section:currently paragraph:1",
+                            "revision_id": "mw:2",
+                            "excerpt_hash": "sha1:bbbbbbbbbbbbbbbb",
+                        }
+                    ],
+                    "history": [
+                        {
+                            "source_id": "src-history",
+                            "locator": "section:history paragraph:2",
+                            "revision_id": "mw:3",
+                            "excerpt_hash": "sha1:cccccccccccccccc",
+                        }
+                    ],
+                    "major_questlines_alliance": {},
+                    "major_questlines_horde": {},
+                    "major_questlines_shared": {},
+                    "major_characters": {},
+                    "major_factions": {},
+                    "instances": {},
+                    "major_landmarks": {},
+                    "glossary": {},
+                },
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "pipeline.linker.linker._load_alias_dictionary",
+        lambda _context=None: [
+            {
+                "term_id": "term-alpha",
+                "alias": "Alpha",
+                "alias_type": "canonical",
+                "case_rule": "insensitive",
+                "category": "event",
+            },
+            {
+                "term_id": "term-beta",
+                "alias": "Beta",
+                "alias_type": "canonical",
+                "case_rule": "insensitive",
+                "category": "event",
+            },
+            {
+                "term_id": "term-gamma",
+                "alias": "Gamma",
+                "alias_type": "canonical",
+                "case_rule": "insensitive",
+                "category": "event",
+            },
+        ],
+    )
+    run_glossary_linker(context, [draft_path], max_entity_concurrency=1)
+    updated = json.loads(draft_path.read_text(encoding="utf-8"))
+    glossary_map = updated["provenance"]["glossary"]
+    if len(glossary_map) < 2:
+        pytest.skip("not enough glossary terms linked for distinct-pointer check")
+    locators = {
+        rows[0]["locator"]
+        for rows in glossary_map.values()
+        if isinstance(rows, list) and rows
+    }
+    assert len(locators) == len(glossary_map)
+
+
+def test_linker_drops_glossary_refs_without_section_pointer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = ensure_run_context(
+        "run-test-linker-drop-unprovenanced",
+        artifacts_root=tmp_path / "runs",
+    )
+    draft_dir = context.data_dir / "drafts" / "zone_page"
+    draft_dir.mkdir(parents=True, exist_ok=True)
+    draft_path = draft_dir / "zone-drop-unprovenanced.json"
+    draft_path.write_text(
+        json.dumps(
+            {
+                "zone_id": "zone-drop-unprovenanced",
+                "name": "Drop Zone",
+                "at_a_glance": (
+                    "Alpha patrols secure the northern frontier while commanders coordinate "
+                    "supply routes and defensive rotations across the district under sustained alerts "
+                    "and repeated patrol coverage throughout the contested recovery zone."
+                ),
+                "currently": "",
+                "history_sections": [],
+                "major_factions": [],
+                "major_questlines": [],
+                "location_cards": [],
+                "instance_links": [],
+                "glossary_refs": [],
+                "sources": [
+                    {
+                        "source_id": "src-at",
+                        "url": "https://example.test/at",
+                        "revision_id": "mw:1",
+                    }
+                ],
+                "provenance": {
+                    "at_a_glance": [
+                        {
+                            "source_id": "src-at",
+                            "locator": "section:at_a_glance paragraph:1",
+                            "revision_id": "mw:1",
+                            "excerpt_hash": "sha1:aaaaaaaaaaaaaaaa",
+                        }
+                    ],
+                    "currently": [],
+                    "history": [],
+                    "major_questlines_alliance": {},
+                    "major_questlines_horde": {},
+                    "major_questlines_shared": {},
+                    "major_characters": {},
+                    "major_factions": {},
+                    "instances": {},
+                    "major_landmarks": {},
+                    "glossary": {},
+                },
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "pipeline.linker.linker._load_alias_dictionary",
+        lambda _context=None: [
+            {
+                "term_id": "term-alpha",
+                "alias": "Alpha",
+                "alias_type": "canonical",
+                "case_rule": "insensitive",
+                "category": "event",
+            },
+            {
+                "term_id": "term-missing",
+                "alias": "Missing",
+                "alias_type": "canonical",
+                "case_rule": "insensitive",
+                "category": "event",
+            },
+        ],
+    )
+    run_glossary_linker(context, [draft_path], max_entity_concurrency=1)
+    updated = json.loads(draft_path.read_text(encoding="utf-8"))
+    linked_ids = {row["term_id"] for row in updated["glossary_refs"]}
+    assert "term-alpha" in linked_ids
+    assert "term-missing" not in linked_ids
+    assert set(updated["provenance"]["glossary"]) == linked_ids
 
 
 def test_linker_scans_major_faction_card_text(tmp_path: Path) -> None:
@@ -911,7 +1146,16 @@ def test_linker_scans_major_faction_card_text(tmp_path: Path) -> None:
                     "major_questlines_horde": {},
                     "major_questlines_shared": {},
                     "major_characters": {},
-                    "major_factions": {},
+                    "major_factions": {
+                        "faction-argent-dawn": [
+                            {
+                                "source_id": "src-zone",
+                                "locator": "section:faction paragraph:1",
+                                "revision_id": "mw:1",
+                                "excerpt_hash": "sha1:faction1111111111",
+                            }
+                        ]
+                    },
                     "instances": {},
                     "major_landmarks": {},
                     "glossary": {},

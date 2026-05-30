@@ -312,6 +312,32 @@ def _alias_type_adjustment(alias_type: str) -> float:
     return 0.0
 
 
+def _normalize_valid_pointer(row: object) -> dict[str, str] | None:
+    if not isinstance(row, dict):
+        return None
+    source_id = row.get("source_id")
+    locator = row.get("locator")
+    revision_id = row.get("revision_id")
+    excerpt_hash = row.get("excerpt_hash")
+    if (
+        isinstance(source_id, str)
+        and isinstance(locator, str)
+        and isinstance(revision_id, str)
+        and isinstance(excerpt_hash, str)
+        and source_id
+        and locator
+        and revision_id
+        and excerpt_hash
+    ):
+        return {
+            "source_id": source_id,
+            "locator": locator,
+            "revision_id": revision_id,
+            "excerpt_hash": excerpt_hash,
+        }
+    return None
+
+
 def _first_valid_pointer(draft: dict[str, Any]) -> dict[str, str] | None:
     provenance = draft.get("provenance")
     if not isinstance(provenance, dict):
@@ -331,32 +357,75 @@ def _first_valid_pointer(draft: dict[str, Any]) -> dict[str, str] | None:
         if not isinstance(section_rows, list):
             continue
         for row in section_rows:
-            if not isinstance(row, dict):
-                continue
-            source_id = row.get("source_id")
-            locator = row.get("locator")
-            revision_id = row.get("revision_id")
-            excerpt_hash = row.get("excerpt_hash")
-            if (
-                isinstance(source_id, str)
-                and isinstance(locator, str)
-                and isinstance(revision_id, str)
-                and isinstance(excerpt_hash, str)
-                and source_id
-                and locator
-                and revision_id
-                and excerpt_hash
-            ):
-                return {
-                    "source_id": source_id,
-                    "locator": locator,
-                    "revision_id": revision_id,
-                    "excerpt_hash": excerpt_hash,
-                }
+            pointer = _normalize_valid_pointer(row)
+            if pointer is not None:
+                return pointer
     return None
 
 
+_CARD_PROVENANCE_KEYS = {
+    "major_factions": "major_factions",
+    "location_cards": "major_landmarks",
+    "instance_links": "instances",
+    "key_enemies": "key_characters",
+}
+
+
 def _pointer_for_section(draft: dict[str, Any], section_name: str) -> dict[str, str] | None:
+    history_match = re.match(r"history_sections\[(\d+)\]", section_name)
+    if history_match:
+        index = int(history_match.group(1)) - 1
+        history_sections = draft.get("history_sections")
+        if isinstance(history_sections, list) and 0 <= index < len(history_sections):
+            section = history_sections[index]
+            if isinstance(section, dict):
+                refs = section.get("source_refs")
+                if isinstance(refs, list):
+                    for row in refs:
+                        pointer = _normalize_valid_pointer(row)
+                        if pointer is not None:
+                            return pointer
+        provenance = draft.get("provenance")
+        if isinstance(provenance, dict):
+            history_rows = provenance.get("history")
+            if isinstance(history_rows, list) and history_rows:
+                if 0 <= index < len(history_rows):
+                    pointer = _normalize_valid_pointer(history_rows[index])
+                    if pointer is not None:
+                        return pointer
+                pointer = _normalize_valid_pointer(history_rows[0])
+                if pointer is not None:
+                    return pointer
+        return None
+
+    card_match = re.match(r"(major_factions|location_cards|instance_links|key_enemies)\[(\d+)\]", section_name)
+    if card_match:
+        field_name = card_match.group(1)
+        index = int(card_match.group(2)) - 1
+        cards = draft.get(field_name)
+        provenance = draft.get("provenance")
+        if isinstance(cards, list) and isinstance(provenance, dict) and 0 <= index < len(cards):
+            card = cards[index]
+            if isinstance(card, dict):
+                card_id = str(card.get("id", "")).strip()
+                prov_key = _CARD_PROVENANCE_KEYS.get(field_name, field_name)
+                pointer_map = provenance.get(prov_key)
+                if isinstance(pointer_map, dict) and card_id:
+                    card_pointers = pointer_map.get(card_id)
+                    if isinstance(card_pointers, list):
+                        for row in card_pointers:
+                            pointer = _normalize_valid_pointer(row)
+                            if pointer is not None:
+                                return pointer
+        return None
+
+    if section_name == "overview":
+        section_name = "story_context"
+    elif section_name == "at_a_glance":
+        provenance = draft.get("provenance")
+        if isinstance(provenance, dict) and not provenance.get("at_a_glance") and provenance.get("identity_header"):
+            section_name = "identity_header"
+
     provenance = draft.get("provenance")
     if not isinstance(provenance, dict):
         return None
@@ -364,28 +433,9 @@ def _pointer_for_section(draft: dict[str, Any], section_name: str) -> dict[str, 
     if not isinstance(section_rows, list):
         return None
     for row in section_rows:
-        if not isinstance(row, dict):
-            continue
-        source_id = row.get("source_id")
-        locator = row.get("locator")
-        revision_id = row.get("revision_id")
-        excerpt_hash = row.get("excerpt_hash")
-        if (
-            isinstance(source_id, str)
-            and isinstance(locator, str)
-            and isinstance(revision_id, str)
-            and isinstance(excerpt_hash, str)
-            and source_id
-            and locator
-            and revision_id
-            and excerpt_hash
-        ):
-            return {
-                "source_id": source_id,
-                "locator": locator,
-                "revision_id": revision_id,
-                "excerpt_hash": excerpt_hash,
-            }
+        pointer = _normalize_valid_pointer(row)
+        if pointer is not None:
+            return pointer
     return None
 
 
@@ -610,32 +660,44 @@ def run_glossary_linker(
                     }
                 )
         density = (len(output) * 100.0 / words) if words else 0.0
-        glossary_payload = [_glossary_ref_payload(term_id, term_metadata) for term_id in output]
-        if entity_type in {"zone_page", "instance_page"}:
-            draft["glossary_refs"] = glossary_payload
-        else:
-            draft["glossary"] = glossary_payload
         if entity_type in {"zone", "sub_zone", "zone_page", "instance_page"}:
             provenance = draft.get("provenance")
             if isinstance(provenance, dict):
                 glossary_map = provenance.get("glossary")
                 if not isinstance(glossary_map, dict):
                     glossary_map = {}
+                used_glossary_pointer_keys: set[tuple[str, str]] = set()
                 for term_id in output:
-                    section_name, section_text = selected_term_sections.get(term_id, ("", ""))
-                    pointer = _pointer_for_section(draft, section_name) or _first_valid_pointer(
-                        draft
-                    )
+                    section_candidates: list[str] = []
+                    primary_section, _section_text = selected_term_sections.get(term_id, ("", ""))
+                    if primary_section:
+                        section_candidates.append(primary_section)
+                    for section_name, linked_term_id in section_term_links:
+                        if linked_term_id == term_id and section_name not in section_candidates:
+                            section_candidates.append(section_name)
+                    pointer: dict[str, str] | None = None
+                    for section_name in section_candidates:
+                        pointer = _pointer_for_section(draft, section_name)
+                        if pointer is not None:
+                            break
                     if pointer is None:
-                        raise RuntimeError(
-                            f"linker could not resolve strict-four provenance pointer for "
-                            f"entity '{entity_id}' term '{term_id}'"
-                        )
+                        continue
+                    pointer_key = (pointer["source_id"], pointer["locator"])
+                    if pointer_key in used_glossary_pointer_keys:
+                        continue
+                    used_glossary_pointer_keys.add(pointer_key)
                     rows = glossary_map.get(term_id)
                     if not isinstance(rows, list) or not rows:
                         glossary_map[term_id] = [pointer]
                 provenance["glossary"] = glossary_map
                 draft["provenance"] = provenance
+                output = [term_id for term_id in output if term_id in glossary_map and glossary_map[term_id]]
+                density = (len(output) * 100.0 / words) if words else 0.0
+        glossary_payload = [_glossary_ref_payload(term_id, term_metadata) for term_id in output]
+        if entity_type in {"zone_page", "instance_page"}:
+            draft["glossary_refs"] = glossary_payload
+        else:
+            draft["glossary"] = glossary_payload
         draft_path.write_text(json.dumps(draft, indent=2), encoding="utf-8")
         return {
             "entity_id": entity_id,

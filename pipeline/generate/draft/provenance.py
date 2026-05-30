@@ -7,6 +7,93 @@ from typing import Any
 from pipeline.generate.draft.common import min_pointers, pick_pointers
 
 
+def build_revision_index(
+    fact_pack: dict[str, Any],
+    snapshots: list[dict[str, Any]] | None = None,
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Merge coalesce fact_pack revisions with ingest snapshot rows (snapshots win)."""
+    revision_map: dict[str, str] = {}
+    source_urls: dict[str, str] = {}
+
+    source_ids = fact_pack.get("source_ids") or []
+    revision_ids = fact_pack.get("revision_ids") or []
+    if isinstance(source_ids, list) and isinstance(revision_ids, list):
+        for index, source_id in enumerate(source_ids):
+            sid = str(source_id).strip()
+            if not sid or index >= len(revision_ids):
+                continue
+            revision_id = str(revision_ids[index]).strip()
+            if revision_id:
+                revision_map[sid] = revision_id
+
+    for snapshot in snapshots or []:
+        if not isinstance(snapshot, dict):
+            continue
+        sid = str(snapshot.get("source_id", "")).strip()
+        if not sid:
+            continue
+        revision_id = snapshot.get("revision_id")
+        if revision_id:
+            revision_map[sid] = str(revision_id)
+        url = snapshot.get("url")
+        if url:
+            source_urls[sid] = str(url)
+
+    fact_urls = fact_pack.get("source_urls") or {}
+    if isinstance(fact_urls, dict):
+        for source_id, url in fact_urls.items():
+            sid = str(source_id).strip()
+            if sid and url and sid not in source_urls:
+                source_urls[sid] = str(url)
+
+    return revision_map, source_urls
+
+
+def _collect_pointer_source_ids(pointers: object, source_ids: set[str]) -> None:
+    if isinstance(pointers, list):
+        for row in pointers:
+            if isinstance(row, dict):
+                source_id = str(row.get("source_id", "")).strip()
+                if source_id:
+                    source_ids.add(source_id)
+    elif isinstance(pointers, dict):
+        for card_pointers in pointers.values():
+            _collect_pointer_source_ids(card_pointers, source_ids)
+
+
+def collect_sources_manifest(
+    page_entity: dict[str, Any],
+    revision_map: dict[str, str],
+    source_urls: dict[str, str],
+) -> list[dict[str, Any]]:
+    """Build sources[] from every provenance pointer referenced on the page."""
+    source_ids: set[str] = set()
+    provenance = page_entity.get("provenance")
+    if isinstance(provenance, dict):
+        for value in provenance.values():
+            _collect_pointer_source_ids(value, source_ids)
+
+    history_sections = page_entity.get("history_sections")
+    if isinstance(history_sections, list):
+        for section in history_sections:
+            if isinstance(section, dict):
+                _collect_pointer_source_ids(section.get("source_refs"), source_ids)
+
+    entries: list[dict[str, Any]] = []
+    for source_id in sorted(source_ids):
+        url = source_urls.get(source_id)
+        if not url:
+            continue
+        entries.append(
+            {
+                "source_id": source_id,
+                "url": url,
+                "revision_id": revision_map.get(source_id),
+            }
+        )
+    return entries
+
+
 def zone_provenance(
     *,
     fact_items: list[dict[str, Any]],

@@ -177,3 +177,4 @@ def test_build_zone_page_emits_cluster_cards() -> None:
     assert card["id"] == "cluster-part-1"
     assert card["wiki_refs"] == ["/wiki/Quest_A"]
     assert draft["provenance"]["major_questlines_alliance"]
+    assert draft["provenance"]["major_questlines_alliance"][card["id"]]

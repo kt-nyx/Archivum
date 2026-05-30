@@ -125,6 +125,12 @@ def run_draft_writer(
         targets_blob = json.loads(location_targets_path.read_text(encoding="utf-8"))
         if isinstance(targets_blob, list):
             location_profile_targets = [row for row in targets_blob if isinstance(row, dict)]
+    source_snapshots: list[dict[str, Any]] = []
+    snapshots_path = context.data_dir / "ingest" / "source_snapshots.json"
+    if snapshots_path.exists():
+        snapshots_blob = json.loads(snapshots_path.read_text(encoding="utf-8"))
+        if isinstance(snapshots_blob, list):
+            source_snapshots = [row for row in snapshots_blob if isinstance(row, dict)]
 
     def _write(path: Path) -> tuple[Path | None, dict[str, object] | None]:
         fact_pack = json.loads(path.read_text(encoding="utf-8"))
@@ -162,6 +168,7 @@ def run_draft_writer(
                         for row in location_profile_targets
                         if str(row.get("zone_id", "")).strip() == entity_id
                     ],
+                    snapshots=source_snapshots,
                 )
             else:
                 lore_source = next(
@@ -185,22 +192,17 @@ def run_draft_writer(
                     "parent_zone_name": parent_zone_name,
                 }
                 instance_section_blocks: list[dict[str, Any]] | None = None
-                snapshots_path = context.data_dir / "ingest" / "source_snapshots.json"
-                if snapshots_path.exists():
-                    snapshots_blob = json.loads(snapshots_path.read_text(encoding="utf-8"))
-                    if isinstance(snapshots_blob, list):
-                        for snapshot in snapshots_blob:
-                            if not isinstance(snapshot, dict):
-                                continue
-                            if (
-                                str(snapshot.get("entity_id", "")).strip() == entity_id
-                                and str(snapshot.get("entity_type", "")).strip() == "instance"
-                                and not str(snapshot.get("auxiliary_role", "")).strip()
-                            ):
-                                blocks = snapshot.get("section_blocks", [])
-                                if isinstance(blocks, list):
-                                    instance_section_blocks = [row for row in blocks if isinstance(row, dict)]
-                                break
+                if source_snapshots:
+                    for snapshot in source_snapshots:
+                        if (
+                            str(snapshot.get("entity_id", "")).strip() == entity_id
+                            and str(snapshot.get("entity_type", "")).strip() == "instance"
+                            and not str(snapshot.get("auxiliary_role", "")).strip()
+                        ):
+                            blocks = snapshot.get("section_blocks", [])
+                            if isinstance(blocks, list):
+                                instance_section_blocks = [row for row in blocks if isinstance(row, dict)]
+                            break
                 draft = build_instance_page(
                     enriched_fact_pack,
                     scoped_evidence,
@@ -208,6 +210,7 @@ def run_draft_writer(
                     parent_zone_evidence_rows=parent_zone_evidence,
                     faction_profile_targets=faction_profile_targets,
                     section_blocks=instance_section_blocks,
+                    snapshots=source_snapshots,
                 )
             entity_dir = stage_dir / f"{entity_type}_page"
             entity_dir.mkdir(parents=True, exist_ok=True)
