@@ -38,7 +38,7 @@ const SLICES = [
   {
     id: "slice-5",
     content: "Slice 5 — Location guards, relevance gates, card quality",
-    status: "pending" as const,
+    status: "completed" as const,
   },
   {
     id: "slice-6",
@@ -75,6 +75,7 @@ export default function WikiFirstPipelineMasterPlan() {
         <Stat label="Slice 2" value="Completed" tone="success" />
         <Stat label="Slice 3" value="Completed" tone="success" />
         <Stat label="Slice 4" value="Completed" tone="success" />
+        <Stat label="Slice 5" value="Completed" tone="success" />
       </Row>
 
       <Callout tone="info" title="Zone-agnostic engineering policy">
@@ -300,6 +301,102 @@ export default function WikiFirstPipelineMasterPlan() {
             ["currently", "Present tense; no geography hub names; no reputation/achievement/player meta"],
             ["history", "Past-tense framing; section count within dynamic cap; seed history_digest only"],
             ["Unit tests", "tests/test_prose_election.py, test_zone_prose_draft.py, test_wiki_first_workers.py"],
+            [
+              "Run semantics",
+              "uv run python scripts/check_run_semantics.py artifacts/runs/<run-id> [--zone-id zone-...]",
+            ],
+          ]}
+        />
+      </CollapsibleSection>
+
+      <Divider />
+      <H2>Slice 5 — completed summary</H2>
+      <Table
+        headers={["Deliverable", "Status", "Notes"]}
+        rows={[
+          ["enrich build_meta.location_id", "Done", "location_profile packs tagged with location_id + location_name"],
+          ["location_pool scoping", "Done", "Separate location_pool and location_seed_pool (no history_digest fallback)"],
+          ["entity_typing guards", "Done", "Dating-convention titles; geography roles exempt from likely_npc heuristic"],
+          ["traverse include-only", "Done", "location_profile fetches include decisions only; defer skipped"],
+          ["location_scoring.py", "Done", "Candidate collection, zone relevance, ranked election (3–8 include-only)"],
+          ["location_lint.py", "Done", "Shared heuristics for draft finalize + check_run_semantics"],
+          ["synthesize_location_summary", "Done", "In-zone landmark worker; deterministic trim fallback"],
+          ["build_location_cards", "Done", "Replaces defer-padded _build_location_cards in build_zone_page"],
+          ["draft_writer wiring", "Done", "Loads location_profile_targets.json per zone"],
+          ["Semantic location checks", "Done", "Card count, lint, denylist, provenance, defer leakage in check_run_semantics.py"],
+        ]}
+      />
+
+      <CollapsibleSection title="Slice 5 — intentional deviations (documented)" count={9}>
+        <Table
+          headers={["Topic", "Plan / canvas wording", "Actual behaviour", "Rationale"]}
+          rows={[
+            [
+              "location_cards validate budget",
+              "major_landmarks_card_summary in validate budget",
+              "Card quality enforced in check_run_semantics + location_lint (20–50 words)",
+              "Schema still uses location_cards on draft; major_landmarks naming unification deferred to Slice 8",
+            ],
+            [
+              "Defer in draft",
+              "Defer remains in decision artifacts only",
+              "Draft election uses include-only; no defer padding",
+              "Matches plan: defer for audit, not card emission",
+            ],
+            [
+              "Card count floor",
+              "3–8 when enough include-scored candidates",
+              "Semantics fails below MIN when ≥3 candidates; draft may emit fewer when evidence thin",
+              "Distinguishes thin vs broken runs per plan risk note",
+            ],
+            [
+              "likely_npc guard",
+              "Denylist at discovery, traverse, and draft",
+              "Geography source roles (maps_subregions, etc.) exempt from two-word Title Case NPC heuristic",
+              "Prevents false rejects for legitimate subregion place names",
+            ],
+            [
+              "Card id pattern",
+              "loc-* or location-*",
+              "Semantics accepts location-* and loc-* prefixes",
+              "Legacy test fixtures use loc-* ids",
+            ],
+            [
+              "Lede-only + seed",
+              "Exclude lede-only profiles without seed",
+              "Lede-only profiles remain electable when seed geography mentions exist",
+              "Matches plan scoring table; enables profile→seed finalize rescue",
+            ],
+            [
+              "Semantics eligible set",
+              "≥3 include-scored candidates",
+              "Eligible location ids filtered to include decisions when decision artifact exists",
+              "Defer/exclude targets no longer inflate minimum card-count checks",
+            ],
+            [
+              "Finalize pool order",
+              "Profile then seed rescue pools",
+              "Per-pool synthesize + fallback_location_summary(pool) before next pool (mirrors faction)",
+              "Ensures seed geography rescues failed profile ledes",
+            ],
+            [
+              "PoC artifact regression",
+              "Optional LORE_PILOT_RUN_ROOT location spot-check",
+              "Not added — unit/integration tests use neutral fixtures only",
+              "Optional per plan; manual QA + semantics on pilot runs instead",
+            ],
+          ]}
+        />
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Slice 5 — verification (completed)" count={5}>
+        <Table
+          headers={["Check", "Criterion"]}
+          rows={[
+            ["location_cards count", "3–8 when ≥3 include-scored candidates in evidence/targets"],
+            ["Card summaries", "In-zone landmark prose; no generic filler; 20–50 words; zone/landmark anchor"],
+            ["Include-only election", "No defer-only cards; traverse fetches include targets only"],
+            ["Unit tests", "tests/test_location_scoring.py, test_zone_location_draft.py, test_location_lint.py"],
             [
               "Run semantics",
               "uv run python scripts/check_run_semantics.py artifacts/runs/<run-id> [--zone-id zone-...]",
@@ -562,25 +659,40 @@ export default function WikiFirstPipelineMasterPlan() {
         </Stack>
       </CollapsibleSection>
 
+      <CollapsibleSection title="Slice 5 — Location guards and landmark summaries" count={2}>
+        <Stack gap={12}>
+          <H3>Acceptance (generalized)</H3>
+          <Table
+            headers={["Check", "Criterion"]}
+            rows={[
+              ["location_cards count", "3–8 include-only when enough scored candidates; no defer padding"],
+              ["Card summaries", "In-zone landmark; zone/subregion anchor; no dating-convention or faction lede"],
+              ["Traverse", "location_profile include-only; dating-convention and denylist defense-in-depth"],
+            ]}
+          />
+          <Text tone="success">Slice 5 completed — see summary and verification tables above.</Text>
+        </Stack>
+      </CollapsibleSection>
+
       <Divider />
       <H2>Pipeline stage touchpoints</H2>
       <Table
         headers={["Stage", "Changes across slices"]}
         rows={[
           ["ingest / fetch_wiki", "Storyline URLs tagged auxiliary_role + parse_html (Slice 1 ✓)"],
-          ["traverse_seed", "Storyline + faction + location only (Slice 2 ✓)"],
+          ["traverse_seed", "Storyline + faction + location (include-only) (Slice 2–5 ✓)"],
           ["traverse_quests", "Quest URLs from v3 only; cap 25; hub resolver (Slice 2 ✓)"],
           ["discovery / storyline_html", "List-item quest parse only (Slice 1 ✓)"],
           ["discovery / entity_typing", "Denylist taxonomy + zone_name self-check (Slice 1 ✓)"],
           ["discovery / enrich", "Scoped evidence + quest_lore / quest_cluster_lore (Slice 1–2 ✓)"],
-          ["scripts/check_run_semantics.py", "Cluster cards + traversal denylist + prose + faction quality (Slice 1–4 ✓)"],
-          ["draft / wiki_first", "Cluster questline cards + zone prose + major_factions election/lint (Slice 2–4 ✓)"],
+          ["scripts/check_run_semantics.py", "Cluster cards + traversal denylist + prose + faction + location quality (Slice 1–5 ✓)"],
+          ["draft / wiki_first", "Cluster questline cards + zone prose + major_factions + location_cards election/lint (Slice 2–5 ✓)"],
           ["dictionary/", "Run-scoped terms replace static pilot aliases"],
         ]}
       />
 
       <Row gap={8}>
-        <Pill tone="accent">Next: Slice 5</Pill>
+        <Pill tone="accent">Next: Slice 6</Pill>
         <Pill tone="neutral">PoC QA: WPL + Scholomance (data only)</Pill>
         <Pill tone="success">Policy: zone-agnostic code</Pill>
       </Row>

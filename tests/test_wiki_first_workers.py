@@ -8,6 +8,7 @@ from pipeline.generate.draft.wiki_first_workers import (
     synthesize_currently,
     synthesize_faction_summary,
     synthesize_history_sections,
+    synthesize_location_summary,
 )
 
 
@@ -61,6 +62,24 @@ def test_workers_return_empty_for_empty_pools(monkeypatch) -> None:
     assert synthesize_currently([]) == ("", [])
     assert synthesize_history_sections([]) == ([], [])
     assert synthesize_faction_summary([], faction_name="Argent Crusade", zone_name="Example Zone") == ("", [])
+    assert synthesize_location_summary([], location_name="Northwatch Hold", zone_name="Example Zone") == ("", [])
+
+
+def test_location_summary_deterministic_respects_max_words(monkeypatch) -> None:
+    monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
+    snippet = (
+        "Northwatch Hold is a fortified outpost in Example Zone where alliance patrols coordinate "
+        "supply lines, defensive operations, and regional scouting missions across the frontier."
+    )
+    summary, used = synthesize_location_summary(
+        [{"source_id": "src-location", "snippet": snippet}],
+        location_name="Northwatch Hold",
+        zone_name="Example Zone",
+        max_words=50,
+    )
+    assert summary
+    assert used == ["src-location"]
+    assert word_count(summary) <= 50
 
 
 def test_faction_summary_deterministic_respects_max_words(monkeypatch) -> None:

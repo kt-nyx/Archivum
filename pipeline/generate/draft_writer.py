@@ -119,6 +119,12 @@ def run_draft_writer(
         targets_blob = json.loads(faction_targets_path.read_text(encoding="utf-8"))
         if isinstance(targets_blob, list):
             faction_profile_targets = [row for row in targets_blob if isinstance(row, dict)]
+    location_profile_targets: list[dict[str, Any]] = []
+    location_targets_path = context.data_dir / "discovery" / "location_profile_targets.json"
+    if location_targets_path.exists():
+        targets_blob = json.loads(location_targets_path.read_text(encoding="utf-8"))
+        if isinstance(targets_blob, list):
+            location_profile_targets = [row for row in targets_blob if isinstance(row, dict)]
 
     def _write(path: Path) -> tuple[Path | None, dict[str, object] | None]:
         fact_pack = json.loads(path.read_text(encoding="utf-8"))
@@ -149,6 +155,11 @@ def run_draft_writer(
                     faction_profile_targets=[
                         row
                         for row in faction_profile_targets
+                        if str(row.get("zone_id", "")).strip() == entity_id
+                    ],
+                    location_profile_targets=[
+                        row
+                        for row in location_profile_targets
                         if str(row.get("zone_id", "")).strip() == entity_id
                     ],
                 )

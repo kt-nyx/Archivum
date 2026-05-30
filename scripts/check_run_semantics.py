@@ -190,6 +190,41 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
 
     if not draft.get("location_cards"):
         _fail("location_cards is empty")
+
+    from pipeline.discovery.entity_typing import should_reject_location_title
+    from pipeline.generate.draft.location_lint import lint_location_summary
+    from pipeline.generate.draft.location_scoring import (
+        MAX_LOCATION_CARDS,
+        MIN_LOCATION_CARDS,
+        extract_subregion_tokens,
+    )
+
+    location_cards = [row for row in draft.get("location_cards") or [] if isinstance(row, dict)]
+    for card in location_cards:
+        card_id = str(card.get("id", "")).strip()
+        if not (card_id.startswith("location-") or card_id.startswith("loc-")):
+            _fail(f"location_cards card id is not location-scoped: {card_id!r}")
+        summary = str(card.get("summary", "")).strip()
+        if not summary:
+            _fail(f"location_cards card missing summary: {card_id!r}")
+        for issue in lint_location_summary(
+            summary,
+            zone_name=zone_name,
+            location_name=str(card.get("name", "")).strip(),
+        ):
+            _fail(f"location_cards quality check failed for {card_id!r}: {issue}")
+        reason_codes = [str(code) for code in (card.get("decision_reason_codes") or [])]
+        if reason_codes == ["defer"] or (
+            "defer" in reason_codes and "include" not in reason_codes and "score_based" not in reason_codes
+        ):
+            _fail(f"location_cards card appears defer-only selected: {card_id!r}")
+        reject, reject_reasons = should_reject_location_title(str(card.get("name", "")).strip(), zone_name=zone_name)
+        hard_reasons = [reason for reason in reject_reasons if reason != "likely_npc"]
+        if hard_reasons:
+            _fail(f"location_cards card name denied by location guards: {card_id!r} ({hard_reasons})")
+    if len(location_cards) > MAX_LOCATION_CARDS:
+        _fail(f"location_cards exceeds cap ({len(location_cards)} > {MAX_LOCATION_CARDS})")
+
     if len(draft.get("sources", [])) < 2:
         _fail("expected multiple sources on zone draft")
 
@@ -269,12 +304,34 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
                 continue
             zone_evidence_rows.append(row)
 
+        location_decisions_path = run_root / "data" / "decisions" / "location_significance_decisions.json"
+        include_location_ids: set[str] | None = None
+        if location_decisions_path.exists():
+            decisions_blob = _load_json(location_decisions_path)
+            if isinstance(decisions_blob, list):
+                include_location_ids = {
+                    str(row.get("subject_id", "")).strip()
+                    for row in decisions_blob
+                    if isinstance(row, dict)
+                    and str(row.get("final_decision", "")).strip() == "include"
+                }
+                include_location_ids = {location_id for location_id in include_location_ids if location_id}
+
+        def _location_is_include(location_id: str) -> bool:
+            if include_location_ids is None:
+                return True
+            return location_id in include_location_ids
+
         eligible_history_blocks = 0
         covered_clusters: set[str] = set()
         glance_items = 0
         eligible_faction_candidates: set[str] = set()
         faction_ids_with_profile: set[str] = set()
         faction_names_by_id: dict[str, str] = {}
+        eligible_location_candidates: set[str] = set()
+        location_ids_with_profile: set[str] = set()
+        location_names_by_id: dict[str, str] = {}
+        location_seed_pool_items: list[dict[str, Any]] = []
         for row in zone_evidence_rows:
             field_name = str(row.get("field_name", ""))
             build_meta = row.get("build_meta") or {}
@@ -294,6 +351,26 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
                     faction_name = str(build_meta.get("faction_name", "")).strip()
                     if faction_name:
                         faction_names_by_id[faction_id] = faction_name
+            elif field_name == "location_pool":
+                location_id = str(build_meta.get("location_id", "")).strip()
+                if location_id and _location_is_include(location_id):
+                    eligible_location_candidates.add(location_id)
+                    location_ids_with_profile.add(location_id)
+                    location_name = str(build_meta.get("location_name", "")).strip()
+                    if location_name:
+                        location_names_by_id[location_id] = location_name
+            elif field_name in {"history_digest", "at_a_glance_input"}:
+                for item in row.get("evidence_items", []):
+                    if not isinstance(item, dict):
+                        continue
+                    role = str(item.get("section_role", build_meta.get("section_role", ""))).lower()
+                    if any(hint in role for hint in ("maps", "subregion", "geography")):
+                        location_seed_pool_items.append(
+                            {
+                                "snippet": str(item.get("snippet", "")),
+                                "section_role": role,
+                            }
+                        )
         targets_path = run_root / "data" / "discovery" / "faction_profile_targets.json"
         if targets_path.exists():
             targets_blob = _load_json(targets_path)
@@ -309,6 +386,59 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
                         eligible_faction_candidates.add(faction_id)
                         if faction_name:
                             faction_names_by_id.setdefault(faction_id, faction_name)
+        location_targets_path = run_root / "data" / "discovery" / "location_profile_targets.json"
+        if location_targets_path.exists():
+            targets_blob = _load_json(location_targets_path)
+            if isinstance(targets_blob, list):
+                for row in targets_blob:
+                    if not isinstance(row, dict):
+                        continue
+                    if str(row.get("zone_id", "")).strip() != resolved_zone_id:
+                        continue
+                    location_id = str(row.get("location_id", "")).strip()
+                    location_name = str(row.get("name", "")).strip()
+                    if location_id and _location_is_include(location_id):
+                        eligible_location_candidates.add(location_id)
+                        if location_name:
+                            location_names_by_id.setdefault(location_id, location_name)
+        for card in location_cards:
+            card_id = str(card.get("id", "")).strip()
+            card_name = str(card.get("name", "")).strip()
+            if card_id and card_name:
+                location_names_by_id.setdefault(card_id, card_name)
+        if len(eligible_location_candidates) >= MIN_LOCATION_CARDS and len(location_cards) < MIN_LOCATION_CARDS:
+            _fail(
+                f"location_cards count {len(location_cards)} below minimum {MIN_LOCATION_CARDS} "
+                f"for {len(eligible_location_candidates)} location candidates"
+            )
+        draft_location_ids = {str(card.get("id", "")).strip() for card in location_cards}
+        unknown_location_ids = sorted(draft_location_ids - eligible_location_candidates)
+        if unknown_location_ids and eligible_location_candidates:
+            _fail(
+                "location_cards reference unknown location ids "
+                f"(got {unknown_location_ids}, expected subset of {sorted(eligible_location_candidates)})"
+            )
+        location_provenance = (draft.get("provenance") or {}).get("major_landmarks") or {}
+        for card in location_cards:
+            card_id = str(card.get("id", "")).strip()
+            if card_id in location_ids_with_profile and card_id not in location_provenance:
+                _fail(f"location_cards card missing provenance despite profile evidence: {card_id!r}")
+        subregion_tokens = extract_subregion_tokens(location_seed_pool_items, zone_name=zone_name)
+        for card in location_cards:
+            card_id = str(card.get("id", "")).strip()
+            if card_id not in location_ids_with_profile:
+                continue
+            summary = str(card.get("summary", "")).strip()
+            from pipeline.generate.draft.location_scoring import location_zone_relevant
+
+            if summary and not location_zone_relevant(
+                summary,
+                zone_name=zone_name,
+                subregion_tokens=subregion_tokens,
+            ):
+                print(
+                    f"WARN: {card_id!r} summary lacks zone/subregion anchor despite profile evidence"
+                )
         for card in faction_cards:
             card_id = str(card.get("id", "")).strip()
             card_name = str(card.get("name", "")).strip()

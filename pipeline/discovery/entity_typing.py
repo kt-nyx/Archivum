@@ -17,6 +17,13 @@ TraverseRole = Literal[
     "instance_lore",
 ]
 
+_DATING_CONVENTION_TITLE_RE = re.compile(
+    r"\([^)]*\b(?:BCE|CE|ADP|BDP)\b[^)]*\)|\b\d+\s+(?:BCE|CE|AD)\b",
+    re.IGNORECASE,
+)
+
+_GEOGRAPHY_SOURCE_ROLES = frozenset({"maps_subregions", "geography_edit", "geography", "subregion"})
+
 _RACE_SPECIES_DENYLIST = frozenset(
     {
         "human",
@@ -190,7 +197,14 @@ def should_reject_location_title(
         return True, ["self_zone"]
     if lowered in _geography_hub_titles():
         return True, ["geography_hub"]
-    if source_section_role != "notable_characters" and _is_likely_npc_name(title):
+    if _DATING_CONVENTION_TITLE_RE.search(title):
+        return True, ["dating_convention"]
+    normalized_role = re.sub(r"\s+", " ", source_section_role.strip()).lower().replace(" ", "_")
+    if (
+        normalized_role not in _GEOGRAPHY_SOURCE_ROLES
+        and source_section_role != "notable_characters"
+        and _is_likely_npc_name(title)
+    ):
         return True, ["likely_npc"]
     return False, []
 

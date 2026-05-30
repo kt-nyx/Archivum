@@ -237,6 +237,9 @@ def _build_evidence_packs(
                 if aux_role == "faction_profile":
                     build_meta["faction_id"] = str(snapshot.get("auxiliary_target_id", "")).strip()
                     build_meta["faction_name"] = page_title or entity_name
+                if aux_role == "location_profile":
+                    build_meta["location_id"] = str(snapshot.get("auxiliary_target_id", "")).strip()
+                    build_meta["location_name"] = page_title or entity_name
                 packs.append(
                     {
                         "subject_id": subject_id,

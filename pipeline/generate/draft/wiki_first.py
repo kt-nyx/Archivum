@@ -16,6 +16,19 @@ from pipeline.generate.draft.faction_scoring import (
     fallback_faction_summary,
     finalize_evidence_pools,
 )
+from pipeline.generate.draft.location_lint import (
+    ensure_sentence_terminator as ensure_location_sentence_terminator,
+    lint_location_summary,
+)
+from pipeline.generate.draft.location_scoring import (
+    LocationCandidate,
+    MAX_LOCATION_CARDS,
+    _decision_reason_codes,
+    candidates_for_finalize as location_candidates_for_finalize,
+    collect_location_candidates,
+    finalize_evidence_pools as finalize_location_evidence_pools,
+)
+from pipeline.generate.draft.location_lint import fallback_location_summary
 from pipeline.generate.draft.prose_election import (
     fallback_at_a_glance,
     fallback_currently,
@@ -39,6 +52,7 @@ from pipeline.generate.draft.wiki_first_workers import (
     synthesize_currently,
     synthesize_faction_summary,
     synthesize_history_sections,
+    synthesize_location_summary,
 )
 
 
@@ -115,6 +129,8 @@ def _iter_evidence_items(
                     "cluster_id": str((row.get("build_meta") or {}).get("cluster_id", "")),
                     "faction_id": str((row.get("build_meta") or {}).get("faction_id", "")),
                     "faction_name": str((row.get("build_meta") or {}).get("faction_name", "")),
+                    "location_id": str((row.get("build_meta") or {}).get("location_id", "")),
+                    "location_name": str((row.get("build_meta") or {}).get("location_name", "")),
                 }
             )
     return items
@@ -182,6 +198,26 @@ def _pointer_for_item(
     }
 
 
+def _normalize_section_role(section_role: str) -> str:
+    return re.sub(r"\s+", " ", section_role.strip()).lower().replace(" ", "_")
+
+
+_GEOGRAPHY_SEED_ROLE_HINTS = ("maps", "subregion", "geography")
+
+
+def _is_geography_seed_item(item: dict[str, Any]) -> bool:
+    role = _normalize_section_role(str(item.get("section_role", "")))
+    return any(hint in role for hint in _GEOGRAPHY_SEED_ROLE_HINTS)
+
+
+def _build_location_seed_pool(evidence_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for item in _iter_evidence_items(evidence_rows, {"history_digest", "at_a_glance_input"}):
+        if _is_geography_seed_item(item):
+            items.append(item)
+    return items
+
+
 def _build_evidence_pools(evidence_rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     history_pool = _iter_evidence_items(evidence_rows, {"history_digest"})
     at_a_glance_pool = _iter_evidence_items(evidence_rows, {"at_a_glance_input"})
@@ -190,18 +226,19 @@ def _build_evidence_pools(evidence_rows: list[dict[str, Any]]) -> dict[str, list
     quest_cluster_lore_pool = _iter_evidence_items(evidence_rows, {"quest_cluster_lore"})
     quest_lore_pool = _iter_evidence_items(evidence_rows, {"quest_lore"})
     faction_pool = _iter_evidence_items(evidence_rows, {"faction_pool"})
-    location_pool_items = _iter_evidence_items(evidence_rows, {"location_pool"})
+    location_pool = _iter_evidence_items(evidence_rows, {"location_pool"})
+    location_seed_pool = _build_location_seed_pool(evidence_rows)
     instance_pool = _iter_evidence_items(evidence_rows, {"instances_or_dungeons", "history_digest"})
     faction_role_pool = _iter_evidence_items(
         evidence_rows, {"history_digest", "currently_input", "questline_pool", "at_a_glance_input"}
     )
-    location_pool = location_pool_items or _iter_evidence_items(evidence_rows, {"history_digest"})
     return {
         "at_a_glance_pool": at_a_glance_pool,
         "currently_pool": currently_pool,
         "history_pool": history_pool,
         "faction_role_pool": faction_role_pool,
         "location_pool": location_pool,
+        "location_seed_pool": location_seed_pool,
         "instance_pool": instance_pool,
         "questline_pool": questline_pool,
         "quest_cluster_lore_pool": quest_cluster_lore_pool,
@@ -410,80 +447,114 @@ def build_major_factions(
     return cards, provenance_map
 
 
-def _build_location_cards(
+def _finalize_location_card(
+    candidate: LocationCandidate,
+    *,
+    zone_name: str,
+    location_decision_map: dict[str, dict[str, Any]],
+) -> tuple[dict[str, Any] | None, list[str], list[dict[str, Any]]]:
+    pools_to_try = finalize_location_evidence_pools(candidate)
+    if not pools_to_try:
+        return None, [], []
+    reason_codes = _decision_reason_codes(candidate.location_id, location_decision_map)
+
+    for pool in pools_to_try:
+        summary, used = synthesize_location_summary(
+            pool,
+            location_name=candidate.name,
+            zone_name=zone_name,
+            max_words=50,
+        )
+        summary = ensure_location_sentence_terminator(summary)
+        if not lint_location_summary(summary, zone_name=zone_name, location_name=candidate.name):
+            return (
+                {
+                    "id": candidate.location_id,
+                    "name": candidate.name,
+                    "summary": summary,
+                    "wiki_url": candidate.wiki_url,
+                    "location_type": (
+                        "major_location"
+                        if candidate.classification == "major_location_candidate"
+                        else candidate.classification or "major_location"
+                    ),
+                    "significance": candidate.classification or "major_location_candidate",
+                    "decision_reason_codes": reason_codes,
+                },
+                used,
+                pool,
+            )
+        summary, used = fallback_location_summary(
+            pool,
+            zone_name=zone_name,
+            location_name=candidate.name,
+        )
+        summary = ensure_location_sentence_terminator(summary)
+        if summary and not lint_location_summary(summary, zone_name=zone_name, location_name=candidate.name):
+            return (
+                {
+                    "id": candidate.location_id,
+                    "name": candidate.name,
+                    "summary": summary,
+                    "wiki_url": candidate.wiki_url,
+                    "location_type": (
+                        "major_location"
+                        if candidate.classification == "major_location_candidate"
+                        else candidate.classification or "major_location"
+                    ),
+                    "significance": candidate.classification or "major_location_candidate",
+                    "decision_reason_codes": reason_codes,
+                },
+                used,
+                pool,
+            )
+    return None, [], []
+
+
+def build_location_cards(
+    *,
     zone_id: str,
+    zone_name: str,
     location_rows: list[dict[str, Any]],
     location_candidate_map: dict[str, dict[str, Any]],
     location_decision_map: dict[str, dict[str, Any]],
-    location_pool: list[dict[str, Any]],
-    *,
+    pools: dict[str, list[dict[str, Any]]],
     revision_map: dict[str, str],
-    max_defer_cards: int = 6,
+    location_profile_targets: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, str]]]]:
+    candidates = collect_location_candidates(
+        zone_id=zone_id,
+        zone_name=zone_name,
+        location_rows=location_rows,
+        location_candidate_map=location_candidate_map,
+        location_decision_map=location_decision_map,
+        pools=pools,
+        location_profile_targets=location_profile_targets,
+    )
+    target_count, queue = location_candidates_for_finalize(candidates)
     cards: list[dict[str, Any]] = []
     provenance_map: dict[str, list[dict[str, str]]] = {}
-    ranked: list[tuple[float, dict[str, Any]]] = []
-    for row in location_rows:
-        if str(row.get("zone_id", "")) != zone_id:
-            continue
-        classification = str(row.get("classification", ""))
-        location_id = str(row.get("location_id", ""))
-        if not location_id or classification == "reject":
-            continue
-        if classification not in {"city", "starter_area", "major_location_candidate"}:
-            continue
-        decision = location_decision_map.get(location_id, {})
-        final_decision = str(decision.get("final_decision", "")).strip()
-        if final_decision == "exclude":
-            continue
-        if final_decision not in {"include", "defer"}:
-            continue
-        score = float(decision.get("score", 0.0) or 0.0)
-        ranked.append((score, row))
-    ranked.sort(key=lambda item: item[0], reverse=True)
-    include_rows = [row for score, row in ranked if location_decision_map.get(str(row.get("location_id", "")), {}).get("final_decision") == "include"]
-    defer_rows = [row for score, row in ranked if location_decision_map.get(str(row.get("location_id", "")), {}).get("final_decision") == "defer"]
-    selected_rows = include_rows + defer_rows[: max(0, max_defer_cards - len(include_rows))]
-    seen: set[str] = set()
-    for row in selected_rows:
-        location_id = str(row.get("location_id", ""))
-        if location_id in seen:
-            continue
-        seen.add(location_id)
-        candidate = location_candidate_map.get(location_id, {})
-        source_link = str(candidate.get("source_link", "")).strip()
-        wiki_url = f"https://warcraft.wiki.gg{source_link}" if source_link.startswith("/wiki/") else "https://warcraft.wiki.gg/"
-        location_type = (
-            "major_location" if str(row.get("classification", "")) == "major_location_candidate" else str(row.get("classification", ""))
+    for candidate in queue:
+        if len(cards) >= MAX_LOCATION_CARDS:
+            break
+        card_body, used_ids, source_pool = _finalize_location_card(
+            candidate,
+            zone_name=zone_name,
+            location_decision_map=location_decision_map,
         )
-        name = str(row.get("name", location_id))
-        scoped_pool = [
-            item
-            for item in location_pool
-            if name.lower() in str(item.get("snippet", "")).lower()
-            or str(item.get("source_title", "")).lower() == name.lower()
-        ] or location_pool
-        summary, used_ids = synthesize_card_summary(scoped_pool, subject=name, max_words=40)
-        if not summary:
-            summary = _best_snippet_for_term(location_pool, name, min_words=10)
-        cards.append(
-            {
-                "id": location_id,
-                "name": name,
-                "location_type": location_type,
-                "zone_id": zone_id,
-                "wiki_url": wiki_url,
-                "summary": summary,
-                "significance": str(row.get("classification", "")),
-                "decision_reason_codes": list(location_decision_map.get(location_id, {}).get("reason_codes") or ["classification"]),
-                "ui_hints": {"render_as": location_type},
-                "provenance": [],
-            }
-        )
-        pointers = _pointers_for_source_ids(scoped_pool, used_ids, revision_map)
+        if card_body is None:
+            continue
+        card = {
+            **card_body,
+            "zone_id": zone_id,
+            "ui_hints": {"render_as": card_body.get("location_type", "major_location")},
+            "provenance": [],
+        }
+        cards.append(card)
+        pointers = _pointers_for_source_ids(source_pool, used_ids, revision_map)
         if pointers:
-            provenance_map[location_id] = pointers
-        if len(cards) >= 8:
+            provenance_map[candidate.location_id] = pointers
+        if len(cards) >= target_count and target_count > 0:
             break
     return cards, provenance_map
 
@@ -636,6 +707,7 @@ def build_zone_page(
     questline_decision: dict[str, Any] | None,
     *,
     faction_profile_targets: list[dict[str, Any]] | None = None,
+    location_profile_targets: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     zone_id = str(fact_pack.get("entity_id", "zone-unknown"))
     name = str(fact_pack.get("name", zone_id))
@@ -739,13 +811,15 @@ def build_zone_page(
             for pointer in pointers:
                 used_source_ids.add(pointer["source_id"])
 
-    location_cards, landmark_provenance_map = _build_location_cards(
-        zone_id,
-        location_rows,
-        location_candidate_map,
-        location_decision_map,
-        pools["location_pool"],
+    location_cards, landmark_provenance_map = build_location_cards(
+        zone_id=zone_id,
+        zone_name=name,
+        location_rows=location_rows,
+        location_candidate_map=location_candidate_map,
+        location_decision_map=location_decision_map,
+        pools=pools,
         revision_map=revision_map,
+        location_profile_targets=location_profile_targets,
     )
     for pointers in landmark_provenance_map.values():
         for pointer in pointers:

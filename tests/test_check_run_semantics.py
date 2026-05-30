@@ -70,7 +70,17 @@ def _valid_draft() -> dict[str, object]:
                 "wiki_refs": ["/wiki/Quest_A"],
             }
         ],
-        "location_cards": [{"id": "loc-1", "name": "Example Landmark", "summary": "A notable place."}],
+        "location_cards": [
+            {
+                "id": "loc-1",
+                "name": "Example Landmark",
+                "summary": (
+                    "Example Landmark is a fortified outpost in Example Zone where patrols coordinate "
+                    "supply lines, defensive operations, and regional scouting missions across the frontier."
+                ),
+                "decision_reason_codes": ["include"],
+            }
+        ],
         "at_a_glance": (
             "Crusaders and druids continue to resist undead forces across the ruined frontier."
         ),

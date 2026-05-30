@@ -143,13 +143,22 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(tmp_path: Path
                 {
                     "source_url": "https://warcraft.wiki.gg/wiki/Hearthglen",
                     "source_title": "Hearthglen",
-                    "snippet": "Hearthglen is a fortified city and major settlement in the Western Plaguelands.",
+                    "snippet": (
+                        "Hearthglen is a fortified city and major settlement in the Western Plaguelands "
+                        "where crusader commanders coordinate patrols, supply lines, and defensive "
+                        "operations across the surrounding blighted farmland and broken keeps."
+                    ),
                     "section_role": "maps_subregions",
                     "confidence": 1.0,
                 }
             ],
             "constraints": {"max_tokens": 1200, "forbidden_extrapolation": True},
-            "build_meta": {"run_id": context.run_id, "source_id": "src-location-hearthglen"},
+            "build_meta": {
+                "run_id": context.run_id,
+                "source_id": "src-location-hearthglen",
+                "location_id": "location-hearthglen",
+                "location_name": "Hearthglen",
+            },
         },
         {
             "subject_id": "zone-western-plaguelands",
@@ -257,7 +266,7 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(tmp_path: Path
                     "name": "Hearthglen",
                     "classification": "major_location_candidate",
                     "hard_reject_reasons": [],
-                    "typing_signals": {},
+                    "typing_signals": {"source_section_role": "maps_subregions"},
                 }
             ],
             indent=2,

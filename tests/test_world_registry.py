@@ -4,6 +4,7 @@ import pytest
 
 from pipeline.discovery.entity_typing import (
     is_valid_quest_graph_link,
+    should_reject_location_title,
     should_skip_registry_traversal,
 )
 from pipeline.discovery.world_registry import load_world_registry, registry_index
@@ -111,3 +112,10 @@ def test_traversal_allows_place_for_location_profile(registry_loaded: None) -> N
         zone_name="Western Plaguelands",
     )
     assert not skip
+
+
+def test_location_title_rejects_dating_convention_pages() -> None:
+    reject, reasons = should_reject_location_title("Third War (28 ADP)")
+    assert reject
+    assert "dating_convention" in reasons
+

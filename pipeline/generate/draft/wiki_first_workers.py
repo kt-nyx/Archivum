@@ -227,6 +227,62 @@ def synthesize_faction_summary(
     return summary, used
 
 
+def synthesize_location_summary(
+    items: list[dict[str, Any]],
+    *,
+    location_name: str,
+    zone_name: str,
+    max_words: int = 50,
+) -> tuple[str, list[str]]:
+    if not items:
+        return "", []
+    settings = load_ai_settings()
+    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
+        from pipeline.generate.draft.location_lint import trim_location_summary
+
+        ranked = sorted(items, key=lambda row: word_count(str(row.get("snippet", ""))), reverse=True)
+        for item in ranked:
+            snippet = clean_wiki_snippet(str(item.get("snippet", "")))
+            if not snippet:
+                continue
+            summary = trim_location_summary(snippet, max_words)
+            if summary:
+                return summary, [str(item.get("source_id", ""))]
+        return "", []
+    from pipeline.generate.draft.location_lint import trim_location_summary
+
+    result = llm_json_with_retry(
+        required_keys=("summary", "used_evidence_ids"),
+        response_json_schema={
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["summary", "used_evidence_ids"],
+            "properties": {
+                "summary": {"type": "string"},
+                "used_evidence_ids": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+        system_prompt=(
+            f"Write an in-zone landmark summary for '{location_name}' in zone '{zone_name}' using ONLY evidence. "
+            f"Maximum {max_words} words. Describe what this place is and does within this zone. "
+            "Use encyclopedic tone. Do not copy generic wiki ledes, faction lists, adjacent-zone geography, "
+            "dating conventions, reputation/achievement meta, or out-of-zone plot."
+        ),
+        user_prompt=f"Evidence:\n{_format_evidence_block(items)}",
+        response_schema_name="wiki_first_location_summary",
+        substep="wiki_first_location_summary",
+    )
+    summary = trim_location_summary(clean_wiki_snippet(str(result.get("summary", ""))), max_words)
+    used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
+    if not summary:
+        ranked = sorted(items, key=lambda row: word_count(str(row.get("snippet", ""))), reverse=True)
+        for item in ranked:
+            snippet = trim_location_summary(clean_wiki_snippet(str(item.get("snippet", ""))), max_words)
+            if snippet:
+                return snippet, [str(item.get("source_id", ""))]
+    return summary, used
+
+
 def synthesize_card_summary(
     items: list[dict[str, Any]],
     *,

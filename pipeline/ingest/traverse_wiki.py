@@ -13,6 +13,7 @@ from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.discovery.entity_typing import (
     is_bogus_traversal_link,
     is_valid_quest_graph_link,
+    should_reject_location_title,
     should_skip_registry_traversal,
 )
 from pipeline.discovery.quest_hub import resolve_hub_child_links
@@ -260,6 +261,7 @@ def _fetch_and_append(
     cluster_id: str = "",
     quest_node_id: str = "",
     hub_resolved_from: str = "",
+    source_section_role: str = "other",
 ) -> dict[str, Any] | None:
     if is_bogus_traversal_link(link):
         report_rows.append({"status": "skipped", "link": link, "reason": "bogus_link", "role": auxiliary_role})
@@ -281,6 +283,23 @@ def _fetch_and_append(
             }
         )
         return None
+    if auxiliary_role == "location_profile":
+        title = page_title.strip() or _wiki_title(link)
+        reject, reject_reasons = should_reject_location_title(
+            title,
+            zone_name=zone_name,
+            source_section_role=source_section_role,
+        )
+        if reject:
+            report_rows.append(
+                {
+                    "status": "skipped",
+                    "link": link,
+                    "reason": reject_reasons[0] if reject_reasons else "location_reject",
+                    "role": auxiliary_role,
+                }
+            )
+            return None
     if auxiliary_role == "quest":
         valid, reasons = is_valid_quest_graph_link(link, zone_name=zone_name)
         if not valid:
@@ -564,7 +583,7 @@ def run_traverse_seed(context: RunContext) -> dict[str, Path]:
             link = str(target.get("source_link", "")).strip()
             location_id = str(target.get("location_id", "")).strip()
             decision = decision_by_location.get(location_id, "defer")
-            if decision not in {"include", "defer"}:
+            if decision != "include":
                 continue
             key = (zone_id, location_id)
             if not zone_id or not link or key in seen_location:
@@ -581,6 +600,7 @@ def run_traverse_seed(context: RunContext) -> dict[str, Path]:
                 auxiliary_target_id=location_id,
                 traversal_origin="location_profile_targets",
                 page_title=str(target.get("name", "")),
+                source_section_role=str(target.get("source_section_role", "other")),
                 snapshots=snapshots,
                 manifest_rows=manifest_rows,
                 existing_source_ids=existing_source_ids,

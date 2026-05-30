@@ -441,7 +441,7 @@ def run_validate_stage(
         location_include_count = sum(
             1
             for row in location_decisions
-            if str(row.get("final_decision", "")) in {"include", "defer"}
+            if str(row.get("final_decision", "")) == "include"
         )
         return {
             "questline_expect_include": str((questline_row or {}).get("final_decision", "")) == "include",

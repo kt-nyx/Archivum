@@ -298,3 +298,34 @@ def test_faction_profile_pack_includes_faction_id_in_build_meta() -> None:
     assert build_meta.get("faction_name") == "Argent Crusade"
     assert build_meta.get("subject_zone_id") == ZONE_ID
 
+
+def test_location_profile_pack_includes_location_id_in_build_meta() -> None:
+    snapshots = [
+        {
+            "entity_id": ZONE_ID,
+            "entity_type": "zone",
+            "name": ZONE_NAME,
+            "source_id": "src-location-hearthglen",
+            "url": "https://warcraft.wiki.gg/wiki/Hearthglen",
+            "section_blocks": [
+                {
+                    "section_role": "lead",
+                    "text": (
+                        "Hearthglen is a fortified city in the Western Plaguelands that serves as a "
+                        "major crusader stronghold and regional command post for reclamation efforts."
+                    ),
+                }
+            ],
+            "auxiliary_role": "location_profile",
+            "auxiliary_target_id": "location-hearthglen",
+            "page_title": "Hearthglen",
+        }
+    ]
+    packs = _build_evidence_packs(snapshots, "run-test")
+    location_packs = [row for row in packs if row.get("field_name") == "location_pool"]
+    assert location_packs
+    build_meta = location_packs[0].get("build_meta") or {}
+    assert build_meta.get("location_id") == "location-hearthglen"
+    assert build_meta.get("location_name") == "Hearthglen"
+    assert build_meta.get("subject_zone_id") == ZONE_ID
+

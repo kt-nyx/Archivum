@@ -215,3 +215,68 @@ def test_traverse_resolves_hub_children_from_wiki_links(
     child_links = {row.get("link", "") for row in hub_children}
     assert "/wiki/Quest_Alpha" in child_links
     assert "/wiki/Quest_Beta" in child_links
+
+
+def test_traverse_skips_defer_location_targets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = ensure_run_context("run-test-traverse-location-defer", artifacts_root=tmp_path / "runs")
+    ingest_dir = context.stage_dir("ingest")
+    _write_ingest_fixtures(context, ingest_dir)
+    discovery_dir = context.data_dir / "discovery"
+    discovery_dir.mkdir(parents=True, exist_ok=True)
+    (discovery_dir / "location_profile_targets.json").write_text(
+        json.dumps(
+            [
+                {
+                    "zone_id": ZONE_ID,
+                    "location_id": "location-include",
+                    "name": "Include Hold",
+                    "source_link": "/wiki/Include_Hold",
+                    "source_section_role": "maps_subregions",
+                },
+                {
+                    "zone_id": ZONE_ID,
+                    "location_id": "location-defer",
+                    "name": "Defer Hold",
+                    "source_link": "/wiki/Defer_Hold",
+                    "source_section_role": "maps_subregions",
+                },
+            ],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    decisions_dir = context.data_dir / "decisions"
+    decisions_dir.mkdir(parents=True, exist_ok=True)
+    (decisions_dir / "location_significance_decisions.json").write_text(
+        json.dumps(
+            [
+                {"subject_id": "location-include", "final_decision": "include"},
+                {"subject_id": "location-defer", "final_decision": "defer"},
+            ],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    fetched_urls: list[str] = []
+
+    def fake_fetch(url: str, source_class: str):
+        fetched_urls.append(url)
+        return (
+            "Location profile body with enough narrative detail for enrichment.",
+            "mw:200",
+            "section:lead paragraph:1",
+            [{"section_role": "lead", "text": "Location profile body."}],
+            [],
+            [],
+            "",
+        )
+
+    monkeypatch.setattr("pipeline.ingest.traverse_wiki._fetch_url_text", fake_fetch)
+    run_traverse_seed(context)
+
+    assert any("Include_Hold" in url for url in fetched_urls)
+    assert not any("Defer_Hold" in url for url in fetched_urls)
