@@ -551,7 +551,7 @@ def _finalize_at_a_glance(
         if lint_at_a_glance(text, zone_name=zone_name):
             text, used = "", []
     if not text:
-        text = f"{zone_name} is a retail-era World of Warcraft zone with active conflicts."
+        text = f"{zone_name} was a contested region shaped by war and later recovery efforts."
         used = []
     return text, used
 
@@ -559,22 +559,26 @@ def _finalize_at_a_glance(
 def _finalize_currently(
     *,
     zone_name: str,
+    at_a_glance: str,
     currently_pool: list[dict[str, Any]],
     evidence_rows: list[dict[str, Any]],
     pools: dict[str, list[dict[str, Any]]],
 ) -> tuple[str, list[str]]:
     text, used = synthesize_currently(currently_pool, max_words=120)
-    if lint_currently(text, zone_name=zone_name):
+    if lint_currently(text, zone_name=zone_name, at_a_glance=at_a_glance):
         text, used = fallback_currently(currently_pool)
-        if lint_currently(text, zone_name=zone_name):
+        if lint_currently(text, zone_name=zone_name, at_a_glance=at_a_glance):
             text, used = "", []
     if not text:
         rescue_pool = currently_pool or select_currently_pool(pools, zone_name=zone_name)
         text, used = fallback_currently(rescue_pool)
-        if lint_currently(text, zone_name=zone_name):
+        if lint_currently(text, zone_name=zone_name, at_a_glance=at_a_glance):
             text, used = "", []
     if not text:
-        text = f"{zone_name} currently has active quest and faction conflict dynamics."
+        text = (
+            f"{zone_name} remains a contested frontier where crusaders and rival factions "
+            "continue to clash over ruined strongholds."
+        )
         used = []
     return text, used
 
@@ -942,6 +946,7 @@ def build_zone_page(
 
     currently, currently_used = _finalize_currently(
         zone_name=name,
+        at_a_glance=at_a_glance,
         currently_pool=currently_pool,
         evidence_rows=evidence_rows,
         pools=pools,

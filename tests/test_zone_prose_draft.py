@@ -114,8 +114,71 @@ def test_build_zone_page_prose_passes_lint_without_llm(monkeypatch) -> None:
     assert len(draft["history_sections"]) >= 3
     assert word_count(str(draft["at_a_glance"])) <= MAX_AT_A_GLANCE_WORDS
     assert not lint_at_a_glance(str(draft["at_a_glance"]), zone_name="Example Zone")
-    assert not lint_currently(str(draft["currently"]), zone_name="Example Zone")
+    assert not lint_currently(
+        str(draft["currently"]),
+        zone_name="Example Zone",
+        at_a_glance=str(draft["at_a_glance"]),
+    )
     assert not lint_history_sections(draft["history_sections"], max_sections=8)
+
+
+def test_build_zone_page_prefers_past_snippet_for_at_a_glance(monkeypatch) -> None:
+    monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
+    zone_id = "zone-example"
+    evidence = [
+        {
+            "subject_id": zone_id,
+            "subject_type": "zone",
+            "field_name": "at_a_glance_input",
+            "evidence_items": [
+                {
+                    "source_id": "src-present",
+                    "snippet": (
+                        "Example Zone is a blighted region where crusaders maintain outposts and continue "
+                        "to heal the soil while factions clash over strategic ruins."
+                    ),
+                    "section_role": "lead",
+                },
+                {
+                    "source_id": "src-past",
+                    "snippet": (
+                        "Once a fertile frontier, the region was devastated during the Third War and remained "
+                        "blighted for decades before recovery efforts began."
+                    ),
+                    "section_role": "history",
+                },
+            ],
+            "build_meta": {"source_id": "src-zone", "subject_zone_id": zone_id},
+        },
+        {
+            "subject_id": zone_id,
+            "subject_type": "zone",
+            "field_name": "currently_input",
+            "evidence_items": [
+                {
+                    "source_id": "src-current",
+                    "snippet": (
+                        "Crusaders continue to push back undead forces while recovery efforts reshape "
+                        "roads and outposts across the frontier."
+                    ),
+                    "section_role": "cataclysm_edit",
+                }
+            ],
+            "build_meta": {"source_id": "src-zone", "subject_zone_id": zone_id},
+        },
+    ]
+    draft = build_zone_page(
+        _fact_pack(zone_id),
+        evidence,
+        [],
+        [],
+        [],
+        {},
+        {},
+        None,
+    )
+    assert "was" in draft["at_a_glance"] or "remained" in draft["at_a_glance"]
+    assert not lint_at_a_glance(str(draft["at_a_glance"]), zone_name="Example Zone")
 
 
 def test_build_zone_page_prefers_expansion_edit_for_currently(monkeypatch) -> None:

@@ -11,6 +11,8 @@ _GEOGRAPHY_KINDS = frozenset({"zone", "continent", "capital", "region", "instanc
 MAX_AT_A_GLANCE_WORDS = 45
 MIN_HISTORY_SECTIONS = 3
 MAX_HISTORY_SECTIONS = 8
+AT_A_GLANCE_CURRENTLY_OVERLAP_THRESHOLD = 0.55
+_SHORT_TEXT_PRESENT_CARVEOUT_WORDS = 8
 
 _HISTORICAL_MARKERS = (
     "formerly",
@@ -32,12 +34,16 @@ _CURRENTLY_META_RE = re.compile(
 )
 
 _PAST_TENSE_RE = re.compile(
-    r"\b(was|were|had been|became|fell|destroyed|invaded|established|founded)\b",
+    r"\b(was|were|had been|became|fell|destroyed|invaded|established|founded|consumed|overran|collapsed|remained)\b",
     re.IGNORECASE,
 )
 
 _PRESENT_TENSE_RE = re.compile(
-    r"\b(is|are|remains|remain|continues|continue|stands|stand|holds|hold)\b",
+    r"\b("
+    r"is|are|remains|remain|continues|continue|stands|stand|holds|hold|"
+    r"maintains|maintain|struggles|struggle|heals|heal|clashes|clash|patrols|patrol|"
+    r"works|work|contests|contest|coordinates|coordinate|guards|guard"
+    r")\b",
     re.IGNORECASE,
 )
 
@@ -59,6 +65,38 @@ def trim_words(text: str, max_words: int, *, ensure_terminal_punct: bool = False
     if ensure_terminal_punct and result and result[-1] not in ".?!":
         return f"{result}."
     return result
+
+
+def _token_set(value: str) -> set[str]:
+    return {token for token in re.findall(r"[a-z0-9]+", value.lower()) if len(token) >= 4}
+
+
+def token_jaccard_overlap(left: str, right: str) -> float:
+    left_tokens = _token_set(left)
+    right_tokens = _token_set(right)
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
+
+
+def tense_marker_counts(text: str) -> tuple[int, int]:
+    past = len(_PAST_TENSE_RE.findall(text))
+    present = len(_PRESENT_TENSE_RE.findall(text))
+    return past, present
+
+
+def has_dominant_present_tense(text: str, *, short_text_word_limit: int = _SHORT_TEXT_PRESENT_CARVEOUT_WORDS) -> bool:
+    past, present = tense_marker_counts(text)
+    if present == 0:
+        return False
+    if past == 0 and word_count(text) < short_text_word_limit:
+        return False
+    return present > past or (present >= 1 and past == 0)
+
+
+def past_marker_score(text: str) -> int:
+    past, present = tense_marker_counts(text)
+    return past * 2 - present
 
 
 def has_historical_framing(text: str) -> bool:
@@ -93,19 +131,29 @@ def lint_at_a_glance(text: str, *, zone_name: str = "") -> list[str]:
         issues.append("at_a_glance reads like a location list dump")
     if zone_name and zone_name.lower() in text.lower() and words < 12:
         issues.append("at_a_glance reads like bare zone description filler")
+    if has_dominant_present_tense(text):
+        issues.append("at_a_glance uses dominant present tense")
+    if not _PAST_TENSE_RE.search(text) and not has_historical_framing(text):
+        if words >= _SHORT_TEXT_PRESENT_CARVEOUT_WORDS:
+            issues.append("at_a_glance lacks past-tense or historical framing")
     return issues
 
 
-def lint_currently(text: str, *, zone_name: str = "") -> list[str]:
+def lint_currently(text: str, *, zone_name: str = "", at_a_glance: str = "") -> list[str]:
     issues: list[str] = []
     if has_geography_hub_in_text(text):
         issues.append("currently mentions geography hub proper nouns")
     if has_currently_meta(text):
         issues.append("currently contains reputation/achievement/player meta")
-    if has_historical_framing(text) and not _PRESENT_TENSE_RE.search(text):
+    if at_a_glance.strip():
+        overlap = token_jaccard_overlap(at_a_glance, text)
+        if overlap >= AT_A_GLANCE_CURRENTLY_OVERLAP_THRESHOLD:
+            issues.append("currently substantially overlaps at_a_glance")
+    words = word_count(text)
+    if words >= _SHORT_TEXT_PRESENT_CARVEOUT_WORDS and not _PRESENT_TENSE_RE.search(text):
+        issues.append("currently lacks present-tense active-state framing")
+    elif has_historical_framing(text) and not _PRESENT_TENSE_RE.search(text):
         issues.append("currently uses historical-era framing without present tense")
-    if zone_name and has_historical_framing(text) and zone_name.lower() not in text.lower():
-        issues.append("currently appears past-tense framed")
     return issues
 
 
@@ -124,8 +172,11 @@ def lint_history_sections(
         if not body:
             issues.append(f"history_sections[{index}] has empty body")
             continue
-        if not _PAST_TENSE_RE.search(body) and not has_historical_framing(body):
+        has_framing = bool(_PAST_TENSE_RE.search(body)) or has_historical_framing(body)
+        if not has_framing:
             issues.append(f"history_sections[{index}] lacks past-tense historical framing")
+        elif has_dominant_present_tense(body, short_text_word_limit=0):
+            issues.append(f"history_sections[{index}] uses dominant present tense")
     return issues
 
 
@@ -133,8 +184,8 @@ def validate_at_a_glance(text: str, *, zone_name: str = "") -> bool:
     return not lint_at_a_glance(text, zone_name=zone_name)
 
 
-def validate_currently(text: str, *, zone_name: str = "") -> bool:
-    return not lint_currently(text, zone_name=zone_name)
+def validate_currently(text: str, *, zone_name: str = "", at_a_glance: str = "") -> bool:
+    return not lint_currently(text, zone_name=zone_name, at_a_glance=at_a_glance)
 
 
 def validate_history_sections(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 
+from pipeline.generate.draft.compendium_voice import COMPENDIUM_VOICE_CORE, zone_system_prompt
 from pipeline.generate.draft.prose_lint import MAX_AT_A_GLANCE_WORDS, word_count
 from pipeline.generate.draft.wiki_first_workers import (
     synthesize_at_a_glance,
@@ -12,6 +13,37 @@ from pipeline.generate.draft.wiki_first_workers import (
     synthesize_key_enemy_summary,
     synthesize_location_summary,
 )
+
+
+def test_at_a_glance_no_llm_prefers_past_heavy_snippet(monkeypatch) -> None:
+    monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
+    items = [
+        {
+            "source_id": "src-present",
+            "snippet": (
+                "Western Plaguelands is a blighted region where crusaders maintain outposts and continue "
+                "to heal the soil while factions clash over strategic ruins across the frontier."
+            ),
+            "section_role": "lead",
+        },
+        {
+            "source_id": "src-past",
+            "snippet": (
+                "Once the breadbasket of Lordaeron, the region was consumed by the Scourge and remained "
+                "blighted for years before recovery efforts began after the Cataclysm."
+            ),
+            "section_role": "history",
+        },
+    ]
+    summary, used = synthesize_at_a_glance(items, max_words=45)
+    assert used == ["src-past"]
+    assert "were" in summary or "was" in summary
+
+
+def test_at_a_glance_system_prompt_uses_compendium_voice() -> None:
+    prompt = zone_system_prompt(field_voice="Past tense zone caption.", task_lines="Maximum 45 words.")
+    assert "Compendium Voice" in prompt
+    assert "Use present tense" not in prompt
 
 
 def test_wiki_first_workers_deterministic_fallback_without_llm(monkeypatch) -> None:
@@ -26,6 +58,7 @@ def test_wiki_first_workers_deterministic_fallback_without_llm(monkeypatch) -> N
     summary, used = synthesize_at_a_glance(items, max_words=40)
     assert summary
     assert used == ["src-zone"]
+    assert "Compendium Voice" in COMPENDIUM_VOICE_CORE
     sections, used_history = synthesize_history_sections(items, max_sections=2)
     assert sections
     assert used_history

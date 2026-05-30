@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Semantic acceptance checks for a pipeline run (zone-agnostic)."""
+"""Semantic acceptance checks for a pipeline run (zone-agnostic).
+
+Zone prose division (Compendium Voice):
+- at_a_glance: past-tense historical identity caption (zone flavor).
+- currently: present-tense active retail state; must not overlap at_a_glance.
+- history_sections: past-tense reference-chronicle era blocks.
+"""
 
 from __future__ import annotations
 
@@ -151,7 +157,7 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
     currently = str(draft.get("currently", "")).strip()
     if not currently:
         _fail("currently is empty")
-    for issue in lint_currently(currently, zone_name=zone_name):
+    for issue in lint_currently(currently, zone_name=zone_name, at_a_glance=at_a_glance):
         _fail(f"currently quality check failed: {issue}")
 
     history = draft.get("history_sections") or []

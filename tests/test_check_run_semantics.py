@@ -97,10 +97,12 @@ def _valid_draft() -> dict[str, object]:
             }
         ],
         "at_a_glance": (
-            "Crusaders and druids continue to resist undead forces across the ruined frontier."
+            "Once a fertile frontier of the kingdom, the region was devastated during the Third War "
+            "and remained blighted for decades before recovery efforts began."
         ),
         "currently": (
-            "The zone remains a contested frontier where crusaders and druids push back undead forces."
+            "Crusaders and druids continue to resist undead forces across the ruined frontier "
+            "while recovery efforts reshape roads and outposts."
         ),
         "sources": [
             {"source_id": "src-zone", "url": "https://example.test/zone"},

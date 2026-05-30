@@ -12,6 +12,7 @@ from pipeline.generate.draft.prose_lint import (
     has_currently_meta,
     has_geography_hub_in_text,
     has_historical_framing,
+    past_marker_score,
     trim_words,
     word_count,
 )
@@ -278,7 +279,7 @@ def history_heading_from_role(section_role: str) -> str:
 def fallback_at_a_glance(items: list[dict[str, Any]]) -> tuple[str, list[str]]:
     if not items:
         return "", []
-    best = max(items, key=lambda row: word_count(str(row.get("snippet", ""))))
+    best = max(items, key=lambda row: (past_marker_score(str(row.get("snippet", ""))), word_count(str(row.get("snippet", "")))))
     summary = trim_words(str(best.get("snippet", "")), MAX_AT_A_GLANCE_WORDS)
     source_id = str(best.get("source_id", "")).strip()
     return summary, [source_id] if source_id else []

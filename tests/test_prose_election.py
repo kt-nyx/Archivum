@@ -182,6 +182,26 @@ def test_cap_history_pool_keeps_trailing_named_sections() -> None:
     assert capped[-1]["raw_section_role"] == "battle_for_azeroth"
 
 
+def test_fallback_at_a_glance_prefers_past_marked_snippet() -> None:
+    from pipeline.generate.draft.prose_election import fallback_at_a_glance
+
+    items = [
+        {
+            "source_id": "src-present",
+            "snippet": " ".join(["maintains"] * 30),
+            "section_role": "lead",
+        },
+        {
+            "source_id": "src-past",
+            "snippet": "The region was devastated during the invasion and fell under undead control for decades.",
+            "section_role": "history",
+        },
+    ]
+    summary, used = fallback_at_a_glance(items)
+    assert used == ["src-past"]
+    assert "was" in summary or "fell" in summary
+
+
 def test_lint_helpers_flag_word_cap_and_meta() -> None:
     glance = " ".join(["word"] * 50)
     assert lint_at_a_glance(glance)

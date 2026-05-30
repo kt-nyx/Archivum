@@ -17,13 +17,13 @@ import {
 const SLICES = [
   {
     id: "slice-9",
-    content: "Slice 9 — Evidence hygiene & geography (RPG filter, era selection, parent_continent)",
+    content: "Slice 9 — Evidence hygiene & geography (RPG filter, trailing-section cap, parent_continent)",
     status: "complete" as const,
   },
   {
     id: "slice-10",
-    content: "Slice 10 — Tense & voice policy (at_a_glance all-past, currently present, history past)",
-    status: "pending" as const,
+    content: "Slice 10 — Compendium Voice & tense (at_a_glance past, currently present, history past)",
+    status: "complete" as const,
   },
   {
     id: "slice-11",
@@ -180,7 +180,9 @@ export default function PipelineQualityPhase2Plan() {
         <Stat label="Dev pilot run" value="test-run-wpl-1" tone="success" />
         <Stat label="CI pilot run" value="run-western-plaguelands" tone="success" />
         <Stat label="Slices 1–8" value="Complete" tone="success" />
-        <Stat label="Next" value="Slice 10" tone="accent" />
+        <Stat label="Slice 9" value="Complete" tone="success" />
+        <Stat label="Slice 10" value="Complete" tone="success" />
+        <Stat label="Next" value="Slice 11" tone="accent" />
       </Row>
 
       <Callout tone="info" title="Locked decisions (2026-05-30)">
@@ -216,33 +218,89 @@ export default function PipelineQualityPhase2Plan() {
       <TodoListCard todos={SLICES} defaultExpanded />
 
       <Divider />
-      <H2>Product intent — prose & tense (Slice 10 locks this)</H2>
+      <H2>Compendium Voice — prose policy (Slice 10)</H2>
+      <Text tone="secondary">
+        Consistent drafting tone: official in-universe lore description (Blizzard zone reference copy), not wiki
+        walkthrough or source voice. Module: pipeline/generate/draft/compendium_voice.py
+      </Text>
+      <Table
+        headers={["Rule", "Policy"]}
+        rows={[
+          ["In-universe", "No player/meta/game-system language; world treated as real"],
+          ["Expansion eras", "Named eras (Cataclysm, Fourth War) OK as historical labels"],
+          ["Drama", "Moderate — clear stakes, readable prose"],
+          ["Evidence", "Always reframe into Compendium Voice; never adopt wiki/source tone"],
+        ]}
+      />
+      <H3>Per-field voice + tense</H3>
+      <Table
+        headers={["Field", "Tense", "Voice model", "Golden example (WPL-style)"]}
+        rows={[
+          [
+            "at_a_glance",
+            "Past",
+            "Zone flavor caption",
+            "Once the breadbasket of Lordaeron, these lands were consumed by the Scourge…",
+          ],
+          [
+            "currently",
+            "Present",
+            "Zone flavor active state",
+            "The Argent Crusade and Cenarion Circle work to heal… while Horde and Alliance contest Andorhal.",
+          ],
+          [
+            "history_sections",
+            "Past",
+            "Reference + chronicle blend (3–5 sentences)",
+            "During the Third War, the Scourge under Arthas overran… ending Lordaeron's hold…",
+          ],
+          [
+            "major_factions.summary",
+            "Present",
+            "Identity clause + zone role",
+            "The Argent Crusade, a holy order devoted to…, maintains outposts here… — Slice 12",
+          ],
+          [
+            "location_cards.summary",
+            "Present",
+            "Landmark zone-flavor",
+            "Andorhal is a ruined city divided between Alliance and Horde forces… — Slice 12",
+          ],
+          [
+            "major_questlines.cta_hook",
+            "Imperative",
+            "Direct verb + named enemies",
+            "Push into Andorhal… / Secure Andorhal before… — Slice 12",
+          ],
+        ]}
+      />
+      <H3>Field division (tense)</H3>
       <Table
         headers={["Field", "Tense", "Scope", "Anti-patterns"]}
         rows={[
           [
             "at_a_glance",
             "Past only",
-            "1–2 sentences; zone historical identity from earliest through latest era in evidence — no present-state duties",
+            "1–2 sentences; historical identity through latest era — no present-state duties",
             "Present tense; location lists; player meta; duplicating currently",
           ],
           [
             "currently",
             "Present only",
-            "Retail in-universe active conflict / recovery state at latest wiki era",
-            "Past historical arcs; reputation/achievement; adjacent-zone geography hubs",
+            "Retail in-universe active conflict / recovery at latest wiki era",
+            "Past historical arcs; reputation/achievement; overlap with at_a_glance (Jaccard ≥0.55)",
           ],
           [
             "history_sections",
             "Past only",
             "Chronological era sections through latest retail block on seed page",
-            "RPG non-canon; expansion banner stubs; present tense (maintains, struggles)",
+            "Present-activity verbs (maintains, struggles); RPG non-canon",
           ],
           [
             "major_questlines.cta_hook",
-            "Present or imperative OK",
+            "Imperative OK",
             "Narrative hook for cluster — not zone geography essay",
-            "Truncated mid-sentence; 66-quest dumps",
+            "Truncated mid-sentence; unnamed enemy factions on faction-split arcs",
           ],
         ]}
       />
@@ -307,12 +365,12 @@ export default function PipelineQualityPhase2Plan() {
       <Divider />
       <H2>Slice specifications</H2>
 
-      <CollapsibleSection title="Slice 9 — Evidence hygiene & geography" count={7}>
+      <CollapsibleSection title="Slice 9 — Evidence hygiene & geography" count={9}>
         <Stack gap={12}>
           <H3>Goals</H3>
           <Text>
-            Stop polluted snippets entering history_digest and related pools. Fix parent_continent. Ensure modern
-            retail era blocks can reach history output.
+            Stop polluted snippets entering history_digest and related pools. Fix parent_continent. Ensure trailing
+            named wiki sections (latest eras on the page) can reach history output without hardcoding expansion names.
           </Text>
 
           <H3>Root causes</H3>
@@ -343,58 +401,130 @@ export default function PipelineQualityPhase2Plan() {
             headers={["Task", "Files", "Specification"]}
             rows={[
               [
+                "Shared filters module",
+                "pipeline/common/wiki_evidence_filters.py",
+                "Single source: is_rpg_section, is_non_canon_history_snippet, is_expansion_boilerplate, should_exclude_from_history, trailing_named_section_items, cap_history_pool",
+              ],
+              [
                 "RPG block filter",
-                "pipeline/discovery/enrich.py, pipeline/generate/draft/prose_election.py",
-                "Exclude snippets after in_the_rpg disclaimer until next major h2; reject *non-canon*, *Warcraft RPG* markers; exclude mis-tagged history_edit duplicates of RPG openings",
+                "fetch_wiki.py, enrich.py, workflow.py, prose_election.py",
+                "Ingest h2-boundary RPG prefix; enrich + prose_election exclusion; workflow._section_role in_the_rpg guard",
               ],
               [
                 "Boilerplate filter",
-                "prose_election.py",
-                "Drop snippets matching /^This section concerns content related to/i and similar wiki template lines from history/at pools",
+                "wiki_evidence_filters.py (via should_exclude_from_history)",
+                "Drop snippets matching /^This section concerns content related to/i from history pools",
               ],
               [
-                "Era-aware history selection",
-                "prose_election.select_history_pool, history_section_cap",
-                "Reserve min 2 slots for latest-era sections (cataclysm_*, battle_for_*, exploring_*, fourth war tokens) when present in pool; sort chronologically not only by _role_sort_key early-first",
+                "Trailing-section history cap",
+                "wiki_evidence_filters.cap_history_pool, wiki_first.py",
+                "Document-order pool; reserve all items from last 1–2 named section groups when cap truncates (not hardcoded era tokens)",
               ],
               [
                 "parent_continent v2",
-                "pipeline/discovery/geography.py",
-                "Priority: lead/geography seed snippets → coalesce geography claims → history. Ignore continent mentions in simile context (e.g. 'as in Northrend'). Prefer Eastern Kingdoms / Lordaeron over incidental Northrend",
+                "pipeline/discovery/geography.py, enrich.py (geography_input)",
+                "Tiers: geography_input → at_a_glance → currently → history; in-game continents only; Lordaeron → eastern-kingdoms; simile ignored on all tiers",
               ],
               [
-                "Ingest section tagging (optional hardening)",
+                "Ingest section tagging",
                 "pipeline/ingest/fetch_wiki.py",
-                "After in_the_rpg h2, force section_role prefix in_the_rpg_ until next top-level era heading — prevents history_edit mis-tag",
+                "Track heading depth; prefix in_the_rpg_* until next h2 (not expansion-name list)",
+              ],
+              [
+                "Evidence metadata",
+                "enrich.py, contracts/models.py, evidence_pack.schema.json",
+                "block_index + raw_section_role on packs for document-order cap and filtering",
               ],
               [
                 "Tests",
-                "tests/test_geography.py, tests/test_evidence_pools.py, new test_rpg_history_filter.py",
-                "Fixtures with RPG HTML excerpt; assert excluded from history_digest; WPL parent_continent not northrend",
+                "test_wiki_evidence_filters.py, test_rpg_history_filter.py, test_geography.py, test_prose_election.py, test_evidence_pools.py",
+                "RPG HTML fixture; geography_input RPG exclusion; parent_continent eastern-kingdoms; trailing cap",
               ],
             ]}
           />
 
           <H3>Acceptance gate</H3>
           <Table
-            headers={["Check", "Criterion"]}
+            headers={["Check", "Criterion", "Result (test-run-wpl-1)"]}
             rows={[
-              ["pytest", "New + updated unit tests green"],
-              ["WPL history content", "No non-canon / Warcraft RPG content in history_sections"],
-              ["parent_continent", "eastern-kingdoms (not northrend, not lordaeron)"],
-              ["Era coverage", "history includes trailing named wiki sections (e.g. Fourth War) for WPL"],
-              ["Run command", "uv run lore-pipeline run --run-id test-run-wpl-1 --fact-check-profile off -v"],
+              ["pytest", "New + updated unit tests green", "Pass"],
+              ["WPL history content", "No non-canon / Warcraft RPG content in history_sections", "Pass"],
+              ["parent_continent", "eastern-kingdoms (not northrend, not lordaeron)", "Pass"],
+              ["Era coverage", "History includes trailing named wiki sections (e.g. Fourth War) for WPL", "Pass (8 sections)"],
+              ["Run command", "uv run lore-pipeline run --run-id test-run-wpl-1 --fact-check-profile off -v", "Complete; validate_passed=false (Slice 11+)"],
+              ["Semantics", "uv run python scripts/check_run_semantics.py …", "Fails location_cards empty (Slice 12) — expected deferral"],
+            ]}
+          />
+
+          <H3>Intentional deviations (documented)</H3>
+          <Table
+            headers={["Topic", "Plan / canvas wording", "Actual behaviour", "Rationale"]}
+            rows={[
+              [
+                "Era-aware history selection",
+                "Reserve min 2 slots for cataclysm_*, battle_for_*, exploring_*, fourth war tokens",
+                "Page-local trailing named section groups via is_named_history_section + cap_history_pool (no expansion token list)",
+                "Latest era on page shifts over time (Midnight, etc.); all in-game historical eras remain eligible — not only \"modern retail\"",
+              ],
+              [
+                "parent_continent tiers",
+                "lead/geography → coalesce geography claims → history; simile exclusion on history tier only",
+                "geography_input → at_a_glance → currently → history; no coalesce tier; simile excluded on all tiers",
+                "geography_input field replaces coalesce hook; at_a_glance includes history-derived snippets so Northrend simile must be filtered everywhere",
+              ],
+              [
+                "Lordaeron as parent_continent",
+                "Prefer Eastern Kingdoms / Lordaeron over incidental Northrend",
+                "Lordaeron never emitted; maps to eastern-kingdoms via LORE_SUBREGION_TO_PARENT",
+                "parent_continent is in-game UI continent only (user decision)",
+              ],
+              [
+                "RPG ingest exit boundary",
+                "Exit in_the_rpg on next top-level era heading",
+                "Exit on next h2 (structural wiki boundary)",
+                "No hardcoded expansion heading list; generalizable for future wiki structure",
+              ],
+              [
+                "Filter module location",
+                "enrich.py + prose_election.py only",
+                "pipeline/common/wiki_evidence_filters.py shared by enrich + prose_election",
+                "Avoid filter drift between discovery and draft stages",
+              ],
+              [
+                "cap_history_pool reserve count",
+                "Reserve min(cap, len(trailing), 2) item slots",
+                "Reserve all items from last 1–2 named section groups, bounded by cap",
+                "Multi-paragraph expansion sections should not lose trailing era coverage to a 2-item ceiling",
+              ],
+              [
+                "select_currently_pool",
+                "Implied era coverage for currently field",
+                "_ERA_TOKENS hardcoding unchanged in prose_election",
+                "Slice 9 scope is history pool + parent_continent only; currently tiering deferred",
+              ],
+              [
+                "CI pilot promotion",
+                "Rerun run-western-plaguelands before marking slice complete",
+                "Not rerun in Slice 9 commit; test-run-wpl-1 is dev gate",
+                "Canvas rule: promote when convenient after dev gate green",
+              ],
+              [
+                "Pilot manifest",
+                "Not in Slice 9 spec",
+                "Removed broken src-scholomance-warcraft-lore row from tests/fixtures/pilot/source_manifest.json",
+                "Bundled pilot fix so WPL ingest completes; main Scholomance page sufficient",
+              ],
             ]}
           />
         </Stack>
       </CollapsibleSection>
 
-      <CollapsibleSection title="Slice 10 — Tense & voice policy" count={6}>
+      <CollapsibleSection title="Slice 10 — Compendium Voice & tense policy" count={8}>
         <Stack gap={12}>
           <H3>Goals</H3>
           <Text>
-            Encode locked tense policy in prompts, fallbacks, lint, and semantics. Remove present-tense instruction
-            from at_a_glance synthesis.
+            Encode Compendium Voice and locked tense policy in prompts, fallbacks, lint, and semantics. Stop drafts
+            from mirroring wiki/source voice and from present-tense at_a_glance output.
           </Text>
 
           <H3>Implementation tasks</H3>
@@ -402,46 +532,58 @@ export default function PipelineQualityPhase2Plan() {
             headers={["Task", "Files", "Specification"]}
             rows={[
               [
-                "at_a_glance prompt",
-                "wiki_first_workers.synthesize_at_a_glance",
-                "Past tense only; historical arc through latest era; explicitly defer present state to currently field",
+                "Compendium Voice module",
+                "compendium_voice.py, wiki_first_workers.py",
+                "COMPENDIUM_VOICE_CORE + per-field addenda injected into zone-core synthesize_* prompts",
               ],
               [
-                "at_a_glance lint",
-                "prose_lint.lint_at_a_glance",
-                "Reject dominant present-tense verbs (is/are/remains/maintains) unless zero past markers and word_count &lt; 8; require ≥1 past marker or historical framing token",
+                "at_a_glance prompt/lint",
+                "wiki_first_workers, prose_lint.lint_at_a_glance",
+                "Past tense zone flavor; reject dominant present; require past marker or historical framing (≥8 words)",
               ],
               [
                 "currently prompt/lint",
-                "wiki_first_workers, prose_lint",
-                "Keep present tense; strengthen overlap check vs at_a_glance (shared token threshold)",
+                "wiki_first_workers, prose_lint.lint_currently",
+                "Present tense; overlap vs at_a_glance (Jaccard ≥0.55); require present markers",
               ],
               [
                 "history prompt/lint",
-                "wiki_first_workers.synthesize_history_sections, prose_lint",
-                "Strict past tense; fail lint on present-tense dominance without historical framing exception removed for RPG voice",
+                "wiki_first_workers, prose_lint.lint_history_sections",
+                "Reference-chronicle blend; reject dominant present even when historical framing present",
               ],
               [
                 "Fallback trimmers",
-                "prose_election.fallback_at_a_glance",
-                "When trimming wiki snippets for fallback, prefer sentences with past markers",
+                "prose_election.fallback_at_a_glance, wiki_first_workers no-LLM path",
+                "Rank snippets by past_marker_score before word count",
+              ],
+              [
+                "Finalize stubs",
+                "wiki_first._finalize_at_a_glance, _finalize_currently",
+                "Past-tense stub; pass at_a_glance into currently lint",
               ],
               [
                 "Semantics",
                 "scripts/check_run_semantics.py",
-                "Align at_a_glance checks with new lint; document currently vs at_a_glance division",
+                "Document Compendium Voice field division; wire overlap lint",
+              ],
+              [
+                "Tests",
+                "test_prose_lint.py, test_compendium_voice.py, test_wiki_first_workers.py, test_prose_election.py",
+                "Tense, overlap, prompt constant coverage",
               ],
             ]}
           />
 
           <H3>Acceptance gate</H3>
           <Table
-            headers={["Check", "Criterion"]}
+            headers={["Check", "Criterion", "Result"]}
             rows={[
-              ["WPL at_a_glance", "All past tense; no present-state Andorhal/healing clause (belongs in currently)"],
-              ["WPL currently", "Present tense; Battle for Andorhal / faction conflict"],
-              ["Semantics", "history_sections[*] past-tense lint passes (incl. index 2 Scarlet)"],
-              ["Tests", "tests/test_wiki_first_workers.py, test_prose_lint extensions"],
+              ["pytest", "Full suite green (3 skipped)", "Pass"],
+              ["Compendium Voice", "compendium_voice.py wired into zone-core workers", "Pass"],
+              ["Lint", "at_a_glance / currently / history tense + overlap rules", "Pass"],
+              ["WPL pipeline", "test-run-wpl-1 re-run (LLM)", "Deferred — run locally when ready"],
+              ["Semantics (full)", "location_cards empty", "Deferred — Slice 12"],
+              ["validate_passed", "provenance hard-fails", "Deferred — Slice 11"],
             ]}
           />
         </Stack>
@@ -541,6 +683,13 @@ export default function PipelineQualityPhase2Plan() {
           </Text>
 
           <H3>Questline clustering — layered strategy</H3>
+          <Callout tone="info" title="Faction-split imperative hooks (from Slice 10 voice policy)">
+            <Text>
+              Shared questlines with faction-specific narratives need separate cta_hook text per faction bucket —
+              e.g. Alliance hook names Horde as the enemy; Horde hook names Alliance. Hooks must use direct imperative
+              verbs and name opposing factions explicitly (Compendium Voice, Slice 12).
+            </Text>
+          </Callout>
           <Table
             headers={["Layer", "When", "Action"]}
             rows={[
@@ -753,12 +902,14 @@ export default function PipelineQualityPhase2Plan() {
         headers={["Stage", "Slice changes"]}
         rows={[
           ["ingest / fetch_wiki", "RPG section tagging hardening (9)"],
-          ["discovery / enrich", "RPG/boilerplate exclusion from history_digest (9)"],
+          ["discovery / enrich", "RPG/boilerplate exclusion; geography_input field (9)"],
           ["discovery / geography", "parent_continent resolver v2 (9)"],
           ["discovery / storyline_html", "Heading extraction + cluster splits (12)"],
           ["discovery / workflow", "Location scoring + junk filter (12)"],
-          ["generate / prose_election", "Era-aware history pool (9); tense-aware fallbacks (10)"],
-          ["generate / wiki_first_workers", "Past-tense at_a_glance prompt (10); card hook quality (12)"],
+          ["generate / prose_election", "Trailing-section history cap (9); tense-aware fallbacks (10)"],
+          ["generate / wiki_first_workers", "Compendium Voice prompts (10); card hook quality (12)"],
+          ["generate / compendium_voice", "Shared voice constants for zone-core + future card workers (10)"],
+          ["generate / prose_lint", "Tense + overlap lint (10)"],
           ["generate / wiki_first", "Revision index, pointer fallbacks, source_refs (11); clustering (12); key_enemies (13)"],
           ["linker", "Term-specific glossary provenance (11)"],
           ["validate / fact_check", "profile=off behaviour (14)"],
@@ -782,9 +933,9 @@ export default function PipelineQualityPhase2Plan() {
       </Callout>
 
       <Row gap={8}>
-        <Pill tone="accent">Next: Slice 10</Pill>
+        <Pill tone="accent">Next: Slice 11</Pill>
         <Pill tone="neutral">Legacy: docs/planning/legacy/</Pill>
-        <Pill tone="success">Tense: at_a_glance past / currently present</Pill>
+        <Pill tone="success">Compendium Voice locked</Pill>
       </Row>
     </Stack>
   );
