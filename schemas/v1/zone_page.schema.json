@@ -47,6 +47,14 @@
           "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
           "title": "Term Id",
           "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "wiki_url": {
+          "title": "Wiki Url",
+          "type": "string"
         }
       },
       "required": [

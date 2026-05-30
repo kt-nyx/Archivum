@@ -1108,3 +1108,11 @@ def test_instance_page_missing_key_enemy_card_provenance_hard_fails() -> None:
     report = validate_payload("instance_page", payload)
     assert report.passed is False
     assert any(issue.code == "provenance.missing_card_pointers" for issue in report.issues)
+
+
+def test_zone_page_glossary_ref_missing_wiki_url_hard_fails() -> None:
+    payload = _valid_zone_page_payload()
+    payload["glossary_refs"] = [{"term_id": "term-scourge", "label": "Scourge"}]
+    report = validate_payload("zone_page", payload)
+    assert report.passed is False
+    assert any(issue.code == "structure.glossary_ref_missing_wiki_url" for issue in report.issues)

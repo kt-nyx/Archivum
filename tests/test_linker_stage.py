@@ -124,7 +124,7 @@ def test_linker_routes_ambiguous_alias_to_manual_review(
 
     monkeypatch.setattr(
         "pipeline.linker.linker._load_alias_dictionary",
-        lambda: [
+        lambda _context=None: [
             {
                 "term_id": "term-front-one",
                 "alias": "front",
@@ -203,7 +203,7 @@ def test_linker_routes_review_band_confidence_to_manual_review(
 
     monkeypatch.setattr(
         "pipeline.linker.linker._load_alias_dictionary",
-        lambda: [
+        lambda _context=None: [
             {
                 "term_id": "term-campaign-front",
                 "alias": "campaign front",
@@ -339,7 +339,7 @@ def test_linker_enforces_density_cap_on_final_links(
     )
     monkeypatch.setattr(
         "pipeline.linker.linker._load_alias_dictionary",
-        lambda: [
+        lambda _context=None: [
             {
                 "term_id": "term-alpha",
                 "alias": "alpha",
@@ -445,7 +445,7 @@ def test_linker_short_drafts_do_not_exceed_density_cap(
     )
     monkeypatch.setattr(
         "pipeline.linker.linker._load_alias_dictionary",
-        lambda: [
+        lambda _context=None: [
             {
                 "term_id": "term-front",
                 "alias": "front",
@@ -522,7 +522,7 @@ def test_linker_ambiguity_is_evaluated_per_section(
     )
     monkeypatch.setattr(
         "pipeline.linker.linker._load_alias_dictionary",
-        lambda: [
+        lambda _context=None: [
             {
                 "term_id": "term-front-one",
                 "alias": "front",
@@ -645,7 +645,7 @@ def test_linker_keeps_instance_page_schema_valid_with_glossary_refs(
     )
     monkeypatch.setattr(
         "pipeline.linker.linker._load_alias_dictionary",
-        lambda: [
+        lambda _context=None: [
             {
                 "term_id": "term-scourge",
                 "alias": "Scourge",
@@ -663,6 +663,9 @@ def test_linker_keeps_instance_page_schema_valid_with_glossary_refs(
     report = validate_payload("instance_page", updated_draft)
     assert report.passed is True
     assert not any(issue.code == "schema.invalid" for issue in report.issues)
+    first_ref = updated_draft["glossary_refs"][0]
+    assert first_ref.get("label")
+    assert str(first_ref.get("wiki_url", "")).startswith("http")
 
 
 def test_linker_scans_wiki_first_history_sections(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -735,7 +738,7 @@ def test_linker_scans_wiki_first_history_sections(tmp_path: Path, monkeypatch: p
     )
     monkeypatch.setattr(
         "pipeline.linker.linker._load_alias_dictionary",
-        lambda: [
+        lambda _context=None: [
             {
                 "term_id": "term-scourge",
                 "alias": "Scourge",
@@ -748,3 +751,162 @@ def test_linker_scans_wiki_first_history_sections(tmp_path: Path, monkeypatch: p
     run_glossary_linker(context, [draft_path], max_entity_concurrency=1)
     updated_draft = json.loads(draft_path.read_text(encoding="utf-8"))
     assert any(row["term_id"] == "term-scourge" for row in updated_draft["glossary_refs"])
+    scourge_ref = next(row for row in updated_draft["glossary_refs"] if row["term_id"] == "term-scourge")
+    assert scourge_ref.get("label") == "Scourge"
+    assert str(scourge_ref.get("wiki_url", "")).startswith("http")
+
+
+def test_linker_enriches_refs_from_run_terms(tmp_path: Path) -> None:
+    context = ensure_run_context("run-test-linker-run-terms", artifacts_root=tmp_path / "runs")
+    glossary_dir = context.data_dir / "glossary"
+    glossary_dir.mkdir(parents=True, exist_ok=True)
+    (glossary_dir / "run_terms.jsonl").write_text(
+        json.dumps(
+            {
+                "term_id": "term-scourge",
+                "label": "Scourge",
+                "wiki_url": "https://warcraft.wiki.gg/wiki/Scourge",
+                "category": "faction",
+                "aliases": ["scourge"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    draft_dir = context.data_dir / "drafts" / "zone_page"
+    draft_dir.mkdir(parents=True, exist_ok=True)
+    draft_path = draft_dir / "zone-example.json"
+    draft_path.write_text(
+        json.dumps(
+            {
+                "zone_id": "zone-example",
+                "name": "Example Zone",
+                "at_a_glance": (
+                    "Scourge patrols continue to threaten the frontier while crusader commanders "
+                    "coordinate defensive operations, supply escorts, and repeated counterattacks "
+                    "across contested farmland routes and fortified recovery lines."
+                ),
+                "currently": (
+                    "Crusaders coordinate anti-Scourge operations while patrol networks reconnect "
+                    "roads, secure villages, and hold strategic crossings threatened by undead incursions."
+                ),
+                "history_sections": [
+                    {
+                        "heading": "Conflict",
+                        "body": (
+                            "Scourge offensives reshaped the region for generations, forcing repeated "
+                            "campaigns to reclaim farmland, stabilize roads, and restore defensive "
+                            "infrastructure after prolonged devastation across the frontier."
+                        ),
+                    }
+                ],
+                "major_factions": [],
+                "major_questlines": [],
+                "location_cards": [],
+                "instance_links": [],
+                "glossary_refs": [],
+                "sources": [{"source_id": "src-zone", "url": "https://example.test/zone", "revision_id": "mw:1"}],
+                "provenance": {
+                    "at_a_glance": [
+                        {
+                            "source_id": "src-zone",
+                            "locator": "section:lead paragraph:1",
+                            "revision_id": "mw:1",
+                            "excerpt_hash": "sha1:zone1111111111111",
+                        }
+                    ],
+                    "currently": [],
+                    "history": [],
+                    "major_questlines_alliance": {},
+                    "major_questlines_horde": {},
+                    "major_questlines_shared": {},
+                    "major_characters": {},
+                    "instances": {},
+                    "major_landmarks": {},
+                    "glossary": {},
+                },
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    run_glossary_linker(context, [draft_path], max_entity_concurrency=1)
+    updated = json.loads(draft_path.read_text(encoding="utf-8"))
+    assert updated["glossary_refs"]
+    ref = updated["glossary_refs"][0]
+    assert ref["term_id"] == "term-scourge"
+    assert ref["label"] == "Scourge"
+    assert ref["wiki_url"] == "https://warcraft.wiki.gg/wiki/Scourge"
+
+
+def test_linker_scans_major_faction_card_text(tmp_path: Path) -> None:
+    context = ensure_run_context("run-test-linker-faction-cards", artifacts_root=tmp_path / "runs")
+    glossary_dir = context.data_dir / "glossary"
+    glossary_dir.mkdir(parents=True, exist_ok=True)
+    (glossary_dir / "run_terms.jsonl").write_text(
+        json.dumps(
+            {
+                "term_id": "term-argent-dawn",
+                "label": "Argent Dawn",
+                "wiki_url": "https://warcraft.wiki.gg/wiki/Argent_Dawn",
+                "category": "faction",
+                "aliases": ["argent dawn"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    draft_dir = context.data_dir / "drafts" / "zone_page"
+    draft_dir.mkdir(parents=True, exist_ok=True)
+    draft_path = draft_dir / "zone-example.json"
+    draft_path.write_text(
+        json.dumps(
+            {
+                "zone_id": "zone-example",
+                "name": "Example Zone",
+                "at_a_glance": "Patrol routes remain contested across the frontier.",
+                "currently": "Militia units hold the main road network.",
+                "history_sections": [],
+                "major_factions": [
+                    {
+                        "id": "faction-argent-dawn",
+                        "name": "Argent Dawn",
+                        "summary": (
+                            "Argent Dawn crusaders coordinate reclamation patrols and supply escorts "
+                            "across the region while maintaining defensive positions at key crossings."
+                        ),
+                        "wiki_url": "https://warcraft.wiki.gg/wiki/Argent_Dawn",
+                    }
+                ],
+                "major_questlines": [],
+                "location_cards": [],
+                "instance_links": [],
+                "glossary_refs": [],
+                "sources": [{"source_id": "src-zone", "url": "https://example.test/zone", "revision_id": "mw:1"}],
+                "provenance": {
+                    "at_a_glance": [
+                        {
+                            "source_id": "src-zone",
+                            "locator": "section:lead paragraph:1",
+                            "revision_id": "mw:1",
+                            "excerpt_hash": "sha1:zone1111111111111",
+                        }
+                    ],
+                    "currently": [],
+                    "history": [],
+                    "major_questlines_alliance": {},
+                    "major_questlines_horde": {},
+                    "major_questlines_shared": {},
+                    "major_characters": {},
+                    "instances": {},
+                    "major_landmarks": {},
+                    "glossary": {},
+                },
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    run_glossary_linker(context, [draft_path], max_entity_concurrency=1)
+    updated = json.loads(draft_path.read_text(encoding="utf-8"))
+    assert any(row["term_id"] == "term-argent-dawn" for row in updated["glossary_refs"])

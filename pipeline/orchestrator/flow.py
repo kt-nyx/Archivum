@@ -21,6 +21,7 @@ from pipeline.orchestrator.stages import (
     run_discovery_stage,
     run_draft_stage,
     run_extract_stage,
+    run_glossary_terms_stage,
     run_ingest_stage,
     run_linker_stage,
     run_traverse_quests_stage,
@@ -215,6 +216,15 @@ def run_pipeline_flow(
         run_id=context.run_id,
         verbose=verbose,
     )
+    _run_stage_with_retry(
+        "glossary_terms",
+        lambda: run_glossary_terms_stage(context),
+        retries=retries_per_stage,
+        on_fail_manifest_inputs=[str(path) for path in draft_paths],
+        on_fail_manifest_outputs=[],
+        run_id=context.run_id,
+        verbose=verbose,
+    )
     linker_report_path = _run_stage_with_retry(
         "linker",
         lambda: run_linker_stage(
@@ -223,7 +233,9 @@ def run_pipeline_flow(
             max_entity_concurrency=max_entity_concurrency,
         ),
         retries=retries_per_stage,
-        on_fail_manifest_inputs=[str(path) for path in draft_paths],
+        on_fail_manifest_inputs=[
+            str(path) for path in draft_paths
+        ] + [str(context.data_dir / "glossary" / "run_terms.jsonl")],
         on_fail_manifest_outputs=[],
         run_id=context.run_id,
         verbose=verbose,

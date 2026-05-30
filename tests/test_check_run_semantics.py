@@ -21,9 +21,23 @@ def _write_minimal_run(run_root: Path, *, draft: dict[str, object]) -> None:
     (run_root / "data" / "discovery").mkdir(parents=True)
     (run_root / "data" / "ingest").mkdir(parents=True)
     (run_root / "data" / "evidence").mkdir(parents=True)
+    (run_root / "data" / "glossary").mkdir(parents=True)
     zone_id = "zone-example"
     (run_root / "data" / "drafts" / "zone_page" / f"{zone_id}.json").write_text(
         json.dumps(draft, indent=2),
+        encoding="utf-8",
+    )
+    (run_root / "data" / "glossary" / "run_terms.jsonl").write_text(
+        json.dumps(
+            {
+                "term_id": "term-example-zone",
+                "label": "Example Zone",
+                "wiki_url": "https://example.test/zone",
+                "category": "place",
+                "aliases": ["example zone"],
+            }
+        )
+        + "\n",
         encoding="utf-8",
     )
     (run_root / "data" / "discovery" / "zone_quest_graph_v3.json").write_text(
@@ -307,6 +321,20 @@ def test_check_run_validates_instance_draft(tmp_path: Path, capsys) -> None:
     (run_root / "data" / "drafts" / "instance_page").mkdir(parents=True)
     (run_root / "data" / "discovery").mkdir(parents=True)
     (run_root / "data" / "evidence").mkdir(parents=True)
+    (run_root / "data" / "glossary").mkdir(parents=True)
+    (run_root / "data" / "glossary" / "run_terms.jsonl").write_text(
+        json.dumps(
+            {
+                "term_id": "term-example-zone",
+                "label": "Example Zone",
+                "wiki_url": "https://example.test/zone",
+                "category": "place",
+                "aliases": ["example zone"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     zone_draft = _valid_draft()
     (run_root / "data" / "drafts" / "zone_page" / f"{zone_id}.json").write_text(
@@ -408,5 +436,65 @@ def test_check_run_validates_instance_draft(tmp_path: Path, capsys) -> None:
     check_run(run_root, zone_id=zone_id)
     captured = capsys.readouterr()
     assert "PASS: instance semantic checks ok" in captured.out
+
+
+def test_check_run_validates_linked_glossary_refs(tmp_path: Path, capsys, monkeypatch) -> None:
+    monkeypatch.setenv("LORE_GLOSSARY_MIN_TERMS", "2")
+    run_root = tmp_path / "run-glossary"
+    _write_minimal_run(run_root, draft=_valid_draft())
+    draft_path = run_root / "data" / "drafts" / "zone_page" / "zone-example.json"
+    draft = json.loads(draft_path.read_text(encoding="utf-8"))
+    draft["glossary_refs"] = [
+        {
+            "term_id": "term-example-zone",
+            "label": "Example Zone",
+            "wiki_url": "https://example.test/zone",
+        },
+        {
+            "term_id": "term-scourge",
+            "label": "Scourge",
+            "wiki_url": "https://example.test/scourge",
+        },
+    ]
+    draft_path.write_text(json.dumps(draft, indent=2), encoding="utf-8")
+    glossary_path = run_root / "data" / "glossary" / "run_terms.jsonl"
+    glossary_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "term_id": "term-example-zone",
+                        "label": "Example Zone",
+                        "wiki_url": "https://example.test/zone",
+                        "category": "place",
+                        "aliases": ["example zone"],
+                    }
+                ),
+                json.dumps(
+                    {
+                        "term_id": "term-scourge",
+                        "label": "Scourge",
+                        "wiki_url": "https://example.test/scourge",
+                        "category": "faction",
+                        "aliases": ["scourge"],
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    check_run(run_root, zone_id="zone-example")
+    captured = capsys.readouterr()
+    assert "PASS: glossary semantic checks ok" in captured.out
+
+
+def test_check_run_fails_when_run_terms_missing(tmp_path: Path) -> None:
+    run_root = tmp_path / "run-no-glossary-terms"
+    run_root.mkdir()
+    _write_minimal_run(run_root, draft=_valid_draft())
+    (run_root / "data" / "glossary" / "run_terms.jsonl").unlink()
+    with pytest.raises(SemanticCheckError, match="missing run-scoped glossary terms file"):
+        check_run(run_root, zone_id="zone-example")
 
 

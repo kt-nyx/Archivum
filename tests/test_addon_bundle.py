@@ -19,7 +19,13 @@ def test_build_addon_bundle_writes_manifest_and_indexes(tmp_path: Path) -> None:
                 "zone_id": "zone-western-plaguelands",
                 "location_cards": [{"id": "location-hearthglen", "name": "Hearthglen"}],
                 "instance_links": [{"id": "instance-scholomance", "name": "Scholomance"}],
-                "glossary_refs": [{"term_id": "term-scourge"}],
+                "glossary_refs": [
+                    {
+                        "term_id": "term-scourge",
+                        "label": "Scourge",
+                        "wiki_url": "https://warcraft.wiki.gg/wiki/Scourge",
+                    }
+                ],
             },
             indent=2,
         ),
@@ -27,9 +33,46 @@ def test_build_addon_bundle_writes_manifest_and_indexes(tmp_path: Path) -> None:
     )
     (drafts_dir / "instance_page" / "instance-scholomance.json").write_text(
         json.dumps(
-            {"instance_id": "instance-scholomance", "glossary_refs": [{"term_id": "term-gandling"}]},
+            {
+                "instance_id": "instance-scholomance",
+                "glossary_refs": [
+                    {
+                        "term_id": "term-gandling",
+                        "label": "Darkmaster Gandling",
+                        "wiki_url": "https://warcraft.wiki.gg/wiki/Darkmaster_Gandling",
+                    }
+                ],
+            },
             indent=2,
         ),
+        encoding="utf-8",
+    )
+    glossary_dir = context.data_dir / "glossary"
+    glossary_dir.mkdir(parents=True, exist_ok=True)
+    (glossary_dir / "run_terms.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "term_id": "term-scourge",
+                        "label": "Scourge",
+                        "wiki_url": "https://warcraft.wiki.gg/wiki/Scourge",
+                        "category": "faction",
+                        "aliases": ["scourge"],
+                    }
+                ),
+                json.dumps(
+                    {
+                        "term_id": "term-gandling",
+                        "label": "Darkmaster Gandling",
+                        "wiki_url": "https://warcraft.wiki.gg/wiki/Darkmaster_Gandling",
+                        "category": "person",
+                        "aliases": ["darkmaster gandling"],
+                    }
+                ),
+            ]
+        )
+        + "\n",
         encoding="utf-8",
     )
     validate_report_path = context.reports_dir / "validate"
@@ -54,4 +97,4 @@ def test_build_addon_bundle_writes_manifest_and_indexes(tmp_path: Path) -> None:
         (output_root / "lookup" / "glossary_terms.json").read_text(encoding="utf-8")
     )
     assert glossary_terms["term-scourge"]["wiki_url"].endswith("/Scourge")
-    assert glossary_terms["term-gandling"]["term_id"] == "term-gandling"
+    assert glossary_terms["term-gandling"]["wiki_url"].endswith("/Darkmaster_Gandling")

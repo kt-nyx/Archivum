@@ -567,6 +567,121 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
 
     print(f"PASS: semantic checks ok for {run_root.name} ({resolved_zone_id})")
     _check_instance_drafts(run_root)
+    _check_glossary(run_root)
+
+
+def _glossary_min_terms() -> int:
+    import os
+
+    raw = os.environ.get("LORE_GLOSSARY_MIN_TERMS", "7").strip()
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 7
+
+
+def _linked_glossary_refs(run_root: Path) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    draft_root = run_root / "data" / "drafts"
+    refs: list[dict[str, Any]] = []
+    for draft_dir_name in ("zone_page", "instance_page"):
+        draft_dir = draft_root / draft_dir_name
+        if not draft_dir.exists():
+            continue
+        for draft_path in sorted(draft_dir.glob("*.json")):
+            draft = _load_json(draft_path)
+            if not isinstance(draft, dict):
+                continue
+            for ref in draft.get("glossary_refs") or []:
+                if isinstance(ref, dict):
+                    refs.append(ref)
+    run_terms_path = run_root / "data" / "glossary" / "run_terms.jsonl"
+    run_terms_by_id: dict[str, dict[str, Any]] = {}
+    if run_terms_path.exists():
+        for line in run_terms_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if isinstance(row, dict):
+                term_id = str(row.get("term_id", "")).strip()
+                if term_id:
+                    run_terms_by_id[term_id] = row
+    return refs, run_terms_by_id
+
+
+def _has_wiki_first_drafts(run_root: Path) -> bool:
+    draft_root = run_root / "data" / "drafts"
+    for draft_dir_name in ("zone_page", "instance_page"):
+        draft_dir = draft_root / draft_dir_name
+        if draft_dir.exists() and any(draft_dir.glob("*.json")):
+            return True
+    return False
+
+
+def _check_glossary(run_root: Path) -> None:
+    if not _has_wiki_first_drafts(run_root):
+        return
+
+    run_terms_path = run_root / "data" / "glossary" / "run_terms.jsonl"
+    if not run_terms_path.exists():
+        _fail(f"missing run-scoped glossary terms file: {run_terms_path}")
+    if not run_terms_path.read_text(encoding="utf-8").strip():
+        _fail(f"run-scoped glossary terms file is empty: {run_terms_path}")
+
+    zone_dir = run_root / "data" / "drafts" / "zone_page"
+    refs, run_terms_by_id = _linked_glossary_refs(run_root)
+    unique_term_ids = {str(ref.get("term_id", "")).strip() for ref in refs if str(ref.get("term_id", "")).strip()}
+    if not unique_term_ids:
+        print(f"PASS: glossary semantic checks ok for {run_root.name} (no linked refs yet)")
+        return
+
+    min_terms = _glossary_min_terms()
+    if min_terms > 0 and len(unique_term_ids) < min_terms:
+        _fail(
+            f"glossary link count {len(unique_term_ids)} below minimum {min_terms} "
+            f"for run {run_root.name!r}"
+        )
+
+    for index, ref in enumerate(refs):
+        term_id = str(ref.get("term_id", "")).strip()
+        label = str(ref.get("label", "")).strip()
+        wiki_url = str(ref.get("wiki_url", "")).strip()
+        if not term_id:
+            _fail(f"glossary ref missing term_id at index {index}")
+        if not label:
+            _fail(f"glossary ref missing label for term_id {term_id!r}")
+        if not wiki_url.startswith("http"):
+            _fail(f"glossary ref missing wiki_url for term_id {term_id!r}")
+        if run_terms_by_id and term_id not in run_terms_by_id:
+            _fail(f"linked glossary term {term_id!r} not present in run_terms.jsonl")
+
+    linked_categories: set[str] = set()
+    zone_name_terms: set[str] = set()
+    linked_labels: set[str] = set()
+    if zone_dir.exists():
+        for draft_path in sorted(zone_dir.glob("*.json")):
+            draft = _load_json(draft_path)
+            if not isinstance(draft, dict):
+                continue
+            zone_name = str(draft.get("name", "")).strip().lower()
+            if zone_name:
+                zone_name_terms.add(zone_name)
+    for term_id in unique_term_ids:
+        row = run_terms_by_id.get(term_id, {})
+        category = str(row.get("category", "")).strip().lower()
+        if category:
+            linked_categories.add(category)
+        label = str(row.get("label", "")).strip().lower()
+        if label:
+            linked_labels.add(label)
+
+    if "faction" not in linked_categories:
+        _fail("glossary links missing at least one faction category term")
+    if "place" not in linked_categories:
+        _fail("glossary links missing at least one place category term")
+    if zone_name_terms and not zone_name_terms.intersection(linked_labels):
+        _fail("glossary links missing zone name term coverage")
+
+    print(f"PASS: glossary semantic checks ok for {run_root.name}")
 
 
 def _instance_seed_section_blocks(run_root: Path, instance_id: str) -> list[dict[str, Any]]:

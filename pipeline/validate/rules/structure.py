@@ -37,6 +37,38 @@ def _jaccard_overlap(left: str, right: str) -> float:
     return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
 
 
+def _validate_enriched_glossary_refs(
+    refs: list[Any],
+    *,
+    path_prefix: str,
+) -> list[ValidationIssue]:
+    issues: list[ValidationIssue] = []
+    if not refs:
+        return issues
+    for index, ref in enumerate(refs):
+        label = getattr(ref, "label", None)
+        wiki_url = getattr(ref, "wiki_url", None)
+        if not _non_empty_text(str(label or "")):
+            issues.append(
+                ValidationIssue(
+                    code="structure.glossary_ref_missing_label",
+                    message="glossary ref must include a non-empty label when present",
+                    severity=ValidationSeverity.HARD_FAIL,
+                    path=f"{path_prefix}[{index}].label",
+                )
+            )
+        if not _non_empty_text(str(wiki_url or "")):
+            issues.append(
+                ValidationIssue(
+                    code="structure.glossary_ref_missing_wiki_url",
+                    message="glossary ref must include a non-empty wiki_url when present",
+                    severity=ValidationSeverity.HARD_FAIL,
+                    path=f"{path_prefix}[{index}].wiki_url",
+                )
+            )
+    return issues
+
+
 def _validate_zone(zone: Zone) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
 
@@ -441,6 +473,12 @@ def _validate_zone_page(
                 path="$.major_factions",
             )
         )
+    issues.extend(
+        _validate_enriched_glossary_refs(
+            zone_page.glossary_refs,
+            path_prefix="$.glossary_refs",
+        )
+    )
     return issues
 
 
@@ -473,6 +511,12 @@ def _validate_instance_page(instance_page: InstancePage) -> list[ValidationIssue
                 path="$.history_sections",
             )
         )
+    issues.extend(
+        _validate_enriched_glossary_refs(
+            instance_page.glossary_refs,
+            path_prefix="$.glossary_refs",
+        )
+    )
     return issues
 
 

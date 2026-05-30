@@ -9,6 +9,11 @@ from pathlib import Path
 from typing import Any, TypedDict, cast
 
 from pipeline.common.run_context import RunContext
+from pipeline.glossary.run_terms import (
+    load_run_terms,
+    run_terms_metadata_map,
+    run_terms_to_alias_dictionary,
+)
 
 AUTO_LINK_MIN = 0.87
 REVIEW_MIN = 0.65
@@ -64,7 +69,7 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _load_alias_dictionary() -> list[dict[str, str]]:
+def _load_static_alias_dictionary() -> list[dict[str, str]]:
     dictionary_path = _repo_root() / "dictionary" / "glossary_aliases.v1.json"
     if not dictionary_path.exists():
         return []
@@ -120,6 +125,78 @@ def _load_alias_dictionary() -> list[dict[str, str]]:
                     }
                 )
     return normalized
+
+
+def _load_alias_dictionary(context: RunContext | None = None) -> list[dict[str, str]]:
+    if context is not None:
+        run_terms = load_run_terms(context)
+        if run_terms:
+            return run_terms_to_alias_dictionary(run_terms)
+    return _load_static_alias_dictionary()
+
+
+def _load_term_metadata(context: RunContext) -> dict[str, dict[str, str]]:
+    run_terms = load_run_terms(context)
+    if run_terms:
+        return run_terms_metadata_map(run_terms)
+    static_rows = _load_static_alias_dictionary()
+    metadata: dict[str, dict[str, str]] = {}
+    for row in static_rows:
+        term_id = str(row.get("term_id", "")).strip()
+        alias = str(row.get("alias", "")).strip()
+        if not term_id or not alias:
+            continue
+        if row.get("alias_type", "") != "canonical" and term_id in metadata:
+            continue
+        wiki_slug = alias.replace(" ", "_")
+        metadata[term_id] = {
+            "term_id": term_id,
+            "label": alias,
+            "wiki_url": f"https://warcraft.wiki.gg/wiki/{wiki_slug}",
+            "category": str(row.get("category", "")).strip().lower(),
+        }
+    return metadata
+
+
+def _preference_entity_type(entity_type: str) -> str:
+    if entity_type == "zone_page":
+        return "zone"
+    if entity_type == "instance_page":
+        return "instance"
+    return entity_type
+
+
+def _glossary_ref_payload(term_id: str, term_metadata: dict[str, dict[str, str]]) -> dict[str, str]:
+    meta = term_metadata.get(term_id, {})
+    label = str(meta.get("label", "")).strip()
+    wiki_url = str(meta.get("wiki_url", "")).strip()
+    if not label:
+        label = term_id.removeprefix("term-").replace("-", " ").title()
+    if not wiki_url.startswith("http"):
+        wiki_url = f"https://warcraft.wiki.gg/wiki/{label.replace(' ', '_')}"
+    return {"term_id": term_id, "label": label, "wiki_url": wiki_url}
+
+
+def _append_card_sections(
+    sections: list[tuple[str, str]],
+    field_name: str,
+    cards: object,
+) -> None:
+    if not isinstance(cards, list):
+        return
+    for index, card in enumerate(cards, start=1):
+        if not isinstance(card, dict):
+            continue
+        parts: list[str] = []
+        name = str(card.get("name", "")).strip()
+        summary = str(card.get("summary", "")).strip()
+        if name:
+            parts.append(name)
+        if summary:
+            parts.append(summary)
+        text = " ".join(parts).strip()
+        if text:
+            sections.append((f"{field_name}[{index}]", text))
 
 
 def _load_category_preferences() -> dict[str, list[str]]:
@@ -201,6 +278,10 @@ def _matching_sections(draft: dict[str, Any]) -> list[tuple[str, str]]:
             if not body:
                 continue
             sections.append((f"history_sections[{index}]", body))
+    _append_card_sections(sections, "major_factions", draft.get("major_factions"))
+    _append_card_sections(sections, "location_cards", draft.get("location_cards"))
+    _append_card_sections(sections, "instance_links", draft.get("instance_links"))
+    _append_card_sections(sections, "key_enemies", draft.get("key_enemies"))
     return sections
 
 
@@ -316,7 +397,8 @@ def run_glossary_linker(
 ) -> Path:
     """Generate a deterministic linker QA report from draft glossary references."""
     rules = _load_linker_rules()
-    alias_dictionary = _load_alias_dictionary()
+    alias_dictionary = _load_alias_dictionary(context)
+    term_metadata = _load_term_metadata(context)
     category_preferences = _load_category_preferences()
     disambiguation_rules = _load_disambiguation_rules()
     linked_terms: dict[str, int] = {}
@@ -330,7 +412,9 @@ def run_glossary_linker(
     def _collect_terms(draft_path: Path) -> dict[str, object]:
         draft = json.loads(draft_path.read_text(encoding="utf-8"))
         entity_type = draft_path.parent.name
-        preferred_categories = set(category_preferences.get(entity_type, []))
+        preferred_categories = set(
+            category_preferences.get(_preference_entity_type(entity_type), [])
+        )
         local_manual_candidates: list[dict[str, object]] = []
         local_rejects: list[dict[str, object]] = []
         existing_glossary = draft.get("glossary", draft.get("glossary_refs", []))
@@ -526,7 +610,7 @@ def run_glossary_linker(
                     }
                 )
         density = (len(output) * 100.0 / words) if words else 0.0
-        glossary_payload = [{"term_id": term_id} for term_id in output]
+        glossary_payload = [_glossary_ref_payload(term_id, term_metadata) for term_id in output]
         if entity_type in {"zone_page", "instance_page"}:
             draft["glossary_refs"] = glossary_payload
         else:

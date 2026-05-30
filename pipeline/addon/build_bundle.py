@@ -7,14 +7,14 @@ from pathlib import Path
 from typing import Any
 
 from pipeline.common.run_context import RunContext
+from pipeline.glossary.run_terms import load_run_terms, run_terms_metadata_map
 
 
 def _load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _load_glossary_term_metadata(root_dir: Path) -> dict[str, dict[str, str]]:
-    _ = root_dir
+def _load_static_glossary_term_metadata() -> dict[str, dict[str, str]]:
     dictionary_path = Path(__file__).resolve().parents[2] / "dictionary" / "glossary_aliases.v1.json"
     if not dictionary_path.exists():
         return {}
@@ -45,6 +45,32 @@ def _load_glossary_term_metadata(root_dir: Path) -> dict[str, dict[str, str]]:
     return metadata
 
 
+def _load_glossary_term_metadata(context: RunContext) -> dict[str, dict[str, Any]]:
+    metadata = run_terms_metadata_map(load_run_terms(context))
+    if not metadata:
+        metadata = _load_static_glossary_term_metadata()
+    return metadata
+
+
+def _metadata_for_ref(
+    ref: dict[str, Any],
+    *,
+    metadata: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    term_id = str(ref.get("term_id", "")).strip()
+    if not term_id:
+        return {}
+    base = dict(metadata.get(term_id, {"term_id": term_id}))
+    label = str(ref.get("label", "")).strip()
+    wiki_url = str(ref.get("wiki_url", "")).strip()
+    if label:
+        base["label"] = label
+    if wiki_url:
+        base["wiki_url"] = wiki_url
+    base.setdefault("term_id", term_id)
+    return base
+
+
 def build_addon_bundle(context: RunContext) -> Path:
     output_root = context.root_dir / "build" / "lua"
     zones_dir = output_root / "zones"
@@ -59,7 +85,8 @@ def build_addon_bundle(context: RunContext) -> Path:
     instance_pages = sorted((draft_root / "instance_page").glob("*.json"))
     location_cards: dict[str, dict[str, Any]] = {}
     glossary_refs: dict[str, dict[str, Any]] = {}
-    glossary_term_metadata = _load_glossary_term_metadata(context.root_dir)
+    glossary_term_metadata = _load_glossary_term_metadata(context)
+    static_metadata = _load_static_glossary_term_metadata()
     nav_edges: list[dict[str, str]] = []
 
     for zone_path in zone_pages:
@@ -86,7 +113,10 @@ def build_addon_bundle(context: RunContext) -> Path:
                 continue
             term_id = str(ref.get("term_id", "")).strip()
             if term_id:
-                glossary_refs[term_id] = glossary_term_metadata.get(term_id, {"term_id": term_id})
+                glossary_refs[term_id] = _metadata_for_ref(
+                    ref,
+                    metadata=glossary_term_metadata,
+                )
 
     for instance_path in instance_pages:
         payload = _load_json(instance_path)
@@ -99,7 +129,17 @@ def build_addon_bundle(context: RunContext) -> Path:
                 continue
             term_id = str(ref.get("term_id", "")).strip()
             if term_id:
-                glossary_refs[term_id] = glossary_term_metadata.get(term_id, {"term_id": term_id})
+                glossary_refs[term_id] = _metadata_for_ref(
+                    ref,
+                    metadata=glossary_term_metadata,
+                )
+
+    for term_id, row in glossary_refs.items():
+        if "wiki_url" not in row and term_id in static_metadata:
+            fallback = static_metadata[term_id]
+            row.setdefault("label", fallback.get("label", term_id))
+            row.setdefault("wiki_url", fallback.get("wiki_url", ""))
+            row.setdefault("category", fallback.get("category", ""))
 
     (lookup_dir / "location_cards.json").write_text(
         json.dumps(location_cards, indent=2), encoding="utf-8"

@@ -48,7 +48,7 @@ const SLICES = [
   {
     id: "slice-7",
     content: "Slice 7 — Dynamic glossary generation + linker + wiki URLs on refs",
-    status: "pending" as const,
+    status: "completed" as const,
   },
   {
     id: "slice-8",
@@ -77,6 +77,7 @@ export default function WikiFirstPipelineMasterPlan() {
         <Stat label="Slice 4" value="Completed" tone="success" />
         <Stat label="Slice 5" value="Completed" tone="success" />
         <Stat label="Slice 6" value="Completed" tone="success" />
+        <Stat label="Slice 7" value="Completed" tone="success" />
       </Row>
 
       <Callout tone="info" title="Zone-agnostic engineering policy">
@@ -389,6 +390,63 @@ export default function WikiFirstPipelineMasterPlan() {
       </CollapsibleSection>
 
       <Divider />
+      <H2>Slice 7 — completed summary</H2>
+      <Table
+        headers={["Deliverable", "Status", "Notes"]}
+        rows={[
+          ["run_terms.jsonl generation", "Done", "pipeline/glossary/run_terms.py from drafts + canonical_entity_map"],
+          ["glossary_terms stage", "Done", "draft → glossary_terms → linker in flow.py + CLI glossary-terms command"],
+          ["Linker run dictionary", "Done", "Run terms first; static glossary_aliases.v1.json tests-only fallback"],
+          ["Enriched glossary_refs", "Done", "term_id + label + wiki_url on zone_page / instance_page after linker"],
+          ["Card-text scan surface", "Done", "major_factions, location_cards, instance_links, key_enemies in _matching_sections"],
+          ["Bundle lookup metadata", "Done", "build_bundle reads run_terms + draft refs; static dict fallback for tests"],
+          ["Semantic glossary checks", "Done", "check_run_semantics _check_glossary with LORE_GLOSSARY_MIN_TERMS (default 7)"],
+        ]}
+      />
+
+      <CollapsibleSection title="Slice 7 — intentional deviations (documented)" count={3}>
+        <Table
+          headers={["Topic", "Plan / canvas wording", "Actual behaviour", "Rationale"]}
+          rows={[
+            [
+              "glossary provenance",
+              "Section where alias matched",
+              "Not written to zone_page / instance_page provenance maps",
+              "Deferred to Slice 8 provenance anchor refactor",
+            ],
+            [
+              "Static dictionary",
+              "Tests-only fallback",
+              "Still loaded when run_terms.jsonl missing/empty (linker + bundle)",
+              "Backward-compatible dev/CI; production runs use run-scoped terms",
+            ],
+            [
+              "Min linked terms gate",
+              "WPL > 7 terms acceptance",
+              "Semantics skips density/coverage when no glossary_refs linked yet",
+              "Pre-linker draft runs pass; full pipeline runs enforce via LORE_GLOSSARY_MIN_TERMS",
+            ],
+          ]}
+        />
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Slice 7 — verification (completed)" count={5}>
+        <Table
+          headers={["Check", "Criterion"]}
+          rows={[
+            ["run_terms.jsonl", "Non-empty when zone/instance drafts exist"],
+            ["glossary_refs shape", "label + wiki_url required when refs present (validate structure rules)"],
+            ["Bundle lookup", "lookup/glossary_refs.json resolves wiki_url from run terms"],
+            ["Unit tests", "tests/test_glossary_run_terms.py + extended linker/bundle/semantics/validation tests"],
+            [
+              "Run semantics",
+              "uv run python scripts/check_run_semantics.py artifacts/runs/<run-id> (glossary section auto-runs after linker)",
+            ],
+          ]}
+        />
+      </CollapsibleSection>
+
+      <Divider />
       <H2>Slice 5 — completed summary</H2>
       <Table
         headers={["Deliverable", "Status", "Notes"]}
@@ -596,8 +654,8 @@ export default function WikiFirstPipelineMasterPlan() {
           [
             "dictionary/glossary_aliases.v1.json",
             "Western Plaguelands, Andorhal, Scholomance terms",
-            "Tests-only fallback after run-scoped glossary (Slice 7)",
-            "7",
+            "Tests-only fallback after run-scoped glossary (Slice 7 ✓)",
+            "7 ✓",
           ],
           [
             "tests/fixtures/pilot/source_manifest.json",
@@ -640,9 +698,9 @@ export default function WikiFirstPipelineMasterPlan() {
           ["2 ✓", "W4, W5", "Quest traverse; lore extract; cluster questline cards", "—"],
           ["3 ✓", "W2", "at-a-glance / currently / history workers + election + lint", "—"],
           ["4 ✓", "W6", "Faction zone-significance scoring + ranked cards", "—"],
-          ["5", "W7", "Location denylist, relevance, no defer padding", "Landmarks section"],
-          ["6", "W8", "Instance LLM workers, boss parse, instance_lore traverse", "Instance pages"],
-          ["7", "W9", "Run-scoped glossary terms; linker; wiki_url on refs", "Click-to-wiki UX"],
+          ["5 ✓", "W7", "Location denylist, relevance, no defer padding", "Landmarks section"],
+          ["6 ✓", "W8", "Instance LLM workers, boss parse, instance_lore traverse", "Instance pages"],
+          ["7 ✓", "W9", "Run-scoped glossary terms; linker; wiki_url on refs", "Click-to-wiki UX"],
           ["8", "W10, W11", "Provenance anchors; validation; remove remaining stubs", "Release quality"],
         ]}
       />
@@ -764,14 +822,16 @@ export default function WikiFirstPipelineMasterPlan() {
           ["discovery / storyline_html", "List-item quest parse only (Slice 1 ✓)"],
           ["discovery / entity_typing", "Denylist taxonomy + zone_name self-check (Slice 1 ✓)"],
           ["discovery / enrich", "Scoped evidence + quest_lore / instance seed boss_pool / instance_lore_pool (Slice 1–6 ✓)"],
-          ["scripts/check_run_semantics.py", "Cluster cards + prose + faction + location + instance quality (Slice 1–6 ✓)"],
+          ["scripts/check_run_semantics.py", "Cluster cards + prose + faction + location + instance + glossary quality (Slice 1–7 ✓)"],
           ["draft / wiki_first", "Zone prose + major_factions + location_cards + instance finalize path (Slice 2–6 ✓)"],
-          ["dictionary/", "Run-scoped terms replace static pilot aliases"],
+          ["glossary / run_terms", "Run-scoped terms from drafts + canonical map (Slice 7 ✓)"],
+          ["linker", "Run dictionary + enriched glossary_refs with wiki_url (Slice 7 ✓)"],
+          ["dictionary/", "Run-scoped terms replace static pilot aliases in pipeline runs (Slice 7 ✓)"],
         ]}
       />
 
       <Row gap={8}>
-        <Pill tone="accent">Next: Slice 7</Pill>
+        <Pill tone="accent">Next: Slice 8</Pill>
         <Pill tone="neutral">PoC QA: WPL + Scholomance (data only)</Pill>
         <Pill tone="success">Policy: zone-agnostic code</Pill>
       </Row>

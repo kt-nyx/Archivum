@@ -13,6 +13,7 @@ from pipeline.orchestrator.stages import (
     run_discovery_stage,
     run_draft_stage,
     run_extract_stage,
+    run_glossary_terms_stage,
     run_ingest_stage,
     run_linker_stage,
     run_addon_bundle_stage,
@@ -172,6 +173,16 @@ def draft(
     typer.echo(f"run_id={context.run_id} stage=draft outputs={len(outputs)}")
 
 
+@app.command(name="glossary-terms")
+def glossary_terms_stage(
+    run_id: str = typer.Option(..., help="Existing run id."),
+) -> None:
+    """Build run-scoped glossary terms from drafts and discovery artifacts."""
+    context = ensure_run_context(run_id)
+    output = run_glossary_terms_stage(context)
+    typer.echo(f"run_id={context.run_id} stage=glossary_terms output={output}")
+
+
 @app.command(name="link")
 def link_stage(
     run_id: str = typer.Option(..., help="Existing run id."),
@@ -184,6 +195,7 @@ def link_stage(
 ) -> None:
     """Run glossary linker first pass."""
     context = ensure_run_context(run_id)
+    run_glossary_terms_stage(context)
     draft_paths = sorted((context.data_dir / "drafts").glob("*/*.json"))
     output = run_linker_stage(
         context,

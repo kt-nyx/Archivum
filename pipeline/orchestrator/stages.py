@@ -17,6 +17,7 @@ from pipeline.generate.extract_facts import run_extract_facts
 from pipeline.ingest.fetch_wiki import run_fetch_wiki
 from pipeline.ingest.normalize_source import run_normalize_source
 from pipeline.ingest.traverse_wiki import run_traverse_quests, run_traverse_seed
+from pipeline.glossary.run_terms import build_run_terms
 from pipeline.linker.linker import run_glossary_linker
 from pipeline.validate.engine import validate_payload
 
@@ -299,22 +300,39 @@ def run_draft_stage(
     return outputs
 
 
+def run_glossary_terms_stage(context: RunContext) -> Path:
+    output_path = build_run_terms(context)
+    write_stage_manifest(
+        context,
+        "glossary_terms",
+        status="ok",
+        inputs=[str(context.data_dir / "drafts")],
+        outputs=[str(output_path)],
+        metadata={},
+    )
+    return output_path
+
+
 def run_linker_stage(
     context: RunContext,
     draft_paths: list[Path],
     *,
     max_entity_concurrency: int = 4,
 ) -> Path:
+    run_terms_path = context.data_dir / "glossary" / "run_terms.jsonl"
     output = run_glossary_linker(
         context,
         draft_paths,
         max_entity_concurrency=max_entity_concurrency,
     )
+    linker_inputs = [str(path) for path in draft_paths]
+    if run_terms_path.exists():
+        linker_inputs.append(str(run_terms_path))
     write_stage_manifest(
         context,
         "linker",
         status="ok",
-        inputs=[str(path) for path in draft_paths],
+        inputs=linker_inputs,
         outputs=[str(output)],
         metadata={"max_entity_concurrency": max_entity_concurrency},
     )
@@ -529,13 +547,18 @@ def run_validate_stage(
         }
         linker_review_count = linker_manual_review_by_entity.get(entity_id, 0)
         if linker_review_count > 0:
+            glossary_path = (
+                "$.glossary_refs"
+                if entity_type in {"zone_page", "instance_page"}
+                else "$.glossary"
+            )
             issues = cast(list[dict[str, Any]], row["issues"])
             issues.append(
                 {
                     "code": "linker.manual_review_required",
                     "message": f"{linker_review_count} glossary link candidates require review",
                     "severity": "warn",
-                    "path": "$.glossary",
+                    "path": glossary_path,
                 }
             )
             warn_count_value = row["warn_count"]

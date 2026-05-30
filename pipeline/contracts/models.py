@@ -239,6 +239,8 @@ class InstanceLinkCard(BaseModel):
 
 class GlossaryLink(BaseModel):
     term_id: str = Field(pattern=ID_PATTERN)
+    label: str | None = None
+    wiki_url: str | None = None
 
 
 class QuestlineCard(BaseModel):
