@@ -13,6 +13,14 @@
           "title": "Section Role",
           "type": "string"
         },
+        "raw_section_role": {
+          "title": "Raw Section Role",
+          "type": "string"
+        },
+        "block_index": {
+          "title": "Block Index",
+          "type": "integer"
+        },
         "snippet": {
           "minLength": 1,
           "title": "Snippet",

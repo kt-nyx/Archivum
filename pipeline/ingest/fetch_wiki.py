@@ -272,20 +272,49 @@ def build_structured_links_from_sections(
     return structured
 
 
+def _heading_level(tag_name: str) -> int:
+    lowered = tag_name.lower()
+    if len(lowered) == 2 and lowered[0] == "h" and lowered[1].isdigit():
+        return int(lowered[1])
+    return 6
+
+
+def _apply_rpg_section_prefix(section: str, *, in_rpg: bool) -> str:
+    if not in_rpg:
+        return section
+    if section.startswith("in_the_rpg"):
+        return section
+    return f"in_the_rpg_{section}"
+
+
 def _extract_sections_and_links(
     html: str, *, max_links: int = 300
 ) -> tuple[list[dict[str, str]], list[str], list[dict[str, str]]]:
     sections: list[dict[str, str]] = []
     links: list[str] = []
     current_section = "lead"
+    in_rpg = False
     for tag_name, raw_value in BLOCK_RE.findall(html):
         cleaned = " ".join(TAG_RE.sub(" ", raw_value).split())
         if not cleaned:
             continue
         if tag_name.lower().startswith("h"):
-            current_section = _normalize_locator_section(cleaned)
+            heading_level = _heading_level(tag_name)
+            normalized = _normalize_locator_section(cleaned)
+            if heading_level <= 2:
+                if normalized in {"in_the_rpg", "in_the_rpg_edit"}:
+                    in_rpg = True
+                    current_section = normalized
+                else:
+                    in_rpg = False
+                    current_section = normalized
+            elif in_rpg:
+                current_section = _apply_rpg_section_prefix(normalized, in_rpg=True)
+            else:
+                current_section = normalized
             continue
-        sections.append({"section_role": current_section, "text": cleaned})
+        section_role = _apply_rpg_section_prefix(current_section, in_rpg=in_rpg)
+        sections.append({"section_role": section_role, "text": cleaned})
     for href, label_raw in HREF_RE.findall(html):
         href_value = href.strip()
         if not href_value:

@@ -127,6 +127,8 @@ def _is_storyline_traversal_url(link: str) -> bool:
 
 def _section_role(raw_role: str) -> str:
     lowered = raw_role.lower()
+    if lowered.startswith("in_the_rpg"):
+        return "in_the_rpg"
     for role, patterns in _SECTION_ROLE_PATTERNS.items():
         if any(pattern in lowered for pattern in patterns):
             return role

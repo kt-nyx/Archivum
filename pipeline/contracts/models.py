@@ -173,6 +173,8 @@ class EvidenceItem(BaseModel):
     snippet: str = Field(min_length=1)
     section_role: str = Field(min_length=1)
     confidence: float = Field(ge=0, le=1)
+    raw_section_role: str | None = None
+    block_index: int | None = None
 
 
 class EvidencePack(BaseModel):

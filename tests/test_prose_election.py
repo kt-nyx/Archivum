@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pipeline.common.wiki_evidence_filters import cap_history_pool
 from pipeline.generate.draft.prose_election import (
     history_section_cap,
     select_at_a_glance_pool,
@@ -9,12 +10,22 @@ from pipeline.generate.draft.prose_election import (
 from pipeline.generate.draft.prose_lint import lint_at_a_glance, lint_currently, word_count
 
 
-def _item(section_role: str, snippet: str, *, cluster_id: str = "", source_id: str = "src-zone") -> dict:
+def _item(
+    section_role: str,
+    snippet: str,
+    *,
+    cluster_id: str = "",
+    source_id: str = "src-zone",
+    block_index: int = 0,
+    raw_section_role: str = "",
+) -> dict:
     return {
         "section_role": section_role,
+        "raw_section_role": raw_section_role or section_role,
         "snippet": snippet,
         "cluster_id": cluster_id,
         "source_id": source_id,
+        "block_index": block_index,
     }
 
 
@@ -132,6 +143,43 @@ def test_select_currently_pool_tier4_uses_history_when_expansion_signal_present(
     assert len(selected) == 1
     assert selected[0]["section_role"] == "cataclysm_edit"
     assert "Recovery efforts" in selected[0]["snippet"]
+
+
+def test_select_history_pool_orders_by_block_index() -> None:
+    items = [
+        _item("cataclysm_edit", " ".join(["Cataclysm"] * 30), block_index=3, raw_section_role="cataclysm_edit"),
+        _item("history", " ".join(["Early"] * 30), block_index=1, raw_section_role="history_edit"),
+        _item("history", " ".join(["Middle"] * 30), block_index=2, raw_section_role="history_edit"),
+    ]
+    selected = select_history_pool(items)
+    assert [row["block_index"] for row in selected] == [1, 2, 3]
+
+
+def test_cap_history_pool_keeps_trailing_named_sections() -> None:
+    items = [
+        _item("history", " ".join(["Early"] * 30), block_index=index, raw_section_role="history_edit")
+        for index in range(1, 6)
+    ]
+    items.extend(
+        [
+            _item(
+                "cataclysm_edit",
+                " ".join(["Cataclysm"] * 30),
+                block_index=6,
+                raw_section_role="cataclysm_edit",
+            ),
+            _item(
+                "battle_for_azeroth",
+                " ".join(["BFA"] * 30),
+                block_index=7,
+                raw_section_role="battle_for_azeroth",
+            ),
+        ]
+    )
+    pool = select_history_pool(items)
+    capped = cap_history_pool(pool, cap=5)
+    assert len(capped) == 5
+    assert capped[-1]["raw_section_role"] == "battle_for_azeroth"
 
 
 def test_lint_helpers_flag_word_cap_and_meta() -> None:

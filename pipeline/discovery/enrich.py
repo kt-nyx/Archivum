@@ -8,6 +8,7 @@ from typing import Any, Literal
 
 from pipeline.common.run_context import RunContext
 from pipeline.common.text_normalize import clean_wiki_snippet
+from pipeline.common.wiki_evidence_filters import should_exclude_from_history
 from pipeline.contracts.models import DecisionArtifact, EvidencePack
 from pipeline.discovery.quest_lore import extract_quest_lore
 from pipeline.discovery.storyline_html import parse_storyline_html, v3_to_legacy_v1
@@ -72,6 +73,8 @@ def _instance_seed_field_names(section_role: str, *, lead_emitted: int) -> list[
 
 def _is_history_digest_role(section_role: str) -> bool:
     lowered = section_role.lower()
+    if lowered.startswith("in_the_rpg"):
+        return False
     if lowered in _HISTORY_DIGEST_EXCLUDED:
         return False
     if "history" in lowered:
@@ -83,6 +86,8 @@ def _is_history_digest_role(section_role: str) -> bool:
 
 def _is_currently_input_role(section_role: str) -> bool:
     lowered = section_role.lower()
+    if lowered.startswith("in_the_rpg"):
+        return False
     if lowered in {"quests_edit", "quests", "quests_or_storyline"}:
         return True
     if lowered in _HISTORY_DIGEST_EXCLUDED:
@@ -92,11 +97,25 @@ def _is_currently_input_role(section_role: str) -> bool:
     return False
 
 
+_GEOGRAPHY_INPUT_HINTS = ("maps", "subregion", "geography")
+
+
+def _is_geography_input_role(section_role: str) -> bool:
+    lowered = section_role.lower()
+    if lowered.startswith("in_the_rpg"):
+        return False
+    if lowered in {"geography_edit", "geography", "maps_subregions"}:
+        return True
+    return any(hint in lowered for hint in _GEOGRAPHY_INPUT_HINTS)
+
+
 def _seed_field_names(section_role: str, *, lead_emitted: int) -> list[str]:
     lowered = section_role.lower()
     names: list[str] = []
     if lowered in {"lead", "introduction"} and lead_emitted < 2:
         names.append("at_a_glance_input")
+    if _is_geography_input_role(lowered):
+        names.append("geography_input")
     if _is_history_digest_role(lowered):
         names.append("history_digest")
         names.append("at_a_glance_input")
@@ -224,6 +243,7 @@ def _build_evidence_packs(
                     cluster_snippets.setdefault((subject_id, cluster_id), []).append(pack)
             continue
 
+        block_index = 0
         for block in section_blocks:
             if not isinstance(block, dict):
                 continue
@@ -232,6 +252,7 @@ def _build_evidence_packs(
             snippet = clean_wiki_snippet(str(block.get("text", "")))
             if not snippet:
                 continue
+            block_index += 1
 
             if is_zone_seed:
                 lead_emitted = lead_counts.get(subject_id, 0)
@@ -265,6 +286,24 @@ def _build_evidence_packs(
                 continue
 
             for field_name in field_names:
+                exclude_history = should_exclude_from_history(
+                    {
+                        "snippet": snippet,
+                        "raw_section_role": raw_section,
+                        "section_role": role,
+                    }
+                )
+                if field_name == "history_digest" and exclude_history:
+                    continue
+                if field_name == "geography_input" and exclude_history:
+                    continue
+                if (
+                    field_name == "at_a_glance_input"
+                    and _is_history_digest_role(raw_section)
+                    and exclude_history
+                ):
+                    continue
+
                 build_meta: dict[str, Any] = {
                     "run_id": run_id,
                     "source_id": source_id,
@@ -273,6 +312,8 @@ def _build_evidence_packs(
                     "auxiliary_role": aux_role,
                     "subject_zone_id": subject_zone_id,
                     "section_role": role,
+                    "raw_section_role": raw_section,
+                    "block_index": str(block_index),
                 }
                 if aux_role == "faction_profile":
                     build_meta["faction_id"] = str(snapshot.get("auxiliary_target_id", "")).strip()
@@ -293,6 +334,8 @@ def _build_evidence_packs(
                                 "source_title": page_title or entity_name,
                                 "snippet": snippet,
                                 "section_role": role,
+                                "raw_section_role": raw_section,
+                                "block_index": block_index,
                                 "confidence": 1.0,
                             }
                         ],

@@ -36,3 +36,57 @@ def test_resolve_parent_continent_from_seed_history() -> None:
         }
     ]
     assert resolve_parent_continent(evidence_rows) == "eastern-kingdoms"
+
+
+def test_resolve_parent_continent_ignores_simile_northrend_in_history() -> None:
+    evidence_rows = [
+        {
+            "field_name": "at_a_glance_input",
+            "build_meta": {"source_kind": "seed"},
+            "evidence_items": [
+                {"snippet": "The Western Plaguelands are located in northern Lordaeron."},
+                {
+                    "snippet": (
+                        "Just as in Northrend, the citizens who contracted the plague died "
+                        "and arose as the Lich King's willing slaves."
+                    )
+                },
+            ],
+        },
+        {
+            "field_name": "history_digest",
+            "build_meta": {"source_kind": "seed"},
+            "evidence_items": [
+                {"snippet": "Just as in Northrend, the cold preserved the dead across the frontier."}
+            ],
+        },
+    ]
+    assert resolve_parent_continent(evidence_rows) == "eastern-kingdoms"
+
+
+def test_resolve_parent_continent_prefers_geography_input() -> None:
+    evidence_rows = [
+        {
+            "field_name": "geography_input",
+            "build_meta": {"source_kind": "seed"},
+            "evidence_items": [
+                {
+                    "snippet": (
+                        "Western Plaguelands is a zone in north-central Lordaeron on the Eastern Kingdoms."
+                    )
+                }
+            ],
+        }
+    ]
+    assert resolve_parent_continent(evidence_rows) == "eastern-kingdoms"
+
+
+def test_resolve_parent_continent_maps_lordaeron_only_to_eastern_kingdoms() -> None:
+    evidence_rows = [
+        {
+            "field_name": "at_a_glance_input",
+            "build_meta": {"source_kind": "seed"},
+            "evidence_items": [{"snippet": "The zone spans northern Lordaeron between key crusader holdings."}],
+        }
+    ]
+    assert resolve_parent_continent(evidence_rows) == "eastern-kingdoms"

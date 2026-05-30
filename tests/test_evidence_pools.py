@@ -225,7 +225,54 @@ def test_scoped_evidence_pools_exclude_auxiliary_other_from_prose_fields() -> No
     assert any("Cataclysm recovery" in snippet for snippet in currently_snippets)
 
 
-
+def test_geography_input_and_rpg_exclusion() -> None:
+    snapshots = [
+        {
+            "entity_id": ZONE_ID,
+            "entity_type": "zone",
+            "name": ZONE_NAME,
+            "source_id": "src-zone",
+            "url": "https://warcraft.wiki.gg/wiki/Example_Zone",
+            "section_blocks": [
+                {"section_role": "geography_edit", "text": "Example Zone sits on the Eastern Kingdoms continent."},
+                {
+                    "section_role": "in_the_rpg_geography_edit",
+                    "text": "The Western Plaguelands is a flat country dotted with abandoned farms in Lordaeron.",
+                },
+                {
+                    "section_role": "in_the_rpg_history",
+                    "text": "This section contains information from the Warcraft RPG and is non-canon.",
+                },
+                {
+                    "section_role": "history",
+                    "text": (
+                        "The region suffered catastrophic collapse before long-term military campaigns "
+                        "began restoring order across the ruined frontier and broken keeps."
+                    ),
+                },
+            ],
+            "auxiliary_role": "",
+        }
+    ]
+    packs = _build_evidence_packs(snapshots, "run-test")
+    field_names = {str(row.get("field_name", "")) for row in packs}
+    assert "geography_input" in field_names
+    history_snippets = [
+        item["snippet"]
+        for row in packs
+        if row.get("field_name") == "history_digest"
+        for item in row.get("evidence_items", [])
+    ]
+    assert history_snippets
+    assert not any("Warcraft RPG" in snippet for snippet in history_snippets)
+    geography_snippets = [
+        item["snippet"]
+        for row in packs
+        if row.get("field_name") == "geography_input"
+        for item in row.get("evidence_items", [])
+    ]
+    assert any("Eastern Kingdoms" in snippet for snippet in geography_snippets)
+    assert not any("abandoned farms" in snippet for snippet in geography_snippets)
 
 
 def test_at_a_glance_pool_scoped() -> None:

@@ -40,6 +40,7 @@ from pipeline.generate.draft.location_scoring import (
     finalize_evidence_pools as finalize_location_evidence_pools,
 )
 from pipeline.generate.draft.location_lint import fallback_location_summary
+from pipeline.common.wiki_evidence_filters import cap_history_pool
 from pipeline.generate.draft.prose_election import (
     fallback_at_a_glance,
     fallback_currently,
@@ -117,19 +118,29 @@ def _iter_evidence_items(
             snippet = _clean_snippet(str(item.get("snippet", "")))
             if not snippet:
                 continue
+            build_meta = row.get("build_meta") or {}
+            block_index = item.get("block_index", build_meta.get("block_index", 0))
+            try:
+                block_index_value = int(block_index)
+            except (TypeError, ValueError):
+                block_index_value = 0
             items.append(
                 {
                     "snippet": snippet,
                     "source_url": str(item.get("source_url", "")),
                     "source_title": str(item.get("source_title", "")),
                     "section_role": str(item.get("section_role", "")),
-                    "source_id": str((row.get("build_meta") or {}).get("source_id", "")),
+                    "raw_section_role": str(
+                        item.get("raw_section_role", build_meta.get("raw_section_role", item.get("section_role", "")))
+                    ),
+                    "block_index": block_index_value,
+                    "source_id": str(build_meta.get("source_id", "")),
                     "field_name": str(row.get("field_name", "")),
-                    "cluster_id": str((row.get("build_meta") or {}).get("cluster_id", "")),
-                    "faction_id": str((row.get("build_meta") or {}).get("faction_id", "")),
-                    "faction_name": str((row.get("build_meta") or {}).get("faction_name", "")),
-                    "location_id": str((row.get("build_meta") or {}).get("location_id", "")),
-                    "location_name": str((row.get("build_meta") or {}).get("location_name", "")),
+                    "cluster_id": str(build_meta.get("cluster_id", "")),
+                    "faction_id": str(build_meta.get("faction_id", "")),
+                    "faction_name": str(build_meta.get("faction_name", "")),
+                    "location_id": str(build_meta.get("location_id", "")),
+                    "location_name": str(build_meta.get("location_name", "")),
                 }
             )
     return items
@@ -507,10 +518,18 @@ def _history_sections_from_pool(
 ) -> tuple[list[dict[str, Any]], list[str]]:
     pool = history_pool or select_history_pool(_iter_evidence_items(evidence_rows, {"history_digest"}))
     cap = history_section_cap(pool) or MIN_HISTORY_SECTIONS
-    sections, used = fallback_history_sections(pool, max_sections=cap)
+    draft_pool = cap_history_pool(pool, cap)
+    sections, used = fallback_history_sections(draft_pool, max_sections=cap)
     if sections:
         return sections, used
     return [], []
+
+
+def _draft_history_pool(history_pool: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    max_history = history_section_cap(history_pool)
+    if max_history <= 0:
+        return [], 0
+    return cap_history_pool(history_pool, max_history), max_history
 
 
 def _finalize_at_a_glance(
@@ -913,7 +932,7 @@ def build_zone_page(
     at_pool = select_at_a_glance_pool(pools["at_a_glance_pool"])
     currently_pool = select_currently_pool(pools, zone_name=name)
     history_pool = select_history_pool(pools["history_pool"])
-    max_history = history_section_cap(history_pool)
+    draft_history_pool, max_history = _draft_history_pool(history_pool)
 
     at_a_glance, at_glance_used = _finalize_at_a_glance(
         zone_name=name,
@@ -936,11 +955,13 @@ def build_zone_page(
         used_source_ids.add(pointer["source_id"])
 
     history_sections, history_used = _finalize_history_sections(
-        history_pool=history_pool,
+        history_pool=draft_history_pool,
         evidence_rows=evidence_rows,
         max_history=max_history,
     )
-    history_pointers = _pointers_for_source_ids(history_pool or pools["history_pool"], history_used, revision_map)
+    history_pointers = _pointers_for_source_ids(
+        draft_history_pool or history_pool or pools["history_pool"], history_used, revision_map
+    )
     for pointer in history_pointers:
         used_source_ids.add(pointer["source_id"])
 
@@ -1153,13 +1174,16 @@ def build_instance_page(
     used_source_ids.update(pointer["source_id"] for pointer in overview_pointers)
 
     history_pool = select_history_pool(pools["history_pool"])
+    draft_history_pool, instance_history_cap = _draft_history_pool(history_pool)
+    if instance_history_cap <= 0:
+        instance_history_cap = MAX_HISTORY_SECTIONS
     history_sections, history_used = _finalize_history_sections(
-        history_pool=history_pool,
+        history_pool=draft_history_pool or history_pool,
         evidence_rows=evidence_rows,
-        max_history=MAX_HISTORY_SECTIONS,
+        max_history=instance_history_cap,
     )
     history_pointers = _pointers_for_source_ids(
-        history_pool or select_history_pool(_iter_evidence_items(evidence_rows, {"history_digest"})),
+        draft_history_pool or history_pool or select_history_pool(_iter_evidence_items(evidence_rows, {"history_digest"})),
         history_used,
         revision_map,
     )

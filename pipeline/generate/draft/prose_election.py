@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from pipeline.common.wiki_evidence_filters import should_exclude_from_history
 from pipeline.generate.draft.prose_lint import (
     MAX_AT_A_GLANCE_WORDS,
     MAX_HISTORY_SECTIONS,
@@ -229,21 +230,28 @@ def select_currently_pool(
     return _dedupe_items(fallback, max_items=12)
 
 
+def _history_sort_key(row: dict[str, Any]) -> tuple[int, str]:
+    block_index = row.get("block_index", 0)
+    try:
+        index = int(block_index)
+    except (TypeError, ValueError):
+        index = 0
+    return (index, str(row.get("source_id", "")))
+
+
 def select_history_pool(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     selected: list[dict[str, Any]] = []
     for item in items:
         role = _normalize_role(str(item.get("section_role", "")))
-        if role in _HISTORY_EXCLUDED_ROLES:
+        if role in _HISTORY_EXCLUDED_ROLES or role == "in_the_rpg":
+            continue
+        if should_exclude_from_history(item):
             continue
         snippet = str(item.get("snippet", "")).strip()
         if word_count(snippet) < _HISTORY_MIN_WORDS:
             continue
         selected.append(item)
-    ranked = sorted(
-        selected,
-        key=lambda row: (_role_sort_key(str(row.get("section_role", "other"))), str(row.get("source_id", ""))),
-    )
-    return ranked
+    return sorted(selected, key=_history_sort_key)
 
 
 def history_section_cap(items: list[dict[str, Any]]) -> int:

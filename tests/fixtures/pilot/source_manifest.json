@@ -38,19 +38,5 @@
     "selection_version": "pilot-v1",
     "policy_version": "policy-v1",
     "manifest_run_id": "manifest-pilot-v1"
-  },
-  {
-    "entity_id": "instance-scholomance",
-    "entity_type": "instance",
-    "slug": "scholomance",
-    "name": "Scholomance",
-    "source_id": "src-scholomance-warcraft-lore",
-    "source_url": "https://warcraft.wiki.gg/wiki/Scholomance_(lore)",
-    "source_class": "warcraft_wiki",
-    "priority": 2,
-    "parent_zone_id": "zone-western-plaguelands",
-    "selection_version": "pilot-v1",
-    "policy_version": "policy-v1",
-    "manifest_run_id": "manifest-pilot-v1"
   }
 ]
