@@ -79,10 +79,11 @@ def score_location_candidate(
     if len(name_lowered.split()) <= 1:
         base_score -= 0.1
     score = max(0.0, min(1.0, base_score))
+    rounded_score = round(score, 2)
     final_decision = (
         "exclude"
         if hard_reject_reasons
-        else ("include" if score >= LOCATION_INCLUDE_MIN else "defer")
+        else ("include" if rounded_score >= LOCATION_INCLUDE_MIN else "defer")
     )
     reason_codes = (
         ["hard_reject"]
@@ -93,6 +94,10 @@ def score_location_candidate(
         reason_codes.append("seed_mention")
     if is_named_place_title(name):
         reason_codes.append("named_place")
+    borderline = 0.45 <= rounded_score <= 0.65
+    if borderline and rounded_score >= 0.5 and final_decision == "defer":
+        final_decision = "include"
+        reason_codes.append("borderline_include")
     return score, final_decision, reason_codes
 
 
@@ -142,7 +147,8 @@ def build_location_decision_row(
     hard_reject_reasons = hard_reject_markers(name)
     source_section_role = str(candidate.get("source_section_role", "other"))
     score, final_decision, reason_codes = score_location_candidate(candidate, seed_text=seed_text)
-    borderline = 0.45 <= score <= 0.65
+    rounded_score = round(score, 2)
+    borderline = 0.45 <= rounded_score <= 0.65
     return {
         "subject_id": candidate["location_id"],
         "subject_type": "location",
@@ -162,7 +168,7 @@ def build_location_decision_row(
         "borderline_adjudication": (
             {
                 "prompt_class": "location_significance_borderline",
-                "ruling": "include" if score >= 0.5 else "exclude",
+                "ruling": "include" if rounded_score >= 0.5 else "exclude",
             }
             if borderline
             else None

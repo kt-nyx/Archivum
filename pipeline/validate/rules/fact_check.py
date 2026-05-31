@@ -231,6 +231,27 @@ def validate_fact_check_rules(
     profile = parse_fact_check_profile(profile_value if isinstance(profile_value, str) else None)
 
     payload = parsed_entity.model_dump(mode="json")
+    entity_id_value = payload.get("id") or payload.get("zone_id") or payload.get("instance_id")
+    entity_id = str(entity_id_value) if isinstance(entity_id_value, str) else ""
+
+    if profile == FactCheckProfile.OFF:
+        report = {
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "profile": profile.value,
+            "web_search_enabled": False,
+            "web_search_available": settings.google_ready,
+            "llm_enabled": False,
+            "llm_available": settings.openai_ready,
+            "llm_model": settings.openai_model,
+            "targeted_for_adjudication": False,
+            "target_reasons": [],
+            "claim_count": 0,
+            "claims": [],
+            "review_queue": [],
+        }
+        return [], report
+
     claims = _section_claims(entity_type, payload)
     source_map = _local_snapshot_map(validation_context)
 
@@ -238,9 +259,6 @@ def validate_fact_check_rules(
         validation_context and validation_context.get("fact_check_web_search")
     )
     llm_enabled = bool(validation_context and validation_context.get("fact_check_enable_llm"))
-    if profile == FactCheckProfile.OFF:
-        web_search_enabled = False
-        llm_enabled = False
     max_web_results_raw = (
         validation_context.get("fact_check_max_web_results") if validation_context else 3
     )
@@ -248,8 +266,6 @@ def validate_fact_check_rules(
     llm_model = settings.openai_model
     if validation_context and isinstance(validation_context.get("fact_check_llm_model"), str):
         llm_model = str(validation_context["fact_check_llm_model"])
-    entity_id_value = payload.get("id") or payload.get("zone_id") or payload.get("instance_id")
-    entity_id = str(entity_id_value) if isinstance(entity_id_value, str) else ""
     target_entity_ids: set[str] = set()
     if validation_context and isinstance(
         validation_context.get("fact_check_target_entity_ids"),

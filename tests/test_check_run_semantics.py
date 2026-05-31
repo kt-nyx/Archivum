@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.check_run_semantics import SemanticCheckError, _cluster_ids_from_v3, check_run
+from scripts.check_run_semantics import SemanticCheckError, _cluster_ids_from_v3, check_run, check_strict_validation
 
 
 def test_cluster_ids_from_v3_filters_quest_nodes_only() -> None:
@@ -160,6 +160,120 @@ def test_check_run_passes_minimal_valid_run(tmp_path: Path) -> None:
     run_root.mkdir()
     _write_minimal_run(run_root, draft=_valid_draft())
     check_run(run_root, zone_id="zone-example")
+
+
+def _schema_valid_zone_page_draft() -> dict[str, object]:
+    return {
+        "zone_id": "zone-example",
+        "name": "Example Zone",
+        "wiki_url": "https://example.test/zone",
+        "parent_continent": "eastern-kingdoms",
+        "expansion_context": "retail",
+        "at_a_glance": (
+            "Once a fertile frontier of the kingdom, the region was devastated during the Third War "
+            "and remained blighted for decades before recovery efforts began."
+        ),
+        "currently": (
+            "Crusaders and druids continue to resist undead forces across the ruined frontier "
+            "while recovery efforts reshape roads and outposts."
+        ),
+        "history_sections": [
+            {
+                "heading": "The Third War",
+                "body": "The region was devastated during the invasion and fell under undead control for decades.",
+            }
+        ],
+        "major_factions": [],
+        "major_questlines": [
+            {
+                "id": "cluster-part-1",
+                "title": "Part 1 - Example Arc",
+                "faction": "alliance",
+                "cta_hook": "Crusaders push back undead forces along the ruined road.",
+                "start_anchor": "Quest A",
+                "chain_refs": ["quest-a"],
+                "include_decision": "include",
+                "reason_codes": ["score_based"],
+                "wiki_refs": ["/wiki/Quest_A"],
+            }
+        ],
+        "location_cards": [
+            {
+                "id": "loc-1",
+                "name": "Example Landmark",
+                "location_type": "major_location",
+                "zone_id": "zone-example",
+                "wiki_url": "https://example.test/landmark",
+                "summary": (
+                    "Example Landmark is a fortified outpost in Example Zone where patrols coordinate "
+                    "supply lines, defensive operations, and regional scouting missions across the frontier."
+                ),
+                "significance": "Primary patrol hub for the region.",
+                "decision_reason_codes": ["include"],
+            }
+        ],
+        "instance_links": [],
+        "glossary_refs": [],
+        "sources": [
+            {"source_id": "src-zone", "url": "https://example.test/zone"},
+            {"source_id": "src-quest", "url": "https://example.test/quest"},
+        ],
+        "provenance": {
+            "at_a_glance": [
+                {
+                    "source_id": "src-zone",
+                    "locator": "section:lead paragraph:1",
+                    "revision_id": "mw:1",
+                    "excerpt_hash": "sha256:glance111111111",
+                }
+            ],
+            "currently": [
+                {
+                    "source_id": "src-zone",
+                    "locator": "section:quests paragraph:1",
+                    "revision_id": "mw:1",
+                    "excerpt_hash": "sha256:currently1111",
+                }
+            ],
+            "history": [
+                {
+                    "source_id": "src-zone",
+                    "locator": "section:history paragraph:1",
+                    "revision_id": "mw:1",
+                    "excerpt_hash": "sha256:history111111",
+                }
+            ],
+            "major_questlines_alliance": {},
+            "major_questlines_horde": {},
+            "major_questlines_shared": {},
+            "major_characters": {},
+            "major_factions": {},
+            "instances": {},
+            "major_landmarks": {},
+            "glossary": {},
+        },
+    }
+
+
+def test_check_run_strict_fails_when_semantics_pass_but_validate_hard_fails(
+    tmp_path: Path,
+) -> None:
+    run_root = tmp_path / "run-strict-pointer-cap"
+    run_root.mkdir()
+    draft = _schema_valid_zone_page_draft()
+    draft["provenance"]["at_a_glance"] = [
+        {
+            "source_id": "src-zone",
+            "locator": f"section:lead paragraph:{index}",
+            "revision_id": "mw:1",
+            "excerpt_hash": f"sha256:cap{index:012d}",
+        }
+        for index in range(4)
+    ]
+    _write_minimal_run(run_root, draft=draft)
+    check_run(run_root, zone_id="zone-example")
+    with pytest.raises(SemanticCheckError, match="provenance.pointer_cap_exceeded"):
+        check_strict_validation(run_root)
 
 
 def test_check_run_fails_when_cluster_card_cap_exceeded(tmp_path: Path) -> None:

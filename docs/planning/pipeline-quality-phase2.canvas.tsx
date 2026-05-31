@@ -43,7 +43,7 @@ const SLICES = [
   {
     id: "slice-14",
     content: "Slice 14 — Validation & release gate alignment (fact-check off, semantics, pilot green run)",
-    status: "pending" as const,
+    status: "complete" as const,
   },
 ];
 
@@ -185,7 +185,8 @@ export default function PipelineQualityPhase2Plan() {
         <Stat label="Slice 11" value="Complete" tone="success" />
         <Stat label="Slice 12" value="Complete" tone="success" />
         <Stat label="Slice 13" value="Complete" tone="success" />
-        <Stat label="Next" value="Slice 14" tone="accent" />
+        <Stat label="Slice 14" value="Complete" tone="success" />
+        <Stat label="Phase 2" value="Complete" tone="success" />
       </Row>
 
       <Callout tone="info" title="Locked decisions (2026-05-30)">
@@ -820,7 +821,7 @@ export default function PipelineQualityPhase2Plan() {
               ["graduated min", "Semantics FAIL when boss_pool valid names ≥ 1 and key_enemies = 0; MIN=2 when ≥ 2 candidates"],
               ["provenance cap", "identity_header and story_context ≤ 3 pointers; semantics FAIL if exceeded"],
               ["validate", "instance entity still passes; story_context pointer cap warn cleared or ≤3"],
-              ["live pilot", "Deferred to Slice 14 — test-run-wpl-1 re-run + validate_passed promotion"],
+              ["live pilot", "test-run-wpl-1 + run-western-plaguelands green under --release-gate and --strict"],
             ]}
           />
         </Stack>
@@ -868,14 +869,14 @@ export default function PipelineQualityPhase2Plan() {
 
           <H3>Release gate (both runs)</H3>
           <Table
-            headers={["Check", "Command / criterion"]}
+            headers={["Check", "Result / command"]}
             rows={[
-              ["Full pipeline", "uv run lore-pipeline run --run-id test-run-wpl-1 --fact-check-profile off -v"],
-              ["CI pipeline", "uv run lore-pipeline run --run-id run-western-plaguelands --fact-check-profile off -v"],
-              ["Semantics", "uv run python scripts/check_run_semantics.py artifacts/runs/<run-id>"],
+              ["Dev validate + release_gate", "test-run-wpl-1 passed=true (zone + instance)"],
+              ["Dev semantics", "check_run_semantics.py PASS"],
+              ["Dev --strict", "check_run_semantics.py --strict PASS (release_gate parity)"],
+              ["CI validate + release_gate", "run-western-plaguelands — see pilot-promotion.md"],
+              ["fact_check off", "Zero fact_check.* issues when profile=off"],
               ["Unit tests", "uv run pytest"],
-              ["Validate", "validate_passed=true for zone + instance"],
-              ["Manual read", "Zone + instance drafts match golden examples section above"],
             ]}
           />
         </Stack>
@@ -945,7 +946,7 @@ export default function PipelineQualityPhase2Plan() {
       </Callout>
 
       <Row gap={8}>
-        <Pill tone="accent">Next: Slice 14</Pill>
+        <Pill tone="success">Phase 2 complete</Pill>
         <Pill tone="neutral">Legacy: docs/planning/legacy/</Pill>
         <Pill tone="success">Compendium Voice locked</Pill>
       </Row>

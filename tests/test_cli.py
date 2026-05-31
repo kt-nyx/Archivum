@@ -151,3 +151,48 @@ def test_run_cli_accepts_case_variant_profile_and_normalizes(monkeypatch) -> Non
     )
     assert result.exit_code == 0
     assert observed["profile"] == "warn"
+
+
+def test_validate_cli_passes_release_gate_flag(tmp_path, monkeypatch) -> None:
+    context = ensure_run_context("run-test-validate-release-gate", artifacts_root=tmp_path / "runs")
+    observed: dict[str, bool] = {}
+
+    monkeypatch.setattr("pipeline.cli.ensure_run_context", lambda _run_id=None: context)
+
+    def fake_validate(*_args, **kwargs):
+        observed["release_gate"] = kwargs["release_gate"]
+        return {
+            "passed": True,
+            "validation_report_path": context.reports_dir / "validate" / "validation_report.json",
+            "fact_check_report_path": context.reports_dir / "validate" / "fact_check_report.json",
+            "fact_check_summary_path": context.reports_dir / "validate" / "fact_check_summary.md",
+        }
+
+    monkeypatch.setattr("pipeline.cli.run_validate_stage", fake_validate)
+    result = runner.invoke(
+        app,
+        ["validate", "--run-id", context.run_id, "--fact-check-profile", "off", "--release-gate"],
+    )
+    assert result.exit_code == 0
+    assert observed["release_gate"] is True
+    assert "release_gate=True" in result.stdout
+
+
+def test_run_cli_passes_release_gate_flag(monkeypatch) -> None:
+    observed: dict[str, bool] = {}
+
+    def fake_run_flow(**kwargs):
+        observed["release_gate"] = kwargs["release_gate"]
+        return {
+            "run_id": "run-test",
+            "validate": {"passed": True},
+        }
+
+    monkeypatch.setattr("pipeline.cli.run_pipeline_flow", fake_run_flow)
+    result = runner.invoke(
+        app,
+        ["run", "--fact-check-profile", "off", "--release-gate"],
+    )
+    assert result.exit_code == 0
+    assert observed["release_gate"] is True
+    assert "release_gate=True" in result.stdout

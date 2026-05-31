@@ -243,6 +243,11 @@ def validate(
         max=6,
         help="Per-stage entity concurrency (default 4, tunable 2-6).",
     ),
+    release_gate: bool = typer.Option(
+        False,
+        "--release-gate",
+        help="Apply release-gate validation severity (pointer caps and unresolved overrides hard-fail).",
+    ),
 ) -> None:
     """Run validation stage over generated drafts."""
     normalized_profile = _parse_fact_check_profile(fact_check_profile)
@@ -269,10 +274,11 @@ def validate(
         no_llm_fact_check=no_llm_fact_check,
         fact_check_llm_model=fact_check_llm_model,
         max_entity_concurrency=max_entity_concurrency,
+        release_gate=release_gate,
     )
     typer.echo(
         f"run_id={context.run_id} stage=validate passed={result['passed']} "
-        f"profile={normalized_profile}"
+        f"profile={normalized_profile} release_gate={release_gate}"
     )
 
 
@@ -329,6 +335,11 @@ def run_all(
         "option_a",
         help="Instance variant split policy selector (currently supports: option_a).",
     ),
+    release_gate: bool = typer.Option(
+        False,
+        "--release-gate",
+        help="Apply release-gate validation severity (pointer caps and unresolved overrides hard-fail).",
+    ),
 ) -> None:
     """Run ingest->validate orchestration flow."""
     normalized_profile = _parse_fact_check_profile(fact_check_profile)
@@ -352,10 +363,11 @@ def run_all(
         max_entity_concurrency=max_entity_concurrency,
         retries_per_stage=retries_per_stage,
         verbose=verbose,
+        release_gate=release_gate,
     )
     typer.echo(
         f"run_id={result['run_id']} validate_passed={result['validate']['passed']} "
-        f"profile={normalized_profile} retail_only={retail_only} "
+        f"profile={normalized_profile} release_gate={release_gate} retail_only={retail_only} "
         f"instance_variant_policy={instance_variant_policy}"
     )
 

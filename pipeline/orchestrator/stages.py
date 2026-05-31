@@ -19,6 +19,11 @@ from pipeline.ingest.normalize_source import run_normalize_source
 from pipeline.ingest.traverse_wiki import run_traverse_quests, run_traverse_seed
 from pipeline.glossary.run_terms import build_run_terms
 from pipeline.linker.linker import run_glossary_linker
+from pipeline.validate.context import (
+    build_entity_validation_context,
+    load_validation_run_resources_from_context,
+    resolve_draft_entity_id,
+)
 from pipeline.validate.engine import validate_payload
 
 
@@ -351,6 +356,7 @@ def run_validate_stage(
     fact_check_llm_model: str = "gpt-5.5",
     max_entity_concurrency: int = 4,
     no_llm_fact_check: bool = False,
+    release_gate: bool = False,
 ) -> dict[str, Any]:
     normalized_fact_check_profile = fact_check_profile.strip().lower()
     if normalized_fact_check_profile not in {"off", "warn", "strict"}:
@@ -361,67 +367,10 @@ def run_validate_stage(
     report_rows: list[dict[str, Any]] = []
     fact_check_rows: list[dict[str, Any]] = []
     all_passed = True
-    snapshots_path = context.stage_dir("ingest") / "source_snapshots.json"
-    source_snapshots: list[dict[str, Any]] = []
-    if snapshots_path.exists():
-        snapshots_blob = json.loads(snapshots_path.read_text(encoding="utf-8"))
-        if isinstance(snapshots_blob, list):
-            source_snapshots = [row for row in snapshots_blob if isinstance(row, dict)]
-    linker_manual_review_by_entity: dict[str, int] = {}
-    if linker_report_path is not None and linker_report_path.exists():
-        linker_payload = json.loads(linker_report_path.read_text(encoding="utf-8"))
-        manual_rows = linker_payload.get("manual_review_candidates", [])
-        if isinstance(manual_rows, list):
-            for row in manual_rows:
-                if not isinstance(row, dict):
-                    continue
-                entity_id = row.get("entity_id")
-                if isinstance(entity_id, str):
-                    linker_manual_review_by_entity[entity_id] = (
-                        linker_manual_review_by_entity.get(entity_id, 0) + 1
-                    )
-    fact_check_target_reasons: dict[str, set[str]] = {}
-    for entity_id in linker_manual_review_by_entity:
-        fact_check_target_reasons.setdefault(entity_id, set()).add("linker_manual_review")
-
-    coalesce_decisions_path = context.data_dir / "coalesced" / "coalesce_decisions.json"
-    if coalesce_decisions_path.exists():
-        coalesce_blob = json.loads(coalesce_decisions_path.read_text(encoding="utf-8"))
-        if isinstance(coalesce_blob, list):
-            for row in coalesce_blob:
-                if not isinstance(row, dict):
-                    continue
-                entity_id = row.get("entity_id")
-                if not isinstance(entity_id, str) or not entity_id:
-                    continue
-                tie_break_events = row.get("tie_break_events")
-                if isinstance(tie_break_events, int) and tie_break_events > 0:
-                    fact_check_target_reasons.setdefault(entity_id, set()).add("coalesce_tie_break")
-                confidence = row.get("confidence")
-                if isinstance(confidence, (int, float)) and float(confidence) < 0.88:
-                    fact_check_target_reasons.setdefault(entity_id, set()).add(
-                        "coalesce_low_confidence"
-                    )
-
-    draft_decisions_path = context.data_dir / "drafts" / "draft_decisions.json"
-    if draft_decisions_path.exists():
-        draft_blob = json.loads(draft_decisions_path.read_text(encoding="utf-8"))
-        if isinstance(draft_blob, list):
-            for row in draft_blob:
-                if not isinstance(row, dict):
-                    continue
-                entity_id = row.get("entity_id")
-                if not isinstance(entity_id, str) or not entity_id:
-                    continue
-                if str(row.get("schema_repair_applied", "")).lower() == "yes":
-                    fact_check_target_reasons.setdefault(entity_id, set()).add(
-                        "draft_schema_repair"
-                    )
-
-    fact_check_target_entity_ids = sorted(fact_check_target_reasons)
-    fact_check_target_reason_map = {
-        entity_id: sorted(reasons) for entity_id, reasons in fact_check_target_reasons.items()
-    }
+    resources = load_validation_run_resources_from_context(context)
+    linker_manual_review_by_entity = resources.linker_manual_review_by_entity
+    fact_check_target_entity_ids = resources.fact_check_target_entity_ids
+    fact_check_target_reason_map = resources.fact_check_target_reasons
 
     resolved_enable_llm = fact_check_enable_llm
     if resolved_enable_llm is None:
@@ -438,42 +387,10 @@ def run_validate_stage(
     if no_llm_fact_check:
         resolved_enable_llm = False
 
-    questline_decisions_path = context.data_dir / "decisions" / "questline_inclusion_decisions.json"
-    location_decisions_path = context.data_dir / "decisions" / "location_significance_decisions.json"
-    questline_decisions: list[dict[str, Any]] = []
-    location_decisions: list[dict[str, Any]] = []
-    if questline_decisions_path.exists():
-        blob = json.loads(questline_decisions_path.read_text(encoding="utf-8"))
-        if isinstance(blob, list):
-            questline_decisions = [row for row in blob if isinstance(row, dict)]
-    if location_decisions_path.exists():
-        blob = json.loads(location_decisions_path.read_text(encoding="utf-8"))
-        if isinstance(blob, list):
-            location_decisions = [row for row in blob if isinstance(row, dict)]
-
-    def _wiki_first_validation_context(entity_id: str) -> dict[str, Any]:
-        questline_row = next(
-            (row for row in questline_decisions if str(row.get("subject_id", "")) == entity_id),
-            None,
-        )
-        location_include_count = sum(
-            1
-            for row in location_decisions
-            if str(row.get("final_decision", "")) == "include"
-        )
-        return {
-            "questline_expect_include": str((questline_row or {}).get("final_decision", "")) == "include",
-            "location_expect_card_count": location_include_count,
-        }
-
     def _validate_one(draft_path: Path) -> tuple[dict[str, Any], dict[str, Any] | None]:
         raw_payload = json.loads(draft_path.read_text(encoding="utf-8"))
         payload = raw_payload if isinstance(raw_payload, dict) else {}
-        payload_id = payload.get("id")
-        if isinstance(payload_id, str) and payload_id.strip():
-            entity_id = payload_id.strip()
-        else:
-            entity_id = draft_path.stem or "unknown-entity"
+        entity_id = resolve_draft_entity_id(draft_path, payload)
         entity_type = draft_path.parent.name
         append_trace_event(
             context,
@@ -487,21 +404,16 @@ def run_validate_stage(
             report = validate_payload(
                 entity_type,
                 payload,
-                validation_context={
-                    "fact_check_profile": normalized_fact_check_profile,
-                    "fact_check_web_search": fact_check_web_search,
-                    "fact_check_max_web_results": fact_check_max_web_results,
-                    "fact_check_enable_llm": resolved_enable_llm,
-                    "fact_check_llm_model": fact_check_llm_model,
-                    "fact_check_source_snapshots": source_snapshots,
-                    "fact_check_target_entity_ids": fact_check_target_entity_ids,
-                    "fact_check_target_reasons": fact_check_target_reason_map,
-                    # warn/strict: require ingest bodies for similarity; strict treats missing
-                    # bodies as hard-fail (see similarity rules).
-                    "similarity_require_snapshots": normalized_fact_check_profile
-                    in {"warn", "strict"},
-                    **_wiki_first_validation_context(entity_id),
-                },
+                validation_context=build_entity_validation_context(
+                    entity_id=entity_id,
+                    fact_check_profile=normalized_fact_check_profile,
+                    release_gate=release_gate,
+                    resources=resources,
+                    fact_check_web_search=fact_check_web_search,
+                    fact_check_max_web_results=fact_check_max_web_results,
+                    fact_check_enable_llm=bool(resolved_enable_llm),
+                    fact_check_llm_model=fact_check_llm_model,
+                ),
             )
         except Exception as exc:
             append_trace_event(
@@ -587,6 +499,7 @@ def run_validate_stage(
             {
                 "run_id": context.run_id,
                 "fact_check_profile": normalized_fact_check_profile,
+                "release_gate": release_gate,
                 "no_llm_fact_check": no_llm_fact_check,
                 "llm_model": fact_check_llm_model,
                 "fact_check_target_entity_count": len(fact_check_target_entity_ids),
@@ -648,6 +561,7 @@ def run_validate_stage(
         metadata={
             "passed": all_passed,
             "fact_check_profile": normalized_fact_check_profile,
+            "release_gate": release_gate,
             "web_search_enabled": fact_check_web_search,
             "llm_enabled": resolved_enable_llm,
             "no_llm_fact_check": no_llm_fact_check,

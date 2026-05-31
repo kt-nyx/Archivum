@@ -22,6 +22,16 @@ def test_wpl_landmarks_reach_include_threshold_with_seed_text() -> None:
         assert decision == "include"
 
 
+def test_borderline_location_score_promotes_to_include() -> None:
+    score, decision, reasons = score_location_candidate(
+        _candidate("Andorhal", role="history"),
+        seed_text="Western Plaguelands history mentions Andorhal repeatedly.",
+    )
+    assert round(score, 2) == 0.65
+    assert decision == "include"
+    assert "borderline_include" in reasons
+
+
 def test_junk_location_titles_are_rejected() -> None:
     for title in ("Lore", "ADP", "Scourge", "Argent Dawn"):
         reject, reasons = should_reject_location_title(title, zone_name="Western Plaguelands")

@@ -59,6 +59,12 @@ Minimal local flow:
    - `uv run lore-pipeline ingest --run-id run-local-mp3`
    - `uv run lore-pipeline run --run-id run-local-mp3 --fact-check-profile warn`
 
+### Pilot promotion (Western Plaguelands)
+
+Dual-run checklist for dev (`test-run-wpl-1`) and CI (`run-western-plaguelands`) lives in
+[`docs/planning/pilot-promotion.md`](docs/planning/pilot-promotion.md). Use `--release-gate` on promotion runs so
+pipeline `validate_passed` matches `check_run_semantics.py --strict`.
+
 ### Wiki ingest (MediaWiki)
 
 `pipeline/ingest/fetch_wiki.py` uses MediaWiki `api.php?action=parse` for canonical article paths (`/wiki/...`) and now captures:

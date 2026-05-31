@@ -1087,6 +1087,79 @@ def test_zone_page_fact_check_uses_zone_id_as_entity_id() -> None:
     assert report.fact_check_report["entity_id"] == "zone-western-plaguelands"
 
 
+def _low_overlap_fact_check_context(source_id: str = "src-zone") -> dict[str, object]:
+    return {
+        "fact_check_source_snapshots": [
+            {
+                "source_id": source_id,
+                "url": "https://example.test/unrelated",
+                "body": (
+                    "Unrelated encyclopedic content about distant continents, trade routes, "
+                    "and historical events with no overlap to the draft narrative sections."
+                ),
+            }
+        ],
+    }
+
+
+def test_fact_check_off_emits_no_insufficient_evidence_zone_page() -> None:
+    payload = _valid_zone_page_payload()
+    report = validate_payload(
+        "zone_page",
+        payload,
+        validation_context={
+            "fact_check_profile": "off",
+            **_low_overlap_fact_check_context(),
+        },
+    )
+    codes = {issue.code for issue in report.issues}
+    assert not any(code.startswith("fact_check.") for code in codes)
+    assert report.fact_check_report is not None
+    assert report.fact_check_report["profile"] == "off"
+    assert report.fact_check_report["claim_count"] == 0
+
+
+def test_fact_check_off_emits_no_insufficient_evidence_instance_page() -> None:
+    payload = _valid_instance_page_payload()
+    report = validate_payload(
+        "instance_page",
+        payload,
+        validation_context={
+            "fact_check_profile": "off",
+            **_low_overlap_fact_check_context("src-instance"),
+        },
+    )
+    codes = {issue.code for issue in report.issues}
+    assert not any(code.startswith("fact_check.") for code in codes)
+    assert report.fact_check_report is not None
+    assert report.fact_check_report["profile"] == "off"
+
+
+def test_fact_check_warn_profile_emits_insufficient_evidence_on_low_overlap() -> None:
+    payload = _valid_zone_page_payload()
+    report = validate_payload(
+        "zone_page",
+        payload,
+        validation_context={
+            "fact_check_profile": "warn",
+            **_low_overlap_fact_check_context(),
+        },
+    )
+    codes = {issue.code for issue in report.issues}
+    assert "fact_check.insufficient_evidence" in codes
+
+
+def test_instance_page_key_enemies_empty_hard_fails_under_release_gate() -> None:
+    payload = _valid_instance_page_payload()
+    report = validate_payload(
+        "instance_page",
+        payload,
+        validation_context={"release_gate": True},
+    )
+    assert report.passed is False
+    assert any(issue.code == "budget.instance_key_characters_empty" for issue in report.issues)
+
+
 def test_zone_page_similarity_rules_execute_against_ingest_snapshots() -> None:
     payload = _valid_zone_page_payload()
     payload["at_a_glance"] = (

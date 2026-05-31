@@ -204,10 +204,27 @@ def collect_boss_candidates(
     section_blocks: list[dict[str, Any]],
     instance_name: str,
     boss_pool_items: list[dict[str, Any]] | None = None,
+    structured_links: list[dict[str, Any]] | None = None,
 ) -> list[BossCandidate]:
-    """Parse boss names from encounter sections and boss_pool evidence."""
+    """Parse boss names from encounter sections, structured links, and boss_pool evidence."""
     boss_pool_items = boss_pool_items or []
     candidates: dict[str, BossCandidate] = {}
+
+    def _register(title: str, url: str, role: str) -> None:
+        if should_reject_boss_title(title, instance_name=instance_name):
+            return
+        boss_id = _slug_id(title)
+        if not boss_id:
+            return
+        key = normalize_title(title)
+        if key in candidates:
+            return
+        candidates[key] = BossCandidate(
+            boss_id=boss_id,
+            name=title,
+            wiki_url=url,
+            source_section_role=role,
+        )
 
     for block in section_blocks:
         if not isinstance(block, dict):
@@ -217,37 +234,25 @@ def collect_boss_candidates(
             continue
         text = str(block.get("text", ""))
         for title, url in _extract_wiki_links(text):
-            if should_reject_boss_title(title, instance_name=instance_name):
-                continue
-            boss_id = _slug_id(title)
-            if not boss_id:
-                continue
-            key = normalize_title(title)
-            if key in candidates:
-                continue
-            candidates[key] = BossCandidate(
-                boss_id=boss_id,
-                name=title,
-                wiki_url=url,
-                source_section_role=role,
-            )
+            _register(title, url, role)
+
+    for row in structured_links or []:
+        if not isinstance(row, dict):
+            continue
+        href = str(row.get("href", "")).strip()
+        if not href.startswith("/wiki/"):
+            continue
+        path = href.removeprefix("/wiki/").split("#", 1)[0].strip()
+        if not path:
+            continue
+        title = str(row.get("label", "")).strip() or _title_from_wiki_path(path)
+        role = str(row.get("section_role", "structured_link"))
+        url = href if href.startswith("http") else f"https://warcraft.wiki.gg/wiki/{path}"
+        _register(title, url, role)
 
     for item in boss_pool_items:
         for title, url in _extract_wiki_links(str(item.get("snippet", ""))):
-            if should_reject_boss_title(title, instance_name=instance_name):
-                continue
-            boss_id = _slug_id(title)
-            if not boss_id:
-                continue
-            key = normalize_title(title)
-            if key in candidates:
-                continue
-            candidates[key] = BossCandidate(
-                boss_id=boss_id,
-                name=title,
-                wiki_url=url,
-                source_section_role=str(item.get("section_role", "boss_pool")),
-            )
+            _register(title, url, str(item.get("section_role", "boss_pool")))
 
     ordered = sorted(candidates.values(), key=lambda row: row.name.lower())
     for candidate in ordered:

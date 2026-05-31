@@ -110,6 +110,7 @@ def run_pipeline_flow(
     no_llm_fact_check: bool = False,
     retries_per_stage: int = 1,
     verbose: bool = False,
+    release_gate: bool = False,
 ) -> dict[str, Any]:
     """Run staged ingest->validate flow with retries and trace artifacts."""
     context = ensure_run_context(run_id)
@@ -253,6 +254,7 @@ def run_pipeline_flow(
             fact_check_llm_model=fact_check_llm_model,
             max_entity_concurrency=max_entity_concurrency,
             no_llm_fact_check=no_llm_fact_check,
+            release_gate=release_gate,
         ),
         retries=retries_per_stage,
         on_fail_manifest_inputs=[str(path) for path in draft_paths],

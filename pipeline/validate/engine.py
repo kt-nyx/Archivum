@@ -84,7 +84,7 @@ def validate_payload(
             entity_type, parsed_entity, validation_context=dict(validation_context or {})
         )
     )
-    issues.extend(validate_budget_rules(entity_type, parsed_entity))
+    issues.extend(validate_budget_rules(entity_type, parsed_entity, validation_context=validation_context))
     issues.extend(
         validate_provenance_rules(entity_type, parsed_entity, validation_context=validation_context)
     )

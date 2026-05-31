@@ -15,8 +15,10 @@ from pipeline.generate.draft.instance_lint import (
     lint_key_enemy_summary,
     lint_overview,
 )
+from pipeline.discovery.entity_typing import normalize_title
 from pipeline.discovery.geography import resolve_parent_continent
 from pipeline.discovery.instance_bosses import BossCandidate, collect_boss_candidates
+from pipeline.discovery.world_registry import entry_kinds
 from pipeline.contracts.models import INSTANCE_MAX_KEY_CHARACTERS
 from pipeline.generate.draft.faction_lint import ensure_sentence_terminator, lint_faction_summary
 from pipeline.generate.draft.faction_scoring import (
@@ -59,7 +61,7 @@ from pipeline.generate.draft.prose_lint import (
     lint_currently,
     lint_history_sections,
 )
-from pipeline.generate.draft.card_lint import finalize_cta_hook, lint_cta_hook
+from pipeline.generate.draft.card_lint import finalize_cta_hook, lint_cta_hook, strip_zone_name_from_cta
 from pipeline.generate.draft.provenance import build_revision_index, collect_sources_manifest
 from pipeline.generate.draft.wiki_first_workers import (
     synthesize_at_a_glance,
@@ -193,6 +195,18 @@ def _pointer_for_item(
         "revision_id": revision_id,
         "excerpt_hash": f"sha256:{digest}",
     }
+
+
+_GEOGRAPHY_KINDS = frozenset({"zone", "continent", "capital", "region", "instance"})
+
+
+def _sanitize_cluster_title(cluster_title: str, *, zone_name: str) -> str:
+    title = cluster_title.strip() or "Main storylines"
+    if entry_kinds(title) & _GEOGRAPHY_KINDS:
+        return "Main storylines"
+    if zone_name and normalize_title(zone_name) == normalize_title(title):
+        return "Main storylines"
+    return title
 
 
 def _cap_card_pointers(
@@ -652,7 +666,17 @@ def _finalize_history_sections(
         if lint_history_sections(sections, max_sections=lint_cap):
             sections, used = [], []
     if not sections:
-        sections, used = _history_sections_from_pool(history_pool, evidence_rows=evidence_rows)
+        pool_sections, pool_used = _history_sections_from_pool(history_pool, evidence_rows=evidence_rows)
+        if pool_sections:
+            kept_sections = [
+                section
+                for section in pool_sections
+                if not lint_history_sections([section], max_sections=1)
+            ]
+            candidate_sections = kept_sections or pool_sections
+            if not lint_history_sections(candidate_sections, max_sections=lint_cap):
+                sections = candidate_sections[:section_cap]
+                used = pool_used
     return sections, used
 
 
@@ -964,8 +988,11 @@ def _append_questline_card(
     questline_decision: dict[str, Any] | None,
     used_source_ids: set[str],
     card_suffix: str = "",
+    zone_name: str = "",
 ) -> None:
     card_id = f"cluster-{cluster_id}{card_suffix}"
+    if zone_name.strip():
+        cta = strip_zone_name_from_cta(cta, zone_name=zone_name)
     cta = finalize_cta_hook(cta)
     major_questlines.append(
         {
@@ -1108,19 +1135,25 @@ def build_zone_page(
 
     at_glance_pool = at_pool or pools["at_a_glance_pool"]
     at_a_glance_pointers = _pointers_for_source_ids(at_glance_pool, at_glance_used, revision_map)
-    at_a_glance_pointers = _ensure_pointer_count(
-        at_a_glance_pointers,
-        pool=at_glance_pool,
-        revision_map=revision_map,
-        min_count=_pointer_count_for_words(_word_count(at_a_glance)),
+    at_a_glance_pointers = _cap_card_pointers(
+        _ensure_pointer_count(
+            at_a_glance_pointers,
+            pool=at_glance_pool,
+            revision_map=revision_map,
+            min_count=_pointer_count_for_words(_word_count(at_a_glance)),
+        ),
+        max_count=3,
     )
     currently_pointer_pool = currently_pool or pools["currently_pool"]
     currently_pointers = _pointers_for_source_ids(currently_pointer_pool, currently_used, revision_map)
-    currently_pointers = _ensure_pointer_count(
-        currently_pointers,
-        pool=currently_pointer_pool,
-        revision_map=revision_map,
-        min_count=_pointer_count_for_words(_word_count(currently)),
+    currently_pointers = _cap_card_pointers(
+        _ensure_pointer_count(
+            currently_pointers,
+            pool=currently_pointer_pool,
+            revision_map=revision_map,
+            min_count=_pointer_count_for_words(_word_count(currently)),
+        ),
+        max_count=3,
     )
     for pointer in at_a_glance_pointers + currently_pointers:
         used_source_ids.add(pointer["source_id"])
@@ -1144,11 +1177,14 @@ def build_zone_page(
         for section in history_sections
         if isinstance(section, dict)
     )
-    history_pointers = _ensure_pointer_count(
-        history_pointers,
-        pool=history_pointer_pool,
-        revision_map=revision_map,
-        min_count=_pointer_count_for_words(_word_count(history_text)),
+    history_pointers = _cap_card_pointers(
+        _ensure_pointer_count(
+            history_pointers,
+            pool=history_pointer_pool,
+            revision_map=revision_map,
+            min_count=_pointer_count_for_words(_word_count(history_text)),
+        ),
+        max_count=3,
     )
     for pointer in history_pointers:
         used_source_ids.add(pointer["source_id"])
@@ -1181,7 +1217,10 @@ def build_zone_page(
         quests = cluster.get("quests", [])
         if not isinstance(quests, list) or not quests:
             continue
-        cluster_title = str(cluster.get("cluster_title", "Main storylines"))
+        cluster_title = _sanitize_cluster_title(
+            str(cluster.get("cluster_title", "Main storylines")),
+            zone_name=name,
+        )
         faction = _majority_faction([str(row.get("faction_binding", "shared")) for row in quests if isinstance(row, dict)])
         first_quest = quests[0] if isinstance(quests[0], dict) else {}
         start_anchor = str(first_quest.get("title", cluster_title))
@@ -1222,6 +1261,7 @@ def build_zone_page(
             revision_map=revision_map,
             questline_decision=questline_decision,
             used_source_ids=used_source_ids,
+            zone_name=name,
         )
         emitted_cards += 1
         if overflow_refs:
@@ -1262,6 +1302,7 @@ def build_zone_page(
                     questline_decision=questline_decision,
                     used_source_ids=used_source_ids,
                     card_suffix="-continued",
+                    zone_name=name,
                 )
                 emitted_cards += 1
             else:
@@ -1470,10 +1511,23 @@ def build_instance_page(
     blocks = section_blocks if section_blocks is not None else fact_pack.get("section_blocks", [])
     if not isinstance(blocks, list):
         blocks = []
+    structured_links: list[dict[str, Any]] = []
+    if snapshots:
+        for snapshot in snapshots:
+            if (
+                str(snapshot.get("entity_id", "")).strip() == instance_id
+                and str(snapshot.get("entity_type", "")).strip() == "instance"
+                and not str(snapshot.get("auxiliary_role", "")).strip()
+            ):
+                raw_links = snapshot.get("structured_links", [])
+                if isinstance(raw_links, list):
+                    structured_links = [row for row in raw_links if isinstance(row, dict)]
+                break
     boss_candidates = collect_boss_candidates(
         section_blocks=blocks,
         instance_name=name,
         boss_pool_items=pools["boss_pool"],
+        structured_links=structured_links,
     )
     key_enemies, key_enemy_provenance, enemy_used = _finalize_key_enemies(
         instance_name=name,

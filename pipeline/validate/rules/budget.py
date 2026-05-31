@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from collections.abc import Mapping
+
 from pydantic import BaseModel
 
 from pipeline.contracts.models import (
@@ -338,8 +340,22 @@ def _validate_zone_page(zone_page: ZonePage) -> list[ValidationIssue]:
     return issues
 
 
-def _validate_instance_page(instance_page: InstancePage) -> list[ValidationIssue]:
+def _validate_instance_page(
+    instance_page: InstancePage,
+    *,
+    validation_context: Mapping[str, object] | None = None,
+) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
+    release_gate = bool(validation_context and validation_context.get("release_gate"))
+    if release_gate and not instance_page.key_enemies:
+        issues.append(
+            ValidationIssue(
+                code="budget.instance_key_characters_empty",
+                message="instance_page.key_enemies must not be empty at release gate",
+                severity=ValidationSeverity.HARD_FAIL,
+                path="$.key_enemies",
+            )
+        )
     if (
         not INSTANCE_MIN_KEY_CHARACTERS
         <= len(instance_page.key_enemies)
@@ -396,7 +412,12 @@ def _validate_instance_page(instance_page: InstancePage) -> list[ValidationIssue
     return issues
 
 
-def validate_budget_rules(entity_type: str, parsed_entity: BaseModel) -> list[ValidationIssue]:
+def validate_budget_rules(
+    entity_type: str,
+    parsed_entity: BaseModel,
+    *,
+    validation_context: Mapping[str, object] | None = None,
+) -> list[ValidationIssue]:
     """Run budget checks for the parsed entity."""
     if entity_type == "zone":
         return _validate_zone(
@@ -436,6 +457,7 @@ def validate_budget_rules(entity_type: str, parsed_entity: BaseModel) -> list[Va
         return _validate_instance_page(
             parsed_entity
             if isinstance(parsed_entity, InstancePage)
-            else InstancePage.model_validate(parsed_entity)
+            else InstancePage.model_validate(parsed_entity),
+            validation_context=validation_context,
         )
     return []

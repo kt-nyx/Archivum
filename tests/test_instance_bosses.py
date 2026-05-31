@@ -3,6 +3,21 @@ from __future__ import annotations
 from pipeline.discovery.instance_bosses import collect_boss_candidates, should_reject_boss_title
 
 
+def test_collect_boss_candidates_from_structured_links() -> None:
+    candidates = collect_boss_candidates(
+        section_blocks=[],
+        instance_name="Scholomance",
+        boss_pool_items=[],
+        structured_links=[
+            {"href": "/wiki/Darkmaster_Gandling", "label": "Darkmaster Gandling", "section_role": "lead"},
+            {"href": "/wiki/Jandice_Barov", "label": "Jandice Barov", "section_role": "lead"},
+        ],
+    )
+    names = {row.name for row in candidates}
+    assert "Darkmaster Gandling" in names
+    assert "Jandice Barov" in names
+
+
 def test_collect_boss_candidates_from_encounter_section() -> None:
     section_blocks = [
         {

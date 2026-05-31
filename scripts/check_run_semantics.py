@@ -16,6 +16,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from pipeline.validate.context import (
+    build_entity_validation_context,
+    load_validation_run_resources,
+    resolve_draft_entity_id,
+)
+from pipeline.validate.engine import validate_payload
 from pipeline.discovery.entity_typing import is_valid_quest_graph_link, normalize_title
 from pipeline.discovery.storyline_html import parse_storyline_html
 from pipeline.discovery.world_registry import entry_kinds
@@ -701,6 +707,47 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
     _check_glossary(run_root)
 
 
+def check_strict_validation(run_root: Path) -> None:
+    """Re-validate all drafts with release_gate=True and fact_check_profile=off."""
+    resources = load_validation_run_resources(run_root)
+    draft_paths = sorted((run_root / "data" / "drafts").glob("*/*.json"))
+    if not draft_paths:
+        _fail(f"no drafts found under {run_root / 'data' / 'drafts'}")
+
+    failures: list[str] = []
+    for draft_path in draft_paths:
+        raw_payload = json.loads(draft_path.read_text(encoding="utf-8"))
+        payload = raw_payload if isinstance(raw_payload, dict) else {}
+        entity_id = resolve_draft_entity_id(draft_path, payload)
+        entity_type = draft_path.parent.name
+        report = validate_payload(
+            entity_type,
+            payload,
+            validation_context=build_entity_validation_context(
+                entity_id=entity_id,
+                fact_check_profile="off",
+                release_gate=True,
+                resources=resources,
+            ),
+        )
+        if report.hard_fail_count == 0:
+            continue
+        rel_path = draft_path.relative_to(run_root)
+        for issue in report.issues:
+            if issue.severity.value != "hard-fail":
+                continue
+            failures.append(
+                f"{issue.code} path={issue.path} draft={rel_path}: {issue.message}"
+            )
+
+    if failures:
+        _fail("strict validation hard-fails:\n" + "\n".join(failures))
+    print(
+        f"PASS: strict validation ok for {run_root.name} "
+        f"({len(draft_paths)} draft(s))"
+    )
+
+
 def _glossary_min_terms() -> int:
     import os
 
@@ -1058,9 +1105,19 @@ def main() -> None:
         default=None,
         help="Zone entity id (e.g. zone-western-plaguelands). Auto-detected when omitted.",
     )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help=(
+            "After semantic checks, re-validate all drafts with release_gate=True "
+            "and fact_check_profile=off."
+        ),
+    )
     args = parser.parse_args()
     try:
         check_run(args.run_root, zone_id=args.zone_id)
+        if args.strict:
+            check_strict_validation(args.run_root)
     except SemanticCheckError as exc:
         print(f"FAIL: {exc}")
         sys.exit(1)

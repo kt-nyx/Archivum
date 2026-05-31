@@ -339,6 +339,22 @@ def test_validate_stage_accepts_case_variant_profile_with_empty_drafts(tmp_path:
     assert output["passed"] is True
 
 
+def test_validate_stage_records_release_gate_in_report(tmp_path: Path) -> None:
+    context = ensure_run_context(
+        "run-test-validate-release-gate-report",
+        artifacts_root=tmp_path / "runs",
+    )
+    output = run_validate_stage(
+        context,
+        [],
+        fact_check_profile="off",
+        release_gate=True,
+    )
+    payload = json.loads(output["validation_report_path"].read_text(encoding="utf-8"))
+    assert payload["release_gate"] is True
+    assert output["passed"] is True
+
+
 def test_coalesce_prefers_manifest_priority_for_tie_break(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
