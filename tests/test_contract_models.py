@@ -32,9 +32,69 @@ def test_entity_model_map_contains_locked_types() -> None:
     ]
 
 
-def test_zone_fixture_parses_with_canonical_contract() -> None:
-    payload = _load_fixture("happy", "zone_valid.json")
-    zone = Zone.model_validate(payload)
+def test_zone_contract_parses_minimal_inline_payload() -> None:
+    zone = Zone.model_validate(
+        {
+            "id": "zone-western-plaguelands",
+            "slug": "western-plaguelands",
+            "name": "Western Plaguelands",
+            "expansion": "cataclysm-state",
+            "at_a_glance": "Blighted farmland contested by crusaders and undead remnants.",
+            "currently": (
+                "Argent operations continue to stabilize roads while hostile forces pressure key routes."
+            ),
+            "history": (
+                "The region suffered catastrophic plague-era collapse before sustained military campaigns "
+                "began long-term restoration efforts across reclaimed farmland and broken keeps."
+            ),
+            "major_questlines_alliance": [
+                {
+                    "id": "ql-andorhal-alliance",
+                    "faction": "alliance",
+                    "title": "Andorhal War Campaign",
+                    "hook": (
+                        "Alliance forces attempt to secure Andorhal through a sustained campaign that "
+                        "combines plague containment, civilian extraction, supply-line defense, and repeated "
+                        "assaults on fortified undead positions across the ruined city blocks."
+                    ),
+                    "start_anchor": "Andorhal",
+                    "story_beats": ["Secure supply routes"],
+                    "inclusion_decision": {
+                        "inclusion_score": 8,
+                        "criteria_breakdown": {
+                            "importance": 2,
+                            "coherence": 2,
+                            "evidence": 2,
+                            "relevance": 2,
+                        },
+                        "include_decision": "include",
+                        "decision_reason": "Pilot-critical arc with sourced coverage.",
+                        "source_refs": [],
+                    },
+                    "depends_on_parent_context": False,
+                }
+            ],
+            "major_questlines_horde": [],
+            "major_questlines_shared": [],
+            "major_characters": [],
+            "instances": [],
+            "major_landmarks": [],
+            "glossary": [],
+            "sources": [],
+            "provenance": {
+                "at_a_glance": [],
+                "currently": [],
+                "history": [],
+                "major_questlines_alliance": {},
+                "major_questlines_horde": {},
+                "major_questlines_shared": {},
+                "major_characters": {},
+                "instances": {},
+                "major_landmarks": {},
+                "glossary": {},
+            },
+        }
+    )
     assert zone.id == "zone-western-plaguelands"
     assert len(zone.major_questlines_alliance) == 1
 

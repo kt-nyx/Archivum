@@ -1,0 +1,146 @@
+{
+  "schema_version": "pilot-zone-page-questlines-v1",
+  "entity_type": "zone_page",
+  "zone_id": "zone-western-plaguelands",
+  "description": "Gold-standard major_questlines slice for Western Plaguelands. Matches pipeline draft shape (QuestlineCardV2 / ZonePage.major_questlines). CTAs and chain_refs come from western_plaguelands_questline_registry.json included_arcs.",
+  "major_questlines": [
+    {
+      "id": "ql-andorhal-horde",
+      "title": "Andorhal Campaign (Horde)",
+      "faction": "horde",
+      "cta_hook": "Join Koltira Deathweaver at Andorhal to break the Scourge hold on the city, then stand against the Alliance when Sylvanas deploys Val'kyr and the Forsaken's true ambitions surface.",
+      "start_anchor": "Warchief's Command: Western Plaguelands!",
+      "chain_refs": [
+        "quest-warchief-s-command-western-plaguelands",
+        "quest-scourge-first-alliance-later",
+        "quest-after-the-crusade",
+        "quest-foxes-and-hounds",
+        "quest-foes-before-hoes",
+        "quest-latent-disease",
+        "quest-who-needs-cauldrons",
+        "quest-lower-the-boom",
+        "quest-strange-new-faces",
+        "quest-when-death-is-not-enough",
+        "quest-combat-training",
+        "quest-lindsay-ravensun-revealed"
+      ],
+      "include_decision": "include",
+      "reason_codes": [
+        "pilot_gold",
+        "zone_signature_arc",
+        "faction_parallel"
+      ],
+      "wiki_refs": [
+        "/wiki/Warchief%27s_Command:_Western_Plaguelands!",
+        "/wiki/Scourge_First..._Alliance_Later",
+        "/wiki/After_the_Crusade",
+        "/wiki/Foxes_and_Hounds",
+        "/wiki/Foes_Before_Hoes",
+        "/wiki/Latent_Disease",
+        "/wiki/Who_Needs_Cauldrons%3F",
+        "/wiki/Lower_the_Boom",
+        "/wiki/Strange_New_Faces",
+        "/wiki/When_Death_is_Not_Enough",
+        "/wiki/Combat_Training",
+        "/wiki/Lindsay_Ravensun,_Revealed"
+      ]
+    },
+    {
+      "id": "ql-andorhal-alliance",
+      "title": "Andorhal Campaign (Alliance)",
+      "faction": "alliance",
+      "cta_hook": "Report to Thassarian at Andorhal and push the Alliance counteroffensive against the Scourge and Forsaken before Sylvanas can claim the ruined city.",
+      "start_anchor": "Hero's Call: Western Plaguelands!",
+      "chain_refs": [
+        "quest-hero-s-call-western-plaguelands",
+        "quest-scourge-first-horde-later",
+        "quest-go-fletch",
+        "quest-a-mighty-hunger",
+        "quest-those-that-couldn-t-let-go",
+        "quest-uther-s-blessing",
+        "quest-the-abandoned-crypt",
+        "quest-ambushed-western-plaguelands",
+        "quest-the-writhing-haunt-quest",
+        "quest-this-is-our-army",
+        "quest-combat-training",
+        "quest-the-depravity-of-the-forsaken"
+      ],
+      "include_decision": "include",
+      "reason_codes": [
+        "pilot_gold",
+        "zone_signature_arc",
+        "faction_parallel"
+      ],
+      "wiki_refs": [
+        "/wiki/Hero%27s_Call:_Western_Plaguelands!",
+        "/wiki/Scourge_First..._Horde_Later",
+        "/wiki/Go_Fletch!",
+        "/wiki/A_Mighty_Hunger",
+        "/wiki/Those_That_Couldn%27t_Let_Go",
+        "/wiki/Uther%27s_Blessing",
+        "/wiki/The_Abandoned_Crypt",
+        "/wiki/Ambushed!_(Western_Plaguelands)",
+        "/wiki/The_Writhing_Haunt_(quest)",
+        "/wiki/This_Is_Our_Army",
+        "/wiki/Combat_Training",
+        "/wiki/The_Depravity_of_the_Forsaken"
+      ]
+    },
+    {
+      "id": "ql-menders-stead-healing",
+      "title": "The Mender's Stead / Healing the Plaguelands",
+      "faction": "shared",
+      "cta_hook": "Help the Argent Crusade and Cenarion Circle at the Mender's Stead test whether poisoned soil can heal and prove these blighted fields can recover after decades of plague.",
+      "start_anchor": "A New Era for the Plaguelands",
+      "chain_refs": [
+        "quest-a-new-era-for-the-plaguelands",
+        "quest-i-ain-t-sayin-you-a-gourd-digger",
+        "quest-zen-kiki-the-druid",
+        "quest-a-different-approach"
+      ],
+      "include_decision": "include",
+      "reason_codes": [
+        "pilot_gold",
+        "zone_restoration_arc"
+      ],
+      "wiki_refs": [
+        "/wiki/A_New_Era_for_the_Plaguelands",
+        "/wiki/I_Ain%27t_Sayin%27_You_a_Gourd-Digger...",
+        "/wiki/Zen%27Kiki,_the_Druid",
+        "/wiki/A_Different_Approach"
+      ]
+    },
+    {
+      "id": "ql-hearthglen-tirion-legacy",
+      "title": "Hearthglen / Tirion Fordring's Legacy",
+      "faction": "shared",
+      "cta_hook": "Ride to Hearthglen under Argent Crusade control and help resolve local threats while the order reckons with Tirion and Taelan Fordring's legacy in a reclaimed Scarlet stronghold.",
+      "start_anchor": "An Audience with the Highlord",
+      "chain_refs": [
+        "quest-an-audience-with-the-highlord",
+        "quest-it-s-about-time",
+        "quest-drudges-sigh",
+        "quest-taelan-fordring-s-legacy",
+        "quest-unusual-behavior-even-for-gnolls",
+        "quest-the-good-people-of-hearthglen",
+        "quest-bagging-bisp",
+        "quest-turning-yourself-in"
+      ],
+      "include_decision": "include",
+      "reason_codes": [
+        "pilot_gold",
+        "symbolic_legacy_arc"
+      ],
+      "wiki_refs": [
+        "/wiki/An_Audience_with_the_Highlord",
+        "/wiki/It%27s_About_Time!",
+        "/wiki/Drudges..._*Sigh*",
+        "/wiki/Taelan_Fordring%27s_Legacy",
+        "/wiki/Unusual_Behavior..._Even_For_Gnolls",
+        "/wiki/The_Good_People_of_Hearthglen",
+        "/wiki/Bagging_Bisp",
+        "/wiki/Turning_Yourself_In"
+      ]
+    }
+  ]
+}

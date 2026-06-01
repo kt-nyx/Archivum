@@ -250,6 +250,113 @@ def _valid_zone_page_payload() -> dict[str, Any]:
     }
 
 
+_VALIDATION_ZONE_PAGE_CURRENTLY = (
+    "Argent Crusade patrols and Cenarion restoration crews have reopened key roads and fields "
+    "in Western Plaguelands, but Andorhal remains a militarized flashpoint and nearby settlements "
+    "still plan around Scourge remnants. Hearthglen and Caer Darrow routes stay active under escort "
+    "discipline, and local stability depends on constant patrol rotations rather than durable peacetime "
+    "conditions. Farmers and caravan teams continue to coordinate movement windows with armed protection."
+)
+_VALIDATION_ZONE_PAGE_HISTORY_BODY = (
+    "Before the Third War, Western Plaguelands served Lordaeron as a grain and trade heartland centered "
+    "on Andorhal. Cult of the Damned infiltration and plague distribution transformed that network into "
+    "contested undead territory, followed by prolonged control struggles among Scourge forces, Scarlet "
+    "remnants, and anti-plague campaigns. After Wrath and into Cataclysm continuity, reclamation expanded "
+    "under Argent and Cenarion efforts, yet conflict legacies around Andorhal and Scholomance-adjacent "
+    "corridors kept security uneven and governance fragile."
+)
+
+
+def _validation_ready_zone_page_payload() -> dict[str, Any]:
+    """Inline zone_page payload for validation-engine tests (replaces legacy zone_valid.json)."""
+    payload = _valid_zone_page_payload()
+    payload["at_a_glance"] = (
+        "A recovering Lordaeron frontier where reclaimed fields, haunted keeps, and contested "
+        "roads carry the scars of plague wars and later rebuilding efforts across the region."
+    )
+    payload["currently"] = _VALIDATION_ZONE_PAGE_CURRENTLY
+    payload["history_sections"] = [
+        {
+            "heading": "Regional Collapse",
+            "body": _VALIDATION_ZONE_PAGE_HISTORY_BODY,
+            "source_refs": [],
+        }
+    ]
+    payload["glossary_refs"] = [
+        {
+            "term_id": "term-scourge",
+            "label": "Scourge",
+            "wiki_url": "https://warcraft.wiki.gg/wiki/Scourge",
+        }
+    ]
+    payload["sources"] = [
+        {
+            "source_id": "src-wiki-wpl",
+            "url": "https://warcraft.wiki.gg/wiki/Western_Plaguelands",
+            "revision_id": "oldid:111",
+        },
+        {
+            "source_id": "src-wiki-scholomance",
+            "url": "https://warcraft.wiki.gg/wiki/Scholomance",
+            "revision_id": "oldid:222",
+        },
+    ]
+    provenance = payload["provenance"]
+    for section in ("at_a_glance", "currently"):
+        provenance[section] = [
+            {
+                "source_id": "src-wiki-wpl",
+                "locator": f"section:{section} paragraph:1",
+                "revision_id": "oldid:111",
+                "excerpt_hash": f"sha256:zonepage{section[:4]}1111",
+            }
+        ]
+    provenance["history"] = [
+        {
+            "source_id": "src-wiki-wpl",
+            "locator": "section:history paragraph:1",
+            "revision_id": "oldid:111",
+            "excerpt_hash": "sha256:zonepagehist1111",
+        }
+    ]
+    provenance["glossary"] = {
+        "term-scourge": [
+            {
+                "source_id": "src-wiki-wpl",
+                "locator": "section:glossary paragraph:1",
+                "revision_id": "oldid:111",
+                "excerpt_hash": "sha256:5555555555555555",
+            }
+        ]
+    }
+    return payload
+
+
+def _sub_zone_invalid_payload() -> dict[str, Any]:
+    return {
+        "id": "subzone-andorhal",
+        "name": "Andorhal",
+        "major_questlines_alliance": [
+            {"id": "ql-andorhal-alliance", "title": "Battle for Andorhal (Alliance)"},
+            {"id": "ql-andorhal-militia", "title": "Andorhal Militia Push"},
+        ],
+        "major_questlines_horde": [
+            {"id": "ql-andorhal-horde", "title": "Battle for Andorhal (Horde)"},
+        ],
+        "major_questlines_shared": [],
+    }
+
+
+def _sub_zone_too_many_questlines_payload() -> dict[str, Any]:
+    payload = _valid_sub_zone_payload()
+    base_card = payload["major_questlines_alliance"][0]
+    payload["major_questlines_alliance"] = [
+        {**base_card, "id": f"ql-cap-{index}", "title": f"Cap overload arc {index}"}
+        for index in range(1, 5)
+    ]
+    return payload
+
+
 def _valid_instance_page_payload() -> dict[str, Any]:
     return {
         "instance_id": "instance-scholomance",
@@ -472,21 +579,25 @@ def _valid_sub_zone_payload() -> dict[str, Any]:
     }
 
 
-def test_zone_happy_fixture_passes_validation() -> None:
-    report = validate_payload("zone", _load_fixture("happy", "zone_valid.json"))
+def test_zone_page_happy_payload_passes_validation() -> None:
+    report = validate_payload("zone_page", _validation_ready_zone_page_payload())
     assert report.passed is True
     assert report.hard_fail_count == 0
 
 
-def test_zone_edge_fixture_only_warns() -> None:
-    report = validate_payload("zone", _load_fixture("edge", "zone_budget_warn.json"))
+def test_zone_page_edge_payload_only_warns() -> None:
+    payload = _validation_ready_zone_page_payload()
+    payload["at_a_glance"] = "Scarred frontier under uneasy recovery."
+    report = validate_payload("zone_page", payload)
     assert report.passed is True
     assert report.hard_fail_count == 0
     assert report.warn_count >= 1
 
 
-def test_zone_failure_fixture_hard_fails_provenance() -> None:
-    report = validate_payload("zone", _load_fixture("failure", "zone_missing_provenance.json"))
+def test_zone_page_failure_hard_fails_missing_glossary_provenance() -> None:
+    payload = _validation_ready_zone_page_payload()
+    payload["provenance"]["glossary"] = {}
+    report = validate_payload("zone_page", payload)
     assert report.passed is False
     assert report.hard_fail_count >= 1
     assert any(issue.code.startswith("provenance.") for issue in report.issues)
@@ -533,17 +644,15 @@ def test_asset_fails_when_pointer_source_id_not_in_manifest() -> None:
     assert "provenance.unknown_source_id" in codes
 
 
-def test_sub_zone_incomplete_fixture_fails_schema() -> None:
-    report = validate_payload("sub_zone", _load_fixture("failure", "sub_zone_invalid.json"))
+def test_sub_zone_incomplete_payload_fails_schema() -> None:
+    report = validate_payload("sub_zone", _sub_zone_invalid_payload())
     assert report.passed is False
     codes = {issue.code for issue in report.issues}
     assert "schema.invalid" in codes
 
 
 def test_sub_zone_exceeds_max_questline_cards() -> None:
-    report = validate_payload(
-        "sub_zone", _load_fixture("failure", "sub_zone_too_many_questlines.json")
-    )
+    report = validate_payload("sub_zone", _sub_zone_too_many_questlines_payload())
     assert report.passed is False
     codes = {issue.code for issue in report.issues}
     assert "sub_zone.questline_max_cards" in codes
@@ -551,8 +660,8 @@ def test_sub_zone_exceeds_max_questline_cards() -> None:
 
 def test_release_gate_blocks_unresolved_provenance_override() -> None:
     report = validate_payload(
-        "zone",
-        _load_fixture("happy", "zone_valid.json"),
+        "zone_page",
+        _validation_ready_zone_page_payload(),
         validation_context={
             "release_gate": True,
             "unresolved_provenance_override": True,
@@ -652,35 +761,34 @@ def test_sub_zone_dependency_note_required_when_parent_context_true() -> None:
     assert "sub_zone.dependency_note_required" in codes
 
 
-def test_zone_questline_inclusion_threshold_enforced() -> None:
-    payload = _load_fixture("happy", "zone_valid.json")
-    payload["major_questlines_alliance"][0]["inclusion_decision"]["criteria_breakdown"] = {
-        "importance": 2,
-        "coherence": 2,
-        "evidence": 2,
-        "relevance": 1,
-    }
-    payload["major_questlines_alliance"][0]["inclusion_decision"]["inclusion_score"] = 7
-    report = validate_payload("zone", payload)
+def test_zone_page_questline_inclusion_threshold_enforced() -> None:
+    payload = _validation_ready_zone_page_payload()
+    payload["major_questlines"] = [
+        {
+            "id": "cluster-part-1",
+            "title": "Part 1 - Example Arc",
+            "faction": "alliance",
+            "cta_hook": "Crusaders push back undead forces along the ruined road network.",
+            "start_anchor": "Quest A",
+            "chain_refs": ["quest-a"],
+            "include_decision": "exclude",
+            "reason_codes": ["graph_depth"],
+            "wiki_refs": ["/wiki/Quest_A"],
+        }
+    ]
+    report = validate_payload("zone_page", payload)
     assert report.passed is False
     codes = {issue.code for issue in report.issues}
-    assert "structure.zone_questline_inclusion_threshold" in codes
-
-
-def test_zone_questline_dependency_note_required_when_parent_context_true() -> None:
-    payload = _load_fixture("happy", "zone_valid.json")
-    payload["major_questlines_alliance"][0]["depends_on_parent_context"] = True
-    report = validate_payload("zone", payload)
-    assert report.passed is False
-    codes = {issue.code for issue in report.issues}
-    assert "structure.zone_questline_dependency_note_required" in codes
+    assert "structure.zone_page_questline_inclusion_threshold" in codes
 
 
 def test_fact_check_warn_profile_routes_contradiction_to_warning() -> None:
-    payload = _load_fixture("happy", "zone_valid.json")
-    payload["history"] = f"{payload['history']} [CONTRADICTED]"
+    payload = _validation_ready_zone_page_payload()
+    payload["history_sections"][0]["body"] = (
+        f"{payload['history_sections'][0]['body']} [CONTRADICTED]"
+    )
     report = validate_payload(
-        "zone",
+        "zone_page",
         payload,
         validation_context={"fact_check_profile": "warn"},
     )
@@ -695,10 +803,10 @@ def test_fact_check_warn_profile_routes_contradiction_to_warning() -> None:
 
 
 def test_fact_check_strict_profile_blocks_contradictions() -> None:
-    payload = _load_fixture("happy", "zone_valid.json")
+    payload = _validation_ready_zone_page_payload()
     payload["currently"] = f"{payload['currently']} [CONTRADICTED]"
     report = validate_payload(
-        "zone",
+        "zone_page",
         payload,
         validation_context={"fact_check_profile": "strict"},
     )
@@ -710,10 +818,10 @@ def test_fact_check_strict_profile_blocks_contradictions() -> None:
 
 
 def test_fact_check_uses_local_snapshots_for_evidence() -> None:
-    payload = _load_fixture("happy", "zone_valid.json")
+    payload = _validation_ready_zone_page_payload()
     source_ids = [entry["source_id"] for entry in payload["sources"]]
     report = validate_payload(
-        "zone",
+        "zone_page",
         payload,
         validation_context={
             "fact_check_profile": "warn",
@@ -748,14 +856,14 @@ def test_fact_check_warns_when_web_toggle_enabled_without_google_credentials(
 ) -> None:
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_CSE_ID", raising=False)
-    payload = _load_fixture("happy", "zone_valid.json")
+    payload = _validation_ready_zone_page_payload()
     report = validate_payload(
-        "zone",
+        "zone_page",
         payload,
         validation_context={
             "fact_check_profile": "warn",
             "fact_check_web_search": True,
-            "fact_check_target_entity_ids": [str(payload["id"])],
+            "fact_check_target_entity_ids": [str(payload["zone_id"])],
         },
     )
     codes = {issue.code for issue in report.issues}
@@ -765,7 +873,7 @@ def test_fact_check_warns_when_web_toggle_enabled_without_google_credentials(
 def test_fact_check_warn_profile_runs_llm_for_low_confidence_supported_claims(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    payload = _load_fixture("happy", "zone_valid.json")
+    payload = _validation_ready_zone_page_payload()
     source_ids = [entry["source_id"] for entry in payload["sources"]]
     settings = SimpleNamespace(
         openai_ready=True,
@@ -787,12 +895,12 @@ def test_fact_check_warn_profile_runs_llm_for_low_confidence_supported_claims(
 
     monkeypatch.setattr("pipeline.validate.rules.fact_check.chat_json_completion", fake_chat)
     report = validate_payload(
-        "zone",
+        "zone_page",
         payload,
         validation_context={
             "fact_check_profile": "warn",
             "fact_check_enable_llm": True,
-            "fact_check_target_entity_ids": [str(payload["id"])],
+            "fact_check_target_entity_ids": [str(payload["zone_id"])],
             "fact_check_source_snapshots": [
                 {
                     "source_id": source_ids[0],
@@ -814,7 +922,7 @@ def test_fact_check_warn_profile_runs_llm_for_low_confidence_supported_claims(
 def test_fact_check_warn_profile_skips_llm_for_non_target_entities(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    payload = _load_fixture("happy", "zone_valid.json")
+    payload = _validation_ready_zone_page_payload()
     settings = SimpleNamespace(
         openai_ready=True,
         google_ready=False,
@@ -835,7 +943,7 @@ def test_fact_check_warn_profile_skips_llm_for_non_target_entities(
 
     monkeypatch.setattr("pipeline.validate.rules.fact_check.chat_json_completion", fake_chat)
     report = validate_payload(
-        "zone",
+        "zone_page",
         payload,
         validation_context={
             "fact_check_profile": "warn",
@@ -849,10 +957,10 @@ def test_fact_check_warn_profile_skips_llm_for_non_target_entities(
 
 
 def test_similarity_warns_on_high_token_overlap_with_ingest_body() -> None:
-    payload = copy.deepcopy(_load_fixture("happy", "zone_valid.json"))
+    payload = copy.deepcopy(_validation_ready_zone_page_payload())
     payload["at_a_glance"] = "one two three four five six seven eight nine ten"
     report = validate_payload(
-        "zone",
+        "zone_page",
         payload,
         validation_context={
             "fact_check_source_snapshots": [
@@ -877,10 +985,10 @@ def test_similarity_hard_fails_on_near_verbatim_ingest_body() -> None:
         "identical verbatim block alpha bravo charlie delta echo foxtrot golf hotel "
         "india juliet kilo lima mike november oscar papa quebec romeo sierra tango"
     )
-    payload = copy.deepcopy(_load_fixture("happy", "zone_valid.json"))
+    payload = copy.deepcopy(_validation_ready_zone_page_payload())
     payload["at_a_glance"] = shared
     report = validate_payload(
-        "zone",
+        "zone_page",
         payload,
         validation_context={
             "fact_check_source_snapshots": [
@@ -897,12 +1005,12 @@ def test_similarity_hard_fails_on_near_verbatim_ingest_body() -> None:
 
 
 def test_similarity_clean_when_draft_diverges_from_ingest_body() -> None:
-    payload = copy.deepcopy(_load_fixture("happy", "zone_valid.json"))
+    payload = copy.deepcopy(_validation_ready_zone_page_payload())
     payload["at_a_glance"] = (
         "xyzzy quux plugh frobnitz wibble nimbus vortex shard prism lattice aurora"
     )
     report = validate_payload(
-        "zone",
+        "zone_page",
         payload,
         validation_context={
             "fact_check_source_snapshots": [
@@ -922,9 +1030,9 @@ def test_similarity_clean_when_draft_diverges_from_ingest_body() -> None:
 
 
 def test_similarity_emits_unavailable_when_snapshots_required_but_missing() -> None:
-    payload = copy.deepcopy(_load_fixture("happy", "zone_valid.json"))
+    payload = copy.deepcopy(_validation_ready_zone_page_payload())
     report = validate_payload(
-        "zone",
+        "zone_page",
         payload,
         validation_context={
             "fact_check_profile": "warn",
@@ -939,9 +1047,9 @@ def test_similarity_emits_unavailable_when_snapshots_required_but_missing() -> N
 
 def test_similarity_stage_context_strict_profile_unavailable_snapshots_is_hard_fail() -> None:
     """Mirrors run_validate_stage keys: strict escalates missing ingest bodies to hard-fail."""
-    payload = copy.deepcopy(_load_fixture("happy", "zone_valid.json"))
+    payload = copy.deepcopy(_validation_ready_zone_page_payload())
     report = validate_payload(
-        "zone",
+        "zone_page",
         payload,
         validation_context={
             "fact_check_profile": "strict",
@@ -956,7 +1064,7 @@ def test_similarity_stage_context_strict_profile_unavailable_snapshots_is_hard_f
 
 
 def test_similarity_skipped_without_issue_when_snapshots_absent_by_default() -> None:
-    report = validate_payload("zone", _load_fixture("happy", "zone_valid.json"))
+    report = validate_payload("zone_page", _validation_ready_zone_page_payload())
     assert not any(issue.code.startswith("similarity.") for issue in report.issues)
 
 

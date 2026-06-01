@@ -4,6 +4,39 @@ Dual-run flow for dev iteration and CI promotion. Pilot input manifest lives at
 `tests/fixtures/pilot/source_manifest.json`; run artifacts stay local under
 `artifacts/runs/<run-id>/` (gitignored).
 
+## Questline gold standard (Western Plaguelands)
+
+Pilot questline fixtures (see `tests/fixtures/pilot/README.md`):
+
+- **`western_plaguelands_questline_registry.json`** — quest→arc clustering oracle (wiki parts, overflow, excluded arcs)
+- **`zone_page_western_plaguelands_gold.json`** — target `ZonePage.major_questlines` (`QuestlineCardV2`) shape
+
+Fact-checked against
+[Warcraft Wiki](https://warcraft.wiki.gg/wiki/Western_Plaguelands_storyline).
+
+| Card | Faction | Start anchor |
+|------|---------|--------------|
+| Andorhal Campaign (Horde) | horde | Warchief's Command: Western Plaguelands! |
+| Andorhal Campaign (Alliance) | alliance | Hero's Call: Western Plaguelands! |
+| The Mender's Stead / Healing the Plaguelands | shared | A New Era for the Plaguelands |
+| Hearthglen / Tirion Fordring's Legacy | shared | An Audience with the Highlord |
+
+Each included row has a gold `cta_hook` that passes `lint_cta_hook` and semantic
+filler checks. Excluded arcs (Northridge/Redpine, Gahrron's Withering cleanup)
+are documented with `exclude_reason`. Scholomancer/Araj beats belong to Andorhal
+Part 1 shared beats—not the Gahrron's excluded arc. The fixture also records known pipeline
+gaps (flat storyline HTML → single v3 cluster → shared junk drawer).
+
+Validate the fixture:
+
+```bash
+uv run pytest tests/test_pilot_questline_gold_standard.py -q
+```
+
+Compare a run draft qualitatively: `major_questlines` should surface all four
+included arcs—not only Andorhal—and CTAs should read like the gold hooks, not
+wiki snippet dumps.
+
 ## Bootstrap (once per machine)
 
 ```bash
