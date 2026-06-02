@@ -10,7 +10,7 @@ from pipeline.generate.draft.wiki_first_workers import (
     synthesize_faction_summary,
     synthesize_history_sections,
     synthesize_instance_overview,
-    synthesize_key_enemy_summary,
+    synthesize_key_character_summary,
     synthesize_location_summary,
 )
 
@@ -147,9 +147,9 @@ def test_instance_overview_deterministic_meets_word_floor(monkeypatch) -> None:
     assert used == ["src-instance"]
 
 
-def test_key_enemy_summary_deterministic_includes_boss_name(monkeypatch) -> None:
+def test_key_character_summary_deterministic_includes_boss_name(monkeypatch) -> None:
     monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
-    summary, used = synthesize_key_enemy_summary(
+    summary, used = synthesize_key_character_summary(
         [{"source_id": "src-instance", "snippet": "Archivist Maelor guards the forbidden stacks."}],
         boss_name="Archivist Maelor",
         instance_name="Archive Vault",

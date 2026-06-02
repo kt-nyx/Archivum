@@ -569,7 +569,7 @@ def _validate_instance_page(
     issues.extend(
         _validate_card_pointer_map(
             instance_page.provenance.key_characters,
-            [card.id for card in instance_page.key_enemies],
+            [card.id for card in instance_page.key_characters],
             map_name="key_characters",
             source_ids=source_ids,
             source_revisions=source_revisions,

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from pipeline.generate.draft.instance_lint import lint_overview
 from pipeline.generate.draft.prose_lint import word_count
-from pipeline.generate.draft.wiki_first import _finalize_key_enemies, build_instance_page
+from pipeline.generate.draft.wiki_first import _finalize_key_characters, build_instance_page
 from pipeline.discovery.instance_bosses import BossCandidate
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "instance"
@@ -97,12 +97,12 @@ def test_build_instance_page_no_llm_overview_and_bosses(monkeypatch) -> None:
     )
     assert word_count(str(draft["overview"])) >= 170
     assert not lint_overview(str(draft["overview"]), instance_name=instance_name)
-    enemy_names = {row["name"] for row in draft["key_enemies"]}
+    enemy_names = {row["name"] for row in draft["key_characters"]}
     assert "Archivist Maelor" in enemy_names
     assert "Warden Voss" in enemy_names
     assert not any(
         "key enemy presence tied to the instance narrative" in str(row.get("summary", "")).lower()
-        for row in draft["key_enemies"]
+        for row in draft["key_characters"]
     )
     provenance = draft.get("provenance") or {}
     assert provenance.get("identity_header")
@@ -110,7 +110,7 @@ def test_build_instance_page_no_llm_overview_and_bosses(monkeypatch) -> None:
     overview_words = word_count(str(draft["overview"]))
     if overview_words > 120:
         assert len(provenance["story_context"]) >= 2
-    for card in draft["key_enemies"]:
+    for card in draft["key_characters"]:
         assert provenance.get("key_characters", {}).get(card["id"])
 
 
@@ -189,18 +189,21 @@ def test_build_scholomance_instance_page_from_faculty_section(monkeypatch) -> No
         {"lore_source": "instance_page"},
         section_blocks=[{"section_role": "scholomance_faculty", "text": faculty_html}],
     )
-    enemy_names = {row["name"] for row in draft["key_enemies"]}
-    assert len(draft["key_enemies"]) >= 2
+    enemy_names = {row["name"] for row in draft["key_characters"]}
+    assert len(draft["key_characters"]) >= 2
     assert "Darkmaster Gandling" in enemy_names
     assert "Jandice Barov" in enemy_names
+    assert any(card.get("wiki_ref") for card in draft["key_characters"])
+    assert all(card.get("role") == "uncertain" for card in draft["key_characters"])
+    assert all(card.get("decision_reason_codes") for card in draft["key_characters"])
     provenance = draft.get("provenance") or {}
     assert len(provenance.get("story_context") or []) <= 3
     assert len(provenance.get("identity_header") or []) <= 3
-    for card in draft["key_enemies"]:
+    for card in draft["key_characters"]:
         assert provenance.get("key_characters", {}).get(card["id"])
 
 
-def test_finalize_key_enemies_pointer_fallback_when_used_empty(monkeypatch) -> None:
+def test_finalize_key_characters_pointer_fallback_when_used_empty(monkeypatch) -> None:
     monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
 
     def _summary_without_used(*_args, **_kwargs):
@@ -210,7 +213,7 @@ def test_finalize_key_enemies_pointer_fallback_when_used_empty(monkeypatch) -> N
         )
 
     monkeypatch.setattr(
-        "pipeline.generate.draft.wiki_first.synthesize_key_enemy_summary",
+        "pipeline.generate.draft.wiki_first.synthesize_key_character_summary",
         _summary_without_used,
     )
     candidate = BossCandidate(
@@ -227,7 +230,7 @@ def test_finalize_key_enemies_pointer_fallback_when_used_empty(monkeypatch) -> N
         }
     ]
     candidate.profile_pool = boss_pool
-    cards, provenance, _used = _finalize_key_enemies(
+    cards, provenance, _used = _finalize_key_characters(
         instance_name="Scholomance",
         boss_candidates=[candidate],
         boss_pool=boss_pool,

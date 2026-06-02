@@ -605,7 +605,7 @@ def test_linker_keeps_instance_page_schema_valid_with_glossary_refs(
                         "source_refs": [],
                     }
                 ],
-                "key_enemies": [],
+                "key_characters": [],
                 "major_factions": [],
                 "lore_source": "instance_page",
                 "lore_source_reason": None,

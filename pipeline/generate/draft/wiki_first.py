@@ -10,9 +10,9 @@ from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.generate.draft.instance_link_lint import trim_instance_link_summary
 from pipeline.generate.draft.instance_lint import (
     fallback_instance_overview,
-    fallback_key_enemy_summary,
+    fallback_key_character_summary,
     lint_at_a_glance as lint_instance_at_a_glance,
-    lint_key_enemy_summary,
+    lint_key_character_summary,
     lint_overview,
 )
 from pipeline.discovery.entity_typing import normalize_title
@@ -70,7 +70,7 @@ from pipeline.generate.draft.wiki_first_workers import (
     synthesize_faction_summary,
     synthesize_history_sections,
     synthesize_instance_overview,
-    synthesize_key_enemy_summary,
+    synthesize_key_character_summary,
     synthesize_location_summary,
 )
 
@@ -445,7 +445,7 @@ def _finalize_instance_overview(
     return "", [], []
 
 
-def _finalize_key_enemies(
+def _finalize_key_characters(
     *,
     instance_name: str,
     boss_candidates: list[BossCandidate],
@@ -470,18 +470,18 @@ def _finalize_key_enemies(
         card: dict[str, Any] | None = None
         card_pointers: list[dict[str, str]] = []
         for pool in pools_to_try:
-            summary, used = synthesize_key_enemy_summary(
+            summary, used = synthesize_key_character_summary(
                 pool,
                 boss_name=candidate.name,
                 instance_name=instance_name,
             )
-            if lint_key_enemy_summary(summary, boss_name=candidate.name, instance_name=instance_name):
-                summary, used = fallback_key_enemy_summary(
+            if lint_key_character_summary(summary, boss_name=candidate.name, instance_name=instance_name):
+                summary, used = fallback_key_character_summary(
                     pool,
                     boss_name=candidate.name,
                     instance_name=instance_name,
                 )
-            if lint_key_enemy_summary(summary, boss_name=candidate.name, instance_name=instance_name):
+            if lint_key_character_summary(summary, boss_name=candidate.name, instance_name=instance_name):
                 continue
             pointers = _cap_card_pointers(
                 _pointers_for_source_ids(pool, used, revision_map),
@@ -509,6 +509,11 @@ def _finalize_key_enemies(
                 "id": candidate.boss_id,
                 "name": candidate.name,
                 "summary": summary,
+                "role": "uncertain",
+                "wiki_ref": candidate.wiki_url or None,
+                "decision_reason_codes": (
+                    [candidate.source_section_role] if candidate.source_section_role else []
+                ),
                 "thumbnail_asset_id": None,
             }
             card_pointers = pointers
@@ -1529,13 +1534,13 @@ def build_instance_page(
         boss_pool_items=pools["boss_pool"],
         structured_links=structured_links,
     )
-    key_enemies, key_enemy_provenance, enemy_used = _finalize_key_enemies(
+    key_characters, key_character_provenance, character_used = _finalize_key_characters(
         instance_name=name,
         boss_candidates=boss_candidates,
         boss_pool=pools["boss_pool"],
         revision_map=revision_map,
     )
-    used_source_ids.update(enemy_used)
+    used_source_ids.update(character_used)
 
     major_factions, faction_provenance = build_instance_major_factions(
         instance_id=instance_id,
@@ -1562,7 +1567,7 @@ def build_instance_page(
         "at_a_glance": at_a_glance,
         "overview": overview,
         "history_sections": history_sections,
-        "key_enemies": key_enemies,
+        "key_characters": key_characters,
         "major_factions": major_factions,
         "lore_source": str((lore_source or {}).get("lore_source", "instance_page")),
         "lore_source_reason": (lore_source or {}).get("fallback_reason"),
@@ -1572,7 +1577,7 @@ def build_instance_page(
         "provenance": {
             "identity_header": at_pointers,
             "story_context": overview_pointers,
-            "key_characters": key_enemy_provenance,
+            "key_characters": key_character_provenance,
             "major_factions": faction_provenance,
             "glossary": {},
         },

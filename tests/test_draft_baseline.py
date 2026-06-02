@@ -425,8 +425,8 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(
     assert zone_draft["sources"]
     assert "reclaimed" in zone_draft["history_sections"][0]["body"].lower()
     assert instance_draft["history_sections"]
-    assert instance_draft["key_enemies"]
+    assert instance_draft["key_characters"]
     assert instance_draft["sources"]
     assert len(str(instance_draft.get("overview", "")).split()) >= 170
-    enemy_names = {row["name"] for row in instance_draft["key_enemies"]}
+    enemy_names = {row["name"] for row in instance_draft["key_characters"]}
     assert "Darkmaster Gandling" in enemy_names

@@ -347,30 +347,30 @@ def _validate_instance_page(
 ) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
     release_gate = bool(validation_context and validation_context.get("release_gate"))
-    if release_gate and not instance_page.key_enemies:
+    if release_gate and not instance_page.key_characters:
         issues.append(
             ValidationIssue(
                 code="budget.instance_key_characters_empty",
-                message="instance_page.key_enemies must not be empty at release gate",
+                message="instance_page.key_characters must not be empty at release gate",
                 severity=ValidationSeverity.HARD_FAIL,
-                path="$.key_enemies",
+                path="$.key_characters",
             )
         )
     if (
         not INSTANCE_MIN_KEY_CHARACTERS
-        <= len(instance_page.key_enemies)
+        <= len(instance_page.key_characters)
         <= INSTANCE_MAX_KEY_CHARACTERS
-        and instance_page.key_enemies
+        and instance_page.key_characters
     ):
         issues.append(
             ValidationIssue(
                 code="budget.instance_key_characters_count",
                 message=(
-                    f"instance_page.key_enemies must contain {INSTANCE_MIN_KEY_CHARACTERS}-"
+                    f"instance_page.key_characters must contain {INSTANCE_MIN_KEY_CHARACTERS}-"
                     f"{INSTANCE_MAX_KEY_CHARACTERS} cards when present"
                 ),
                 severity=ValidationSeverity.WARN,
-                path="$.key_enemies",
+                path="$.key_characters",
             )
         )
 
@@ -388,11 +388,11 @@ def _validate_instance_page(
         if issue:
             issues.append(issue)
 
-    for index, card in enumerate(instance_page.key_enemies):
+    for index, card in enumerate(instance_page.key_characters):
         issue = _rule_issue_count(
             INSTANCE_BUDGET_RULES["key_characters_card_summary"],
             _word_count(card.summary),
-            f"$.key_enemies[{index}].summary",
+            f"$.key_characters[{index}].summary",
             "budget.character_card",
         )
         if issue:

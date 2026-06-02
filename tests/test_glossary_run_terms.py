@@ -38,7 +38,7 @@ def test_build_run_terms_from_zone_and_instance_drafts(tmp_path: Path) -> None:
                 "instance_id": "instance-vault",
                 "name": "Archive Vault",
                 "wiki_url": "https://warcraft.wiki.gg/wiki/Archive_Vault",
-                "key_enemies": [{"id": "character-boss", "name": "Archivist Maelor", "summary": "A boss."}],
+                "key_characters": [{"id": "character-boss", "name": "Archivist Maelor", "summary": "A boss."}],
             },
             indent=2,
         ),

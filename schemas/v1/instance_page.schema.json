@@ -2,6 +2,13 @@
   "$defs": {
     "CharacterCard": {
       "properties": {
+        "decision_reason_codes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Decision Reason Codes",
+          "type": "array"
+        },
         "id": {
           "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
           "title": "Id",
@@ -10,6 +17,17 @@
         "name": {
           "minLength": 1,
           "title": "Name",
+          "type": "string"
+        },
+        "role": {
+          "default": "uncertain",
+          "enum": [
+            "enemy",
+            "ally",
+            "neutral",
+            "uncertain"
+          ],
+          "title": "Role",
           "type": "string"
         },
         "summary": {
@@ -28,6 +46,18 @@
           ],
           "default": null,
           "title": "Thumbnail Asset Id"
+        },
+        "wiki_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wiki Ref"
         }
       },
       "required": [
@@ -37,15 +67,6 @@
       ],
       "title": "CharacterCard",
       "type": "object"
-    },
-    "Faction": {
-      "enum": [
-        "alliance",
-        "horde",
-        "shared"
-      ],
-      "title": "Faction",
-      "type": "string"
     },
     "FactionCard": {
       "properties": {
@@ -81,18 +102,34 @@
     },
     "GlossaryLink": {
       "properties": {
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
         "term_id": {
           "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
           "title": "Term Id",
           "type": "string"
         },
-        "label": {
-          "title": "Label",
-          "type": "string"
-        },
         "wiki_url": {
-          "title": "Wiki Url",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wiki Url"
         }
       },
       "required": [
@@ -128,24 +165,8 @@
       "title": "HistorySection",
       "type": "object"
     },
-    "IncludeDecision": {
-      "enum": [
-        "include",
-        "exclude",
-        "defer"
-      ],
-      "title": "IncludeDecision",
-      "type": "string"
-    },
     "InstanceProvenance": {
       "properties": {
-        "identity_header": {
-          "items": {
-            "$ref": "#/$defs/SourcePointer"
-          },
-          "title": "Identity Header",
-          "type": "array"
-        },
         "glossary": {
           "additionalProperties": {
             "items": {
@@ -155,6 +176,13 @@
           },
           "title": "Glossary",
           "type": "object"
+        },
+        "identity_header": {
+          "items": {
+            "$ref": "#/$defs/SourcePointer"
+          },
+          "title": "Identity Header",
+          "type": "array"
         },
         "key_characters": {
           "additionalProperties": {
@@ -185,67 +213,6 @@
         }
       },
       "title": "InstanceProvenance",
-      "type": "object"
-    },
-    "QuestlineCardV2": {
-      "properties": {
-        "chain_refs": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Chain Refs",
-          "type": "array"
-        },
-        "cta_hook": {
-          "minLength": 1,
-          "title": "Cta Hook",
-          "type": "string"
-        },
-        "faction": {
-          "$ref": "#/$defs/Faction"
-        },
-        "id": {
-          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-          "title": "Id",
-          "type": "string"
-        },
-        "include_decision": {
-          "$ref": "#/$defs/IncludeDecision"
-        },
-        "reason_codes": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Reason Codes",
-          "type": "array"
-        },
-        "start_anchor": {
-          "minLength": 1,
-          "title": "Start Anchor",
-          "type": "string"
-        },
-        "title": {
-          "minLength": 1,
-          "title": "Title",
-          "type": "string"
-        },
-        "wiki_refs": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Wiki Refs",
-          "type": "array"
-        }
-      },
-      "required": [
-        "id",
-        "title",
-        "faction",
-        "cta_hook",
-        "start_anchor",
-        "include_decision"
-      ],
-      "title": "QuestlineCardV2",
       "type": "object"
     },
     "SourceManifestEntry": {
@@ -353,11 +320,11 @@
       "title": "Instance Type",
       "type": "string"
     },
-    "key_enemies": {
+    "key_characters": {
       "items": {
         "$ref": "#/$defs/CharacterCard"
       },
-      "title": "Key Enemies",
+      "title": "Key Characters",
       "type": "array"
     },
     "lore_source": {

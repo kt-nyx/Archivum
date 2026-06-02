@@ -101,7 +101,7 @@ def minimal_instance_page_payload(*, instance_id: str = "instance-test-dungeon")
                 "source_refs": [],
             }
         ],
-        "key_enemies": [],
+        "key_characters": [],
         "major_factions": [],
         "lore_source": "instance_page",
         "lore_source_reason": None,

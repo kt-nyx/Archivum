@@ -2,24 +2,40 @@
   "$defs": {
     "EvidenceItem": {
       "properties": {
+        "block_index": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Block Index"
+        },
         "confidence": {
           "maximum": 1,
           "minimum": 0,
           "title": "Confidence",
           "type": "number"
         },
+        "raw_section_role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Section Role"
+        },
         "section_role": {
           "minLength": 1,
           "title": "Section Role",
           "type": "string"
-        },
-        "raw_section_role": {
-          "title": "Raw Section Role",
-          "type": "string"
-        },
-        "block_index": {
-          "title": "Block Index",
-          "type": "integer"
         },
         "snippet": {
           "minLength": 1,

@@ -380,7 +380,7 @@ def _valid_instance_page_payload() -> dict[str, Any]:
                 "source_refs": [],
             }
         ],
-        "key_enemies": [],
+        "key_characters": [],
         "major_factions": [],
         "lore_source": "instance_page",
         "lore_source_reason": None,
@@ -1257,7 +1257,7 @@ def test_fact_check_warn_profile_emits_insufficient_evidence_on_low_overlap() ->
     assert "fact_check.insufficient_evidence" in codes
 
 
-def test_instance_page_key_enemies_empty_hard_fails_under_release_gate() -> None:
+def test_instance_page_key_characters_empty_hard_fails_under_release_gate() -> None:
     payload = _valid_instance_page_payload()
     report = validate_payload(
         "instance_page",
@@ -1314,19 +1314,34 @@ def test_zone_page_missing_currently_provenance_hard_fails() -> None:
     assert any(issue.code == "provenance.missing_section_pointers" for issue in report.issues)
 
 
-def test_instance_page_missing_key_enemy_card_provenance_hard_fails() -> None:
+def test_instance_page_missing_key_character_card_provenance_hard_fails() -> None:
     payload = _valid_instance_page_payload()
-    payload["key_enemies"] = [
+    payload["key_characters"] = [
         {
             "id": "character-darkmaster-gandling",
             "name": "Darkmaster Gandling",
             "summary": "Leader of the instance's necromantic hierarchy and primary objective.",
+            "role": "enemy",
             "thumbnail_asset_id": None,
         }
     ]
     report = validate_payload("instance_page", payload)
     assert report.passed is False
     assert any(issue.code == "provenance.missing_card_pointers" for issue in report.issues)
+
+
+def test_instance_page_invalid_character_role_rejected() -> None:
+    payload = _valid_instance_page_payload()
+    payload["key_characters"] = [
+        {
+            "id": "character-darkmaster-gandling",
+            "name": "Darkmaster Gandling",
+            "summary": "Leader of the instance's necromantic hierarchy and primary objective.",
+            "role": "villain",
+        }
+    ]
+    report = validate_payload("instance_page", payload)
+    assert report.passed is False
 
 
 def test_zone_page_generic_instance_link_hard_fails() -> None:

@@ -281,7 +281,7 @@ def _matching_sections(draft: dict[str, Any]) -> list[tuple[str, str]]:
     _append_card_sections(sections, "major_factions", draft.get("major_factions"))
     _append_card_sections(sections, "location_cards", draft.get("location_cards"))
     _append_card_sections(sections, "instance_links", draft.get("instance_links"))
-    _append_card_sections(sections, "key_enemies", draft.get("key_enemies"))
+    _append_card_sections(sections, "key_characters", draft.get("key_characters"))
     return sections
 
 
@@ -367,7 +367,7 @@ _CARD_PROVENANCE_KEYS = {
     "major_factions": "major_factions",
     "location_cards": "major_landmarks",
     "instance_links": "instances",
-    "key_enemies": "key_characters",
+    "key_characters": "key_characters",
 }
 
 
@@ -398,7 +398,7 @@ def _pointer_for_section(draft: dict[str, Any], section_name: str) -> dict[str, 
                     return pointer
         return None
 
-    card_match = re.match(r"(major_factions|location_cards|instance_links|key_enemies)\[(\d+)\]", section_name)
+    card_match = re.match(r"(major_factions|location_cards|instance_links|key_characters)\[(\d+)\]", section_name)
     if card_match:
         field_name = card_match.group(1)
         index = int(card_match.group(2)) - 1

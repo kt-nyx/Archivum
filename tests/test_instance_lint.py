@@ -3,7 +3,7 @@ from __future__ import annotations
 from pipeline.generate.draft.instance_lint import (
     fallback_instance_overview,
     is_generic_overview,
-    lint_key_enemy_summary,
+    lint_key_character_summary,
     lint_overview,
 )
 
@@ -36,8 +36,8 @@ def test_fallback_instance_overview_meets_word_floor() -> None:
     assert used == ["src-instance"]
 
 
-def test_lint_key_enemy_summary_requires_boss_anchor() -> None:
-    issues = lint_key_enemy_summary(
+def test_lint_key_character_summary_requires_boss_anchor() -> None:
+    issues = lint_key_character_summary(
         "A major encounter shapes the instance narrative stakes.",
         boss_name="Archivist Maelor",
         instance_name="Archive Vault",

@@ -216,7 +216,7 @@ def _collect_from_draft(
                 source_entity_id=instance_id,
                 source_entity_type="instance",
             )
-        for card in draft.get("key_enemies") or []:
+        for card in draft.get("key_characters") or []:
             if not isinstance(card, dict):
                 continue
             card_name = str(card.get("name", "")).strip()

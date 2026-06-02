@@ -391,7 +391,7 @@ def synthesize_instance_overview(
     return summary, used
 
 
-def synthesize_key_enemy_summary(
+def synthesize_key_character_summary(
     items: list[dict[str, Any]],
     *,
     boss_name: str,
@@ -400,11 +400,11 @@ def synthesize_key_enemy_summary(
 ) -> tuple[str, list[str]]:
     if not items:
         return "", []
-    from pipeline.generate.draft.instance_lint import fallback_key_enemy_summary, trim_key_enemy_summary
+    from pipeline.generate.draft.instance_lint import fallback_key_character_summary, trim_key_character_summary
 
     settings = load_ai_settings()
     if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
-        return fallback_key_enemy_summary(
+        return fallback_key_character_summary(
             items,
             boss_name=boss_name,
             instance_name=instance_name,
@@ -422,18 +422,19 @@ def synthesize_key_enemy_summary(
             },
         },
         system_prompt=(
-            f"Write a key-enemy card summary for boss '{boss_name}' in instance '{instance_name}' "
-            f"using ONLY evidence. Maximum {max_words} words. Describe narrative role and threat in this instance. "
-            "No generic stubs, loot, or player tactics."
+            f"Write a key-character card summary for '{boss_name}' in instance '{instance_name}' "
+            f"using ONLY evidence. Maximum {max_words} words. Describe who they are and their role in "
+            "this instance: whether they oppose, aid, or are neutral toward adventurers, and why they "
+            "matter to the instance's story. No generic stubs, loot, or player tactics."
         ),
         user_prompt=f"Evidence:\n{_format_evidence_block(items)}",
-        response_schema_name="wiki_first_key_enemy_summary",
-        substep="wiki_first_key_enemy_summary",
+        response_schema_name="wiki_first_key_character_summary",
+        substep="wiki_first_key_character_summary",
     )
-    summary = trim_key_enemy_summary(clean_wiki_snippet(str(result.get("summary", ""))), max_words=max_words)
+    summary = trim_key_character_summary(clean_wiki_snippet(str(result.get("summary", ""))), max_words=max_words)
     used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
     if not summary:
-        return fallback_key_enemy_summary(
+        return fallback_key_character_summary(
             items,
             boss_name=boss_name,
             instance_name=instance_name,

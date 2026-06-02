@@ -2,6 +2,13 @@
   "$defs": {
     "CharacterCard": {
       "properties": {
+        "decision_reason_codes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Decision Reason Codes",
+          "type": "array"
+        },
         "id": {
           "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
           "title": "Id",
@@ -10,6 +17,17 @@
         "name": {
           "minLength": 1,
           "title": "Name",
+          "type": "string"
+        },
+        "role": {
+          "default": "uncertain",
+          "enum": [
+            "enemy",
+            "ally",
+            "neutral",
+            "uncertain"
+          ],
+          "title": "Role",
           "type": "string"
         },
         "summary": {
@@ -28,6 +46,18 @@
           ],
           "default": null,
           "title": "Thumbnail Asset Id"
+        },
+        "wiki_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wiki Ref"
         }
       },
       "required": [
@@ -49,10 +79,34 @@
     },
     "GlossaryLink": {
       "properties": {
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
         "term_id": {
           "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
           "title": "Term Id",
           "type": "string"
+        },
+        "wiki_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wiki Url"
         }
       },
       "required": [

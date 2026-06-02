@@ -513,7 +513,7 @@ def test_check_run_validates_instance_draft(tmp_path: Path, capsys) -> None:
         "history_sections": [
             {"heading": "Founding", "body": "The vault was built to safeguard forbidden relics after the great war."}
         ],
-        "key_enemies": [
+        "key_characters": [
             {
                 "id": "character-archivist-maelor",
                 "name": "Archivist Maelor",
@@ -678,7 +678,7 @@ def _minimal_instance_draft(**overrides: object) -> dict[str, object]:
         "history_sections": [
             {"heading": "Founding", "body": "The academy was built to safeguard forbidden rituals after the great war."}
         ],
-        "key_enemies": [],
+        "key_characters": [],
         "sources": [{"source_id": "src-instance", "url": "https://example.test/scholomance"}],
         "provenance": {
             "identity_header": [{"source_id": "src-instance", "locator": "section:lead paragraph:1"}],
@@ -690,15 +690,15 @@ def _minimal_instance_draft(**overrides: object) -> dict[str, object]:
     return draft
 
 
-def test_check_run_fails_when_boss_pool_present_but_key_enemies_empty(tmp_path: Path) -> None:
+def test_check_run_fails_when_boss_pool_present_but_key_characters_empty(tmp_path: Path) -> None:
     run_root = _write_instance_semantics_run(tmp_path, instance_draft=_minimal_instance_draft())
-    with pytest.raises(SemanticCheckError, match="key_enemies empty despite"):
+    with pytest.raises(SemanticCheckError, match="key_characters empty despite"):
         check_run(run_root, zone_id="zone-western-plaguelands")
 
 
-def test_check_run_passes_with_single_key_enemy_when_only_one_boss_name(tmp_path: Path, capsys) -> None:
+def test_check_run_passes_with_single_key_character_when_only_one_boss_name(tmp_path: Path, capsys) -> None:
     draft = _minimal_instance_draft(
-        key_enemies=[
+        key_characters=[
             {
                 "id": "character-darkmaster-gandling",
                 "name": "Darkmaster Gandling",
@@ -727,7 +727,7 @@ def test_check_run_passes_with_single_key_enemy_when_only_one_boss_name(tmp_path
 
 def test_check_run_fails_when_instance_story_context_pointer_cap_exceeded(tmp_path: Path) -> None:
     draft = _minimal_instance_draft(
-        key_enemies=[
+        key_characters=[
             {
                 "id": "character-darkmaster-gandling",
                 "name": "Darkmaster Gandling",
@@ -758,7 +758,7 @@ def test_check_run_fails_when_instance_story_context_pointer_cap_exceeded(tmp_pa
 
 def test_check_run_fails_when_instance_identity_header_pointer_cap_exceeded(tmp_path: Path) -> None:
     draft = _minimal_instance_draft(
-        key_enemies=[
+        key_characters=[
             {
                 "id": "character-darkmaster-gandling",
                 "name": "Darkmaster Gandling",
@@ -787,9 +787,9 @@ def test_check_run_fails_when_instance_identity_header_pointer_cap_exceeded(tmp_
         check_run(run_root, zone_id="zone-western-plaguelands")
 
 
-def test_check_run_fails_when_two_boss_candidates_but_one_key_enemy(tmp_path: Path) -> None:
+def test_check_run_fails_when_two_boss_candidates_but_one_key_character(tmp_path: Path) -> None:
     draft = _minimal_instance_draft(
-        key_enemies=[
+        key_characters=[
             {
                 "id": "character-darkmaster-gandling",
                 "name": "Darkmaster Gandling",

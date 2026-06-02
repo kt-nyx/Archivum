@@ -913,10 +913,10 @@ def _check_instance_drafts(run_root: Path) -> None:
     from pipeline.generate.draft.faction_lint import lint_faction_summary
     from pipeline.generate.draft.instance_lint import (
         is_generic_at_a_glance,
-        is_generic_key_enemy_summary,
+        is_generic_key_character_summary,
         is_generic_overview,
         lint_at_a_glance as lint_instance_at_a_glance,
-        lint_key_enemy_summary,
+        lint_key_character_summary,
         lint_overview,
     )
     from pipeline.generate.draft.prose_lint import (
@@ -1027,37 +1027,37 @@ def _check_instance_drafts(run_root: Path) -> None:
             boss_pool_items=boss_pool_items,
         )
 
-        key_enemies = [row for row in draft.get("key_enemies") or [] if isinstance(row, dict)]
+        key_characters = [row for row in draft.get("key_characters") or [] if isinstance(row, dict)]
         valid_boss_pool_names = valid_boss_names_from_pool_items(
             boss_pool_items,
             instance_name=instance_name,
         )
-        if len(valid_boss_pool_names) >= 1 and len(key_enemies) == 0:
+        if len(valid_boss_pool_names) >= 1 and len(key_characters) == 0:
             _fail(
-                f"instance key_enemies empty despite {len(valid_boss_pool_names)} valid boss_pool name(s) "
+                f"instance key_characters empty despite {len(valid_boss_pool_names)} valid boss_pool name(s) "
                 f"for {instance_id!r}"
             )
-        if len(key_enemies) > INSTANCE_MAX_KEY_CHARACTERS:
+        if len(key_characters) > INSTANCE_MAX_KEY_CHARACTERS:
             _fail(
-                f"instance key_enemies exceeds cap for {instance_id!r} "
-                f"({len(key_enemies)} > {INSTANCE_MAX_KEY_CHARACTERS})"
+                f"instance key_characters exceeds cap for {instance_id!r} "
+                f"({len(key_characters)} > {INSTANCE_MAX_KEY_CHARACTERS})"
             )
-        if len(boss_candidates) >= INSTANCE_MIN_KEY_CHARACTERS and len(key_enemies) < INSTANCE_MIN_KEY_CHARACTERS:
+        if len(boss_candidates) >= INSTANCE_MIN_KEY_CHARACTERS and len(key_characters) < INSTANCE_MIN_KEY_CHARACTERS:
             _fail(
-                f"instance key_enemies count {len(key_enemies)} below minimum {INSTANCE_MIN_KEY_CHARACTERS} "
+                f"instance key_characters count {len(key_characters)} below minimum {INSTANCE_MIN_KEY_CHARACTERS} "
                 f"despite {len(boss_candidates)} boss candidates for {instance_id!r}"
             )
-        for card in key_enemies:
+        for card in key_characters:
             summary = str(card.get("summary", "")).strip()
             boss_name = str(card.get("name", "")).strip()
-            if is_generic_key_enemy_summary(summary):
-                _fail(f"instance key_enemy summary reads like generic stub: {boss_name!r}")
-            for issue in lint_key_enemy_summary(
+            if is_generic_key_character_summary(summary):
+                _fail(f"instance key_character summary reads like generic stub: {boss_name!r}")
+            for issue in lint_key_character_summary(
                 summary,
                 boss_name=boss_name,
                 instance_name=instance_name,
             ):
-                _fail(f"instance key_enemy quality check failed for {boss_name!r}: {issue}")
+                _fail(f"instance key_character quality check failed for {boss_name!r}: {issue}")
 
         provenance = draft.get("provenance") or {}
         identity_header = provenance.get("identity_header") or []
@@ -1077,10 +1077,10 @@ def _check_instance_drafts(run_root: Path) -> None:
         if overview and not story_context:
             _fail(f"instance overview missing story_context provenance: {instance_id!r}")
         key_char_provenance = provenance.get("key_characters") or {}
-        for card in key_enemies:
+        for card in key_characters:
             card_id = str(card.get("id", "")).strip()
             if card_id and card_id not in key_char_provenance:
-                _fail(f"instance key_enemy missing provenance: {card_id!r}")
+                _fail(f"instance key_character missing provenance: {card_id!r}")
 
         faction_cards = [row for row in draft.get("major_factions") or [] if isinstance(row, dict)]
         faction_provenance = provenance.get("major_factions") or {}

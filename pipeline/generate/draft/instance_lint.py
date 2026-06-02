@@ -18,8 +18,8 @@ MIN_AT_A_GLANCE_WORDS = 10
 MAX_AT_A_GLANCE_WORDS = 45
 MIN_OVERVIEW_WORDS = 170
 MAX_OVERVIEW_WORDS = 320
-MIN_KEY_ENEMY_WORDS = 18
-MAX_KEY_ENEMY_WORDS = 50
+MIN_KEY_CHARACTER_WORDS = 18
+MAX_KEY_CHARACTER_WORDS = 50
 
 _GENERIC_AT_A_GLANCE = re.compile(
     r"\bis a lore-significant retail instance\b", re.IGNORECASE
@@ -50,7 +50,7 @@ def trim_instance_overview(text: str, max_words: int = MAX_OVERVIEW_WORDS) -> st
     return trim_words(text, max_words, ensure_terminal_punct=True)
 
 
-def trim_key_enemy_summary(text: str, max_words: int = MAX_KEY_ENEMY_WORDS) -> str:
+def trim_key_character_summary(text: str, max_words: int = MAX_KEY_CHARACTER_WORDS) -> str:
     return ensure_sentence_terminator(trim_words(text, max_words, ensure_terminal_punct=True))
 
 
@@ -62,7 +62,7 @@ def is_generic_overview(text: str) -> bool:
     return bool(_GENERIC_OVERVIEW.search(text.strip()))
 
 
-def is_generic_key_enemy_summary(text: str) -> bool:
+def is_generic_key_character_summary(text: str) -> bool:
     return bool(_GENERIC_ENEMY.search(text.strip()))
 
 
@@ -108,22 +108,22 @@ def lint_overview(text: str, *, instance_name: str = "") -> list[str]:
     return issues
 
 
-def lint_key_enemy_summary(text: str, *, boss_name: str = "", instance_name: str = "") -> list[str]:
+def lint_key_character_summary(text: str, *, boss_name: str = "", instance_name: str = "") -> list[str]:
     issues: list[str] = []
     cleaned = text.strip()
     if not cleaned:
         issues.append("key enemy summary is empty")
         return issues
     words = word_count(cleaned)
-    if words < MIN_KEY_ENEMY_WORDS:
-        issues.append(f"key enemy summary below {MIN_KEY_ENEMY_WORDS} words ({words})")
-    if words > MAX_KEY_ENEMY_WORDS:
-        issues.append(f"key enemy summary exceeds {MAX_KEY_ENEMY_WORDS} words ({words})")
-    if is_generic_key_enemy_summary(cleaned):
+    if words < MIN_KEY_CHARACTER_WORDS:
+        issues.append(f"key enemy summary below {MIN_KEY_CHARACTER_WORDS} words ({words})")
+    if words > MAX_KEY_CHARACTER_WORDS:
+        issues.append(f"key enemy summary exceeds {MAX_KEY_CHARACTER_WORDS} words ({words})")
+    if is_generic_key_character_summary(cleaned):
         issues.append("key enemy summary reads like generic stub")
     if boss_name and boss_name.lower() not in cleaned.lower():
         issues.append("key enemy summary lacks boss name anchor")
-    if instance_name and instance_name.lower() not in cleaned.lower() and words < MIN_KEY_ENEMY_WORDS:
+    if instance_name and instance_name.lower() not in cleaned.lower() and words < MIN_KEY_CHARACTER_WORDS:
         issues.append("key enemy summary lacks instance context")
     return issues
 
@@ -171,28 +171,28 @@ def fallback_instance_overview(
     return text, used
 
 
-def fallback_key_enemy_summary(
+def fallback_key_character_summary(
     items: list[dict],
     *,
     boss_name: str,
     instance_name: str,
-    max_words: int = MAX_KEY_ENEMY_WORDS,
+    max_words: int = MAX_KEY_CHARACTER_WORDS,
 ) -> tuple[str, list[str]]:
     if not items:
         text = (
             f"{boss_name} serves as a major encounter within {instance_name}, shaping the "
             f"instance's narrative stakes and the power struggles that unfold inside its halls."
         )
-        return trim_key_enemy_summary(text, max_words=max_words), []
+        return trim_key_character_summary(text, max_words=max_words), []
     best = max(items, key=lambda row: word_count(str(row.get("snippet", ""))))
     snippet = clean_wiki_snippet(_HTML_TAG_RE.sub(" ", str(best.get("snippet", "")))).strip()
     snippet = trim_words(snippet, 24, ensure_terminal_punct=False)
-    text = trim_key_enemy_summary(
+    text = trim_key_character_summary(
         f"{boss_name} features prominently in {instance_name}: {snippet}",
         max_words=max_words,
     )
-    if word_count(text) < MIN_KEY_ENEMY_WORDS:
-        text = trim_key_enemy_summary(
+    if word_count(text) < MIN_KEY_CHARACTER_WORDS:
+        text = trim_key_character_summary(
             (
                 f"{boss_name} stands among the defining threats of {instance_name}, commanding "
                 f"hostile forces and anchoring the instance's narrative conflict. {snippet}"

@@ -221,6 +221,9 @@ class CharacterCard(BaseModel):
     id: str = Field(pattern=ID_PATTERN)
     name: str = Field(min_length=1)
     summary: str = Field(min_length=1)
+    role: Literal["enemy", "ally", "neutral", "uncertain"] = "uncertain"
+    wiki_ref: str | None = None
+    decision_reason_codes: list[str] = Field(default_factory=list)
     thumbnail_asset_id: str | None = None
 
 
@@ -385,7 +388,7 @@ class InstancePage(BaseModel):
     at_a_glance: str = Field(min_length=1)
     overview: str = Field(min_length=1)
     history_sections: list[HistorySection] = Field(default_factory=list)
-    key_enemies: list[CharacterCard] = Field(default_factory=list)
+    key_characters: list[CharacterCard] = Field(default_factory=list)
     major_factions: list[FactionCard] = Field(default_factory=list)
     lore_source: Literal["instance_page", "linked_lore_page"] = "instance_page"
     lore_source_reason: str | None = None
