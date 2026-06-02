@@ -68,6 +68,7 @@ from pipeline.generate.draft.prose_lint import (
 from pipeline.generate.draft.card_lint import finalize_cta_hook, lint_cta_hook, strip_zone_name_from_cta
 from pipeline.generate.draft.provenance import build_revision_index, collect_sources_manifest
 from pipeline.generate.draft.wiki_first_workers import (
+    classify_key_character_role_llm,
     synthesize_at_a_glance,
     synthesize_card_summary,
     synthesize_currently,
@@ -510,15 +511,30 @@ def _finalize_key_characters(
                 )
             if not pointers:
                 continue
+            role = candidate.role or "uncertain"
+            role_reason = candidate.role_reason or "no_signal"
+            # Hybrid: only spend an LLM call when deterministic signals were inconclusive.
+            if role == "uncertain":
+                role = classify_key_character_role_llm(
+                    pool,
+                    character_name=candidate.name,
+                    instance_name=instance_name,
+                    fallback_role="uncertain",
+                )
+                if role != "uncertain":
+                    role_reason = "llm_tiebreaker"
+            reason_codes: list[str] = []
+            if candidate.source_section_role:
+                reason_codes.append(candidate.source_section_role)
+            if role_reason:
+                reason_codes.append(f"role:{role}:{role_reason}")
             card = {
                 "id": candidate.boss_id,
                 "name": candidate.name,
                 "summary": summary,
-                "role": "uncertain",
+                "role": role,
                 "wiki_ref": candidate.wiki_url or None,
-                "decision_reason_codes": (
-                    [candidate.source_section_role] if candidate.source_section_role else []
-                ),
+                "decision_reason_codes": reason_codes,
                 "thumbnail_asset_id": None,
             }
             card_pointers = pointers

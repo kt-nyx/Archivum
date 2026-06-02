@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pipeline.discovery.instance_bosses import (
+    BossCandidate,
+    classify_character_role,
     collect_boss_candidates,
     should_reject_boss_title,
 )
@@ -211,3 +213,108 @@ def test_valid_boss_names_from_pool_items() -> None:
     ]
     names = valid_boss_names_from_pool_items(items, instance_name="Scholomance")
     assert "darkmaster gandling" in names
+
+
+def _candidate(name: str, role: str, snippets: list[str]) -> BossCandidate:
+    cand = BossCandidate(
+        boss_id=f"character-{name.lower().replace(' ', '-')}",
+        name=name,
+        wiki_url=f"https://warcraft.wiki.gg/wiki/{name.replace(' ', '_')}",
+        source_section_role=role,
+    )
+    cand.profile_pool = [{"snippet": text} for text in snippets]
+    return cand
+
+
+def test_classify_role_enemy_from_boss_section() -> None:
+    cand = _candidate("Loken", "bosses", ["Loken is the final boss of the instance."])
+    role, reason = classify_character_role(cand, instance_name="Halls of Lightning")
+    assert role == "enemy"
+    assert reason
+
+
+def test_classify_role_neutral_from_vendor_descriptor() -> None:
+    # Listed in a denizens roster but the evidence marks them as a vendor.
+    cand = _candidate(
+        "Provisioner Stonepath",
+        "denizens",
+        ["Provisioner Stonepath is a merchant and reagent vendor stationed at the entrance."],
+    )
+    role, _reason = classify_character_role(cand, instance_name="Some Instance")
+    assert role == "neutral"
+
+
+def test_classify_role_ally_from_rescue_descriptor() -> None:
+    cand = _candidate(
+        "Captain Helaina",
+        "npcs",
+        ["Captain Helaina must be rescued and then fights alongside the adventurers."],
+    )
+    role, _reason = classify_character_role(cand, instance_name="Some Instance")
+    assert role == "ally"
+
+
+def test_classify_role_uncertain_without_signal() -> None:
+    cand = _candidate(
+        "Mysterious Figure", "narrative_fallback", ["Mysterious Figure is mentioned once."]
+    )
+    role, reason = classify_character_role(cand, instance_name="Some Instance")
+    assert role == "uncertain"
+    assert reason == "no_signal"
+
+
+def test_significance_orders_bosses_ahead_of_trash() -> None:
+    section_blocks = [
+        {
+            "section_role": "bosses",
+            "text": '<a href="/wiki/Marquee_Boss">Marquee Boss</a>',
+        },
+        {
+            "section_role": "dungeon_denizens",
+            "text": '<a href="/wiki/Trash_Mob">Trash Mob</a>',
+        },
+    ]
+    boss_pool_items = [
+        {
+            "snippet": "Marquee Boss is the final boss. Marquee Boss commands the keep.",
+            "section_role": "bosses",
+            "source_id": "src",
+        }
+    ]
+    candidates = collect_boss_candidates(
+        section_blocks=section_blocks,
+        instance_name="Test Keep",
+        boss_pool_items=boss_pool_items,
+    )
+    names = [c.name for c in candidates]
+    assert names[0] == "Marquee Boss"
+    assert candidates[0].significance > candidates[-1].significance
+
+
+def test_redirect_alias_links_collapse_to_one_candidate() -> None:
+    # Two roster links (a redirect alias and its canonical) carry the same
+    # canonical_path from ingest resolution and must collapse into one entry.
+    structured_links = [
+        {
+            "href": "/wiki/Razuvious",
+            "label": "Razuvious",
+            "section_role": "bosses",
+            "canonical_path": "Instructor_Razuvious",
+            "page_id": 4242,
+        },
+        {
+            "href": "/wiki/Instructor_Razuvious",
+            "label": "Instructor Razuvious",
+            "section_role": "bosses",
+            "canonical_path": "Instructor_Razuvious",
+            "page_id": 4242,
+        },
+    ]
+    candidates = collect_boss_candidates(
+        section_blocks=[],
+        instance_name="Naxxramas",
+        boss_pool_items=[],
+        structured_links=structured_links,
+    )
+    assert len(candidates) == 1
+    assert candidates[0].name == "Instructor Razuvious"

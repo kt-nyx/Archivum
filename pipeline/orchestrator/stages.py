@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, cast
@@ -12,10 +13,12 @@ from pipeline.common.run_context import RunContext, append_trace_event, write_st
 from pipeline.addon import build_addon_bundle
 from pipeline.discovery import run_discovery_workflow
 from pipeline.discovery.enrich import EnrichPhase, run_discovery_enrich
+from pipeline.discovery.instance_bosses import row_has_roster_role
 from pipeline.generate.draft_writer import run_draft_writer
 from pipeline.generate.extract_facts import run_extract_facts
 from pipeline.ingest.fetch_wiki import run_fetch_wiki
 from pipeline.ingest.normalize_source import run_normalize_source
+from pipeline.ingest.wiki_redirects import annotate_snapshots_with_canonical_identity
 from pipeline.ingest.traverse_wiki import run_traverse_quests, run_traverse_seed
 from pipeline.glossary.run_terms import build_run_terms
 from pipeline.linker.linker import run_glossary_linker
@@ -29,6 +32,7 @@ from pipeline.validate.engine import validate_payload
 
 def run_ingest_stage(context: RunContext) -> dict[str, Path]:
     snapshots_path = run_fetch_wiki(context)
+    redirect_meta = _resolve_instance_roster_identities(context, snapshots_path)
     manifest_path = run_normalize_source(context, snapshots_path)
     manifest_rows = json.loads(manifest_path.read_text(encoding="utf-8"))
     retrieval_modes = sorted(
@@ -44,9 +48,46 @@ def run_ingest_stage(context: RunContext) -> dict[str, Path]:
         status="ok",
         inputs=[],
         outputs=[str(snapshots_path), str(manifest_path)],
-        metadata={"record_count": len(manifest_rows), "retrieval_modes": retrieval_modes},
+        metadata={
+            "record_count": len(manifest_rows),
+            "retrieval_modes": retrieval_modes,
+            **redirect_meta,
+        },
     )
     return {"snapshots_path": snapshots_path, "source_manifest_path": manifest_path}
+
+
+def _resolve_instance_roster_identities(
+    context: RunContext, snapshots_path: Path
+) -> dict[str, Any]:
+    """Resolve roster-link canonical identity (redirects/page ids) into snapshots.
+
+    Best-effort: the core fetch already succeeded, so a wiki query hiccup must not
+    fail ingest. On error we leave snapshots unannotated and record the reason.
+    Disabled via ``WOW_LORE_INGEST_RESOLVE_REDIRECTS=0`` (tests default to off so
+    they never reach the live wiki API).
+    """
+    if os.environ.get("WOW_LORE_INGEST_RESOLVE_REDIRECTS", "1").lower() in {"0", "false", "no"}:
+        return {"redirect_resolution": "disabled"}
+    try:
+        snapshots = json.loads(snapshots_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {"redirect_resolution": "skipped", "redirect_error": repr(exc)}
+    if not isinstance(snapshots, list):
+        return {"redirect_resolution": "skipped"}
+
+    try:
+        run_map = annotate_snapshots_with_canonical_identity(
+            snapshots,
+            roster_predicate=row_has_roster_role,
+        )
+    except Exception as exc:  # noqa: BLE001 - resolution is a best-effort enhancement
+        return {"redirect_resolution": "error", "redirect_error": repr(exc)}
+
+    snapshots_path.write_text(json.dumps(snapshots, indent=2), encoding="utf-8")
+    map_path = context.stage_dir("ingest") / "wiki_redirect_map.json"
+    map_path.write_text(json.dumps(run_map, indent=2), encoding="utf-8")
+    return {"redirect_resolution": "ok", "redirect_resolved_count": len(run_map)}
 
 
 def run_discovery_stage(context: RunContext, source_manifest_path: Path) -> dict[str, Path]:

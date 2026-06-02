@@ -66,6 +66,9 @@ class BossCandidate:
     wiki_url: str
     source_section_role: str
     profile_pool: list[dict[str, Any]] = field(default_factory=list)
+    significance: float = 0.0
+    role: str = "uncertain"
+    role_reason: str = ""
 
 
 def _normalize_role(section_role: str) -> str:
@@ -97,6 +100,33 @@ def row_has_roster_role(row: dict[str, Any]) -> bool:
 
 def _title_from_wiki_path(path: str) -> str:
     return path.replace("_", " ").strip()
+
+
+def _wiki_path_from_url(url: str) -> str:
+    """Return the bare ``Title_With_Underscores`` path from a wiki URL/href."""
+    value = str(url).strip()
+    if "/wiki/" in value:
+        value = value[value.index("/wiki/") + len("/wiki/") :]
+    return value.split("#", 1)[0].strip().strip("/")
+
+
+def _canonical_index_from_structured_links(
+    structured_links: list[dict[str, Any]] | None,
+) -> dict[str, str]:
+    """Map normalized href path -> canonical_path using ingest-resolved identity.
+
+    Lets candidates from any source (structured links, section blocks, boss_pool)
+    collapse to the same entry when their links redirect to one canonical page.
+    """
+    index: dict[str, str] = {}
+    for row in structured_links or []:
+        if not isinstance(row, dict):
+            continue
+        href_path = _wiki_path_from_url(str(row.get("href", "")))
+        canonical = str(row.get("canonical_path", "")).strip()
+        if href_path and canonical:
+            index[href_path.lower()] = canonical
+    return index
 
 
 def _slug_id(name: str) -> str:
@@ -214,6 +244,143 @@ def _profile_pool_for_boss(
     return pool
 
 
+# Section roles whose membership implies hostility (boss/encounter rosters), versus
+# roles that merely list characters and need descriptor evidence to classify.
+# "force"/"faction" rosters are intentionally excluded: pages like Culling of
+# Stratholme list Alliance allies and Scourge enemies under the same heading, so
+# membership alone is not a hostility signal - those defer to descriptors/LLM.
+_ENEMY_LEAN_TOKENS = (
+    "boss",
+    "encounter",
+    "denizen",
+    "inhabit",
+    "monster",
+    "faculty",
+    "dungeon_journal",
+    "adventure_guide",
+    "walkthrough",
+    "layout",
+)
+_NPC_LEAN_TOKENS = ("npc", "notable", "character", "ally", "allies", "friendly")
+
+# Per-character hostility markers only. Broad scourge/corruption words are excluded
+# because they appear in shared instance context and would tag every candidate.
+_ENEMY_DESCRIPTORS = (
+    "final boss",
+    "boss of",
+    "is a boss",
+    "is the boss",
+    "must be defeated",
+    "must be slain",
+    "servant of",
+    "minion of",
+    "commander of the scourge",
+)
+_ALLY_DESCRIPTORS = (
+    "aids the",
+    "assists the",
+    "fights alongside",
+    "ally of",
+    "allied with",
+    "helps the",
+    "must be escorted",
+    "must be rescued",
+    "is rescued",
+    "rescued by",
+    "to rescue",
+    "freed by",
+    "joins the",
+)
+_NEUTRAL_DESCRIPTORS = (
+    "merchant",
+    "vendor",
+    "innkeeper",
+    "quest giver",
+    "questgiver",
+    "trainer",
+    "flight master",
+    "banker",
+    "auctioneer",
+    "repair",
+    "reagent",
+)
+
+
+def _section_weight(section_role: str) -> int:
+    role = _normalize_role(section_role)
+    if any(token in role for token in ("boss", "encounter", "dungeon_journal", "adventure_guide")):
+        return 5
+    if any(token in role for token in ("force", "faculty", "denizen", "inhabit")):
+        return 4
+    if any(token in role for token in ("npc", "notable", "character")):
+        return 3
+    if any(token in role for token in ("monster", "walkthrough", "layout", "dungeon")):
+        return 2
+    if role == "narrative_fallback":
+        return 2
+    return 1
+
+
+def _significance_score(candidate: BossCandidate) -> float:
+    """Rank a candidate by section weight, evidence depth, and name mentions."""
+    weight = _section_weight(candidate.source_section_role)
+    pool = candidate.profile_pool or []
+    name_lower = candidate.name.lower()
+    mentions = sum(str(item.get("snippet", "")).lower().count(name_lower) for item in pool)
+    return weight * 100 + min(len(pool), 10) * 5 + min(mentions, 20)
+
+
+def _candidate_profile_text(candidate: BossCandidate) -> str:
+    return " ".join(
+        _plain_snippet(str(item.get("snippet", ""))) for item in candidate.profile_pool or []
+    ).lower()
+
+
+def classify_character_role(
+    candidate: BossCandidate, *, instance_name: str = ""
+) -> tuple[str, str]:
+    """Deterministically classify a character's role from section + descriptor signals.
+
+    Returns ``(role, reason_code)``. ``"uncertain"`` is returned when there is no
+    signal or signals conflict (a tie), deferring those cases to the LLM tiebreaker.
+    """
+    section = _normalize_role(candidate.source_section_role)
+    text = _candidate_profile_text(candidate)
+
+    enemy = sum(1 for kw in _ENEMY_DESCRIPTORS if kw in text)
+    ally = sum(1 for kw in _ALLY_DESCRIPTORS if kw in text)
+    neutral = sum(1 for kw in _NEUTRAL_DESCRIPTORS if kw in text)
+
+    # With no per-character descriptor evidence, only an unambiguous hostile section
+    # (boss/encounter rosters) is enough to classify; everything else stays uncertain
+    # so the LLM tiebreaker can resolve it without us guessing wrong.
+    if not (enemy or ally or neutral):
+        if any(token in section for token in _ENEMY_LEAN_TOKENS):
+            return "enemy", "enemy_section"
+        return "uncertain", "no_signal"
+
+    # Descriptor evidence present: decide among the three on that evidence alone, so an
+    # explicit ally/neutral marker is never overridden by mere roster membership.
+    scores = {"enemy": enemy, "ally": ally, "neutral": neutral}
+    ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+    if ranked[0][1] == ranked[1][1]:
+        return "uncertain", "conflicting_signal"
+    best_role = ranked[0][0]
+    return best_role, f"{best_role}_descriptor"
+
+
+def _rank_candidates(
+    candidates: list[BossCandidate], *, instance_name: str
+) -> list[BossCandidate]:
+    """Assign significance + deterministic role, then order by significance desc."""
+    for candidate in candidates:
+        candidate.significance = _significance_score(candidate)
+        candidate.role, candidate.role_reason = classify_character_role(
+            candidate, instance_name=instance_name
+        )
+    return sorted(candidates, key=lambda row: (-row.significance, row.name.lower()))
+
+
 def collect_boss_candidates(
     *,
     section_blocks: list[dict[str, Any]],
@@ -224,19 +391,41 @@ def collect_boss_candidates(
     """Parse boss names from encounter sections, structured links, and boss_pool evidence."""
     boss_pool_items = boss_pool_items or []
     candidates: dict[str, BossCandidate] = {}
+    canonical_index = _canonical_index_from_structured_links(structured_links)
 
     def _register(title: str, url: str, role: str) -> None:
-        if should_reject_boss_title(title, instance_name=instance_name):
+        href_path = _wiki_path_from_url(url)
+        canonical_path = canonical_index.get(href_path.lower(), "")
+        display_title = title
+        # A redirect alias resolves to a different canonical page: prefer the real
+        # name and url so "Razuvious" and "Instructor Razuvious" collapse to one.
+        if canonical_path and canonical_path.lower() != href_path.lower():
+            canonical_title = _title_from_wiki_path(canonical_path)
+            if canonical_title and not should_reject_boss_title(
+                canonical_title, instance_name=instance_name
+            ):
+                display_title = canonical_title
+                url = f"https://warcraft.wiki.gg/wiki/{canonical_path}"
+        if should_reject_boss_title(display_title, instance_name=instance_name):
             return
-        boss_id = _slug_id(title)
+        boss_id = _slug_id(display_title)
         if not boss_id:
             return
-        key = normalize_title(title)
+        identity_path = (canonical_path or href_path).lower()
+        if identity_path:
+            key = f"path:{identity_path}"
+        else:
+            key = f"title:{normalize_title(display_title)}"
         if key in candidates:
+            existing = candidates[key]
+            # Upgrade to a roster role if the first sighting was a weaker context.
+            new_is_roster = is_boss_section_role(role)
+            if new_is_roster and not is_boss_section_role(existing.source_section_role):
+                existing.source_section_role = role
             return
         candidates[key] = BossCandidate(
             boss_id=boss_id,
-            name=title,
+            name=display_title,
             wiki_url=url,
             source_section_role=role,
         )
@@ -272,14 +461,14 @@ def collect_boss_candidates(
         for title, url in _extract_wiki_links(str(item.get("snippet", ""))):
             _register(title, url, str(item.get("section_role", "boss_pool")))
 
-    ordered = sorted(candidates.values(), key=lambda row: row.name.lower())
-    for candidate in ordered:
+    collected = list(candidates.values())
+    for candidate in collected:
         candidate.profile_pool = _profile_pool_for_boss(
             candidate.name,
             boss_pool_items=boss_pool_items,
             section_blocks=section_blocks,
         )
-    return ordered
+    return _rank_candidates(collected, instance_name=instance_name)
 
 
 _NARRATIVE_SECTION_TOKENS = (
@@ -549,4 +738,4 @@ def mine_narrative_character_candidates(
             section_blocks=section_blocks,
         )
         results.append(candidate)
-    return results
+    return _rank_candidates(results, instance_name=instance_name)

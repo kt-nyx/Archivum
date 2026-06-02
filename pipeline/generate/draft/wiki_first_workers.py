@@ -443,6 +443,53 @@ def synthesize_key_character_summary(
     return summary, used
 
 
+_CHARACTER_ROLE_VALUES = ("enemy", "ally", "neutral", "uncertain")
+
+
+def classify_key_character_role_llm(
+    items: list[dict[str, Any]],
+    *,
+    character_name: str,
+    instance_name: str,
+    fallback_role: str = "uncertain",
+) -> str:
+    """LLM tiebreaker for an ambiguous character role, constrained to the enum.
+
+    Only meant to be called when deterministic classification returned
+    ``"uncertain"``. Offline / no-LLM / empty-evidence returns ``fallback_role`` so
+    the deterministic result (usually ``"uncertain"``) stands.
+    """
+    if not items:
+        return fallback_role
+    settings = load_ai_settings()
+    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
+        return fallback_role
+    result = llm_json_with_retry(
+        required_keys=("role",),
+        response_json_schema={
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["role"],
+            "properties": {"role": {"type": "string", "enum": list(_CHARACTER_ROLE_VALUES)}},
+        },
+        system_prompt=(
+            f"Classify the role of '{character_name}' within the instance '{instance_name}' "
+            "using ONLY the evidence. Choose exactly one: 'enemy' (opposes or is fought by "
+            "adventurers), 'ally' (aids or fights alongside adventurers), 'neutral' (a non-hostile "
+            "figure such as a vendor or bystander), or 'uncertain' if the evidence does not say."
+        ),
+        user_prompt=f"Evidence:\n{_format_evidence_block(items)}",
+        response_schema_name="wiki_first_key_character_role",
+        substep="wiki_first_key_character_role",
+    )
+    role = str(result.get("role", "")).strip().lower()
+    return role if role in _CHARACTER_ROLE_VALUES else fallback_role
+
+
 def select_key_characters_from_narrative(
     candidates: list[dict[str, Any]],
     *,

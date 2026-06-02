@@ -194,7 +194,13 @@ def test_build_scholomance_instance_page_from_faculty_section(monkeypatch) -> No
     assert "Darkmaster Gandling" in enemy_names
     assert "Jandice Barov" in enemy_names
     assert any(card.get("wiki_ref") for card in draft["key_characters"])
-    assert all(card.get("role") == "uncertain" for card in draft["key_characters"])
+    # Faculty roster is an enemy-lean section, so deterministic classification
+    # takes these off the uncertain default (Slice I3).
+    assert all(
+        card.get("role") in {"enemy", "ally", "neutral", "uncertain"}
+        for card in draft["key_characters"]
+    )
+    assert all(card.get("role") == "enemy" for card in draft["key_characters"])
     assert all(card.get("decision_reason_codes") for card in draft["key_characters"])
     provenance = draft.get("provenance") or {}
     assert len(provenance.get("story_context") or []) <= 3

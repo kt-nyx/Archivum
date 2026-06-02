@@ -10,6 +10,11 @@ import os
 if "WOW_LORE_DOTENV" not in os.environ:
     os.environ["WOW_LORE_DOTENV"] = "0"
 
+# Never reach the live wiki redirect API during tests unless a test explicitly opts in
+# (resolver/annotation helpers are still unit-tested directly with a mocked HTTP seam).
+if "WOW_LORE_INGEST_RESOLVE_REDIRECTS" not in os.environ:
+    os.environ["WOW_LORE_INGEST_RESOLVE_REDIRECTS"] = "0"
+
 
 def pytest_configure(config) -> None:  # noqa: ARG001
     # Quieter Prefect defaults for the test process (before first Prefect import).

@@ -37,8 +37,8 @@ const INSTANCE_SLICES = [
   },
   {
     id: "slice-i3",
-    content: "Slice I3 — Role classification (off the uncertain default), dedupe, and significance ranking",
-    status: "pending" as const,
+    content: "Slice I3 — Role classification (hybrid), redirect alias dedupe, and significance ranking",
+    status: "completed" as const,
   },
   {
     id: "slice-i4",
@@ -410,12 +410,13 @@ export default function InstanceMasterPlanCanvas() {
         </Stack>
       </CollapsibleSection>
 
-      <CollapsibleSection title="Slice I3 — Role classification + significance" count={8}>
+      <CollapsibleSection title="Slice I3 — Role classification + significance (shipped)" count={8}>
         <Stack gap={12}>
           <H3>Intent</H3>
           <Text>
             The role field already exists on the card (added in I1, defaulting to uncertain). I3 supplies the
-            intelligence: classify each character's role accurately, dedupe aliases, and rank significance.
+            intelligence: classify each character's role accurately, collapse redirect/title aliases, and rank
+            significance instead of emitting an alphabetical cast.
           </Text>
 
           <H3>Decision framework</H3>
@@ -429,13 +430,24 @@ export default function InstanceMasterPlanCanvas() {
             ]}
           />
 
-          <H3>Acceptance gate</H3>
+          <H3>Implementation (shipped)</H3>
           <Table
-            headers={["Check", "Pass condition"]}
+            headers={["Area", "What shipped"]}
             rows={[
-              ["No obvious role regressions", "Known allied or neutral figures are no longer forced into enemy-only output"],
-              ["Deduping quality", "Boss/NPC duplicate rows collapse into one character entry"],
-              ["Summary quality", "Each emitted character has a concise summary covering who they are + their role"],
+              ["Hybrid role classifier", "Deterministic classify_character_role (section lean + per-character descriptor markers) in instance_bosses.py; LLM tiebreaker classify_key_character_role_llm (enum-constrained, openai-gated, deterministic fallback) in wiki_first_workers.py, called only when the heuristic is uncertain. Wired into _finalize_key_characters off the hardcoded uncertain."],
+              ["Conservative by design", "force/faction rosters are not treated as hostile (Alliance + Scourge share one heading), and broad scourge/corruption words are excluded so ambiguous figures stay uncertain for the LLM rather than being mislabeled enemy."],
+              ["Redirect alias dedupe", "New ingest network step (pipeline/ingest/wiki_redirects.py) resolves roster-link identity via action=query&redirects=1, annotating snapshot structured_links with canonical_path + page_id and writing data/ingest/wiki_redirect_map.json. collect_boss_candidates keys candidates by canonical identity (canonical_path -> href path -> title), collapsing redirect aliases (e.g. Caldoran -> Baelin_Caldoran)."],
+              ["Significance ranking", "BossCandidate.significance = section weight + evidence depth + name mentions; replaces the alphabetical sort so marquee bosses (Loken, Sapphiron) lead the cast and the cap keeps the top-N."],
+            ]}
+          />
+
+          <H3>Acceptance gate (met)</H3>
+          <Table
+            headers={["Check", "Result"]}
+            rows={[
+              ["No obvious role regressions", "Culling of Stratholme allies (Uther, Eris, townsfolk) fall to uncertain instead of enemy; pure-enemy dungeons (Halls of Lightning, Naxxramas) classify enemy"],
+              ["Deduping quality", "Redirect/title aliases collapse to one canonical entry via ingest-resolved page identity; unit + live spot checks confirm"],
+              ["Summary quality", "Each emitted character keeps the I1/I2 who+role summary path; classification adds a role:<value>:<reason> decision code for provenance"],
             ]}
           />
         </Stack>
