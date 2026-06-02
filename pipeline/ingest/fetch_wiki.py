@@ -251,6 +251,7 @@ def build_structured_links_from_sections(
     seen: set[str] = set()
     for block in section_blocks:
         section_role = str(block.get("section_role", "other"))
+        parent_section_role = str(block.get("parent_section_role", ""))
         text = str(block.get("text", ""))
         text_lower = text.lower()
         for href in wiki_links:
@@ -261,7 +262,10 @@ def build_structured_links_from_sections(
                 continue
             if title in text_lower or title.replace(" ", "") in text_lower.replace(" ", ""):
                 label = unquote(href.split("/wiki/", 1)[-1].split("#", 1)[0]).replace("_", " ")
-                structured.append({"href": href, "section_role": section_role, "label": label})
+                entry = {"href": href, "section_role": section_role, "label": label}
+                if parent_section_role:
+                    entry["parent_section_role"] = parent_section_role
+                structured.append(entry)
                 seen.add(href)
     for href in wiki_links:
         if href in seen:
@@ -293,6 +297,7 @@ def _extract_sections_and_links(
     sections: list[dict[str, str]] = []
     links: list[str] = []
     current_section = "lead"
+    current_top_section = "lead"
     in_rpg = False
     for tag_name, raw_value in BLOCK_RE.findall(html):
         cleaned = " ".join(TAG_RE.sub(" ", raw_value).split())
@@ -308,13 +313,21 @@ def _extract_sections_and_links(
                 else:
                     in_rpg = False
                     current_section = normalized
+                current_top_section = current_section
             elif in_rpg:
                 current_section = _apply_rpg_section_prefix(normalized, in_rpg=True)
             else:
                 current_section = normalized
             continue
         section_role = _apply_rpg_section_prefix(current_section, in_rpg=in_rpg)
-        sections.append({"section_role": section_role, "text": cleaned})
+        parent_section_role = _apply_rpg_section_prefix(current_top_section, in_rpg=in_rpg)
+        sections.append(
+            {
+                "section_role": section_role,
+                "parent_section_role": parent_section_role,
+                "text": cleaned,
+            }
+        )
     for href, label_raw in HREF_RE.findall(html):
         href_value = href.strip()
         if not href_value:

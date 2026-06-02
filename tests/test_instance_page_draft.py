@@ -203,6 +203,78 @@ def test_build_scholomance_instance_page_from_faculty_section(monkeypatch) -> No
         assert provenance.get("key_characters", {}).get(card["id"])
 
 
+def test_build_instance_page_wires_scoped_links_and_parent_roles(monkeypatch) -> None:
+    monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
+    instance_id = "instance-archive-vault"
+    instance_name = "Archive Vault"
+    history = _long_history_snippet(instance_name)
+    evidence = [
+        {
+            "subject_id": instance_id,
+            "field_name": "at_a_glance_input",
+            "evidence_items": [
+                {
+                    "snippet": (
+                        f"{instance_name} is a blighted academy where Archivist Maelor and Warden Voss "
+                        "still guard the haunted inner vault."
+                    ),
+                    "section_role": "lead",
+                }
+            ],
+            "build_meta": {"source_id": "src-instance", "source_kind": "seed"},
+        },
+        {
+            "subject_id": instance_id,
+            "field_name": "history_digest",
+            "evidence_items": [{"snippet": history, "section_role": "history"}],
+            "build_meta": {"source_id": "src-instance", "source_kind": "seed"},
+        },
+        {
+            "subject_id": instance_id,
+            "field_name": "boss_pool",
+            "evidence_items": [
+                {
+                    "snippet": (
+                        "Archivist Maelor hoards forbidden tomes while Warden Voss bars the vault doors "
+                        "against intruders."
+                    ),
+                    "section_role": "denizens",
+                }
+            ],
+            "build_meta": {"source_id": "src-instance", "source_kind": "seed"},
+        },
+    ]
+    snapshots = [
+        {
+            "entity_id": instance_id,
+            "entity_type": "instance",
+            "structured_links": [
+                {"href": "/wiki/Archivist_Maelor", "label": "Archivist Maelor", "section_role": "denizens"},
+                {"href": "/wiki/Patch_3.0.2", "label": "Patch 3.0.2", "section_role": "lead"},
+            ],
+        }
+    ]
+    draft = build_instance_page(
+        _fact_pack(instance_id, instance_name),
+        evidence,
+        {"lore_source": "instance_page"},
+        section_blocks=[
+            {
+                "section_role": "vault_catacombs",
+                "parent_section_role": "dungeon_denizens",
+                "text": '<a href="/wiki/Warden_Voss">Warden Voss</a>',
+            }
+        ],
+        snapshots=snapshots,
+    )
+    names = {row["name"] for row in draft["key_characters"]}
+    assert "Archivist Maelor" in names  # scoped structured link (roster role) registered
+    assert "Warden Voss" in names  # parent_section_role made a non-roster leaf roster-bearing
+    assert "Patch 3.0.2" not in names  # non-roster (lead) structured link scoped out
+    for card in draft["key_characters"]:
+        assert draft.get("provenance", {}).get("key_characters", {}).get(card["id"])
+
+
 def test_finalize_key_characters_pointer_fallback_when_used_empty(monkeypatch) -> None:
     monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
 

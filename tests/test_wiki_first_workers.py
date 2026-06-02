@@ -5,6 +5,7 @@ import os
 from pipeline.generate.draft.compendium_voice import COMPENDIUM_VOICE_CORE, zone_system_prompt
 from pipeline.generate.draft.prose_lint import MAX_AT_A_GLANCE_WORDS, word_count
 from pipeline.generate.draft.wiki_first_workers import (
+    select_key_characters_from_narrative,
     synthesize_at_a_glance,
     synthesize_currently,
     synthesize_faction_summary,
@@ -157,4 +158,32 @@ def test_key_character_summary_deterministic_includes_boss_name(monkeypatch) -> 
     assert "Archivist Maelor" in summary
     assert "Archive Vault" in summary
     assert used == ["src-instance"]
+
+
+def test_select_narrative_characters_no_llm_returns_ranking(monkeypatch) -> None:
+    monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
+    selected = select_key_characters_from_narrative(
+        [{"name": "Yogg-Saron"}, {"name": "Loken"}, {"name": "Thorim"}],
+        instance_name="Ulduar",
+        max_count=2,
+    )
+    assert selected == ["Yogg-Saron", "Loken"]
+
+
+def test_select_narrative_characters_llm_is_constrained_to_inputs(monkeypatch) -> None:
+    monkeypatch.delenv("WOW_LORE_WIKI_FIRST_NO_LLM", raising=False)
+    import pipeline.generate.draft.wiki_first_workers as workers
+
+    monkeypatch.setattr(workers, "load_ai_settings", lambda: type("S", (), {"openai_ready": True})())
+    monkeypatch.setattr(
+        workers,
+        "llm_json_with_retry",
+        lambda **kwargs: {"selected": ["Loken", "Made Up Name", "yogg-saron"]},
+    )
+    selected = select_key_characters_from_narrative(
+        [{"name": "Yogg-Saron"}, {"name": "Loken"}, {"name": "Thorim"}],
+        instance_name="Ulduar",
+        max_count=10,
+    )
+    assert selected == ["Loken", "Yogg-Saron"]
 

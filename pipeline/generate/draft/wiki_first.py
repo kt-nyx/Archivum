@@ -17,7 +17,11 @@ from pipeline.generate.draft.instance_lint import (
 )
 from pipeline.discovery.entity_typing import normalize_title
 from pipeline.discovery.geography import resolve_parent_continent
-from pipeline.discovery.instance_bosses import BossCandidate, collect_boss_candidates
+from pipeline.discovery.instance_bosses import (
+    BossCandidate,
+    collect_boss_candidates,
+    mine_narrative_character_candidates,
+)
 from pipeline.discovery.world_registry import entry_kinds
 from pipeline.contracts.models import INSTANCE_MAX_KEY_CHARACTERS
 from pipeline.generate.draft.faction_lint import ensure_sentence_terminator, lint_faction_summary
@@ -72,6 +76,7 @@ from pipeline.generate.draft.wiki_first_workers import (
     synthesize_instance_overview,
     synthesize_key_character_summary,
     synthesize_location_summary,
+    select_key_characters_from_narrative,
 )
 
 
@@ -1534,6 +1539,28 @@ def build_instance_page(
         boss_pool_items=pools["boss_pool"],
         structured_links=structured_links,
     )
+    if not boss_candidates:
+        narrative_pool = pools["overview_pool"] + pools["at_a_glance_pool"]
+        narrative_candidates = mine_narrative_character_candidates(
+            blocks,
+            instance_name=name,
+            structured_links=structured_links,
+            narrative_pool=narrative_pool,
+            max_count=INSTANCE_MAX_KEY_CHARACTERS,
+        )
+        if narrative_candidates:
+            selected_names = select_key_characters_from_narrative(
+                [{"name": candidate.name, "wiki_url": candidate.wiki_url} for candidate in narrative_candidates],
+                instance_name=name,
+                max_count=INSTANCE_MAX_KEY_CHARACTERS,
+            )
+            selected_keys = {normalize_title(value) for value in selected_names}
+            chosen = [
+                candidate
+                for candidate in narrative_candidates
+                if normalize_title(candidate.name) in selected_keys
+            ] or narrative_candidates
+            boss_candidates = chosen[:INSTANCE_MAX_KEY_CHARACTERS]
     key_characters, key_character_provenance, character_used = _finalize_key_characters(
         instance_name=name,
         boss_candidates=boss_candidates,

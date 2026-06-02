@@ -1,0 +1,12 @@
+{
+  "instance_name": "Blackrock Depths",
+  "source": "warcraft.wiki.gg/wiki/Blackrock_Depths (trimmed)",
+  "section_blocks": [
+    {
+      "section_role": "encounters",
+      "parent_section_role": "dungeon_denizens",
+      "text": "<ul><li><a href=\"/wiki/Marshal_Windsor\">Marshal Windsor</a></li><li><a href=\"/wiki/Kharan_Mighthammer\">Kharan Mighthammer</a></li><li><a href=\"/wiki/Commander_Gor%27shak\">Commander Gor'shak</a></li><li><a href=\"/wiki/Plugger_Spazzring\">Plugger Spazzring</a></li><li><a href=\"/wiki/Mistress_Nagmara\">Mistress Nagmara</a></li><li><a href=\"/wiki/Lokhtos_Darkbargainer\">Lokhtos Darkbargainer</a></li><li><a href=\"/wiki/Marshal_Maxwell\">Marshal Maxwell</a></li><li><a href=\"/wiki/Warlord_Goretooth\">Warlord Goretooth</a></li><li><a href=\"/wiki/Mayara_Brightwing\">Mayara Brightwing</a></li><li><a href=\"/wiki/Hierophant_Theodora_Mulvadania\">Hierophant Theodora Mulvadania</a></li><li><a href=\"/wiki/Twilight%27s_Hammer\">Twilight's Hammer</a></li><li><a href=\"/wiki/Dark_Iron_dwarf\">Dark Iron dwarves</a></li></ul>"
+    }
+  ],
+  "structured_links": []
+}

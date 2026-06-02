@@ -441,3 +441,60 @@ def synthesize_key_character_summary(
             max_words=max_words,
         )
     return summary, used
+
+
+def select_key_characters_from_narrative(
+    candidates: list[dict[str, Any]],
+    *,
+    instance_name: str,
+    narrative_text: str = "",
+    max_count: int = 10,
+) -> list[str]:
+    """Grounded narrative-fallback selector.
+
+    Given deterministic link candidates already mined from the page (each a dict
+    with at least ``name``), return the ordered subset that are genuine key
+    characters of the instance. Selection is constrained to the provided names,
+    so it can never invent a character without a backing wiki link. Offline / no
+    LLM falls back to the deterministic ranking already applied by the miner.
+    """
+    names = [str(row.get("name", "")).strip() for row in candidates if str(row.get("name", "")).strip()]
+    if not names:
+        return []
+
+    settings = load_ai_settings()
+    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
+        return names[:max_count]
+
+    allowed = {name.lower(): name for name in names}
+    result = llm_json_with_retry(
+        required_keys=("selected",),
+        response_json_schema={
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["selected"],
+            "properties": {
+                "selected": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+        system_prompt=(
+            f"Select which of the listed names are key characters of the instance '{instance_name}' "
+            "(notable bosses, NPCs, leaders, or lore figures tied to this place). Choose ONLY from the "
+            "provided names; never invent names. Order by narrative importance. Exclude factions, "
+            f"organizations, locations, and items. Return at most {max_count} names."
+        ),
+        user_prompt="Candidate names:\n" + "\n".join(f"- {name}" for name in names)
+        + (f"\n\nContext:\n{clean_wiki_snippet(narrative_text)}" if narrative_text.strip() else ""),
+        response_schema_name="wiki_first_narrative_character_selection",
+        substep="wiki_first_narrative_character_selection",
+    )
+    selected: list[str] = []
+    seen: set[str] = set()
+    for value in result.get("selected", []):
+        canonical = allowed.get(str(value).strip().lower())
+        if canonical and canonical not in seen:
+            seen.add(canonical)
+            selected.append(canonical)
+    if not selected:
+        return names[:max_count]
+    return selected[:max_count]

@@ -28,6 +28,11 @@ const INSTANCE_SLICES = [
   {
     id: "slice-i2",
     content: "Slice I2 — Robust character extraction across wiki structure variants",
+    status: "completed" as const,
+  },
+  {
+    id: "slice-i2_5",
+    content: "Slice I2.5 — Ingestion structure fidelity (lead bucket + list/table capture)",
     status: "pending" as const,
   },
   {
@@ -302,6 +307,107 @@ export default function InstanceMasterPlanCanvas() {
               ["Determinism", "Repeated runs produce stable candidate sets for same inputs"],
             ]}
           />
+
+          <H3>Outcome (shipped)</H3>
+          <Text>
+            Extraction is now structure-tolerant. Roster vocabulary expanded (inhabitants / notable / character / npc /
+            monster); ingest records an additive parent_section_role so rosters nested under subregion subheadings are no
+            longer lost; structured_links are scoped to roster-relevant roles (leaf or parent) for precision. A grounded
+            narrative fallback fires only when roster sources yield nothing: a deterministic miner pulls person-like
+            /wiki/ links from narrative sections (ranked by prose mention frequency, location/faction-filtered, capped),
+            then an LLM selector picks the genuine key characters constrained to those links — with the deterministic
+            ranking as the NO_LLM fallback so offline runs stay reproducible. Locked by a real-fetched cross-structure
+            fixture matrix (ICC + Ulduar narrative fallback; Blackrock Depths roster + subregion-nested parent awareness)
+            and an end-to-end build_instance_page wiring test. Role still defaults to uncertain (classification is I3).
+          </Text>
+
+          <H3>Review hardening (103-page survey)</H3>
+          <Text>
+            Surveyed 103 real instance pages across every expansion. Two structural gaps were found and fixed: the
+            roster vocabulary missed an Inhabitants sub-role (added an `inhabit` token), and ~12% of pages produced zero
+            candidates because their roster/lore lives in the page's eponymous lead bucket — the MediaWiki h1 title is
+            slugified into a section role equal to the instance name (e.g. razorfen_kraul, halls_of_lightning,
+            trial_of_the_crusader), which is neither roster nor narrative. The narrative fallback now recognizes that
+            eponymous bucket (article/apostrophe/comma-insensitive slug match), taking the survey from 12 zero-candidate
+            pages to 0 (final: 49 roster, 54 narrative-fallback, 0 zero) with the full suite still green.
+          </Text>
+        </Stack>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Slice I2.5 — Ingestion structure fidelity" count={6}>
+        <Stack gap={12}>
+          <H3>Intent</H3>
+          <Text>
+            Fix the two ingest-layer root causes that I2 had to work around in the instance layer, so every downstream
+            consumer (instances, zones, characters, factions) benefits and the instance narrative-fallback eponymous
+            patch can be retired. Goal: section blocks faithfully represent the page's lead text, lists, and tables.
+          </Text>
+
+          <H3>Root causes (from the I2 103-page survey)</H3>
+          <Table
+            headers={["Cause", "Effect today", "Where"]}
+            rows={[
+              [
+                "h1 title slugified as a section",
+                "Lead/intro content is bucketed under an instance-name slug (e.g. razorfen_kraul) instead of 'lead', so it is neither roster nor narrative",
+                "fetch_wiki._extract_sections_and_links (heading loop sets current_section on level<=2, including the h1 title)",
+              ],
+              [
+                "BLOCK_RE captures only <p>/<h*>",
+                "Boss lists/rosters in <ul>/<li> and <table> never become section blocks; their links land in structured_links with role 'other' and get scoped out",
+                "fetch_wiki.BLOCK_RE + _extract_sections_and_links",
+              ],
+            ]}
+          />
+
+          <H3>Implementation tasks</H3>
+          <Table
+            headers={["Task", "Primary files", "Done when"]}
+            rows={[
+              [
+                "Lead bucket fix",
+                "fetch_wiki._extract_sections_and_links",
+                "Content before the first real h2 is roled 'lead' (h1 title no longer overrides section); matches _extract_main_text",
+              ],
+              [
+                "Capture list/table blocks",
+                "fetch_wiki BLOCK_RE + section walker",
+                "<ul>/<li> and <table> roster content becomes section blocks with correct section_role + parent_section_role",
+              ],
+              [
+                "Structured-link role accuracy",
+                "fetch_wiki.build_structured_links_from_sections",
+                "Links inside captured lists/tables inherit the real section role instead of falling back to 'other'",
+              ],
+              [
+                "Retire instance eponymous patch",
+                "discovery/instance_bosses.mine_narrative_character_candidates",
+                "Eponymous-slug special-case removed once lead is correctly labeled; narrative fallback relies on real 'lead'/roster roles",
+              ],
+              [
+                "Cross-entity regression sweep",
+                "zone/character/faction builders + their tests",
+                "Zone/character/faction drafts unchanged or improved; no fixture regressions",
+              ],
+            ]}
+          />
+
+          <H3>Acceptance gate</H3>
+          <Table
+            headers={["Check", "Pass condition"]}
+            rows={[
+              ["Survey parity", "Re-running the I2 103-page survey keeps 0 zero-candidate pages, now via real roster/lead roles (not the eponymous patch)"],
+              ["No regressions", "Full suite green; zone/character/faction outputs reviewed for drift"],
+              ["Determinism", "Repeated runs produce identical section blocks and candidate sets"],
+              ["Simplification", "Instance-layer eponymous workaround removed; behavior preserved"],
+            ]}
+          />
+
+          <Callout tone="info">
+            Risk: this changes shared ingest behavior across all entity types. Land behind the existing test suite and a
+            before/after diff on a sample of zone + instance + character fact packs. Keep changes additive where possible
+            (new keys) and re-baseline fixtures deliberately.
+          </Callout>
         </Stack>
       </CollapsibleSection>
 
