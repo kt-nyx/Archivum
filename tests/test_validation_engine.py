@@ -1342,6 +1342,9 @@ def test_instance_page_invalid_character_role_rejected() -> None:
     ]
     report = validate_payload("instance_page", payload)
     assert report.passed is False
+    assert any(
+        issue.code == "schema.invalid" and "role" in issue.path for issue in report.issues
+    )
 
 
 def test_zone_page_generic_instance_link_hard_fails() -> None:
