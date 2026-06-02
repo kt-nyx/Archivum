@@ -32,8 +32,8 @@ const INSTANCE_SLICES = [
   },
   {
     id: "slice-i2_5",
-    content: "Slice I2.5 — Ingestion structure fidelity (lead bucket + list/table capture)",
-    status: "pending" as const,
+    content: "Slice I2.5 — Ingestion structure fidelity (list/table capture + structured-link accuracy)",
+    status: "completed" as const,
   },
   {
     id: "slice-i3",
@@ -334,80 +334,79 @@ export default function InstanceMasterPlanCanvas() {
         </Stack>
       </CollapsibleSection>
 
-      <CollapsibleSection title="Slice I2.5 — Ingestion structure fidelity" count={6}>
+      <CollapsibleSection title="Slice I2.5 — Ingestion structure fidelity (shipped)" count={5}>
         <Stack gap={12}>
           <H3>Intent</H3>
           <Text>
-            Fix the two ingest-layer root causes that I2 had to work around in the instance layer, so every downstream
-            consumer (instances, zones, characters, factions) benefits and the instance narrative-fallback eponymous
-            patch can be retired. Goal: section blocks faithfully represent the page's lead text, lists, and tables.
+            Fix the real ingest-layer root cause that starved instance rosters, so every downstream consumer (instances,
+            zones, characters, factions) benefits and the instance narrative-fallback eponymous patch can be retired.
+            Goal: section blocks faithfully represent the page's lead prose, lists, and tables. Fetch strategy is
+            unchanged — ingest still uses the MediaWiki action=parse API; only the parser of the returned fragment changed.
           </Text>
 
-          <H3>Root causes (from the I2 103-page survey)</H3>
-          <Table
-            headers={["Cause", "Effect today", "Where"]}
-            rows={[
-              [
-                "h1 title slugified as a section",
-                "Lead/intro content is bucketed under an instance-name slug (e.g. razorfen_kraul) instead of 'lead', so it is neither roster nor narrative",
-                "fetch_wiki._extract_sections_and_links (heading loop sets current_section on level<=2, including the h1 title)",
-              ],
-              [
-                "BLOCK_RE captures only <p>/<h*>",
-                "Boss lists/rosters in <ul>/<li> and <table> never become section blocks; their links land in structured_links with role 'other' and get scoped out",
-                "fetch_wiki.BLOCK_RE + _extract_sections_and_links",
-              ],
-            ]}
-          />
-
-          <H3>Implementation tasks</H3>
-          <Table
-            headers={["Task", "Primary files", "Done when"]}
-            rows={[
-              [
-                "Lead bucket fix",
-                "fetch_wiki._extract_sections_and_links",
-                "Content before the first real h2 is roled 'lead' (h1 title no longer overrides section); matches _extract_main_text",
-              ],
-              [
-                "Capture list/table blocks",
-                "fetch_wiki BLOCK_RE + section walker",
-                "<ul>/<li> and <table> roster content becomes section blocks with correct section_role + parent_section_role",
-              ],
-              [
-                "Structured-link role accuracy",
-                "fetch_wiki.build_structured_links_from_sections",
-                "Links inside captured lists/tables inherit the real section role instead of falling back to 'other'",
-              ],
-              [
-                "Retire instance eponymous patch",
-                "discovery/instance_bosses.mine_narrative_character_candidates",
-                "Eponymous-slug special-case removed once lead is correctly labeled; narrative fallback relies on real 'lead'/roster roles",
-              ],
-              [
-                "Cross-entity regression sweep",
-                "zone/character/faction builders + their tests",
-                "Zone/character/faction drafts unchanged or improved; no fixture regressions",
-              ],
-            ]}
-          />
-
-          <H3>Acceptance gate</H3>
-          <Table
-            headers={["Check", "Pass condition"]}
-            rows={[
-              ["Survey parity", "Re-running the I2 103-page survey keeps 0 zero-candidate pages, now via real roster/lead roles (not the eponymous patch)"],
-              ["No regressions", "Full suite green; zone/character/faction outputs reviewed for drift"],
-              ["Determinism", "Repeated runs produce identical section blocks and candidate sets"],
-              ["Simplification", "Instance-layer eponymous workaround removed; behavior preserved"],
-            ]}
-          />
-
-          <Callout tone="info">
-            Risk: this changes shared ingest behavior across all entity types. Land behind the existing test suite and a
-            before/after diff on a sample of zone + instance + character fact packs. Keep changes additive where possible
-            (new keys) and re-baseline fixtures deliberately.
+          <Callout tone="warning">
+            Premise correction: production ingest for warcraft_wiki uses the action=parse API, which returns a content
+            fragment with no &lt;h1&gt; page title and no site chrome. The I2 "eponymous lead bucket" (h1 slugified into a
+            section role) was an artifact of the review survey fetching full pages out-of-band; it does not occur in
+            production. Verified across 52 parse-API instance pages: 0 had a section role equal to the instance slug. The
+            genuine, reproducible gap is that rosters live in &lt;ul&gt;/&lt;li&gt; and &lt;table&gt; elements that the old
+            BLOCK_RE (&lt;p&gt;/&lt;h*&gt; only) never captured.
           </Callout>
+
+          <H3>Root cause (actual)</H3>
+          <Table
+            headers={["Cause", "Effect", "Where"]}
+            rows={[
+              [
+                "Section walk captured only <p>/<h*>",
+                "Boss rosters in <ul>/<li> and <table> (e.g. a 'Bosses' list + 'Encounters' table under 'Dungeon denizens', or the infobox boss collapsible) never became section blocks, so their links were scoped out and enrich boss_pool stayed empty",
+                "fetch_wiki._extract_sections_and_links (BLOCK_RE loop)",
+              ],
+              [
+                "First-match link role assignment",
+                "A boss named in lead prose first (e.g. Loken) bound to 'lead' and was shadowed out of the roster path even though it also appeared under a 'Bosses' heading",
+                "fetch_wiki.build_structured_links_from_sections",
+              ],
+            ]}
+          />
+
+          <H3>Implementation (shipped)</H3>
+          <Table
+            headers={["Change", "Primary files", "Result"]}
+            rows={[
+              [
+                "Document-order section walk over <p>/<h*>/<li>/<td>/<th>",
+                "fetch_wiki (SECTION_BLOCK_RE + _extract_sections_and_links)",
+                "<ul>/<li> and content-table cells become section blocks with the correct section_role + parent_section_role",
+              ],
+              [
+                "Chrome-table exclusion",
+                "fetch_wiki (_strip_excluded_tables, nesting-aware)",
+                "infobox/navbox/toc/metadata tables are removed before the walk, so they never pollute lead / at_a_glance",
+              ],
+              [
+                "Multi-homed structured links",
+                "fetch_wiki.build_structured_links_from_sections",
+                "One entry per distinct (href, section_role); the roster collector keeps roster-roled entries even when a narrative section mentions the link earlier",
+              ],
+              [
+                "Lead guard + retire eponymous patch",
+                "fetch_wiki (h1 ignored as a section setter); instance_bosses.mine_narrative_character_candidates",
+                "Stray h1 never overrides lead; eponymous-slug special-case and its test removed. Added a 'force' roster token (recovers scenario 'Forces' rosters, e.g. Culling of Stratholme)",
+              ],
+            ]}
+          />
+
+          <H3>Acceptance gate (met)</H3>
+          <Table
+            headers={["Check", "Result"]}
+            rows={[
+              ["Roster capture", "Halls of Lightning (Bjarngrim/Volkhan/Ionar/Loken) and Razorfen Kraul rosters now flow through the roster path from their real list/table blocks"],
+              ["Parse-API sweep", "52 instance pages: 41 roster, 4 narrative-fallback; remaining zeros were redirect-title artifacts or a location-vs-dungeon article, not parsing gaps"],
+              ["Eponymous retired", "0 production pages relied on the eponymous bucket; patch + test removed, full suite green"],
+              ["No regression", "Live zone (Western Plaguelands) at_a_glance/history evidence still draws clean lead/history prose; infobox/navbox excluded"],
+            ]}
+          />
         </Stack>
       </CollapsibleSection>
 

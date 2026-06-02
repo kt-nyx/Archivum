@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import pytest
-
 from pipeline.discovery.instance_bosses import (
     collect_boss_candidates,
-    mine_narrative_character_candidates,
     should_reject_boss_title,
 )
 
@@ -200,36 +197,6 @@ def test_rejects_section_header_link_titles() -> None:
         boss_pool_items=[],
     )
     assert candidates == []
-
-
-@pytest.mark.parametrize(
-    "instance_name,role",
-    [
-        ("Razorfen Kraul", "razorfen_kraul"),  # plain eponymous lead bucket
-        ("Gruul's Lair", "gruul_s_lair"),  # apostrophe normalization
-        ("Aberrus, the Shadowed Crucible", "aberrus_the_shadowed_crucible"),  # comma
-        ("The Culling of Stratholme", "culling_of_stratholme"),  # leading article dropped
-    ],
-)
-def test_narrative_fallback_mines_eponymous_lead_bucket(instance_name: str, role: str) -> None:
-    """The MediaWiki <h1> title is slugified into a section role equal to the page
-    name; that lead bucket (where many pages list bosses/lore) must be mined by the
-    narrative fallback even across apostrophe/comma/"The " normalization differences."""
-    blocks = [
-        {
-            "section_role": role,
-            "parent_section_role": role,
-            "text": (
-                "The instance is ruled by [[/wiki/Warlord_Ramtusk|Warlord Ramtusk]], "
-                "who commands the defenders. Warlord Ramtusk is the marquee threat here."
-            ),
-        }
-    ]
-    candidates = mine_narrative_character_candidates(
-        blocks, instance_name=instance_name, max_count=10
-    )
-    names = {row.name for row in candidates}
-    assert "Warlord Ramtusk" in names, f"{instance_name}: eponymous lead not mined ({names})"
 
 
 def test_valid_boss_names_from_pool_items() -> None:

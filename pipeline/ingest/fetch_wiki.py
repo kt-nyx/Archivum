@@ -36,6 +36,33 @@ HREF_RE = re.compile(r'<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', re.IGNORECASE | re
 REVISION_RE = re.compile(r'"wgRevisionId"\s*:\s*([0-9]+)')
 _PARSE_HTML_CAP = 524288
 
+# Document-order content elements used for section_blocks. Headings update the
+# current section; paragraphs, list items, and content-table cells become blocks.
+# Lists/tables matter because Warcraft Wiki rosters (bosses, dungeon denizens,
+# encounters) are authored as <ul>/<li> and <table> rows, not <p> prose.
+SECTION_BLOCK_RE = re.compile(
+    r"<(?P<h>h[1-6])\b[^>]*>(?P<htext>.*?)</(?P=h)>"
+    r"|<p\b[^>]*>(?P<ptext>.*?)</p>"
+    r"|<li\b[^>]*>(?P<litext>.*?)</li>"
+    r"|<t(?P<cell>[dh])\b[^>]*>(?P<celltext>.*?)</t(?P=cell)>",
+    re.IGNORECASE | re.DOTALL,
+)
+_TABLE_OPEN_RE = re.compile(r"<table\b[^>]*>", re.IGNORECASE)
+_TABLE_TOKEN_RE = re.compile(r"<table\b|</table\s*>", re.IGNORECASE)
+_TABLE_CLASS_RE = re.compile(r'class\s*=\s*"([^"]*)"', re.IGNORECASE)
+# Chrome tables (infoboxes, navboxes, ToCs, message boxes) carry navigation and
+# metadata, not roster content; capturing their cells would pollute the lead and
+# section blocks, so they are removed before the section walk.
+_EXCLUDED_TABLE_CLASS_TOKENS = (
+    "infobox",
+    "navbox",
+    "toc",
+    "metadata",
+    "mbox",
+    "noprint",
+    "navigation",
+)
+
 
 def _cap_parse_html(html: str) -> str:
     if not html:
@@ -242,37 +269,56 @@ def _extract_main_text(html: str, *, max_chars: int) -> tuple[str, str]:
     return text[:max_chars], first_locator
 
 
+def _wiki_href_label(href: str) -> str:
+    return unquote(href.split("/wiki/", 1)[-1].split("#", 1)[0]).replace("_", " ")
+
+
 def build_structured_links_from_sections(
     section_blocks: list[dict[str, str]],
     wiki_links: list[str],
 ) -> list[dict[str, str]]:
-    """Attach section context to wiki links when href appears in section text."""
+    """Attach section context to wiki links when href appears in section text.
+
+    A link can legitimately live in several sections (e.g. a boss named in the
+    lead collapsible, the dungeon-denizens table, and a narrative paragraph). We
+    emit one entry per distinct (href, section_role) pair so downstream consumers
+    can pick the role they care about: the roster collector keeps entries whose
+    role is roster-relevant even when an earlier narrative section also mentions
+    the link. Links matched by no section fall back to a single "other" entry.
+    """
     structured: list[dict[str, str]] = []
-    seen: set[str] = set()
+    seen_pairs: set[tuple[str, str]] = set()
+    matched: set[str] = set()
     for block in section_blocks:
         section_role = str(block.get("section_role", "other"))
         parent_section_role = str(block.get("parent_section_role", ""))
-        text = str(block.get("text", ""))
-        text_lower = text.lower()
+        text_lower = str(block.get("text", "")).lower()
+        if not text_lower:
+            continue
+        compact_text = text_lower.replace(" ", "")
         for href in wiki_links:
-            if href in seen:
+            pair = (href, section_role)
+            if pair in seen_pairs:
                 continue
             title = href.split("/wiki/", 1)[-1].split("#", 1)[0].replace("_", " ").lower()
             if not title:
                 continue
-            if title in text_lower or title.replace(" ", "") in text_lower.replace(" ", ""):
-                label = unquote(href.split("/wiki/", 1)[-1].split("#", 1)[0]).replace("_", " ")
-                entry = {"href": href, "section_role": section_role, "label": label}
+            if title in text_lower or title.replace(" ", "") in compact_text:
+                seen_pairs.add(pair)
+                matched.add(href)
+                entry = {
+                    "href": href,
+                    "section_role": section_role,
+                    "label": _wiki_href_label(href),
+                }
                 if parent_section_role:
                     entry["parent_section_role"] = parent_section_role
                 structured.append(entry)
-                seen.add(href)
     for href in wiki_links:
-        if href in seen:
+        if href in matched:
             continue
-        label = unquote(href.split("/wiki/", 1)[-1].split("#", 1)[0]).replace("_", " ")
-        structured.append({"href": href, "section_role": "other", "label": label})
-        seen.add(href)
+        structured.append({"href": href, "section_role": "other", "label": _wiki_href_label(href)})
+        matched.add(href)
     return structured
 
 
@@ -291,6 +337,45 @@ def _apply_rpg_section_prefix(section: str, *, in_rpg: bool) -> str:
     return f"in_the_rpg_{section}"
 
 
+def _is_excluded_table(open_tag: str) -> bool:
+    """True for navigation/metadata tables (infobox, navbox, toc, ...) we drop."""
+    class_match = _TABLE_CLASS_RE.search(open_tag)
+    if not class_match:
+        return False
+    classes = class_match.group(1).lower()
+    return any(token in classes for token in _EXCLUDED_TABLE_CLASS_TOKENS)
+
+
+def _find_table_end(html: str, start: int) -> int:
+    """Return index past the </table> matching the <table> at ``start`` (nesting-aware)."""
+    depth = 0
+    for token in _TABLE_TOKEN_RE.finditer(html, start):
+        if token.group(0).lower().startswith("</"):
+            depth -= 1
+            if depth <= 0:
+                return token.end()
+        else:
+            depth += 1
+    return len(html)
+
+
+def _strip_excluded_tables(html: str) -> str:
+    """Remove chrome tables (and their nested content) before the section walk."""
+    out: list[str] = []
+    index = 0
+    while True:
+        match = _TABLE_OPEN_RE.search(html, index)
+        if not match:
+            out.append(html[index:])
+            break
+        out.append(html[index : match.start()])
+        end = _find_table_end(html, match.start())
+        if not _is_excluded_table(match.group(0)):
+            out.append(html[match.start() : end])
+        index = end
+    return "".join(out)
+
+
 def _extract_sections_and_links(
     html: str, *, max_links: int = 300
 ) -> tuple[list[dict[str, str]], list[str], list[dict[str, str]]]:
@@ -299,12 +384,18 @@ def _extract_sections_and_links(
     current_section = "lead"
     current_top_section = "lead"
     in_rpg = False
-    for tag_name, raw_value in BLOCK_RE.findall(html):
-        cleaned = " ".join(TAG_RE.sub(" ", raw_value).split())
-        if not cleaned:
-            continue
-        if tag_name.lower().startswith("h"):
-            heading_level = _heading_level(tag_name)
+    walk_html = _strip_excluded_tables(html)
+    for match in SECTION_BLOCK_RE.finditer(walk_html):
+        heading_tag = match.group("h")
+        if heading_tag is not None:
+            cleaned = " ".join(TAG_RE.sub(" ", match.group("htext") or "").split())
+            if not cleaned:
+                continue
+            heading_level = _heading_level(heading_tag)
+            # Parse-API fragments have no <h1> page title; ignore stray level-1
+            # headings so they never override the lead section.
+            if heading_level == 1:
+                continue
             normalized = _normalize_locator_section(cleaned)
             if heading_level <= 2:
                 if normalized in {"in_the_rpg", "in_the_rpg_edit"}:
@@ -319,6 +410,18 @@ def _extract_sections_and_links(
             else:
                 current_section = normalized
             continue
+        if match.group("ptext") is not None:
+            raw_value = match.group("ptext")
+            block_type = "paragraph"
+        elif match.group("litext") is not None:
+            raw_value = match.group("litext")
+            block_type = "list_item"
+        else:
+            raw_value = match.group("celltext")
+            block_type = "table_cell"
+        cleaned = " ".join(TAG_RE.sub(" ", raw_value or "").split())
+        if not cleaned:
+            continue
         section_role = _apply_rpg_section_prefix(current_section, in_rpg=in_rpg)
         parent_section_role = _apply_rpg_section_prefix(current_top_section, in_rpg=in_rpg)
         sections.append(
@@ -326,6 +429,7 @@ def _extract_sections_and_links(
                 "section_role": section_role,
                 "parent_section_role": parent_section_role,
                 "text": cleaned,
+                "block_type": block_type,
             }
         )
     for href, label_raw in HREF_RE.findall(html):

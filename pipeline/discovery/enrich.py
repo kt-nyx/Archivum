@@ -53,12 +53,18 @@ def _is_instance_seed_snapshot(snapshot: dict[str, Any]) -> bool:
     )
 
 
-def _instance_seed_field_names(section_role: str, *, lead_emitted: int) -> list[str]:
+def _instance_seed_field_names(
+    section_role: str, *, lead_emitted: int, block_type: str = "paragraph"
+) -> list[str]:
     lowered = section_role.lower()
     names: list[str] = []
-    if lowered in {"lead", "introduction"} and lead_emitted < 2:
+    # Prose-oriented fields only draw from paragraph text. List/table blocks (added
+    # so rosters reach boss_pool + structured links) are not narrative prose and
+    # must not pollute at_a_glance / history with loot/quest/patch/roster fragments.
+    is_prose = block_type == "paragraph"
+    if is_prose and lowered in {"lead", "introduction"} and lead_emitted < 2:
         names.append("at_a_glance_input")
-    if _is_history_digest_role(lowered):
+    if is_prose and _is_history_digest_role(lowered):
         names.append("history_digest")
         names.append("at_a_glance_input")
     if is_boss_section_role(section_role):
@@ -104,9 +110,16 @@ def _is_geography_input_role(section_role: str) -> bool:
     return any(hint in lowered for hint in _GEOGRAPHY_INPUT_HINTS)
 
 
-def _seed_field_names(section_role: str, *, lead_emitted: int) -> list[str]:
+def _seed_field_names(
+    section_role: str, *, lead_emitted: int, block_type: str = "paragraph"
+) -> list[str]:
     lowered = section_role.lower()
     names: list[str] = []
+    # Zone prose fields draw from paragraphs only; list/table blocks (subregion,
+    # loot, quest, resource lists) are not prose and historically never reached
+    # these fields, so keep them out to avoid evidence bloat/dilution.
+    if block_type != "paragraph":
+        return names
     if lowered in {"lead", "introduction"} and lead_emitted < 2:
         names.append("at_a_glance_input")
     if _is_geography_input_role(lowered):
@@ -246,6 +259,7 @@ def _build_evidence_packs(
                 continue
             raw_section = str(block.get("section_role", ""))
             role = _section_role(raw_section)
+            block_type = str(block.get("block_type", "paragraph"))
             snippet = clean_wiki_snippet(str(block.get("text", "")))
             if not snippet:
                 continue
@@ -253,7 +267,9 @@ def _build_evidence_packs(
 
             if is_zone_seed:
                 lead_emitted = lead_counts.get(subject_id, 0)
-                field_names = _seed_field_names(raw_section, lead_emitted=lead_emitted)
+                field_names = _seed_field_names(
+                    raw_section, lead_emitted=lead_emitted, block_type=block_type
+                )
                 if "at_a_glance_input" in field_names and raw_section.lower() in {
                     "lead",
                     "introduction",
@@ -263,7 +279,9 @@ def _build_evidence_packs(
                     continue
             elif is_instance_seed:
                 lead_emitted = lead_counts.get(subject_id, 0)
-                field_names = _instance_seed_field_names(raw_section, lead_emitted=lead_emitted)
+                field_names = _instance_seed_field_names(
+                    raw_section, lead_emitted=lead_emitted, block_type=block_type
+                )
                 if "at_a_glance_input" in field_names and raw_section.lower() in {
                     "lead",
                     "introduction",

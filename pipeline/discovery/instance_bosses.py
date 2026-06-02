@@ -30,6 +30,7 @@ _BOSS_SECTION_TOKENS = (
     "npc",
     "monster",
     "inhabit",
+    "force",
 )
 _BOSS_SECTION_EXACT = frozenset(
     {
@@ -476,26 +477,11 @@ def mine_narrative_character_candidates(
     first_seen: dict[str, tuple[str, str]] = {}
     order: list[str] = []
 
-    # Many wiki pages place their roster/lore in an eponymous lead bucket: the
-    # MediaWiki <h1> article title is slugified into a section role equal to the
-    # instance name (e.g. "razorfen_kraul"), which is neither a roster nor a
-    # narrative role. Treat that bucket as narrative for the fallback so those
-    # pages are not invisible. Compare on the same slug scheme used for section
-    # roles, article-insensitive, so apostrophes/commas/"The " don't break it.
-    def _slug_core(value: str) -> str:
-        slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
-        return slug[4:] if slug.startswith("the_") else slug
-
-    instance_core = _slug_core(instance_name)
-
-    def _is_narrative_for_instance(role: str) -> bool:
-        return _is_narrative_role(role) or (bool(instance_core) and _slug_core(role) == instance_core)
-
     def _row_is_narr(row: dict[str, Any]) -> bool:
-        if _is_narrative_for_instance(str(row.get("section_role", "other"))):
+        if _is_narrative_role(str(row.get("section_role", "other"))):
             return True
         parent = str(row.get("parent_section_role", "")).strip()
-        return bool(parent) and _is_narrative_for_instance(parent)
+        return bool(parent) and _is_narrative_role(parent)
 
     narrative_text = " ".join(
         _plain_snippet(str(block.get("text", "")))
