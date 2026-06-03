@@ -71,6 +71,12 @@ INSTANCE_FACTION_VOICE = (
 )
 
 
+QUESTLINE_CTA_VOICE = (
+    "Questline card hook. One imperative sentence (max 35 words). Spoiler-light: stakes and invitation, "
+    "not walkthrough steps or quest-by-quest spoilers. No zone-name filler, no meta, no achievement language. "
+    "Do not repeat the arc title verbatim; do not copy evidence phrasing."
+)
+
 def instance_system_prompt(*, field_voice: str, task_lines: str) -> str:
     """Compose an instance synthesis system prompt.
 

@@ -9,15 +9,18 @@ from pipeline.ai.config import load_ai_settings
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.generate.draft.compendium_voice import (
     AT_A_GLANCE_VOICE,
+    COMPENDIUM_VOICE_CORE,
     CURRENTLY_VOICE,
     HISTORY_VOICE,
     INSTANCE_AT_A_GLANCE_VOICE,
     INSTANCE_FACTION_VOICE,
     INSTANCE_OVERVIEW_VOICE,
     KEY_CHARACTER_VOICE,
+    QUESTLINE_CTA_VOICE,
     instance_system_prompt,
     zone_system_prompt,
 )
+from pipeline.generate.draft.card_lint import finalize_cta_hook
 from pipeline.generate.draft.llm import llm_json_with_retry
 from pipeline.generate.draft.prose_election import history_heading_from_role, precompress_at_a_glance_evidence
 from pipeline.generate.draft.faction_lint import trim_faction_summary
@@ -335,6 +338,105 @@ def synthesize_location_summary(
             if snippet:
                 return snippet, [str(item.get("source_id", ""))]
     return summary, used
+
+
+def _early_chain_ref_limit(chain_refs: list[str], *, arc_title: str) -> int:
+    if "andorhal" in arc_title.lower():
+        return 6
+    return 4 if len(chain_refs) <= 8 else 6
+
+
+def filter_early_chain_evidence_pool(
+    items: list[dict[str, Any]],
+    chain_refs: list[str],
+    *,
+    arc_title: str = "",
+) -> list[dict[str, Any]]:
+    if not items:
+        return []
+    limit = _early_chain_ref_limit(chain_refs, arc_title=arc_title)
+    early_ids = set(chain_refs[:limit])
+    scoped = [
+        item
+        for item in items
+        if str(item.get("quest_node_id", "")).strip() in early_ids
+    ]
+    if scoped:
+        return scoped[:limit]
+    return items[:limit]
+
+
+def synthesize_questline_cta_hook(
+    items: list[dict[str, Any]],
+    *,
+    arc_title: str,
+    start_anchor: str,
+    faction: str,
+    chain_refs: list[str] | None = None,
+    quest_descriptions: dict[str, str] | None = None,
+    max_words: int = 35,
+) -> tuple[str, list[str]]:
+    refs = list(chain_refs or [])
+    early_pool = filter_early_chain_evidence_pool(items, refs, arc_title=arc_title)
+    if quest_descriptions and refs:
+        limit = _early_chain_ref_limit(refs, arc_title=arc_title)
+        for node_id in refs[:limit]:
+            description = clean_wiki_snippet(str(quest_descriptions.get(node_id, "")))
+            if description and word_count(description) >= 6:
+                hook = finalize_cta_hook(trim_words(description, max_words), max_words=max_words)
+                if hook and hook.lower() != arc_title.strip().lower():
+                    return hook, [node_id]
+    if not early_pool:
+        return "", []
+    faction_addendum = ""
+    if faction == "alliance":
+        faction_addendum = " Name the Horde as the opposing faction when evidence supports it."
+    elif faction == "horde":
+        faction_addendum = " Name the Alliance as the opposing faction when evidence supports it."
+    settings = load_ai_settings()
+    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
+        ranked = sorted(early_pool, key=lambda row: word_count(str(row.get("snippet", ""))), reverse=True)
+        for item in ranked:
+            snippet = trim_words(clean_wiki_snippet(str(item.get("snippet", ""))), max_words)
+            if snippet and snippet.lower() != arc_title.strip().lower():
+                return finalize_cta_hook(snippet, max_words=max_words), [str(item.get("source_id", ""))]
+        return "", []
+    result = llm_json_with_retry(
+        required_keys=("summary", "used_evidence_ids"),
+        response_json_schema={
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["summary", "used_evidence_ids"],
+            "properties": {
+                "summary": {"type": "string"},
+                "used_evidence_ids": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+        system_prompt=(
+            f"{COMPENDIUM_VOICE_CORE} {QUESTLINE_CTA_VOICE}"
+            f" Write a questline card hook for arc '{arc_title}' starting at '{start_anchor}'."
+            f" Max {max_words} words.{faction_addendum}"
+        ),
+        user_prompt=f"Evidence:\n{_format_evidence_block(early_pool, max_items=6)}",
+        response_schema_name="wiki_first_questline_cta_hook",
+        substep="wiki_first_questline_cta_hook",
+    )
+    summary = finalize_cta_hook(
+        trim_words(clean_wiki_snippet(str(result.get("summary", ""))), max_words),
+        max_words=max_words,
+    )
+    used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
+    if summary and summary.lower() != arc_title.strip().lower():
+        return summary, used
+    ranked = sorted(early_pool, key=lambda row: word_count(str(row.get("snippet", ""))), reverse=True)
+    for item in ranked:
+        snippet = finalize_cta_hook(
+            trim_words(clean_wiki_snippet(str(item.get("snippet", ""))), max_words),
+            max_words=max_words,
+        )
+        if snippet:
+            return snippet, [str(item.get("source_id", ""))]
+    return "", []
 
 
 def synthesize_card_summary(

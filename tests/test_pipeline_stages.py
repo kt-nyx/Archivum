@@ -223,6 +223,17 @@ def test_wiki_first_stage_chain_includes_discovery_and_enrich(
         phase="significance",
     )
     assert significance_outputs["zone_quest_cluster_rankings"].exists()
+
+    card_polish_outputs = run_discovery_enrich_stage(
+        context,
+        ingest_output["source_manifest_path"],
+        phase="card_polish",
+    )
+    assert card_polish_outputs["zone_questline_card_metadata"].exists()
+    metadata = json.loads(
+        card_polish_outputs["zone_questline_card_metadata"].read_text(encoding="utf-8")
+    )
+    assert isinstance(metadata, list)
     decisions = json.loads(
         significance_outputs["questline_inclusion_decisions"].read_text(encoding="utf-8")
     )

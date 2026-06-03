@@ -111,11 +111,36 @@ def _cluster_ids_from_v3(v3_rows: list[dict[str, Any]], zone_id: str) -> set[str
     }
 
 
-def _cluster_id_from_card_id(card_id: str) -> str:
+def _cluster_id_from_card_id(
+    card_id: str,
+    *,
+    card_id_to_cluster_id: dict[str, str] | None = None,
+) -> str:
+    mapped = (card_id_to_cluster_id or {}).get(str(card_id).strip())
+    if mapped:
+        return mapped
     normalized = str(card_id).replace("cluster-", "", 1)
     if normalized.endswith("-continued"):
         return normalized[: -len("-continued")]
     return normalized
+
+
+def _card_id_to_cluster_id_map(run_root: Path, zone_id: str) -> dict[str, str]:
+    metadata_path = run_root / "data" / "discovery" / "zone_questline_card_metadata.json"
+    rows = _load_json(metadata_path)
+    if not isinstance(rows, list):
+        return {}
+    mapping: dict[str, str] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("zone_id", "")).strip() != zone_id:
+            continue
+        card_id = str(row.get("card_id", "")).strip()
+        cluster_id = str(row.get("cluster_id", "")).strip()
+        if card_id and cluster_id:
+            mapping[card_id] = cluster_id
+    return mapping
 
 
 def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
@@ -405,8 +430,12 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
 
     if v3_rows:
         expected_clusters = _cluster_ids_from_v3(v3_rows, resolved_zone_id)
+        card_id_to_cluster = _card_id_to_cluster_id_map(run_root, resolved_zone_id)
         card_ids = {
-            _cluster_id_from_card_id(str(row.get("id", "")))
+            _cluster_id_from_card_id(
+                str(row.get("id", "")),
+                card_id_to_cluster_id=card_id_to_cluster,
+            )
             for row in cards
         }
         if expected_clusters:

@@ -18,6 +18,7 @@ from pipeline.discovery.location_discovery import (
 )
 from pipeline.discovery.instance_bosses import is_boss_section_role
 from pipeline.discovery.questline_cluster import cluster_zone_questlines
+from pipeline.discovery.questline_card_polish import build_zone_questline_card_metadata
 from pipeline.discovery.questline_significance import (
     load_included_cluster_ids_by_zone,
     score_zone_questline_clusters,
@@ -30,7 +31,7 @@ from pipeline.discovery.workflow import _load_json, _section_role
 # "roster" (pre-traverse): build the flat, UNCLUSTERED quest graph + zone-level
 # questline decision; clustering is deferred until quest pages exist (Slice B).
 # "full" keeps the legacy single-pass clustering behavior for any direct callers.
-EnrichPhase = Literal["full", "roster", "cluster", "significance", "evidence_merge"]
+EnrichPhase = Literal["full", "roster", "cluster", "significance", "card_polish", "evidence_merge"]
 
 _UNCLUSTERED_CLUSTER_ID = "unclustered"
 
@@ -519,6 +520,7 @@ def run_discovery_enrich(
         "zone_quest_graph_v3": discovery_dir / "zone_quest_graph_v3.json",
         "zone_quest_clusters": discovery_dir / "zone_quest_clusters.json",
         "zone_quest_cluster_rankings": discovery_dir / "zone_quest_cluster_rankings.json",
+        "zone_questline_card_metadata": discovery_dir / "zone_questline_card_metadata.json",
         "location_significance_decisions": decisions_dir / "location_significance_decisions.json",
         "questline_inclusion_decisions": decisions_dir / "questline_inclusion_decisions.json",
         "evidence_packs": evidence_dir / "evidence_packs.jsonl",
@@ -665,6 +667,61 @@ def run_discovery_enrich(
                 "clusters_included": included_total,
                 "clusters_excluded": excluded_total,
                 "clusters_borderline": borderline_total,
+                "quest_records_path": str(quest_records_path),
+            }
+        )
+        outputs["enrich_report"].write_text(json.dumps(report_payload, indent=2), encoding="utf-8")
+        outputs["quest_records"] = quest_records_path
+        return outputs
+
+    if phase == "card_polish":
+        v3_blob = _load_json(outputs["zone_quest_graph_v3"])
+        questline_graph_v3 = v3_blob if isinstance(v3_blob, list) else []
+        clusters_blob = _load_json(outputs["zone_quest_clusters"])
+        cluster_summaries = clusters_blob if isinstance(clusters_blob, list) else []
+        rankings_blob = _load_json(outputs["zone_quest_cluster_rankings"])
+        rankings_list = rankings_blob if isinstance(rankings_blob, list) else []
+        included_by_zone = load_included_cluster_ids_by_zone(rankings_list)
+        quest_records_path, quest_records = _load_or_aggregate_quest_records(discovery_dir, snapshots)
+
+        metadata_rows: list[dict[str, Any]] = []
+        aggregate_metrics: dict[str, int] = defaultdict(int)
+        summaries_by_zone: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for summary in cluster_summaries:
+            if isinstance(summary, dict):
+                zone_id = str(summary.get("zone_id", "")).strip()
+                if zone_id:
+                    summaries_by_zone[zone_id].append(summary)
+
+        for zone_id in sorted(included_by_zone):
+            zone_rows = [row for row in questline_graph_v3 if str(row.get("zone_id", "")) == zone_id]
+            rows, metrics = build_zone_questline_card_metadata(
+                zone_id=zone_id,
+                cluster_summaries=summaries_by_zone.get(zone_id, []),
+                v3_rows=zone_rows,
+                quest_records=quest_records,
+                included_cluster_ids=included_by_zone[zone_id],
+            )
+            metadata_rows.extend(rows)
+            for key, value in metrics.items():
+                aggregate_metrics[key] += int(value)
+
+        outputs["zone_questline_card_metadata"].write_text(
+            json.dumps(metadata_rows, indent=2), encoding="utf-8"
+        )
+        prior_report = _load_json(outputs["enrich_report"])
+        report_payload = prior_report if isinstance(prior_report, dict) else {}
+        report_payload.update(
+            {
+                "run_id": context.run_id,
+                "enrich_phase": phase,
+                "quest_record_count": len(quest_records),
+                "card_polish_cluster_count": aggregate_metrics.get("card_polish_cluster_count", 0),
+                "card_polish_registry_mapped_count": aggregate_metrics.get(
+                    "card_polish_registry_mapped_count", 0
+                ),
+                "card_polish_entry_anchor_count": aggregate_metrics.get("card_polish_entry_anchor_count", 0),
+                "card_polish_unmapped_count": aggregate_metrics.get("card_polish_unmapped_count", 0),
                 "quest_records_path": str(quest_records_path),
             }
         )

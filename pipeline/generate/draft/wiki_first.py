@@ -78,6 +78,7 @@ from pipeline.generate.draft.wiki_first_workers import (
     classify_key_character_role_llm,
     synthesize_at_a_glance,
     synthesize_card_summary,
+    synthesize_questline_cta_hook,
     synthesize_currently,
     synthesize_faction_summary,
     synthesize_history_sections,
@@ -1137,8 +1138,9 @@ def _append_questline_card(
     card_suffix: str = "",
     zone_name: str = "",
     cluster_decision: dict[str, Any] | None = None,
+    card_id: str = "",
 ) -> None:
-    card_id = f"cluster-{cluster_id}{card_suffix}"
+    resolved_card_id = card_id.strip() or f"cluster-{cluster_id}{card_suffix}"
     if zone_name.strip():
         cta = strip_zone_name_from_cta(cta, zone_name=zone_name)
     cta = finalize_cta_hook(cta)
@@ -1152,7 +1154,7 @@ def _append_questline_card(
         reason_codes = list((questline_decision or {}).get("reason_codes") or ["graph_depth"])
     major_questlines.append(
         {
-            "id": card_id,
+            "id": resolved_card_id,
             "title": cluster_title,
             "faction": faction,
             "cta_hook": cta,
@@ -1175,7 +1177,7 @@ def _append_questline_card(
         )
     if pointers:
         bucket = _provenance_bucket_for_faction(faction)
-        questline_provenance_by_bucket[bucket][card_id] = pointers
+        questline_provenance_by_bucket[bucket][resolved_card_id] = pointers
         for pointer in pointers:
             used_source_ids.add(pointer["source_id"])
 
@@ -1256,6 +1258,7 @@ def build_zone_page(
     questline_decision: dict[str, Any] | None,
     *,
     questline_cluster_decision_map: dict[str, dict[str, Any]] | None = None,
+    questline_card_metadata: dict[str, dict[str, Any]] | None = None,
     included_cluster_ids: list[str] | None = None,
     faction_profile_targets: list[dict[str, Any]] | None = None,
     location_profile_targets: list[dict[str, Any]] | None = None,
@@ -1416,9 +1419,16 @@ def build_zone_page(
             str(cluster.get("cluster_title", "Main storylines")),
             zone_name=name,
         )
+        card_meta = (questline_card_metadata or {}).get(cluster_id, {})
+        if str(card_meta.get("display_title", "")).strip():
+            cluster_title = str(card_meta.get("display_title", "")).strip()
         faction = _majority_faction([str(row.get("faction_binding", "shared")) for row in quests if isinstance(row, dict)])
         first_quest = quests[0] if isinstance(quests[0], dict) else {}
-        start_anchor = str(first_quest.get("title", cluster_title))
+        start_anchor = str(card_meta.get("start_anchor", "")).strip() or str(
+            first_quest.get("title", cluster_title)
+        )
+        card_id_override = str(card_meta.get("card_id", "")).strip()
+        suppress_continued_card = bool(card_meta.get("suppress_continued_card"))
         chain_refs = [str(row.get("node_id", "")) for row in quests if isinstance(row, dict) and row.get("node_id")]
         wiki_refs = [
             str(row.get("source_link", ""))
@@ -1429,11 +1439,13 @@ def build_zone_page(
         scoped_pool = _faction_scoped_lore_pool(scoped_pool, quests, faction)
         if not scoped_pool:
             continue
-        cta, cta_used = synthesize_card_summary(
+        cta, cta_used = synthesize_questline_cta_hook(
             scoped_pool,
-            subject=cluster_title,
-            max_words=35,
+            arc_title=cluster_title,
+            start_anchor=start_anchor,
             faction=faction,
+            chain_refs=chain_refs,
+            max_words=35,
         )
         if not cta:
             cta = _best_snippet_for_term(scoped_pool, cluster_title, min_words=8) or (
@@ -1458,9 +1470,22 @@ def build_zone_page(
             used_source_ids=used_source_ids,
             zone_name=name,
             cluster_decision=cluster_decision,
+            card_id=card_id_override,
         )
         emitted_cards += 1
         if overflow_refs:
+            if suppress_continued_card:
+                questline_overflow_decisions.append(
+                    {
+                        "entity_id": zone_id,
+                        "entity_type": "questline_cluster",
+                        "cluster_id": cluster_id,
+                        "card_id": card_id_override or f"cluster-{cluster_id}",
+                        "reason": "questline_chain_refs_cap",
+                        "overflow_chain_refs": overflow_refs,
+                    }
+                )
+                continue
             overflow_pool = _cluster_lore_pool(pools, cluster_id)
             overflow_pool = _faction_scoped_lore_pool(overflow_pool, quests, faction)
             overflow_cta, overflow_used = synthesize_card_summary(
