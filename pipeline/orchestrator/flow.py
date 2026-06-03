@@ -182,6 +182,19 @@ def run_pipeline_flow(
         lambda: run_discovery_enrich_stage(
             context,
             ingest_output["source_manifest_path"],
+            phase="cluster",
+        ),
+        retries=retries_per_stage,
+        on_fail_manifest_inputs=[str(coalesced_path)],
+        on_fail_manifest_outputs=[],
+        run_id=context.run_id,
+        verbose=verbose,
+    )
+    _run_stage_with_retry(
+        "discovery_enrich",
+        lambda: run_discovery_enrich_stage(
+            context,
+            ingest_output["source_manifest_path"],
             phase="evidence_merge",
         ),
         retries=retries_per_stage,

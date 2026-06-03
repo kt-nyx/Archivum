@@ -210,6 +210,21 @@ def test_wiki_first_stage_chain_includes_discovery_and_enrich(
     assert traverse_quest_outputs["traversal_report"].exists()
     assert traverse_quest_outputs["quest_records"].exists()
 
+    cluster_outputs = run_discovery_enrich_stage(
+        context,
+        ingest_output["source_manifest_path"],
+        phase="cluster",
+    )
+    assert cluster_outputs["zone_quest_clusters"].exists()
+    clustered_v3 = json.loads(cluster_outputs["zone_quest_graph_v3"].read_text(encoding="utf-8"))
+    quest_cluster_ids = {
+        str(row.get("cluster_id", ""))
+        for row in clustered_v3
+        if row.get("node_type") == "quest"
+    }
+    assert "unclustered" not in quest_cluster_ids
+    assert len(quest_cluster_ids) >= 2
+
     enrich_outputs = run_discovery_enrich_stage(
         context,
         ingest_output["source_manifest_path"],

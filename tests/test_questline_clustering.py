@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from pipeline.discovery.questline_clustering import (
@@ -128,3 +129,32 @@ def test_apply_cluster_layers_orders_l4_before_l2_l3() -> None:
     layered = apply_cluster_layers(rows, html="<h2>Andorhal Front</h2>")
     titles = {row["cluster_title"] for row in layered}
     assert any("Andorhal" in title or "Main storylines" in title for title in titles)
+
+
+def test_prereq_graph_clustering_beats_heading_collapse_on_wpl_fixture() -> None:
+    """Slice B clustering should not collapse the WPL pilot into one mega-cluster."""
+    from pipeline.discovery.questline_cluster import cluster_zone_questlines
+
+    roster = json.loads(
+        Path("tests/fixtures/clustering/western_plaguelands_roster_v3.json").read_text(encoding="utf-8")
+    )
+    records = [
+        json.loads(line)
+        for line in Path("tests/fixtures/clustering/western_plaguelands_quest_records.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+    html = WPL_FIXTURE.read_text(encoding="utf-8")
+    heading_rows = apply_cluster_layers(roster, html=html)
+    graph_rows, _summaries, _unresolved = cluster_zone_questlines(
+        zone_id="zone-western-plaguelands",
+        roster_rows=roster,
+        quest_records=records,
+        storyline_html=html,
+        zone_name="Western Plaguelands",
+    )
+    heading_clusters = {row["cluster_id"] for row in heading_rows if row.get("node_type") == "quest"}
+    graph_clusters = {row["cluster_id"] for row in graph_rows if row.get("node_type") == "quest"}
+    assert len(graph_clusters) >= len(heading_clusters)
+    assert len(graph_clusters) >= 5

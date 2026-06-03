@@ -216,6 +216,22 @@ class QuestRecord(BaseModel):
     description: str = ""
 
 
+class QuestlineClusterSummary(BaseModel):
+    """Cluster-level summary produced by post-traverse questline clustering (Slice B)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    zone_id: str = Field(min_length=1)
+    cluster_id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    faction: Faction = Faction.SHARED
+    quest_count: int = Field(ge=0)
+    reputation_orgs: list[str] = Field(default_factory=list)
+    quest_node_ids: list[str] = Field(default_factory=list)
+    algorithm_version: str = Field(default="v1-prereq-graph")
+    unresolved_edge_count: int = Field(default=0, ge=0)
+
+
 class InclusionDecision(BaseModel):
     """Inclusion/exclusion audit object used in candidate filtering."""
 
@@ -641,4 +657,5 @@ WIKI_FIRST_ENTITY_MODEL_MAP: dict[str, type[BaseModel]] = {
     "decision_artifact": DecisionArtifact,
     "evidence_pack": EvidencePack,
     "quest_record": QuestRecord,
+    "questline_cluster_summary": QuestlineClusterSummary,
 }

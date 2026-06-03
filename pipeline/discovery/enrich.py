@@ -3,19 +3,21 @@
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Literal
 
 from pipeline.common.run_context import RunContext
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.common.wiki_evidence_filters import should_exclude_from_history
-from pipeline.contracts.models import DecisionArtifact, EvidencePack, QuestRecord
+from pipeline.contracts.models import DecisionArtifact, EvidencePack, QuestRecord, QuestlineClusterSummary
 from pipeline.discovery.quest_lore import extract_quest_lore
 from pipeline.discovery.location_discovery import (
     build_location_decision_row,
     build_zone_seed_text,
 )
 from pipeline.discovery.instance_bosses import is_boss_section_role
+from pipeline.discovery.questline_cluster import cluster_zone_questlines
 from pipeline.discovery.questline_clustering import apply_cluster_layers
 from pipeline.discovery.quest_roster import build_quest_roster
 from pipeline.discovery.storyline_html import parse_storyline_html, v3_to_legacy_v1
@@ -24,7 +26,7 @@ from pipeline.discovery.workflow import _load_json, _section_role
 # "roster" (pre-traverse): build the flat, UNCLUSTERED quest graph + zone-level
 # questline decision; clustering is deferred until quest pages exist (Slice B).
 # "full" keeps the legacy single-pass clustering behavior for any direct callers.
-EnrichPhase = Literal["full", "roster", "evidence_merge"]
+EnrichPhase = Literal["full", "roster", "cluster", "evidence_merge"]
 
 _UNCLUSTERED_CLUSTER_ID = "unclustered"
 
@@ -504,11 +506,85 @@ def run_discovery_enrich(
     outputs = {
         "zone_quest_graph": discovery_dir / "zone_quest_graph.json",
         "zone_quest_graph_v3": discovery_dir / "zone_quest_graph_v3.json",
+        "zone_quest_clusters": discovery_dir / "zone_quest_clusters.json",
         "location_significance_decisions": decisions_dir / "location_significance_decisions.json",
         "questline_inclusion_decisions": decisions_dir / "questline_inclusion_decisions.json",
         "evidence_packs": evidence_dir / "evidence_packs.jsonl",
         "enrich_report": discovery_dir / "discovery_enrich_report.json",
     }
+
+    if phase == "cluster":
+        v3_blob = _load_json(outputs["zone_quest_graph_v3"])
+        questline_graph_v3 = v3_blob if isinstance(v3_blob, list) else []
+        quest_records_path, quest_records = _load_or_aggregate_quest_records(discovery_dir, snapshots)
+        storyline_by_zone = _storyline_snapshots_by_zone(snapshots)
+        zone_names: dict[str, str] = {}
+        for snapshot in snapshots:
+            if isinstance(snapshot, dict) and _is_seed_snapshot(snapshot):
+                zone_names[str(snapshot.get("entity_id", ""))] = str(snapshot.get("name", ""))
+
+        records_by_zone: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for record in quest_records:
+            zone_id = str(record.get("zone_id", "")).strip()
+            if zone_id:
+                records_by_zone[zone_id].append(record)
+
+        rows_by_zone: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for row in questline_graph_v3:
+            if isinstance(row, dict):
+                zone_id = str(row.get("zone_id", "")).strip()
+                if zone_id:
+                    rows_by_zone[zone_id].append(row)
+
+        clustered_rows: list[dict[str, Any]] = []
+        cluster_summaries: list[dict[str, Any]] = []
+        max_cluster_size = 0
+        unresolved_edge_count = 0
+        for zone_id in sorted(set(rows_by_zone) | set(records_by_zone)):
+            zone_rows, summaries, zone_unresolved = cluster_zone_questlines(
+                zone_id=zone_id,
+                roster_rows=rows_by_zone.get(zone_id, []),
+                quest_records=records_by_zone.get(zone_id, []),
+                storyline_html=str(storyline_by_zone.get(zone_id, {}).get("parse_html", "")),
+                zone_name=zone_names.get(zone_id, ""),
+            )
+            clustered_rows.extend(zone_rows)
+            cluster_summaries.extend(summaries)
+            unresolved_edge_count += zone_unresolved
+            for summary in summaries:
+                max_cluster_size = max(max_cluster_size, int(summary.get("quest_count", 0)))
+
+        quest_graph = v3_to_legacy_v1(clustered_rows)
+        outputs["zone_quest_graph"].write_text(json.dumps(quest_graph, indent=2), encoding="utf-8")
+        outputs["zone_quest_graph_v3"].write_text(json.dumps(clustered_rows, indent=2), encoding="utf-8")
+        outputs["zone_quest_clusters"].write_text(
+            json.dumps(cluster_summaries, indent=2), encoding="utf-8"
+        )
+        cluster_ids = {
+            (str(row.get("zone_id", "")), str(row.get("cluster_id", "")))
+            for row in clustered_rows
+            if row.get("cluster_id")
+        }
+        prior_report = _load_json(outputs["enrich_report"])
+        report_payload = prior_report if isinstance(prior_report, dict) else {}
+        report_payload.update(
+            {
+                "run_id": context.run_id,
+                "enrich_phase": phase,
+                "snapshot_count": len(snapshots),
+                "quest_record_count": len(quest_records),
+                "v3_quest_count": sum(1 for row in clustered_rows if row.get("node_type") == "quest"),
+                "v3_cluster_count": len(cluster_ids),
+                "max_cluster_quest_count": max_cluster_size,
+                "unresolved_edge_count": unresolved_edge_count,
+                "quest_records_path": str(quest_records_path),
+            }
+        )
+        outputs["enrich_report"].write_text(json.dumps(report_payload, indent=2), encoding="utf-8")
+        outputs["quest_records"] = quest_records_path
+        for row in cluster_summaries:
+            QuestlineClusterSummary.model_validate(row)
+        return outputs
 
     if phase == "evidence_merge":
         v3_blob = _load_json(outputs["zone_quest_graph_v3"])
