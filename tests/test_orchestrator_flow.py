@@ -263,7 +263,7 @@ def test_run_pipeline_flow_orders_enrich_phases_around_quest_traverse(
 
     run_pipeline_flow(run_id=context.run_id, retries_per_stage=0)
 
-    assert enrich_phases == ["graph_only", "evidence_merge"]
+    assert enrich_phases == ["roster", "evidence_merge"]
     first_enrich_idx = stage_calls.index("discovery_enrich")
     quests_idx = stage_calls.index("traverse_quests")
     second_enrich_idx = stage_calls.index("discovery_enrich", first_enrich_idx + 1)

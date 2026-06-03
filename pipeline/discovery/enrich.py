@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pipeline.common.run_context import RunContext
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.common.wiki_evidence_filters import should_exclude_from_history
-from pipeline.contracts.models import DecisionArtifact, EvidencePack
+from pipeline.contracts.models import DecisionArtifact, EvidencePack, QuestRecord
 from pipeline.discovery.quest_lore import extract_quest_lore
 from pipeline.discovery.location_discovery import (
     build_location_decision_row,
@@ -17,10 +17,16 @@ from pipeline.discovery.location_discovery import (
 )
 from pipeline.discovery.instance_bosses import is_boss_section_role
 from pipeline.discovery.questline_clustering import apply_cluster_layers
+from pipeline.discovery.quest_roster import build_quest_roster
 from pipeline.discovery.storyline_html import parse_storyline_html, v3_to_legacy_v1
 from pipeline.discovery.workflow import _load_json, _section_role
 
-EnrichPhase = Literal["full", "graph_only", "evidence_merge"]
+# "roster" (pre-traverse): build the flat, UNCLUSTERED quest graph + zone-level
+# questline decision; clustering is deferred until quest pages exist (Slice B).
+# "full" keeps the legacy single-pass clustering behavior for any direct callers.
+EnrichPhase = Literal["full", "roster", "evidence_merge"]
+
+_UNCLUSTERED_CLUSTER_ID = "unclustered"
 
 _HISTORY_DIGEST_EXCLUDED = frozenset(
     {
@@ -402,6 +408,44 @@ def _build_evidence_packs(
     return packs
 
 
+def _load_or_aggregate_quest_records(
+    discovery_dir: Path,
+    snapshots: list[dict[str, Any]],
+) -> tuple[Path, list[dict[str, Any]]]:
+    """Load quest_records.jsonl from traverse, or aggregate from quest snapshots."""
+    quest_records_path = discovery_dir / "quest_records.jsonl"
+    records: list[dict[str, Any]] = []
+    if quest_records_path.exists():
+        for line in quest_records_path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                row = json.loads(line)
+                if isinstance(row, dict):
+                    records.append(row)
+    if not records:
+        seen_links: set[str] = set()
+        for snapshot in snapshots:
+            if not isinstance(snapshot, dict):
+                continue
+            if str(snapshot.get("auxiliary_role", "")).strip() != "quest":
+                continue
+            raw = snapshot.get("quest_record")
+            if not isinstance(raw, dict) or not raw.get("has_questbox", True):
+                continue
+            link_key = str(raw.get("source_link", "")).strip().lower().split("#", 1)[0]
+            if link_key and link_key in seen_links:
+                continue
+            if link_key:
+                seen_links.add(link_key)
+            records.append(raw)
+    validated = [QuestRecord.model_validate(row).model_dump(mode="json") for row in records]
+    if validated and not quest_records_path.exists():
+        quest_records_path.write_text(
+            "\n".join(json.dumps(row) for row in validated) + "\n",
+            encoding="utf-8",
+        )
+    return quest_records_path, validated
+
+
 def _storyline_snapshots_by_zone(snapshots: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     by_zone: dict[str, dict[str, Any]] = {}
     for snapshot in snapshots:
@@ -471,6 +515,7 @@ def run_discovery_enrich(
         questline_graph_v3 = v3_blob if isinstance(v3_blob, list) else []
         evidence_packs = _build_evidence_packs(snapshots, context.run_id, v3_rows=questline_graph_v3)
         clusters_with_evidence, clusters_missing = _cluster_evidence_metrics(questline_graph_v3, evidence_packs)
+        quest_records_path, quest_records = _load_or_aggregate_quest_records(discovery_dir, snapshots)
         prior_report = _load_json(outputs["enrich_report"])
         report_payload = prior_report if isinstance(prior_report, dict) else {}
         report_payload.update(
@@ -479,6 +524,7 @@ def run_discovery_enrich(
                 "enrich_phase": phase,
                 "snapshot_count": len(snapshots),
                 "evidence_pack_count": len(evidence_packs),
+                "quest_record_count": len(quest_records),
                 "clusters_with_quest_evidence": clusters_with_evidence,
                 "clusters_missing_evidence": clusters_missing,
             }
@@ -487,6 +533,7 @@ def run_discovery_enrich(
             "\n".join(json.dumps(row) for row in evidence_packs) + "\n", encoding="utf-8"
         )
         outputs["enrich_report"].write_text(json.dumps(report_payload, indent=2), encoding="utf-8")
+        outputs["quest_records"] = quest_records_path
         for row in evidence_packs:
             EvidencePack.model_validate(row)
         return outputs
@@ -508,12 +555,22 @@ def run_discovery_enrich(
         if _is_seed_snapshot(snapshot):
             zone_names[str(snapshot.get("entity_id", ""))] = str(snapshot.get("name", ""))
 
-    for zone_id, storyline_snap in storyline_by_zone.items():
-        parse_html = str(storyline_snap.get("parse_html", ""))
+    for zone_id in sorted(set(zone_names) | set(storyline_by_zone)):
+        storyline_snap = storyline_by_zone.get(zone_id)
+        parse_html = str(storyline_snap.get("parse_html", "")) if storyline_snap else ""
         zone_name = zone_names.get(zone_id, "")
-        v3_rows = parse_storyline_html(parse_html, zone_id=zone_id, zone_name=zone_name)
-        if v3_rows:
-            v3_rows = apply_cluster_layers(v3_rows, html=parse_html)
+        if phase == "roster":
+            # Flat, unclustered roster: storyline links + Category:<Zone> quests
+            # fallback. Clustering is deferred to Slice B (post-traverse).
+            v3_rows = build_quest_roster(
+                zone_id=zone_id,
+                zone_name=zone_name,
+                storyline_html=parse_html,
+            )
+        else:
+            v3_rows = parse_storyline_html(parse_html, zone_id=zone_id, zone_name=zone_name)
+            if v3_rows:
+                v3_rows = apply_cluster_layers(v3_rows, html=parse_html)
         if v3_rows:
             storyline_parse_status[zone_id] = "ok"
         elif parse_html.strip():
@@ -589,7 +646,7 @@ def run_discovery_enrich(
                 questline_decisions.append(row)
 
     evidence_packs: list[dict[str, Any]] = []
-    if phase in {"full", "graph_only"}:
+    if phase in {"full", "roster"}:
         evidence_packs = _build_evidence_packs(snapshots, context.run_id, v3_rows=questline_graph_v3)
     history_digest_count = sum(1 for row in evidence_packs if row.get("field_name") == "history_digest")
     v3_quest_count = sum(1 for row in questline_graph_v3 if row.get("node_type") == "quest")
@@ -610,7 +667,7 @@ def run_discovery_enrich(
     outputs["questline_inclusion_decisions"].write_text(
         json.dumps(questline_decisions, indent=2), encoding="utf-8"
     )
-    if phase in {"full", "graph_only"}:
+    if phase in {"full", "roster"}:
         outputs["evidence_packs"].write_text(
             "\n".join(json.dumps(row) for row in evidence_packs) + "\n", encoding="utf-8"
         )

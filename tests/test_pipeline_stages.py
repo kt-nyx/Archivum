@@ -23,6 +23,15 @@ from tests.draft_llm_mocks import fake_draft_chat_by_schema
 
 STORYLINE_HTML = Path("tests/fixtures/storyline/western_plaguelands_storyline.html").read_text(encoding="utf-8")
 
+# Minimal Questbox parse tree so quest fetches yield a structured QuestRecord.
+QUEST_PARSETREE = (
+    "<root><template><title>Questbox</title>"
+    "<part><name> start </name><equals>=</equals>"
+    "<value> [[Quest Giver]] {{Co|50.0|50.0|Example Zone}}\n</value></part>"
+    "<part><name> category </name><equals>=</equals><value> Example Zone\n</value></part>"
+    "</template>\n</root>\n"
+)
+
 
 def _seed_manifest(context_root: Path) -> None:
     fixture = Path("tests/fixtures/pilot/source_manifest.json")
@@ -54,8 +63,8 @@ def _mock_generation_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(target, lambda: ready_settings)
 
     def fake_fetch(
-        url: str, source_class: str
-    ) -> tuple[str, str, str, list, list, list, str]:
+        url: str, source_class: str, *, include_parsetree: bool = False
+    ) -> tuple:
         if "storyline" in url.lower():
             return (
                 "Example Zone storyline overview.",
@@ -72,7 +81,7 @@ def _mock_generation_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
             {"section_role": "quests_edit", "text": "Current quest activity around the capital district."},
             {"section_role": "cataclysm_edit", "text": "Cataclysm recovery efforts continue across the zone."},
         ]
-        return (
+        base = (
             f"{source_class} source evidence for {url} with campaign chronology and factions.",
             "mw:123456",
             "section:lead paragraph:1",
@@ -81,6 +90,9 @@ def _mock_generation_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
             [{"href": "/wiki/Example_Zone_storyline", "section_role": "quests", "label": "storyline"}],
             "",
         )
+        if include_parsetree:
+            return (*base, QUEST_PARSETREE)
+        return base
 
     def fake_coalesce_chat(*_args: object, **_kwargs: object) -> dict[str, object]:
         return {
@@ -97,6 +109,7 @@ def _mock_generation_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("pipeline.ingest.fetch_wiki._fetch_url_text", fake_fetch)
     monkeypatch.setattr("pipeline.ingest.traverse_wiki._fetch_url_text", fake_fetch)
+    monkeypatch.setattr("pipeline.ingest.traverse_wiki._throttle", lambda seconds: None)
     monkeypatch.setattr(
         "pipeline.coalesce.resolve_entities.chat_json_completion",
         fake_coalesce_chat,
@@ -176,7 +189,7 @@ def test_wiki_first_stage_chain_includes_discovery_and_enrich(
     enrich_graph = run_discovery_enrich_stage(
         context,
         ingest_output["source_manifest_path"],
-        phase="graph_only",
+        phase="roster",
     )
     assert enrich_graph["zone_quest_graph_v3"].exists()
     v3_rows = json.loads(enrich_graph["zone_quest_graph_v3"].read_text(encoding="utf-8"))
@@ -187,15 +200,22 @@ def test_wiki_first_stage_chain_includes_discovery_and_enrich(
     }
     assert "the endless flow" in quest_titles
     assert "into the woods" not in quest_titles
+    assert all(
+        str(row.get("cluster_id", "")) == "unclustered"
+        for row in v3_rows
+        if row.get("node_type") == "quest"
+    )
 
     traverse_quest_outputs = run_traverse_quests_stage(context)
     assert traverse_quest_outputs["traversal_report"].exists()
+    assert traverse_quest_outputs["quest_records"].exists()
 
     enrich_outputs = run_discovery_enrich_stage(
         context,
         ingest_output["source_manifest_path"],
         phase="evidence_merge",
     )
+    assert enrich_outputs["quest_records"].exists()
     evidence_path = enrich_outputs["evidence_packs"]
     field_names = set()
     for line in evidence_path.read_text(encoding="utf-8").splitlines():

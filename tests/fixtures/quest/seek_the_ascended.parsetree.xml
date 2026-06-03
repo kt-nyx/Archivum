@@ -1,0 +1,10 @@
+<root><template lineStart="1"><title>Questbox</title><part><name> name </name><equals>=</equals><value> Seek the Ascended
+</value></part><part><name> level </name><equals>=</equals><value> 60
+</value></part><part><name> category </name><equals>=</equals><value> Bastion
+</value></part><part><name> start </name><equals>=</equals><value> [[Kleia]] {{Co|34.9|56.1|Bastion}}
+</value></part><part><name> end </name><equals>=</equals><value> [[Mikanikos]]
+</value></part><part><name> next </name><equals>=</equals><value> [[The Path to Ascension]]
+</value></part><part><name> reputation </name><equals>=</equals><value> +75 [[The Ascended]]
+</value></part></template>
+The kyrian of [[Bastion]] invite you to learn the path to ascension.
+</root>

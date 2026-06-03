@@ -160,7 +160,7 @@ def run_pipeline_flow(
         lambda: run_discovery_enrich_stage(
             context,
             ingest_output["source_manifest_path"],
-            phase="graph_only",
+            phase="roster",
         ),
         retries=retries_per_stage,
         on_fail_manifest_inputs=[str(coalesced_path)],

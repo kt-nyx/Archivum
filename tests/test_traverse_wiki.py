@@ -21,6 +21,28 @@ DENYLIST_LINKS = {
     "/wiki/Western_Plaguelands_Quests",
 }
 
+# Minimal Questbox parse tree so quest fetches yield a structured QuestRecord.
+QUEST_PARSETREE = (
+    "<root><template><title>Questbox</title>"
+    "<part><name> start </name><equals>=</equals>"
+    "<value> [[Quest Giver]] {{Co|50.0|50.0|Example Zone}}\n</value></part>"
+    "<part><name> category </name><equals>=</equals><value> Example Zone\n</value></part>"
+    "</template>\nQuest narrative description about the front lines.\n</root>\n"
+)
+
+
+def _quest_fetch_payload() -> tuple:
+    return (
+        "Quest page body with narrative description about the front lines.",
+        "mw:100",
+        "section:lead paragraph:1",
+        [{"section_role": "description", "text": "Quest narrative description about the front lines."}],
+        [],
+        [],
+        "",
+        QUEST_PARSETREE,
+    )
+
 
 def _write_ingest_fixtures(context, ingest_dir: Path) -> None:
     snapshots = [
@@ -77,8 +99,9 @@ def test_traverse_fetches_v3_quests_from_graph_not_wiki_link_dump(
     run_discovery_workflow(context, manifest_path)
 
     fetched_urls: list[str] = []
+    throttle_calls: list[float] = []
 
-    def fake_fetch(url: str, source_class: str):
+    def fake_fetch(url: str, source_class: str, *, include_parsetree: bool = False):
         fetched_urls.append(url)
         if "storyline" in url.lower():
             return (
@@ -90,22 +113,27 @@ def test_traverse_fetches_v3_quests_from_graph_not_wiki_link_dump(
                 [{"href": "/wiki/The_Endless_Flow", "section_role": "part_1", "label": "The Endless Flow"}],
                 STORYLINE_HTML,
             )
-        return (
-            "Quest page body with narrative description about the front lines.",
-            "mw:100",
-            "section:lead paragraph:1",
-            [
-                {"section_role": "description", "text": "Quest narrative description about the front lines."},
-            ],
-            [],
-            [],
-            "",
-        )
+        assert include_parsetree, "quest fetches must request the parse tree"
+        return _quest_fetch_payload()
 
     monkeypatch.setattr("pipeline.ingest.traverse_wiki._fetch_url_text", fake_fetch)
+    monkeypatch.setattr(
+        "pipeline.ingest.traverse_wiki._throttle", lambda seconds: throttle_calls.append(seconds)
+    )
     run_traverse_seed(context)
-    run_discovery_enrich(context, manifest_path, phase="graph_only")
+    run_discovery_enrich(context, manifest_path, phase="roster")
     run_traverse_quests(context)
+
+    # Throttle is invoked between quest fetches (D4 politeness).
+    assert throttle_calls
+
+    quest_records_path = context.data_dir / "discovery" / "quest_records.jsonl"
+    assert quest_records_path.exists()
+    record_lines = [line for line in quest_records_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert record_lines
+    first_record = json.loads(record_lines[0])
+    assert first_record["start_npc"] == "Quest Giver"
+    assert first_record["has_questbox"] is True
 
     report_path = context.data_dir / "ingest" / "traversal_report.json"
     report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -144,7 +172,7 @@ def test_traverse_resolves_hub_children_from_wiki_links(
     manifest_path = ingest_dir / "source_manifest.json"
     run_discovery_workflow(context, manifest_path)
 
-    def fake_fetch(url: str, source_class: str):
+    def fake_fetch(url: str, source_class: str, *, include_parsetree: bool = False):
         if "storyline" in url.lower():
             return (
                 "Storyline page body",
@@ -156,6 +184,8 @@ def test_traverse_resolves_hub_children_from_wiki_links(
                 STORYLINE_HTML,
             )
         if "Quest_Hub" in url:
+            # A hub/disambiguation page: no Questbox, but it links to child quests
+            # that hub resolution must follow.
             return (
                 "Hub disambiguation page.",
                 "mw:101",
@@ -167,22 +197,14 @@ def test_traverse_resolves_hub_children_from_wiki_links(
                     {"href": "/wiki/Quest_Beta", "section_role": "other", "label": "Quest Beta"},
                 ],
                 "",
+                "<root>Hub page with no infobox.</root>",
             )
-        return (
-            "Quest page body with narrative description about the front lines.",
-            "mw:100",
-            "section:lead paragraph:1",
-            [
-                {"section_role": "description", "text": "Quest narrative description about the front lines."},
-            ],
-            [],
-            [],
-            "",
-        )
+        return _quest_fetch_payload()
 
     monkeypatch.setattr("pipeline.ingest.traverse_wiki._fetch_url_text", fake_fetch)
+    monkeypatch.setattr("pipeline.ingest.traverse_wiki._throttle", lambda seconds: None)
     run_traverse_seed(context)
-    run_discovery_enrich(context, manifest_path, phase="graph_only")
+    run_discovery_enrich(context, manifest_path, phase="roster")
 
     v3_path = context.data_dir / "discovery" / "zone_quest_graph_v3.json"
     v3_rows = json.loads(v3_path.read_text(encoding="utf-8"))
@@ -263,7 +285,7 @@ def test_traverse_skips_defer_location_targets(
 
     fetched_urls: list[str] = []
 
-    def fake_fetch(url: str, source_class: str):
+    def fake_fetch(url: str, source_class: str, *, include_parsetree: bool = False):
         fetched_urls.append(url)
         return (
             "Location profile body with enough narrative detail for enrichment.",
@@ -396,7 +418,7 @@ def test_traverse_fetches_linked_lore_page_not_instance_page_source(
 
     fetched_urls: list[str] = []
 
-    def fake_fetch(url: str, source_class: str):
+    def fake_fetch(url: str, source_class: str, *, include_parsetree: bool = False):
         fetched_urls.append(url)
         return (
             "Lore page body with extended narrative history.",
@@ -417,3 +439,95 @@ def test_traverse_fetches_linked_lore_page_not_instance_page_source(
     lore_rows = [row for row in merged if row.get("auxiliary_role") == "instance_lore"]
     assert len(lore_rows) == 1
     assert lore_rows[0].get("entity_id") == instance_id
+
+
+DISAMBIG_PARSETREE = Path(
+    "tests/fixtures/quest/combat_training_faction_disambig.parsetree.xml"
+).read_text(encoding="utf-8")
+
+
+def test_traverse_resolves_faction_disambiguation_variants(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = ensure_run_context("run-test-traverse-disambig", artifacts_root=tmp_path / "runs")
+    ingest_dir = context.stage_dir("ingest")
+    _write_ingest_fixtures(context, ingest_dir)
+    manifest_path = ingest_dir / "source_manifest.json"
+    run_discovery_workflow(context, manifest_path)
+
+    def fake_fetch(url: str, source_class: str, *, include_parsetree: bool = False):
+        if "storyline" in url.lower():
+            return (
+                "Storyline page body",
+                "mw:99",
+                "section:lead paragraph:1",
+                [{"section_role": "part_1", "text": "Part 1"}],
+                [],
+                [],
+                STORYLINE_HTML,
+            )
+        if url.rstrip("/").endswith("/Combat_Training"):
+            return (
+                "Faction disambiguation page.",
+                "mw:201",
+                "section:lead paragraph:1",
+                [{"section_role": "other", "text": "Combat Training may refer to:"}],
+                [],
+                [],
+                "",
+                DISAMBIG_PARSETREE,
+            )
+        return _quest_fetch_payload()
+
+    monkeypatch.setattr("pipeline.ingest.traverse_wiki._fetch_url_text", fake_fetch)
+    monkeypatch.setattr("pipeline.ingest.traverse_wiki._throttle", lambda seconds: None)
+    run_traverse_seed(context)
+    run_discovery_enrich(context, manifest_path, phase="roster")
+
+    v3_path = context.data_dir / "discovery" / "zone_quest_graph_v3.json"
+    v3_path.write_text(
+        json.dumps(
+            [
+                {
+                    "zone_id": ZONE_ID,
+                    "node_type": "quest",
+                    "cluster_id": "unclustered",
+                    "cluster_title": "Unclustered",
+                    "cluster_order": 1,
+                    "order_in_cluster": 1,
+                    "node_id": "quest-combat-training",
+                    "title": "Combat Training",
+                    "source_link": "/wiki/Combat_Training",
+                    "faction_binding": "shared",
+                }
+            ],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    run_traverse_quests(context)
+
+    report = json.loads((context.data_dir / "ingest" / "traversal_report.json").read_text(encoding="utf-8"))
+    variant_entries = [
+        row
+        for row in report.get("entries", [])
+        if row.get("role") == "quest"
+        and row.get("status") == "fetched"
+        and row.get("traversal_origin") == "faction_disambiguation"
+    ]
+    assert len(variant_entries) == 2
+    variant_links = {row.get("link", "") for row in variant_entries}
+    assert "/wiki/Combat_Training_(Alliance)" in variant_links
+    assert "/wiki/Combat_Training_(Horde)" in variant_links
+
+    records = [
+        json.loads(line)
+        for line in (context.data_dir / "discovery" / "quest_records.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+    assert len(records) == 2
+    assert all(record.get("has_questbox") for record in records)

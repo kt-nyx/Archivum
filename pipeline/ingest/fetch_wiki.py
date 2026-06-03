@@ -457,9 +457,14 @@ def _mediawiki_parse_ingest_eligible(url: str, source_class: str) -> bool:
 
 
 def _fetch_mediawiki_via_parse_api(
-    url: str, profile: RetrievalProfile
-) -> tuple[str, str, str, list[dict[str, str]], list[str], list[dict[str, str]], str]:
-    """Fetch article HTML via MediaWiki api.php action=parse (returns stable revid)."""
+    url: str, profile: RetrievalProfile, *, include_parsetree: bool = False
+) -> tuple[Any, ...]:
+    """Fetch article HTML via MediaWiki api.php action=parse (returns stable revid).
+
+    When ``include_parsetree`` is set, also request ``prop=parsetree`` and append
+    the parse-tree XML string as an 8th tuple element. Only the quest-traversal
+    path opts in, so other callers keep the historical 7-tuple shape.
+    """
     parsed = urlparse(url)
     origin = f"{parsed.scheme}://{parsed.netloc}"
     wiki_prefix = "/wiki/"
@@ -477,7 +482,7 @@ def _fetch_mediawiki_via_parse_api(
 
     params: dict[str, str] = {
         "action": "parse",
-        "prop": "text|revid",
+        "prop": "text|revid|parsetree" if include_parsetree else "text|revid",
         "formatversion": "2",
         "format": "json",
     }
@@ -512,19 +517,30 @@ def _fetch_mediawiki_via_parse_api(
         revision_id = f"mw:{int(revid)}"
     body, locator = _extract_main_text(html_str, max_chars=profile.max_chars)
     sections, links, structured = _extract_sections_and_links(html_str)
+    if include_parsetree:
+        raw_tree = parse_blob.get("parsetree")
+        if isinstance(raw_tree, dict):
+            parse_tree = str(raw_tree.get("*", ""))
+        elif raw_tree is not None:
+            parse_tree = str(raw_tree)
+        else:
+            parse_tree = ""
+        return body, revision_id, locator, sections, links, structured, html_str, parse_tree
     return body, revision_id, locator, sections, links, structured, html_str
 
 
 def _fetch_url_text(
-    url: str, source_class: str
-) -> tuple[str, str, str, list[dict[str, str]], list[str], list[dict[str, str]], str]:
+    url: str, source_class: str, *, include_parsetree: bool = False
+) -> tuple[Any, ...]:
     profile = profile_for_source_class(source_class)
     last_error: Exception | None = None
     use_parse_api = _mediawiki_parse_ingest_eligible(url, source_class)
     for attempt in range(profile.retries + 1):
         try:
             if use_parse_api:
-                return _fetch_mediawiki_via_parse_api(url, profile)
+                return _fetch_mediawiki_via_parse_api(
+                    url, profile, include_parsetree=include_parsetree
+                )
             request = Request(url, headers={"User-Agent": _INGEST_USER_AGENT})
             with urlopen(request, timeout=profile.timeout_seconds) as response:  # noqa: S310
                 html = response.read().decode("utf-8", errors="replace")
@@ -535,6 +551,9 @@ def _fetch_url_text(
                 revision_id = f"mw:{revision_match.group(1)}"
             else:
                 revision_id = "sha256:" + sha256(html.encode("utf-8")).hexdigest()[:16]
+            if include_parsetree:
+                # Non-MediaWiki/HTML fallback has no parse tree available.
+                return body, revision_id, locator, sections, links, structured, html, ""
             return body, revision_id, locator, sections, links, structured, html
         except (HTTPError, URLError, TimeoutError, ValueError) as exc:
             last_error = exc

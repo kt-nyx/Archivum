@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from pipeline.common.run_context import RunContext
 from pipeline.common.text_normalize import clean_wiki_snippet
+from pipeline.contracts.models import QuestRecord
 from pipeline.discovery.entity_typing import (
     is_bogus_traversal_link,
     is_valid_quest_graph_link,
@@ -22,6 +25,7 @@ from pipeline.discovery.lore_sources import (
 )
 from pipeline.discovery.quest_hub import resolve_hub_child_links
 from pipeline.discovery.quest_lore import build_quest_lore_record
+from pipeline.discovery.quest_record import build_quest_record
 from pipeline.discovery.storyline_parser import _to_entity_id, _wiki_title
 from pipeline.ingest.fetch_wiki import (
     _fetch_url_text,
@@ -32,11 +36,21 @@ from pipeline.ingest.normalize_source import run_normalize_source
 
 _WARCRAFT_WIKI_ORIGIN = "https://warcraft.wiki.gg"
 _MAX_STORYLINE = 1
-_MAX_QUEST = 25
+# Slice A removes the per-zone quest cap (D4: fetch all roster quests with
+# throttling). A very high ceiling stays as a runaway guard, overridable via env.
+_MAX_QUEST = int(os.environ.get("WOWLORE_MAX_QUESTS_PER_ZONE", "100000"))
 _MAX_FACTION = 6
 _MAX_LOCATION = 8
 _MAX_PARENT_LORE = 1
 _MAX_RELATED_LORE = 3
+# Politeness throttle between quest page fetches (seconds), env-overridable.
+_QUEST_FETCH_SLEEP_SECONDS = float(os.environ.get("WOWLORE_QUEST_FETCH_SLEEP", "0.35"))
+
+
+def _throttle(seconds: float) -> None:
+    """Sleep between quest fetches (indirected so tests can stub it out)."""
+    if seconds > 0:
+        time.sleep(seconds)
 
 
 def _load_json(path: Path) -> Any:
@@ -51,6 +65,20 @@ def _absolute_wiki_url(link: str) -> str:
     if link.startswith("/wiki/"):
         return f"{_WARCRAFT_WIKI_ORIGIN}{link.split('#', 1)[0]}"
     return link
+
+
+def _wiki_path_from_link_or_title(link_or_title: str) -> str:
+    """Normalize a ``/wiki/...`` href or bare page title to a wiki path."""
+    cleaned = link_or_title.strip()
+    if not cleaned:
+        return ""
+    if cleaned.startswith("http://") or cleaned.startswith("https://"):
+        lowered = cleaned.split("#", 1)[0]
+        wiki_idx = lowered.find("/wiki/")
+        return lowered[wiki_idx:] if wiki_idx >= 0 else ""
+    if cleaned.startswith("/wiki/"):
+        return cleaned.split("#", 1)[0]
+    return f"/wiki/{cleaned.replace(' ', '_')}"
 
 
 def _source_id_for(role: str, zone_id: str, target_id: str) -> str:
@@ -150,6 +178,7 @@ def _snapshot_from_fetch(
     parse_html: str = "",
     parse_html_truncated: bool = False,
     quest_lore_blocks: list[dict[str, str]] | None = None,
+    quest_record: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     cleaned_blocks: list[dict[str, str]] = []
     for block in section_blocks:
@@ -196,6 +225,8 @@ def _snapshot_from_fetch(
         snapshot["quest_node_id"] = manifest_row["quest_node_id"]
     if quest_lore_blocks:
         snapshot["quest_lore_blocks"] = quest_lore_blocks
+    if quest_record is not None:
+        snapshot["quest_record"] = quest_record
     return snapshot
 
 
@@ -306,6 +337,7 @@ def _fetch_and_append(
     quest_node_id: str = "",
     hub_resolved_from: str = "",
     source_section_role: str = "other",
+    faction_binding: str = "shared",
 ) -> dict[str, Any] | None:
     if is_bogus_traversal_link(link):
         report_rows.append({"status": "skipped", "link": link, "reason": "bogus_link", "role": auxiliary_role})
@@ -386,13 +418,19 @@ def _fetch_and_append(
         cluster_id=cluster_id,
         quest_node_id=quest_node_id,
     )
+    include_parsetree = auxiliary_role == "quest"
     try:
-        body, revision_id, locator, section_blocks, wiki_links, structured_from_fetch, raw_html = _fetch_url_text(
-            url, "warcraft_wiki"
-        )
+        fetch_result = _fetch_url_text(url, "warcraft_wiki", include_parsetree=include_parsetree)
     except RuntimeError as exc:
         report_rows.append({"status": "error", "link": link, "reason": repr(exc), "role": auxiliary_role})
         return None
+    parse_tree = ""
+    if len(fetch_result) == 8:
+        body, revision_id, locator, section_blocks, wiki_links, structured_from_fetch, raw_html, parse_tree = (
+            fetch_result
+        )
+    else:
+        body, revision_id, locator, section_blocks, wiki_links, structured_from_fetch, raw_html = fetch_result
     parse_html = ""
     parse_html_truncated = False
     if auxiliary_role == "storyline" and raw_html:
@@ -400,6 +438,7 @@ def _fetch_and_append(
         parse_html = raw_html[:524288]
     structured_links = structured_from_fetch or build_structured_links_from_sections(section_blocks, wiki_links)
     quest_lore_blocks: list[dict[str, str]] | None = None
+    quest_record: dict[str, Any] | None = None
     if auxiliary_role == "quest":
         lore_record = build_quest_lore_record(
             zone_id=str(zone_snapshot.get("entity_id", "")),
@@ -410,6 +449,15 @@ def _fetch_and_append(
             section_blocks=section_blocks,
         )
         quest_lore_blocks = lore_record.get("snippets", [])
+        quest_record = build_quest_record(
+            zone_id=str(zone_snapshot.get("entity_id", "")),
+            node_id=quest_node_id or auxiliary_target_id,
+            quest_title=page_title,
+            source_link=link,
+            parse_tree=parse_tree,
+            section_blocks=section_blocks,
+            faction_binding=faction_binding,
+        )
     snapshot = _snapshot_from_fetch(
         manifest_row=manifest_row,
         body=body,
@@ -422,6 +470,7 @@ def _fetch_and_append(
         parse_html=parse_html,
         parse_html_truncated=parse_html_truncated,
         quest_lore_blocks=quest_lore_blocks if isinstance(quest_lore_blocks, list) else None,
+        quest_record=quest_record,
     )
     snapshots.append(snapshot)
     manifest_rows.append(manifest_row)
@@ -481,6 +530,7 @@ def _persist_traverse_state(
     snapshots: list[dict[str, Any]],
     manifest_rows: list[dict[str, Any]],
     report_rows: list[dict[str, Any]],
+    quest_records: list[dict[str, Any]] | None = None,
 ) -> dict[str, Path]:
     ingest_dir = context.stage_dir("ingest")
     snapshots_path = ingest_dir / "source_snapshots.json"
@@ -495,7 +545,24 @@ def _persist_traverse_state(
         json.dumps({"run_id": context.run_id, "entries": report_rows}, indent=2),
         encoding="utf-8",
     )
-    return {"traversal_report": report_path, "source_snapshots": snapshots_path, "source_manifest": manifest_path}
+    outputs = {
+        "traversal_report": report_path,
+        "source_snapshots": snapshots_path,
+        "source_manifest": manifest_path,
+    }
+    if quest_records is not None:
+        discovery_dir = context.data_dir / "discovery"
+        discovery_dir.mkdir(parents=True, exist_ok=True)
+        quest_records_path = discovery_dir / "quest_records.jsonl"
+        validated: list[dict[str, Any]] = []
+        for row in quest_records:
+            validated.append(QuestRecord.model_validate(row).model_dump(mode="json"))
+        quest_records_path.write_text(
+            ("\n".join(json.dumps(row) for row in validated) + "\n") if validated else "",
+            encoding="utf-8",
+        )
+        outputs["quest_records"] = quest_records_path
+    return outputs
 
 
 def _ordered_v3_quest_nodes(v3_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -771,6 +838,8 @@ def run_traverse_quests(context: RunContext) -> dict[str, Path]:
         raise RuntimeError("zone_quest_graph_v3.json must exist and be a JSON array before quest traverse")
 
     counts_by_zone_role: dict[tuple[str, str], int] = {}
+    quest_records: list[dict[str, Any]] = []
+    seen_record_links: set[str] = set()
 
     def _within_cap(zone_id: str, role: str, cap: int) -> bool:
         return counts_by_zone_role.get((zone_id, role), 0) < cap
@@ -778,6 +847,26 @@ def run_traverse_quests(context: RunContext) -> dict[str, Path]:
     def _increment(zone_id: str, role: str) -> None:
         key = (zone_id, role)
         counts_by_zone_role[key] = counts_by_zone_role.get(key, 0) + 1
+
+    def _process_record(snapshot: dict[str, Any]) -> list[str]:
+        """Collect a real quest record, or return faction-mirror variant links.
+
+        Pages without a Questbox produce no quest record (the not-a-quest filter
+        keeps achievements/hatnotes out of ``quest_records.jsonl``), but their
+        snapshot is retained so hub-child resolution can still run. A
+        faction-disambiguation page returns its per-faction variant links so the
+        caller fetches the real quest variants instead.
+        """
+        record = snapshot.get("quest_record")
+        if not isinstance(record, dict):
+            return []
+        if not record.get("has_questbox", True):
+            return [str(link).strip() for link in record.get("faction_mirror", []) if str(link).strip()]
+        link_key = str(record.get("source_link", "")).strip().lower().split("#", 1)[0]
+        if link_key and link_key not in seen_record_links:
+            seen_record_links.add(link_key)
+            quest_records.append(record)
+        return []
 
     for node in _ordered_v3_quest_nodes(v3_blob):
         zone_id = str(node.get("zone_id", "")).strip()
@@ -790,6 +879,7 @@ def run_traverse_quests(context: RunContext) -> dict[str, Path]:
         if zone_snap is None:
             continue
         zone_name = str(zone_snap.get("name", zone_id))
+        node_faction = str(node.get("faction_binding", "shared"))
         snapshot = _fetch_and_append(
             zone_snapshot=zone_snap,
             link=quest_link,
@@ -806,10 +896,44 @@ def run_traverse_quests(context: RunContext) -> dict[str, Path]:
             allowed_instance_titles=allowed_instance_titles,
             cluster_id=str(node.get("cluster_id", "")),
             quest_node_id=str(node.get("node_id", "")),
+            faction_binding=node_faction,
         )
+        _throttle(_QUEST_FETCH_SLEEP_SECONDS)
         if snapshot is None:
             continue
         _increment(zone_id, "quest")
+        variant_links = _process_record(snapshot)
+        for variant_link in variant_links:
+            if not _within_cap(zone_id, "quest", _MAX_QUEST):
+                break
+            variant_path = _wiki_path_from_link_or_title(variant_link)
+            if not variant_path:
+                continue
+            variant_title = _wiki_title(variant_path)
+            variant_snapshot = _fetch_and_append(
+                zone_snapshot=zone_snap,
+                link=variant_path,
+                auxiliary_role="quest",
+                auxiliary_target_id=_to_entity_id("quest", variant_title),
+                traversal_origin="faction_disambiguation",
+                page_title=variant_title,
+                snapshots=snapshots,
+                manifest_rows=manifest_rows,
+                existing_source_ids=existing_source_ids,
+                existing_urls=existing_urls,
+                captured_at=captured_at,
+                report_rows=report_rows,
+                allowed_instance_titles=allowed_instance_titles,
+                cluster_id=str(node.get("cluster_id", "")),
+                quest_node_id=_to_entity_id("quest", variant_title),
+                hub_resolved_from=quest_link,
+                faction_binding=node_faction,
+            )
+            _throttle(_QUEST_FETCH_SLEEP_SECONDS)
+            if variant_snapshot is None:
+                continue
+            _increment(zone_id, "quest")
+            _process_record(variant_snapshot)
         child_links = resolve_hub_child_links(
             snapshot.get("section_blocks", []),
             parse_html=str(snapshot.get("parse_html", "")),
@@ -837,15 +961,19 @@ def run_traverse_quests(context: RunContext) -> dict[str, Path]:
                 cluster_id=str(node.get("cluster_id", "")),
                 quest_node_id=_to_entity_id("quest", _wiki_title(child_link)),
                 hub_resolved_from=quest_link,
+                faction_binding=node_faction,
             )
+            _throttle(_QUEST_FETCH_SLEEP_SECONDS)
             if child_snapshot is not None:
                 _increment(zone_id, "quest")
+                _process_record(child_snapshot)
 
     return _persist_traverse_state(
         context,
         snapshots=snapshots,
         manifest_rows=manifest_rows,
         report_rows=report_rows,
+        quest_records=quest_records,
     )
 
 

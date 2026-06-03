@@ -188,6 +188,34 @@ class EvidencePack(BaseModel):
     build_meta: dict[str, str] = Field(default_factory=dict)
 
 
+class QuestRecord(BaseModel):
+    """Structured per-quest record extracted from the wiki Questbox parse tree.
+
+    Produced during quest traversal (Slice A) and consumed by clustering /
+    significance / anchor stages downstream. Most narrative fields are optional
+    because wiki Questbox completeness varies by quest and expansion.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    zone_id: str = Field(min_length=1)
+    node_id: str = Field(min_length=1)
+    quest_title: str = Field(min_length=1)
+    source_link: str = Field(min_length=1)
+    has_questbox: bool = True
+    start_npc: str = ""
+    start_location: str = ""
+    start_coords: str = ""
+    end_npc: str = ""
+    category: str = ""
+    reputation_org: str = ""
+    faction: Faction = Faction.SHARED
+    previous: list[str] = Field(default_factory=list)
+    next: list[str] = Field(default_factory=list)
+    faction_mirror: list[str] = Field(default_factory=list)
+    description: str = ""
+
+
 class InclusionDecision(BaseModel):
     """Inclusion/exclusion audit object used in candidate filtering."""
 
@@ -612,4 +640,5 @@ WIKI_FIRST_ENTITY_MODEL_MAP: dict[str, type[BaseModel]] = {
     "canonical_entity_ref": CanonicalEntityRef,
     "decision_artifact": DecisionArtifact,
     "evidence_pack": EvidencePack,
+    "quest_record": QuestRecord,
 }

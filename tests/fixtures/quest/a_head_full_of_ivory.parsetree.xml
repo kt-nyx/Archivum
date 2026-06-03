@@ -1,0 +1,11 @@
+<root><template lineStart="1"><title>Questbox</title><part><name> name </name><equals>=</equals><value> A Head Full of Ivory
+</value></part><part><name> level </name><equals>=</equals><value> 67
+</value></part><part><name> category </name><equals>=</equals><value> Nagrand
+</value></part><part><name> start </name><equals>=</equals><value> [[Nasota Sandhoof]] {{Co|47.2|34.8|Nagrand}}
+</value></part><part><name> end </name><equals>=</equals><value> [[Nasota Sandhoof]]
+</value></part><part><name> previous </name><equals>=</equals><value> [[Murkblood Investigation]]
+</value></part><part><name> next </name><equals>=</equals><value> [[More Heads Full of Ivory]]
+</value></part><part><name> reputation </name><equals>=</equals><value> +250 [[Kurenai]]
+</value></part></template>
+This quest asks you to gather kurenai relics from the murkblood scattered across [[Nagrand]].
+</root>

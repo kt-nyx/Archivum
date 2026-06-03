@@ -1,0 +1,10 @@
+<root><template lineStart="1"><title>Questbox</title><part><name> name </name><equals>=</equals><value> The Battle for Andorhal
+</value></part><part><name> level </name><equals>=</equals><value> 42
+</value></part><part><name> side </name><equals>=</equals><value> Alliance
+</value></part><part><name> category </name><equals>=</equals><value> [[Western Plaguelands]]
+</value></part><part><name> start </name><equals>=</equals><value> [[Thassarian]] {{Co|44.9|71.5|Western Plaguelands}}
+</value></part><part><name> previous </name><equals>=</equals><value> [[Recruitment]]
+</value></part><part><name> next </name><equals>=</equals><value> [[Reclamation]]
+</value></part></template>
+The Alliance pushes to seize [[Andorhal]] from the Forsaken.
+</root>
