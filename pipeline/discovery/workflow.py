@@ -12,6 +12,10 @@ from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.common.run_context import RunContext
 from pipeline.contracts.models import DecisionArtifact
 from pipeline.discovery.entity_typing import should_reject_location_title
+from pipeline.discovery.lore_sources import (
+    build_instance_lore_candidates,
+    compute_instance_lore_density,
+)
 from pipeline.discovery.location_discovery import (
     HARD_REJECT_MARKERS,
     build_location_decision_row,
@@ -550,6 +554,47 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
         deduped_instances.append(row)
     instance_registry = deduped_instances
 
+    # Slice I4: enumerate cross-page lore candidates from each instance's OWN page
+    # (parent-complex + related narrative links), and record the instance page's own
+    # lore density so the linked-lore decision stops relying on the zone-seed proxy.
+    lore_traversal_targets: list[dict[str, Any]] = []
+    instance_density_by_id: dict[str, dict[str, Any]] = {}
+    for snapshot in snapshots:
+        if not isinstance(snapshot, dict):
+            continue
+        if str(snapshot.get("entity_type", "")).strip() != "instance":
+            continue
+        if str(snapshot.get("auxiliary_role", "")).strip():
+            continue
+        instance_id = str(snapshot.get("entity_id", "")).strip()
+        instance_name = str(snapshot.get("name", "")).strip()
+        if not instance_id or not instance_name:
+            continue
+        section_blocks = snapshot.get("section_blocks", [])
+        if not isinstance(section_blocks, list):
+            section_blocks = []
+        wiki_links = snapshot.get("wiki_links", [])
+        if not isinstance(wiki_links, list):
+            wiki_links = []
+        structured_links = snapshot.get("structured_links", [])
+        if not isinstance(structured_links, list):
+            structured_links = []
+        instance_density_by_id[instance_id] = compute_instance_lore_density(section_blocks)
+        lore_traversal_targets.extend(
+            build_instance_lore_candidates(
+                instance_id=instance_id,
+                instance_name=instance_name,
+                section_blocks=section_blocks,
+                wiki_links=wiki_links,
+                structured_links=structured_links,
+            )
+        )
+
+    for row in instance_lore_source_map:
+        density = instance_density_by_id.get(str(row.get("instance_id", "")).strip())
+        if density is not None:
+            row["instance_page_density"] = density
+
     outputs = {
         "zone_coverage_registry": discovery_dir / "zone_coverage_registry.json",
         "canonical_entity_map": discovery_dir / "canonical_entity_map.jsonl",
@@ -562,6 +607,7 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
         "faction_profile_targets": discovery_dir / "faction_profile_targets.json",
         "location_profile_targets": discovery_dir / "location_profile_targets.json",
         "storyline_traversal_targets": discovery_dir / "storyline_traversal_targets.json",
+        "lore_traversal_targets": discovery_dir / "lore_traversal_targets.json",
         "instance_zone_profiles": discovery_dir / "instance_zone_profiles.json",
         "location_significance_decisions": decisions_dir / "location_significance_decisions.json",
         "questline_inclusion_decisions": decisions_dir / "questline_inclusion_decisions.json",
@@ -593,6 +639,9 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
     )
     outputs["storyline_traversal_targets"].write_text(
         json.dumps(storyline_traversal_targets, indent=2), encoding="utf-8"
+    )
+    outputs["lore_traversal_targets"].write_text(
+        json.dumps(lore_traversal_targets, indent=2), encoding="utf-8"
     )
     outputs["instance_zone_profiles"].write_text(
         json.dumps(instance_zone_profiles, indent=2), encoding="utf-8"

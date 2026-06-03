@@ -66,6 +66,12 @@ from pipeline.generate.draft.prose_lint import (
     lint_history_sections,
 )
 from pipeline.generate.draft.card_lint import finalize_cta_hook, lint_cta_hook, strip_zone_name_from_cta
+from pipeline.generate.draft.lore_selection import (
+    build_sparse_lore_rescue_pool,
+    dedupe_lore_items,
+    filter_relevant_lore_items,
+    is_instance_lore_sparse,
+)
 from pipeline.generate.draft.provenance import build_revision_index, collect_sources_manifest
 from pipeline.generate.draft.wiki_first_workers import (
     classify_key_character_role_llm,
@@ -153,6 +159,8 @@ def _iter_evidence_items(
                     "faction_name": str(build_meta.get("faction_name", "")),
                     "location_id": str(build_meta.get("location_id", "")),
                     "location_name": str(build_meta.get("location_name", "")),
+                    "lore_scope": str(build_meta.get("lore_scope", "")),
+                    "lore_source_title": str(build_meta.get("lore_source_title", "")),
                 }
             )
     return items
@@ -384,7 +392,21 @@ def _build_instance_evidence_pools(
     at_a_glance_pool = _iter_evidence_items(evidence_rows, {"at_a_glance_input"})
     boss_pool = _iter_evidence_items(evidence_rows, {"boss_pool"})
     instance_lore_pool = _iter_evidence_items(evidence_rows, {"instance_lore_pool"})
-    overview_pool = history_pool + instance_lore_pool
+    parent_lore_pool = _iter_evidence_items(evidence_rows, {"parent_lore_pool"})
+    related_lore_pool = _iter_evidence_items(evidence_rows, {"related_lore_pool"})
+    # Slice I4: the instance's own narrative is primary. Cross-page (parent-complex /
+    # related) lore only augments the overview when the instance page is sparse, and
+    # only snippets that explicitly name the instance are fused (attribution guard).
+    # Rich instances keep their exact prior overview pool, so output never regresses.
+    instance_own_overview = history_pool + instance_lore_pool
+    instance_lore_sparse = is_instance_lore_sparse(instance_own_overview)
+    if instance_lore_sparse:
+        cross_relevant = filter_relevant_lore_items(
+            related_lore_pool + parent_lore_pool, instance_name=instance_name
+        )
+        overview_pool = dedupe_lore_items(instance_own_overview + cross_relevant)
+    else:
+        overview_pool = instance_own_overview
     zone_mention_pool = _build_zone_mention_pool(instance_name, parent_zone_evidence_rows or [])
     faction_pool = _iter_evidence_items(evidence_rows, {"faction_pool"})
     faction_role_pool = _iter_evidence_items(
@@ -397,6 +419,9 @@ def _build_instance_evidence_pools(
         "overview_pool": overview_pool,
         "boss_pool": boss_pool,
         "instance_lore_pool": instance_lore_pool,
+        "parent_lore_pool": parent_lore_pool,
+        "related_lore_pool": related_lore_pool,
+        "instance_lore_sparse": instance_lore_sparse,
         "zone_mention_pool": zone_mention_pool,
         "faction_pool": faction_pool,
         "faction_role_pool": faction_role_pool,
@@ -432,6 +457,7 @@ def _finalize_instance_overview(
     instance_name: str,
     overview_pool: list[dict[str, Any]],
     zone_mention_pool: list[dict[str, Any]],
+    sparse_rescue_pool: list[dict[str, Any]] | None = None,
 ) -> tuple[str, list[str], list[dict[str, Any]]]:
     pools_to_try: list[list[dict[str, Any]]] = []
     if overview_pool:
@@ -440,6 +466,13 @@ def _finalize_instance_overview(
         rescue_pool = overview_pool + zone_mention_pool
         if rescue_pool not in pools_to_try:
             pools_to_try.append(rescue_pool)
+    # Slice I4 last resort: a genuinely sparse instance whose own page (and any
+    # instance-naming cross-page lore) produced nothing falls back to parent-complex
+    # context here. This runs only after the instance-first pools above are exhausted.
+    if sparse_rescue_pool:
+        combined = overview_pool + sparse_rescue_pool
+        if combined not in pools_to_try:
+            pools_to_try.append(combined)
 
     for pool in pools_to_try:
         text, used = synthesize_instance_overview(pool, instance_name=instance_name)
@@ -1482,10 +1515,18 @@ def build_instance_page(
     )
     used_source_ids.update(pointer["source_id"] for pointer in at_pointers)
 
+    sparse_rescue_pool: list[dict[str, Any]] = []
+    if pools.get("instance_lore_sparse"):
+        sparse_rescue_pool = build_sparse_lore_rescue_pool(
+            parent_lore_pool=pools["parent_lore_pool"],
+            related_lore_pool=pools["related_lore_pool"],
+            instance_name=name,
+        )
     overview, overview_used, overview_pool = _finalize_instance_overview(
         instance_name=name,
         overview_pool=pools["overview_pool"],
         zone_mention_pool=pools["zone_mention_pool"],
+        sparse_rescue_pool=sparse_rescue_pool,
     )
     overview_pointers = _pointers_for_source_ids(overview_pool, overview_used, revision_map)
     overview_pointers = _cap_card_pointers(
@@ -1498,6 +1539,15 @@ def build_instance_page(
         max_count=3,
     )
     used_source_ids.update(pointer["source_id"] for pointer in overview_pointers)
+    # Cross-page lore counts as "used" only when a story-context provenance pointer
+    # actually cites a parent/related source, so the lore_source flip stays accurate.
+    cross_page_source_ids = {
+        str(item.get("source_id", ""))
+        for item in pools["parent_lore_pool"] + pools["related_lore_pool"]
+    }
+    cross_page_lore_used = any(
+        pointer["source_id"] in cross_page_source_ids for pointer in overview_pointers
+    )
 
     history_pool = select_history_pool(pools["history_pool"])
     draft_history_pool, instance_history_cap = _draft_history_pool(history_pool)
@@ -1612,8 +1662,16 @@ def build_instance_page(
         "history_sections": history_sections,
         "key_characters": key_characters,
         "major_factions": major_factions,
-        "lore_source": str((lore_source or {}).get("lore_source", "instance_page")),
-        "lore_source_reason": (lore_source or {}).get("fallback_reason"),
+        "lore_source": (
+            "linked_lore_page"
+            if cross_page_lore_used
+            else str((lore_source or {}).get("lore_source", "instance_page"))
+        ),
+        "lore_source_reason": (
+            "cross_page_fusion"
+            if cross_page_lore_used
+            else (lore_source or {}).get("fallback_reason")
+        ),
         "variant_policy": "standalone",
         "variant_reason_codes": [],
         "glossary_refs": [],

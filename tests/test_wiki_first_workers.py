@@ -6,6 +6,7 @@ from pipeline.generate.draft.compendium_voice import COMPENDIUM_VOICE_CORE, zone
 from pipeline.generate.draft.prose_lint import MAX_AT_A_GLANCE_WORDS, word_count
 from pipeline.generate.draft.wiki_first_workers import (
     classify_key_character_role_llm,
+    classify_lore_relevance_llm,
     select_key_characters_from_narrative,
     synthesize_at_a_glance,
     synthesize_currently,
@@ -230,4 +231,44 @@ def test_classify_role_llm_rejects_out_of_enum_value(monkeypatch) -> None:
         fallback_role="uncertain",
     )
     assert role == "uncertain"
+
+
+def test_classify_lore_relevance_llm_offline_returns_unrelated(monkeypatch) -> None:
+    monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
+    verdict = classify_lore_relevance_llm(
+        [{"snippet": "Some general complex lore."}],
+        page_title="Auchindoun",
+        instance_name="Mana-Tombs",
+    )
+    assert verdict == "unrelated"
+
+
+def test_classify_lore_relevance_llm_uses_constrained_enum(monkeypatch) -> None:
+    monkeypatch.delenv("WOW_LORE_WIKI_FIRST_NO_LLM", raising=False)
+    import pipeline.generate.draft.wiki_first_workers as workers
+
+    ready = type("S", (), {"openai_ready": True})()
+    monkeypatch.setattr(workers, "load_ai_settings", lambda: ready)
+    monkeypatch.setattr(workers, "llm_json_with_retry", lambda **kwargs: {"relevance": "relevant"})
+    verdict = classify_lore_relevance_llm(
+        [{"snippet": "This page is specifically about the Mana-Tombs."}],
+        page_title="Auchindoun",
+        instance_name="Mana-Tombs",
+    )
+    assert verdict == "relevant"
+
+
+def test_classify_lore_relevance_llm_rejects_out_of_enum(monkeypatch) -> None:
+    monkeypatch.delenv("WOW_LORE_WIKI_FIRST_NO_LLM", raising=False)
+    import pipeline.generate.draft.wiki_first_workers as workers
+
+    ready = type("S", (), {"openai_ready": True})()
+    monkeypatch.setattr(workers, "load_ai_settings", lambda: ready)
+    monkeypatch.setattr(workers, "llm_json_with_retry", lambda **kwargs: {"relevance": "maybe"})
+    verdict = classify_lore_relevance_llm(
+        [{"snippet": "Ambiguous."}],
+        page_title="Auchindoun",
+        instance_name="Mana-Tombs",
+    )
+    assert verdict == "unrelated"
 

@@ -83,6 +83,10 @@ _TRAVERSE_BLOCK_BY_ROLE: dict[str, frozenset[str]] = {
     "location_profile": frozenset({"zone", "continent", "instance"}),
     "storyline": frozenset(),
     "instance_lore": frozenset({"zone", "continent", "capital", "region"}),
+    # Parent-complex lore pages are themselves instance/zone-classified (e.g.
+    # Auchindoun), so they must not be blocked; only continents are too broad.
+    "parent_lore": frozenset({"continent"}),
+    "related_lore": frozenset({"continent", "capital"}),
 }
 
 

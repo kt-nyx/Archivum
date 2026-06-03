@@ -16,6 +16,10 @@ from pipeline.discovery.entity_typing import (
     should_reject_location_title,
     should_skip_registry_traversal,
 )
+from pipeline.discovery.lore_sources import (
+    classify_lore_retail_eligibility,
+    variant_cluster_key,
+)
 from pipeline.discovery.quest_hub import resolve_hub_child_links
 from pipeline.discovery.quest_lore import build_quest_lore_record
 from pipeline.discovery.storyline_parser import _to_entity_id, _wiki_title
@@ -31,6 +35,8 @@ _MAX_STORYLINE = 1
 _MAX_QUEST = 25
 _MAX_FACTION = 6
 _MAX_LOCATION = 8
+_MAX_PARENT_LORE = 1
+_MAX_RELATED_LORE = 3
 
 
 def _load_json(path: Path) -> Any:
@@ -242,6 +248,30 @@ def _upgrade_storyline_snapshot(
         existing["parse_html"] = raw_html[:524288]
     report_rows.append({"status": "upgraded", "link": link, "role": "storyline"})
     return existing
+
+
+def _drop_snapshot(
+    snapshot: dict[str, Any],
+    *,
+    snapshots: list[dict[str, Any]],
+    manifest_rows: list[dict[str, Any]],
+    existing_source_ids: set[str],
+    existing_urls: set[str],
+    report_rows: list[dict[str, Any]],
+    reason: str,
+    role: str,
+) -> None:
+    """Undo a just-appended snapshot (e.g. a fetched page that proved Classic-only)."""
+    source_id = str(snapshot.get("source_id", "")).strip()
+    url = str(snapshot.get("url", "")).strip().lower().split("#", 1)[0]
+    if snapshot in snapshots:
+        snapshots.remove(snapshot)
+    manifest_rows[:] = [
+        row for row in manifest_rows if str(row.get("source_id", "")).strip() != source_id
+    ]
+    existing_source_ids.discard(source_id)
+    existing_urls.discard(url)
+    report_rows.append({"status": "skipped", "link": url, "reason": reason, "role": role})
 
 
 def _manifest_instance_titles(manifest_rows: list[dict[str, Any]]) -> frozenset[str]:
@@ -658,6 +688,68 @@ def run_traverse_seed(context: RunContext) -> dict[str, Path]:
                 allowed_instance_titles=allowed_instance_titles,
             ):
                 seen_instance_lore.add(instance_id)
+
+    lore_targets = _load_json(discovery_dir / "lore_traversal_targets.json")
+    if isinstance(lore_targets, list):
+        seen_lore_targets: set[tuple[str, str]] = set()
+        seen_lore_variants: set[tuple[str, str]] = set()
+        for target in lore_targets:
+            if not isinstance(target, dict):
+                continue
+            instance_id = str(target.get("instance_id", "")).strip()
+            link = str(target.get("source_link", "")).strip()
+            kind = str(target.get("candidate_kind", "")).strip()
+            if not instance_id or not link or kind not in {"parent", "related"}:
+                continue
+            aux_role = "parent_lore" if kind == "parent" else "related_lore"
+            cap = _MAX_PARENT_LORE if kind == "parent" else _MAX_RELATED_LORE
+            key = (instance_id, link.lower())
+            if key in seen_lore_targets:
+                continue
+            seen_lore_targets.add(key)
+            # Collapse version variants of the same page so retail/Classic siblings of one
+            # candidate are not both fetched for the same instance.
+            title = str(target.get("title", "")).strip() or _wiki_title(link)
+            variant_key = (instance_id, variant_cluster_key(title))
+            if variant_key in seen_lore_variants:
+                continue
+            seen_lore_variants.add(variant_key)
+            if not _within_cap(instance_id, aux_role, cap):
+                continue
+            instance_snap = _instance_seed_snapshot(snapshots, instance_id)
+            if instance_snap is None:
+                continue
+            snapshot = _fetch_and_append(
+                zone_snapshot=instance_snap,
+                link=link,
+                auxiliary_role=aux_role,
+                auxiliary_target_id=_to_entity_id(kind, title),
+                traversal_origin="lore_traversal_targets",
+                page_title=title,
+                snapshots=snapshots,
+                manifest_rows=manifest_rows,
+                existing_source_ids=existing_source_ids,
+                existing_urls=existing_urls,
+                captured_at=captured_at,
+                report_rows=report_rows,
+                allowed_instance_titles=allowed_instance_titles,
+            )
+            if snapshot is None:
+                continue
+            eligibility = classify_lore_retail_eligibility(str(snapshot.get("body", "")))
+            if eligibility != "eligible":
+                _drop_snapshot(
+                    snapshot,
+                    snapshots=snapshots,
+                    manifest_rows=manifest_rows,
+                    existing_source_ids=existing_source_ids,
+                    existing_urls=existing_urls,
+                    report_rows=report_rows,
+                    reason=eligibility,
+                    role=aux_role,
+                )
+                continue
+            _increment(instance_id, aux_role)
 
     return _persist_traverse_state(
         context,

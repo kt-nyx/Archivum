@@ -490,6 +490,57 @@ def classify_key_character_role_llm(
     return role if role in _CHARACTER_ROLE_VALUES else fallback_role
 
 
+_LORE_RELEVANCE_VALUES = ("relevant", "unrelated")
+
+
+def classify_lore_relevance_llm(
+    items: list[dict[str, Any]],
+    *,
+    page_title: str,
+    instance_name: str,
+    fallback: str = "unrelated",
+) -> str:
+    """Decide whether a related cross-page lore source is about this instance.
+
+    Used only for the sparse-instance rescue path, where parent/related prose does
+    not literally name the instance. Returns ``"relevant"`` or ``"unrelated"``.
+    Offline / no-LLM / empty-evidence returns ``fallback`` (default ``"unrelated"``)
+    so related pages are not fused unless explicitly affirmed (overreach control).
+    """
+    if not items:
+        return fallback
+    settings = load_ai_settings()
+    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
+        return fallback
+    result = llm_json_with_retry(
+        required_keys=("relevance",),
+        response_json_schema={
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["relevance"],
+            "properties": {
+                "relevance": {"type": "string", "enum": list(_LORE_RELEVANCE_VALUES)}
+            },
+        },
+        system_prompt=(
+            f"You are deciding whether the wiki page '{page_title}' provides lore that is "
+            f"directly about the instance '{instance_name}' (its story, history, or denizens), "
+            "as opposed to broadly related lore that is not specifically about this instance. "
+            "Using ONLY the evidence, answer 'relevant' if the evidence describes this specific "
+            "instance, otherwise 'unrelated'."
+        ),
+        user_prompt=f"Evidence:\n{_format_evidence_block(items)}",
+        response_schema_name="wiki_first_lore_relevance",
+        substep="wiki_first_lore_relevance",
+    )
+    relevance = str(result.get("relevance", "")).strip().lower()
+    return relevance if relevance in _LORE_RELEVANCE_VALUES else fallback
+
+
 def select_key_characters_from_narrative(
     candidates: list[dict[str, Any]],
     *,

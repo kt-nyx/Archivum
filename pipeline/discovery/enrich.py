@@ -297,6 +297,19 @@ def _build_evidence_packs(
                 field_names = ["location_pool"]
             elif aux_role == "instance_lore":
                 field_names = ["instance_lore_pool"]
+            elif aux_role in {"parent_lore", "related_lore"}:
+                # Cross-page lore is the highest overreach risk, so use a strict narrative
+                # allowlist (lead/intro + history/lore/background/story) rather than the
+                # broad _is_history_digest_role denylist used for instance-owned prose.
+                lowered_raw = raw_section.lower()
+                is_narrative = lowered_raw in {"lead", "introduction"} or any(
+                    token in lowered_raw for token in ("history", "lore", "background", "story")
+                )
+                if lowered_raw.startswith("in_the_rpg") or not is_narrative:
+                    continue
+                field_names = [
+                    "parent_lore_pool" if aux_role == "parent_lore" else "related_lore_pool"
+                ]
             else:
                 continue
 
@@ -338,6 +351,14 @@ def _build_evidence_packs(
                     build_meta["location_name"] = page_title or entity_name
                 if aux_role == "instance_lore":
                     build_meta["instance_id"] = str(snapshot.get("auxiliary_target_id", subject_id)).strip()
+                if is_instance_seed or aux_role == "instance_lore":
+                    build_meta["lore_scope"] = "instance"
+                elif aux_role == "parent_lore":
+                    build_meta["lore_scope"] = "parent"
+                    build_meta["lore_source_title"] = page_title or entity_name
+                elif aux_role == "related_lore":
+                    build_meta["lore_scope"] = "related"
+                    build_meta["lore_source_title"] = page_title or entity_name
                 packs.append(
                     {
                         "subject_id": subject_id,

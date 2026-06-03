@@ -43,7 +43,7 @@ const INSTANCE_SLICES = [
   {
     id: "slice-i4",
     content: "Slice I4 — Instance lore sourcing + cross-page traversal strategy",
-    status: "pending" as const,
+    status: "completed" as const,
   },
   {
     id: "slice-i5",
@@ -453,42 +453,39 @@ export default function InstanceMasterPlanCanvas() {
         </Stack>
       </CollapsibleSection>
 
-      <CollapsibleSection title="Slice I4 — Lore source traversal + fusion" count={9}>
+      <CollapsibleSection title="Slice I4 — Lore source traversal + fusion (shipped)" count={9}>
         <Stack gap={12}>
           <H3>Intent</H3>
           <Text>
             Ensure instance lore generation draws from the best available evidence even when lore is split across
-            instance pages, parent complexes, and related pages.
+            instance pages, parent complexes, and related pages — without fusing tangential or Classic-version content.
           </Text>
 
-          <H3>Source ranking strategy</H3>
+          <H3>Locked decisions (this session)</H3>
+          <Text>
+            Hybrid B/C: one-hop parent-complex + related candidates, always-score (candidates fetched every run),
+            strict attribution (cross-page prose must name the instance), and explicit exclusion of
+            Classic/expansion-version pages.
+          </Text>
+
+          <H3>Implementation (shipped)</H3>
           <Table
-            headers={["Source class", "Use when", "Priority"]}
+            headers={["Area", "What shipped"]}
             rows={[
-              ["Instance page", "Has adequate lore sections and clear narrative density", "High"],
-              ["Parent/complex page", "Instance page is sparse or mostly gameplay metadata", "High fallback"],
-              ["Related linked pages", "Directly relevant and improves narrative completeness", "Selective"],
-              ["Low-signal pages", "Mostly loot/achievements/mechanics with weak lore content", "De-prioritize"],
+              ["Candidate enumeration", "New pipeline/discovery/lore_sources.py derives a bounded, deterministic candidate set from each instance's OWN page: parent-complex = a lead link corroborated by the infobox (wiki_links), capped to 1; related = history/lore prose links, capped to 3. Self, Classic-suffixed variants, noise, and character/faction links are filtered. Emits discovery/lore_traversal_targets.json and records the instance page's own lore density."],
+              ["Always-score traversal", "run_traverse_seed fetches each candidate as parent_lore / related_lore auxiliary snapshots via the existing fetch path, with per-instance caps (parent<=1, related<=3), URL dedupe, a post-fetch retail-eligibility skip (drops Classic-only/other-game pages), and new _TRAVERSE_BLOCK_BY_ROLE entries so parent complexes (instance/zone-classified) are not blocked. Manifest aux enum extended."],
+              ["Signal scorer", "pipeline/generate/draft/lore_selection.py scores instance vs cross-page lore by word volume + instance-name mention; replaces the zone-seed has_history proxy. Optional LLM relevance gate (classify_lore_relevance_llm, enum-constrained, openai-gated) rescues borderline parent context for sparse instances; deterministic NO_LLM fallback keeps related pages out."],
+              ["Attribution-disciplined fusion", "enrich routes parent_lore/related_lore narrative blocks into parent_lore_pool/related_lore_pool with a lore_scope tag. build_instance_page fuses cross-page snippets into the overview ONLY when the instance is sparse and ONLY snippets that name the instance (mention gate); rich instances keep their exact prior pool (no regression). Dedup by normalized text; provenance pointers cite each source page+revision; lore_source flips to linked_lore_page (reason cross_page_fusion) only when a pointer actually cites a cross-page source."],
             ]}
           />
 
-          <H3>Implementation tasks</H3>
+          <H3>Acceptance gate (met)</H3>
           <Table
-            headers={["Task", "Primary files", "Done when"]}
+            headers={["Check", "Result"]}
             rows={[
-              ["Cross-page traversal policy", "source traversal logic", "Traversal graph has bounded depth and deterministic tie-breaks"],
-              ["Lore density scorer", "evidence selection module", "Selection is based on signal, not hardcoded page type"],
-              ["Fusion + provenance", "draft construction path", "Lore excerpts carry clean source_refs and no noisy duplication"],
-            ]}
-          />
-
-          <H3>Acceptance gate</H3>
-          <Table
-            headers={["Check", "Pass condition"]}
-            rows={[
-              ["Sparse-page resilience", "Sparse instance pages still produce coherent lore with justified fallbacks"],
-              ["Overreach control", "Traversal does not pull broad unrelated lore that dilutes instance narrative"],
-              ["Provenance fidelity", "Merged lore claims remain source-traceable"],
+              ["Sparse-page resilience", "Sparse instance whose own page is a stub fuses parent-complex prose that names it; end-to-end test asserts a coherent overview + parent citation"],
+              ["Overreach control", "Rich-instance test asserts a non-naming parent snippet is never fused and lore_source stays instance_page; mention-gating + Classic exclusion + caps bound the candidate set"],
+              ["Provenance fidelity", "Every fused claim keeps source_id -> revision via existing pointer machinery; story_context provenance cites the originating page"],
             ]}
           />
         </Stack>
