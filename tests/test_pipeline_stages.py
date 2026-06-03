@@ -216,6 +216,22 @@ def test_wiki_first_stage_chain_includes_discovery_and_enrich(
         phase="cluster",
     )
     assert cluster_outputs["zone_quest_clusters"].exists()
+
+    significance_outputs = run_discovery_enrich_stage(
+        context,
+        ingest_output["source_manifest_path"],
+        phase="significance",
+    )
+    assert significance_outputs["zone_quest_cluster_rankings"].exists()
+    decisions = json.loads(
+        significance_outputs["questline_inclusion_decisions"].read_text(encoding="utf-8")
+    )
+    cluster_decisions = [
+        row for row in decisions if row.get("subject_type") == "questline_cluster"
+    ]
+    assert cluster_decisions
+    assert any(row.get("final_decision") == "include" for row in cluster_decisions)
+
     clustered_v3 = json.loads(cluster_outputs["zone_quest_graph_v3"].read_text(encoding="utf-8"))
     quest_cluster_ids = {
         str(row.get("cluster_id", ""))

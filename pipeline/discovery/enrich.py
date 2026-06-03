@@ -18,6 +18,10 @@ from pipeline.discovery.location_discovery import (
 )
 from pipeline.discovery.instance_bosses import is_boss_section_role
 from pipeline.discovery.questline_cluster import cluster_zone_questlines
+from pipeline.discovery.questline_significance import (
+    load_included_cluster_ids_by_zone,
+    score_zone_questline_clusters,
+)
 from pipeline.discovery.questline_clustering import apply_cluster_layers
 from pipeline.discovery.quest_roster import build_quest_roster
 from pipeline.discovery.storyline_html import parse_storyline_html, v3_to_legacy_v1
@@ -26,7 +30,7 @@ from pipeline.discovery.workflow import _load_json, _section_role
 # "roster" (pre-traverse): build the flat, UNCLUSTERED quest graph + zone-level
 # questline decision; clustering is deferred until quest pages exist (Slice B).
 # "full" keeps the legacy single-pass clustering behavior for any direct callers.
-EnrichPhase = Literal["full", "roster", "cluster", "evidence_merge"]
+EnrichPhase = Literal["full", "roster", "cluster", "significance", "evidence_merge"]
 
 _UNCLUSTERED_CLUSTER_ID = "unclustered"
 
@@ -186,6 +190,7 @@ def _build_evidence_packs(
     run_id: str,
     *,
     v3_rows: list[dict[str, Any]] | None = None,
+    included_clusters_by_zone: dict[str, set[str]] | None = None,
 ) -> list[dict[str, Any]]:
     packs: list[dict[str, Any]] = []
     lead_counts: dict[str, int] = {}
@@ -257,8 +262,11 @@ def _build_evidence_packs(
                     },
                 }
                 packs.append(pack)
-                if cluster_id:
-                    cluster_snippets.setdefault((subject_id, cluster_id), []).append(pack)
+            if cluster_id:
+                zone_included = (included_clusters_by_zone or {}).get(subject_id)
+                if zone_included is not None and cluster_id not in zone_included:
+                    continue
+                cluster_snippets.setdefault((subject_id, cluster_id), []).append(pack)
             continue
 
         block_index = 0
@@ -390,6 +398,9 @@ def _build_evidence_packs(
 
     seen_cluster_keys: set[tuple[str, ...]] = set()
     for (subject_id, cluster_id), cluster_packs in sorted(cluster_snippets.items()):
+        zone_included = (included_clusters_by_zone or {}).get(subject_id)
+        if zone_included is not None and cluster_id not in zone_included:
+            continue
         for pack in cluster_packs:
             key = _pack_key(pack)
             if key in seen_cluster_keys:
@@ -507,6 +518,7 @@ def run_discovery_enrich(
         "zone_quest_graph": discovery_dir / "zone_quest_graph.json",
         "zone_quest_graph_v3": discovery_dir / "zone_quest_graph_v3.json",
         "zone_quest_clusters": discovery_dir / "zone_quest_clusters.json",
+        "zone_quest_cluster_rankings": discovery_dir / "zone_quest_cluster_rankings.json",
         "location_significance_decisions": decisions_dir / "location_significance_decisions.json",
         "questline_inclusion_decisions": decisions_dir / "questline_inclusion_decisions.json",
         "evidence_packs": evidence_dir / "evidence_packs.jsonl",
@@ -586,12 +598,107 @@ def run_discovery_enrich(
             QuestlineClusterSummary.model_validate(row)
         return outputs
 
+    if phase == "significance":
+        v3_blob = _load_json(outputs["zone_quest_graph_v3"])
+        questline_graph_v3 = v3_blob if isinstance(v3_blob, list) else []
+        clusters_blob = _load_json(outputs["zone_quest_clusters"])
+        cluster_summaries = clusters_blob if isinstance(clusters_blob, list) else []
+        quest_records_path, quest_records = _load_or_aggregate_quest_records(discovery_dir, snapshots)
+        storyline_by_zone = _storyline_snapshots_by_zone(snapshots)
+
+        all_decisions: list[dict[str, Any]] = []
+        all_rankings: list[dict[str, Any]] = []
+        included_total = 0
+        excluded_total = 0
+        borderline_total = 0
+
+        summaries_by_zone: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for summary in cluster_summaries:
+            if isinstance(summary, dict):
+                zone_id = str(summary.get("zone_id", "")).strip()
+                if zone_id:
+                    summaries_by_zone[zone_id].append(summary)
+
+        for zone_id in sorted(summaries_by_zone):
+            zone_rows = [row for row in questline_graph_v3 if str(row.get("zone_id", "")) == zone_id]
+            decisions, ranking = score_zone_questline_clusters(
+                zone_id=zone_id,
+                cluster_summaries=summaries_by_zone[zone_id],
+                v3_rows=zone_rows,
+                quest_records=quest_records,
+                seed_text=build_zone_seed_text(snapshots, zone_id),
+                storyline_html=str(storyline_by_zone.get(zone_id, {}).get("parse_html", "")),
+                run_id=context.run_id,
+            )
+            all_decisions.extend(decisions)
+            all_rankings.append(ranking)
+            for row in decisions:
+                if str(row.get("subject_type", "")) != "questline_cluster":
+                    continue
+                decision = str(row.get("final_decision", ""))
+                if decision == "include":
+                    included_total += 1
+                elif decision == "exclude":
+                    excluded_total += 1
+                if row.get("borderline_adjudication"):
+                    borderline_total += 1
+
+        outputs["questline_inclusion_decisions"].write_text(
+            json.dumps(all_decisions, indent=2), encoding="utf-8"
+        )
+        outputs["zone_quest_cluster_rankings"].write_text(
+            json.dumps(all_rankings, indent=2), encoding="utf-8"
+        )
+        for row in all_decisions:
+            DecisionArtifact.model_validate(row)
+
+        prior_report = _load_json(outputs["enrich_report"])
+        report_payload = prior_report if isinstance(prior_report, dict) else {}
+        report_payload.update(
+            {
+                "run_id": context.run_id,
+                "enrich_phase": phase,
+                "quest_record_count": len(quest_records),
+                "clusters_scored": sum(
+                    1 for row in all_decisions if row.get("subject_type") == "questline_cluster"
+                ),
+                "clusters_included": included_total,
+                "clusters_excluded": excluded_total,
+                "clusters_borderline": borderline_total,
+                "quest_records_path": str(quest_records_path),
+            }
+        )
+        outputs["enrich_report"].write_text(json.dumps(report_payload, indent=2), encoding="utf-8")
+        outputs["quest_records"] = quest_records_path
+        return outputs
+
     if phase == "evidence_merge":
         v3_blob = _load_json(outputs["zone_quest_graph_v3"])
         questline_graph_v3 = v3_blob if isinstance(v3_blob, list) else []
-        evidence_packs = _build_evidence_packs(snapshots, context.run_id, v3_rows=questline_graph_v3)
+        rankings_blob = _load_json(outputs["zone_quest_cluster_rankings"])
+        rankings_list = rankings_blob if isinstance(rankings_blob, list) else []
+        included_by_zone = load_included_cluster_ids_by_zone(rankings_list)
+        included_sets = {
+            zone_id: set(cluster_ids) for zone_id, cluster_ids in included_by_zone.items()
+        }
+        evidence_packs = _build_evidence_packs(
+            snapshots,
+            context.run_id,
+            v3_rows=questline_graph_v3,
+            included_clusters_by_zone=included_sets or None,
+        )
         clusters_with_evidence, clusters_missing = _cluster_evidence_metrics(questline_graph_v3, evidence_packs)
         quest_records_path, quest_records = _load_or_aggregate_quest_records(discovery_dir, snapshots)
+        all_cluster_ids = {
+            (str(row.get("zone_id", "")), str(row.get("cluster_id", "")))
+            for row in questline_graph_v3
+            if row.get("cluster_id")
+        }
+        included_cluster_keys = {
+            (zone_id, cluster_id)
+            for zone_id, cluster_ids in included_by_zone.items()
+            for cluster_id in cluster_ids
+        }
         prior_report = _load_json(outputs["enrich_report"])
         report_payload = prior_report if isinstance(prior_report, dict) else {}
         report_payload.update(
@@ -603,6 +710,8 @@ def run_discovery_enrich(
                 "quest_record_count": len(quest_records),
                 "clusters_with_quest_evidence": clusters_with_evidence,
                 "clusters_missing_evidence": clusters_missing,
+                "clusters_included_for_evidence": len(included_cluster_keys),
+                "clusters_excluded_from_evidence": len(all_cluster_ids - included_cluster_keys),
             }
         )
         outputs["evidence_packs"].write_text(

@@ -14,6 +14,7 @@ from pipeline.generate.draft import generate_entity_draft, is_valid_draft
 from pipeline.generate.draft.llm import draft_chat_json_completion, set_draft_verbose
 from pipeline.generate.draft.mode import draft_pipeline_mode
 from pipeline.generate.draft.trace import DraftTraceContext
+from pipeline.discovery.questline_significance import load_included_cluster_ids_by_zone
 from pipeline.generate.draft.wiki_first import (
     build_instance_key_character_roster,
     build_instance_page,
@@ -151,6 +152,8 @@ def run_draft_writer(
                 if subject_id:
                     location_decision_map[subject_id] = row
     questline_decision_map: dict[str, dict[str, Any]] = {}
+    questline_cluster_decision_map: dict[str, dict[str, Any]] = {}
+    cluster_rankings_by_zone: dict[str, list[str]] = {}
     questline_decisions_path = context.data_dir / "decisions" / "questline_inclusion_decisions.json"
     if questline_decisions_path.exists():
         blob = json.loads(questline_decisions_path.read_text(encoding="utf-8"))
@@ -158,9 +161,17 @@ def run_draft_writer(
             for row in blob:
                 if not isinstance(row, dict):
                     continue
+                subject_type = str(row.get("subject_type", "")).strip()
                 subject_id = str(row.get("subject_id", "")).strip()
-                if subject_id:
+                if subject_type == "zone_questline_set" and subject_id:
                     questline_decision_map[subject_id] = row
+                elif subject_type == "questline_cluster" and subject_id:
+                    questline_cluster_decision_map[subject_id] = row
+    rankings_path = context.data_dir / "discovery" / "zone_quest_cluster_rankings.json"
+    if rankings_path.exists():
+        rankings_blob = json.loads(rankings_path.read_text(encoding="utf-8"))
+        if isinstance(rankings_blob, list):
+            cluster_rankings_by_zone = load_included_cluster_ids_by_zone(rankings_blob)
     faction_profile_targets: list[dict[str, Any]] = []
     faction_targets_path = context.data_dir / "discovery" / "faction_profile_targets.json"
     if faction_targets_path.exists():
@@ -207,6 +218,8 @@ def run_draft_writer(
                     location_candidate_map,
                     location_decision_map,
                     questline_decision_map.get(entity_id),
+                    questline_cluster_decision_map=questline_cluster_decision_map,
+                    included_cluster_ids=cluster_rankings_by_zone.get(entity_id),
                     faction_profile_targets=[
                         row
                         for row in faction_profile_targets

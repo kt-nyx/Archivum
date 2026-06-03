@@ -263,8 +263,8 @@ def test_run_pipeline_flow_orders_enrich_phases_around_quest_traverse(
 
     run_pipeline_flow(run_id=context.run_id, retries_per_stage=0)
 
-    assert enrich_phases == ["roster", "cluster", "evidence_merge"]
+    assert enrich_phases == ["roster", "cluster", "significance", "evidence_merge"]
     enrich_indices = [index for index, name in enumerate(stage_calls) if name == "discovery_enrich"]
-    assert len(enrich_indices) == 3
+    assert len(enrich_indices) == 4
     quests_idx = stage_calls.index("traverse_quests")
-    assert stage_calls.index("traverse_seed") < enrich_indices[0] < quests_idx < enrich_indices[1] < enrich_indices[2]
+    assert stage_calls.index("traverse_seed") < enrich_indices[0] < quests_idx < enrich_indices[1] < enrich_indices[2] < enrich_indices[3]
