@@ -37,6 +37,22 @@ Target **`ZonePage.major_questlines`** shape (`QuestlineCardV2`):
 
 This matches `data/drafts/zone_page/*.json` questline cards (wiki-first pipeline output).
 
+## 4. Instance page gold — `instance_page_scholomance_gold.json`
+
+Target **`InstancePage`** shape for the Scholomance pilot instance. Hand-authored canonical
+page that passes release-gate `validate_payload` (0 hard fails), every `instance_lint`
+detector, and the manifest alignment for `instance-scholomance`. It is the regression anchor
+for instance generation quality (Slice I6).
+
+Companion **`instance_key_character_decisions_scholomance_gold.json`** mirrors the
+`data/decisions/instance_key_character_decisions.json` sidecar: the full ranked key-character
+roster with an `emitted` flag per candidate. Used by the role-diversity and pool-aware
+minimum checks.
+
+Validated by `tests/test_instance_pilot_gold_standard.py`; exercised offline by the pilot
+tooling smoke in `tests/test_instance_pilot_tooling.py`. See
+[`docs/planning/instance-pilot-rollout.md`](../../../docs/planning/instance-pilot-rollout.md).
+
 ## Comparison
 
 | | Registry | Zone page gold | Pipeline draft |

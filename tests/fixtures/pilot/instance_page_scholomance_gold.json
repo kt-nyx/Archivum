@@ -1,0 +1,135 @@
+{
+  "instance_id": "instance-scholomance",
+  "name": "Scholomance",
+  "instance_type": "dungeon",
+  "parent_zone_id": "zone-western-plaguelands",
+  "expansion_context": "retail",
+  "wiki_url": "https://warcraft.wiki.gg/wiki/Scholomance",
+  "at_a_glance": "Scholomance was the Cult of the Damned's hidden necromantic academy beneath Caer Darrow, training Scourge spellcasters and binding the restless dead under the Darkmaster's pitiless rule.",
+  "overview": "Scholomance was raised within the crypts beneath Caer Darrow as a hidden academy where the Cult of the Damned trained new necromancers in the forbidden arts. Under the patronage of the Scourge, its instructors gathered stolen corpses, dark reagents, and captured apprentices to perpetuate the teachings of Kel'Thuzad long after his ascension. The halls of Scholomance bound restless dead to the will of the Darkmaster, who governed examinations, punishments, and the steady production of fresh undead servants for the war against the living. Those who breached the academy confronted reanimated horrors, bound spirits, and faculty who had traded their humanity for mastery over death. Scholomance stood as both a school and a forge, a place where ambition curdled into damnation and where each chamber answered to a curriculum of cruelty. Its enduring threat lay not in a single villain but in the institution itself, which replenished the Scourge with disciplined practitioners even as its leadership was dismantled. In the later chapters of the Lordaeron campaign, Scholomance remained a lingering wound upon the Plaguelands, a reminder that the architects of the plague had built lasting machinery to teach, sustain, and spread their dominion over the dead.",
+  "history_sections": [
+    {
+      "heading": "Origins of the Academy",
+      "body": "Scholomance began as the ancestral crypt of House Barov, whose lands at Caer Darrow were seized through betrayal during the Third War. The Cult of the Damned converted the burial vaults into lecture halls and laboratories, and Kel'Thuzad installed loyal instructors to school a new generation of necromancers. Over the following years the academy refined its grim curriculum, raising ever more capable undead and exporting trained practitioners to bolster the Scourge across Lordaeron.",
+      "source_refs": []
+    },
+    {
+      "heading": "A Lingering Threat",
+      "body": "Even after repeated incursions by heroes of the living, Scholomance endured because its true power was institutional rather than personal. Each fallen instructor was replaced, each shattered experiment rebuilt, and the academy continued to graduate necromancers who carried its methods outward. The site became a fixed objective for those seeking to weaken the Scourge, yet its deep vaults and disciplined faculty made any lasting victory costly and incomplete.",
+      "source_refs": []
+    }
+  ],
+  "key_characters": [
+    {
+      "id": "character-darkmaster-gandling",
+      "name": "Darkmaster Gandling",
+      "summary": "Darkmaster Gandling presided over Scholomance as its headmaster, enforcing the academy's lethal curriculum and reanimating those who failed his examinations. He stood as the final authority adventurers had to defeat to break the school's hold on the dead.",
+      "role": "enemy",
+      "wiki_ref": "https://warcraft.wiki.gg/wiki/Darkmaster_Gandling",
+      "decision_reason_codes": ["role:enemy:section_lean"]
+    },
+    {
+      "id": "character-rattlegore",
+      "name": "Rattlegore",
+      "summary": "Rattlegore was the bonecrafter of Scholomance, a towering abomination stitched together within the academy to guard its lower halls. The construct embodied the school's industrial approach to undeath, turning raw remains into disciplined Scourge soldiers.",
+      "role": "enemy",
+      "wiki_ref": "https://warcraft.wiki.gg/wiki/Rattlegore",
+      "decision_reason_codes": ["role:enemy:section_lean"]
+    },
+    {
+      "id": "character-jandice-barov",
+      "name": "Jandice Barov",
+      "summary": "Jandice Barov haunted Scholomance as a deranged illusionist of the fallen Barov line, conjuring mirror images to bewilder intruders. Her presence tied the academy to the noble family whose betrayal first delivered Caer Darrow to the Cult of the Damned.",
+      "role": "enemy",
+      "wiki_ref": "https://warcraft.wiki.gg/wiki/Jandice_Barov",
+      "decision_reason_codes": ["role:enemy:descriptor"]
+    },
+    {
+      "id": "character-lord-alexei-barov",
+      "name": "Lord Alexei Barov",
+      "summary": "Lord Alexei Barov lingered within Scholomance as an undead heir of his cursed house, clinging to stolen authority over the academy's vaults. His continued existence reflected the Scourge's habit of binding ambitious nobles into eternal, obedient service.",
+      "role": "enemy",
+      "wiki_ref": "https://warcraft.wiki.gg/wiki/Lord_Alexei_Barov",
+      "decision_reason_codes": ["role:enemy:descriptor"]
+    }
+  ],
+  "major_factions": [],
+  "lore_source": "instance_page",
+  "lore_source_reason": null,
+  "variant_policy": "standalone",
+  "variant_reason_codes": [],
+  "glossary_refs": [],
+  "sources": [
+    {
+      "source_id": "src-wiki-scholomance",
+      "url": "https://warcraft.wiki.gg/wiki/Scholomance",
+      "revision_id": "oldid:5512345"
+    }
+  ],
+  "provenance": {
+    "identity_header": [
+      {
+        "source_id": "src-wiki-scholomance",
+        "locator": "section:lead paragraph:1",
+        "revision_id": "oldid:5512345",
+        "excerpt_hash": "sha256:scholomanceidentityheader01"
+      }
+    ],
+    "story_context": [
+      {
+        "source_id": "src-wiki-scholomance",
+        "locator": "section:overview paragraph:1",
+        "revision_id": "oldid:5512345",
+        "excerpt_hash": "sha256:scholomancestorycontext01"
+      },
+      {
+        "source_id": "src-wiki-scholomance",
+        "locator": "section:overview paragraph:2",
+        "revision_id": "oldid:5512345",
+        "excerpt_hash": "sha256:scholomancestorycontext02"
+      },
+      {
+        "source_id": "src-wiki-scholomance",
+        "locator": "section:history paragraph:1",
+        "revision_id": "oldid:5512345",
+        "excerpt_hash": "sha256:scholomancestorycontext03"
+      }
+    ],
+    "key_characters": {
+      "character-darkmaster-gandling": [
+        {
+          "source_id": "src-wiki-scholomance",
+          "locator": "section:bosses paragraph:gandling",
+          "revision_id": "oldid:5512345",
+          "excerpt_hash": "sha256:scholomancegandling01"
+        }
+      ],
+      "character-rattlegore": [
+        {
+          "source_id": "src-wiki-scholomance",
+          "locator": "section:bosses paragraph:rattlegore",
+          "revision_id": "oldid:5512345",
+          "excerpt_hash": "sha256:scholomancerattlegore01"
+        }
+      ],
+      "character-jandice-barov": [
+        {
+          "source_id": "src-wiki-scholomance",
+          "locator": "section:bosses paragraph:jandice",
+          "revision_id": "oldid:5512345",
+          "excerpt_hash": "sha256:scholomancejandice01"
+        }
+      ],
+      "character-lord-alexei-barov": [
+        {
+          "source_id": "src-wiki-scholomance",
+          "locator": "section:bosses paragraph:alexei",
+          "revision_id": "oldid:5512345",
+          "excerpt_hash": "sha256:scholomancealexei01"
+        }
+      ]
+    },
+    "major_factions": {},
+    "glossary": {}
+  }
+}

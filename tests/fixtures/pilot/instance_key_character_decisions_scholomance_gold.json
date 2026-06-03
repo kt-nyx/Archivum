@@ -1,0 +1,49 @@
+[
+  {
+    "instance_id": "instance-scholomance",
+    "candidates": [
+      {
+        "id": "character-darkmaster-gandling",
+        "name": "Darkmaster Gandling",
+        "role": "enemy",
+        "significance": 9.5,
+        "emitted": true
+      },
+      {
+        "id": "character-rattlegore",
+        "name": "Rattlegore",
+        "role": "enemy",
+        "significance": 7.0,
+        "emitted": true
+      },
+      {
+        "id": "character-jandice-barov",
+        "name": "Jandice Barov",
+        "role": "enemy",
+        "significance": 6.5,
+        "emitted": true
+      },
+      {
+        "id": "character-lord-alexei-barov",
+        "name": "Lord Alexei Barov",
+        "role": "enemy",
+        "significance": 6.0,
+        "emitted": true
+      },
+      {
+        "id": "character-kirtonos-the-herald",
+        "name": "Kirtonos the Herald",
+        "role": "enemy",
+        "significance": 5.5,
+        "emitted": false
+      },
+      {
+        "id": "character-ras-frostwhisper",
+        "name": "Ras Frostwhisper",
+        "role": "enemy",
+        "significance": 5.0,
+        "emitted": false
+      }
+    ]
+  }
+]

@@ -53,7 +53,7 @@ const INSTANCE_SLICES = [
   {
     id: "slice-i6",
     content: "Slice I6 — Pilot fixtures, evaluation rubric, run playbook, and rollout",
-    status: "pending" as const,
+    status: "completed" as const,
   },
 ];
 
@@ -531,30 +531,53 @@ export default function InstanceMasterPlanCanvas() {
         </Stack>
       </CollapsibleSection>
 
-      <CollapsibleSection title="Slice I6 — Pilot validation + rollout" count={8}>
+      <CollapsibleSection title="Slice I6 — Pilot validation + rollout (shipped)" count={9}>
         <Stack gap={12}>
           <H3>Intent</H3>
           <Text>
-            Run the new instance pipeline path in controlled promotion stages and finalize rollout checklist.
+            Make instance pilot validation and promotion objective and repeatable: a deterministic
+            evaluation rubric, a before/after run-diff archiver, a committed instance gold anchor, and
+            a run playbook — all exercisable offline so the tooling is testable without OpenAI.
+          </Text>
+
+          <H3>Locked decisions (this session)</H3>
+          <Text>
+            Ship all four deliverables (run-diff tool, quality rubric, instance gold fixture + tests,
+            refreshed playbook/docs) plus an offline/deterministic smoke path. The live pipeline run
+            stays operator-driven (coalesce requires OpenAI); the slice ships no production pipeline
+            code changes — only additive tooling, fixtures, tests, and docs.
           </Text>
 
           <H3>Promotion flow</H3>
           <Table
             headers={["Stage", "Run target", "Purpose", "Exit criteria"]}
             rows={[
-              ["Dev validation", "test-run-wpl-1", "Fast iteration + output inspection", "Instance checks green, manual quality review done"],
-              ["Promotion validation", "run-western-plaguelands", "CI parity and release confidence", "Same checks green in promotion run"],
+              ["Dev validation", "test-run-wpl-1", "Fast iteration + output inspection", "Instance rubric clean, semantics + manual review done"],
+              ["Promotion validation", "run-western-plaguelands", "CI parity and release confidence", "Rubric --gate clean, before/after diff archived"],
               ["Rollout", "default pipeline path", "Enable canonical behavior", "No unresolved blockers, docs/tests updated"],
             ]}
           />
 
-          <H3>Acceptance gate</H3>
+          <H3>Implementation (shipped)</H3>
           <Table
-            headers={["Check", "Pass condition"]}
+            headers={["Area", "What shipped"]}
             rows={[
-              ["Pilot artifacts", "Before/after instance diffs archived with rationale"],
-              ["Documentation", "Operational checklist updated for future instance work"],
-              ["Final sign-off", "All slices complete with no deferred high-severity instance blockers"],
+              ["Evaluation rubric", "scripts/instance_quality_report.py scores each instance_page draft PASS/WARN/FAIL by aggregating release-gate validate_payload + instance_lint detectors + pool-aware key-character minimum + assess_role_diversity (sidecar). Emits reports/instance_quality_report.{json,md}; exits non-zero on FAIL, and on WARN with --gate. Pure function of payload + sidecar."],
+              ["Before/after diff", "scripts/diff_instance_runs.py compares two run roots' instance_page drafts + decision sidecars (at_a_glance, overview word delta, history count, key_characters added/removed/role changes, lore_source, provenance counts, emitted roster) and writes reports/instance_run_diff.{json,md} with an auto rationale per changed instance plus an optional --notes operator rationale."],
+              ["Instance gold anchor", "tests/fixtures/pilot/instance_page_scholomance_gold.json (canonical InstancePage that passes the release gate + every detector) and instance_key_character_decisions_scholomance_gold.json (ranked roster sidecar). tests/test_instance_pilot_gold_standard.py asserts contract, release-gate pass, detectors, manifest alignment, and role diversity."],
+              ["Offline smoke", "tests/test_instance_pilot_tooling.py builds synthetic baseline/candidate run trees from the fixtures and exercises both scripts (candidate PASS, degraded baseline FAIL, WARN-only --gate escalation, reported deltas, deterministic JSON) without network or OpenAI."],
+              ["Docs + rollout", "New docs/planning/instance-pilot-rollout.md run playbook; pilot-promotion.md gains an instance gate step and fixes the stale key_enemies wording; tests/fixtures/pilot/README.md documents the instance gold layer."],
+            ]}
+          />
+
+          <H3>Acceptance gate (met)</H3>
+          <Table
+            headers={["Check", "Result"]}
+            rows={[
+              ["Pilot artifacts", "Before/after instance diffs are archivable with rationale via diff_instance_runs.py (json + md, optional --notes); smoke test asserts overview/cast/roster deltas"],
+              ["Evaluation rubric", "instance_quality_report.py scores PASS/WARN/FAIL deterministically; gold candidate PASSes and a degraded baseline FAILs in the offline smoke"],
+              ["Documentation", "Instance run playbook added; pilot-promotion.md + pilot README refreshed for the instance path; canvas slice updated"],
+              ["Final sign-off", "Full pytest suite green; no new ruff violations; no production pipeline code touched (additive tooling/fixtures/tests/docs only)"],
             ]}
           />
         </Stack>

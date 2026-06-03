@@ -75,7 +75,22 @@ uv run lore-pipeline run --run-id test-run-wpl-1 --fact-check-profile off --rele
 - `validation_report.json` → `"passed": true` for all entity reports
 - `check_run_semantics.py` PASS (zone + instance + glossary)
 - `check_run_semantics.py --strict` PASS (release gate + fact-check off parity)
-- Qualitative spot-check vs canvas golden examples (parent_continent, questlines, locations, Scholomance key_enemies)
+- `instance_quality_report.py` clean (no FAIL instances; see instance gate below)
+- Qualitative spot-check vs canvas golden examples (parent_continent, questlines, locations, Scholomance key_characters)
+
+## Instance gate
+
+Score and archive instance quality with the Slice I6 tooling (full instance run playbook in
+[`instance-pilot-rollout.md`](instance-pilot-rollout.md)):
+
+```bash
+uv run python scripts/instance_quality_report.py artifacts/runs/test-run-wpl-1
+# promotion (WARN also fails) + before/after diff archived with rationale:
+uv run python scripts/instance_quality_report.py artifacts/runs/run-western-plaguelands --gate
+uv run python scripts/diff_instance_runs.py \
+  --baseline artifacts/runs/run-western-plaguelands-prev \
+  --candidate artifacts/runs/run-western-plaguelands --notes promotion-rationale.txt
+```
 
 ## CI promotion — `run-western-plaguelands`
 
@@ -93,7 +108,7 @@ LORE_PILOT_RUN_ROOT=artifacts/runs/run-western-plaguelands uv run pytest tests/t
 | Flag / tool | Role |
 |-------------|------|
 | `--fact-check-profile off` | No `fact_check.*` validation issues; similarity anti-verbatim skipped |
-| `--release-gate` | Pointer caps and unresolved provenance overrides hard-fail; empty instance `key_enemies` hard-fail |
+| `--release-gate` | Pointer caps and unresolved provenance overrides hard-fail; empty instance `key_characters` hard-fail |
 | Default validate (no gate) | Pointer cap overages are WARN; use for iteration |
 | `check_run_semantics.py` | Zone-agnostic semantic acceptance (preferred over deprecated `check_pilot_semantics.py`) |
 | `--strict` | Re-validates all `drafts/*/*.json` with shared validation context (`release_gate=True`, `fact_check_profile=off`) |
