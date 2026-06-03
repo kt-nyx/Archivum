@@ -143,8 +143,23 @@ def _card_id_to_cluster_id_map(run_root: Path, zone_id: str) -> dict[str, str]:
     return mapping
 
 
-def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
+def check_run(
+    run_root: Path,
+    *,
+    zone_id: str | None = None,
+    pilot_questline_gate: bool | None = None,
+    require_questline_evidence: bool = False,
+) -> None:
+    from pipeline.discovery.questline_promotion_gate import (
+        QuestlineRunArtifacts,
+        check_questline_promotion,
+        default_pilot_strict_for_zone,
+        load_questline_run_artifacts,
+        warn_questline_promotion,
+    )
+
     draft_path, resolved_zone_id, zone_name = _resolve_zone_target(run_root, zone_id)
+    covered_clusters: set[str] = set()
     draft = json.loads(draft_path.read_text(encoding="utf-8"))
     if not draft.get("major_questlines"):
         _fail("major_questlines is empty")
@@ -489,7 +504,6 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
             return location_id in include_location_ids
 
         eligible_history_blocks = 0
-        covered_clusters: set[str] = set()
         glance_items = 0
         eligible_faction_candidates: set[str] = set()
         faction_ids_with_profile: set[str] = set()
@@ -730,6 +744,31 @@ def check_run(run_root: Path, *, zone_id: str | None = None) -> None:
                 valid, reasons = is_valid_quest_graph_link(link, zone_name=zone_name)
                 if not valid:
                     _fail(f"traversal report fetched denylisted quest href: {link!r} ({reasons})")
+
+    artifacts = load_questline_run_artifacts(run_root, resolved_zone_id)
+    artifacts = QuestlineRunArtifacts(
+        zone_id=artifacts.zone_id,
+        cards=cards,
+        included_cluster_ids=artifacts.included_cluster_ids,
+        metadata_by_cluster=artifacts.metadata_by_cluster,
+        card_id_to_cluster_id=artifacts.card_id_to_cluster_id,
+        excluded_cluster_ids=artifacts.excluded_cluster_ids,
+        v3_quest_rows=artifacts.v3_quest_rows,
+        pilot_expectations=artifacts.pilot_expectations,
+    )
+    pilot_strict = default_pilot_strict_for_zone(
+        resolved_zone_id, pilot_questline_gate, run_root=run_root
+    )
+    for error in check_questline_promotion(
+        artifacts,
+        pilot_strict=pilot_strict,
+        require_rankings=bool(pilot_strict and artifacts.included_cluster_ids),
+        require_evidence_coverage=require_questline_evidence and bool(artifacts.included_cluster_ids),
+        covered_cluster_ids=covered_clusters,
+    ):
+        _fail(error)
+    for warning in warn_questline_promotion(artifacts):
+        print(f"WARN: {warning}")
 
     print(f"PASS: semantic checks ok for {run_root.name} ({resolved_zone_id})")
     _check_instance_drafts(run_root)
@@ -1186,9 +1225,25 @@ def main() -> None:
             "and fact_check_profile=off."
         ),
     )
+    parser.add_argument(
+        "--pilot-questline-gate",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Enable WPL registry structural questline checks "
+            "(default on for zone-western-plaguelands)."
+        ),
+    )
     args = parser.parse_args()
+    pilot_gate = args.pilot_questline_gate
+    require_evidence = bool(args.strict or pilot_gate)
     try:
-        check_run(args.run_root, zone_id=args.zone_id)
+        check_run(
+            args.run_root,
+            zone_id=args.zone_id,
+            pilot_questline_gate=pilot_gate,
+            require_questline_evidence=require_evidence,
+        )
         if args.strict:
             check_strict_validation(args.run_root)
     except SemanticCheckError as exc:

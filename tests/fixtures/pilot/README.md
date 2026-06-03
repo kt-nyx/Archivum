@@ -9,6 +9,8 @@ Validated by `test_source_manifest_validates_against_schema`.
 
 ## 2. Questline registry — `western_plaguelands_questline_registry.json`
 
+**Runtime copy:** [`pipeline/data/pilot/western_plaguelands_questline_registry.json`](../../pipeline/data/pilot/western_plaguelands_questline_registry.json) (loaded by `pipeline.discovery.pilot_questline_registry`). The copy in this folder remains for fixture discoverability and backward compatibility.
+
 **Schema:** `pilot-questline-registry-v1`
 
 Clustering oracle: wiki storyline parts, which quests belong to each arc, excluded arcs,

@@ -8,7 +8,7 @@ from pathlib import Path
 from pipeline.discovery.questline_cluster import cluster_zone_questlines
 from pipeline.discovery.questline_significance import score_zone_questline_clusters
 
-REGISTRY_PATH = Path("tests/fixtures/pilot/western_plaguelands_questline_registry.json")
+from pipeline.discovery.pilot_questline_registry import load_registry
 FIXTURE_DIR = Path("tests/fixtures/clustering")
 ZONE_ID = "zone-western-plaguelands"
 
@@ -25,7 +25,8 @@ _EXCLUDED_KEYWORDS = (
 
 
 def test_registry_arcs_match_significance_inclusion_by_title_keywords() -> None:
-    registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+    registry = load_registry(ZONE_ID)
+    assert registry is not None
     assert int(registry["pipeline_gap_analysis"]["expected_included_card_count"]) == 4
 
     roster = json.loads((FIXTURE_DIR / "western_plaguelands_roster_v3.json").read_text(encoding="utf-8"))

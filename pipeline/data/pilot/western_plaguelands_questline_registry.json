@@ -1,0 +1,300 @@
+{
+  "schema_version": "pilot-questline-registry-v1",
+  "zone_id": "zone-western-plaguelands",
+  "zone_name": "Western Plaguelands",
+  "description": "Questline clustering oracle for the WPL pilot: which quests belong to which arc, wiki storyline parts, and excluded arcs. Used to evaluate discovery/clustering; not a pipeline draft payload.",
+  "wiki_authority": {
+    "primary_source_url": "https://warcraft.wiki.gg/wiki/Western_Plaguelands_storyline",
+    "template_url": "https://warcraft.wiki.gg/wiki/Template:Western_Plaguelands_storyline",
+    "secondary_source_url": "https://wowpedia.fandom.com/wiki/Western_Plaguelands_storyline",
+    "reviewed_date": "2026-05-25",
+    "storyline_parts": [
+      {
+        "part": 1,
+        "title": "The first battle for Andorhal",
+        "summary": "Three-way war at Andorhal; faction entry quests plus shared Scourge-clearing beats including Scholomancer/Araj (Scholomance foreshadowing, not Gahrron's arc)."
+      },
+      {
+        "part": 2,
+        "title": "The uneasy calm",
+        "summary": "Faction-split mid-campaign at Andorhal after the first battle; ends with Combat Training before players leave for restoration content."
+      },
+      {
+        "part": 3,
+        "title": "The mending of the Plaguelands",
+        "summary": "Mender's Stead restoration arc with Argent Crusade and Cenarion Circle."
+      },
+      {
+        "part": 4,
+        "title": "Living in the Plaguelands",
+        "summary": "Northridge lumber mill / local reconstruction side content (pilot-excluded as a major card)."
+      },
+      {
+        "part": 5,
+        "title": "Hearthglen",
+        "summary": "Tirion Fordring audience and Fordring legacy investigation at reclaimed Hearthglen."
+      },
+      {
+        "part": 6,
+        "title": "The renewed plague",
+        "summary": "Del Gahrron / Gahrron's Withering cauldron investigation (pilot-excluded as separate major card; overlaps Part 3 thematically)."
+      },
+      {
+        "part": 7,
+        "title": "The battle resumes",
+        "summary": "Return to Andorhal for the faction finale; Forsaken win, Alliance loses (Alas, Andorhal / The Reckoning)."
+      }
+    ]
+  },
+  "included_arcs": [
+    {
+      "id": "ql-andorhal-horde",
+      "title": "Andorhal Campaign (Horde)",
+      "faction": "horde",
+      "wiki_storyline_parts": [1, 2, 7],
+      "start_anchor": "Warchief's Command: Western Plaguelands!",
+      "alternate_start_anchors": ["The Battle for Andorhal"],
+      "significance": "The zone's most important Horde arc: Sylvanas' post-Wrath push to claim Andorhal, culminating in a Forsaken victory and The Reckoning punishing Koltira for mercy toward Thassarian.",
+      "chain_refs": [
+        "quest-warchief-s-command-western-plaguelands",
+        "quest-scourge-first-alliance-later",
+        "quest-after-the-crusade",
+        "quest-foxes-and-hounds",
+        "quest-foes-before-hoes",
+        "quest-latent-disease",
+        "quest-who-needs-cauldrons",
+        "quest-lower-the-boom",
+        "quest-strange-new-faces",
+        "quest-when-death-is-not-enough",
+        "quest-combat-training",
+        "quest-lindsay-ravensun-revealed"
+      ],
+      "overflow_chain_refs": [
+        "quest-the-battle-resumes",
+        "quest-ashes-to-ashes-quest",
+        "quest-supporting-the-troops",
+        "quest-ace-in-the-hole",
+        "quest-the-farmers-militia",
+        "quest-andorhal-once-and-for-all",
+        "quest-the-reckoning-western-plaguelands"
+      ],
+      "shared_beat_refs": [
+        "quest-the-endless-flow",
+        "quest-scholomancer",
+        "quest-araj-the-summoner-quest",
+        "quest-brute-strength",
+        "quest-war-machines",
+        "quest-victory-for-now"
+      ],
+      "wiki_refs": [
+        "/wiki/Warchief%27s_Command:_Western_Plaguelands!",
+        "/wiki/Scourge_First..._Alliance_Later",
+        "/wiki/After_the_Crusade",
+        "/wiki/Foxes_and_Hounds",
+        "/wiki/Foes_Before_Hoes",
+        "/wiki/Latent_Disease",
+        "/wiki/Who_Needs_Cauldrons%3F",
+        "/wiki/Lower_the_Boom",
+        "/wiki/Strange_New_Faces",
+        "/wiki/When_Death_is_Not_Enough",
+        "/wiki/Combat_Training",
+        "/wiki/Lindsay_Ravensun,_Revealed"
+      ],
+      "overflow_wiki_refs": [
+        "/wiki/The_Battle_Resumes!",
+        "/wiki/Ashes_to_Ashes_(quest)",
+        "/wiki/Supporting_the_Troops",
+        "/wiki/Ace_in_the_Hole",
+        "/wiki/The_Farmers%27_Militia",
+        "/wiki/Andorhal,_Once_and_For_All",
+        "/wiki/The_Reckoning_(Western_Plaguelands)"
+      ],
+      "zone_page_gold_id": "ql-andorhal-horde",
+      "notes": "Horde Part 2 + Part 7 quests. Ace in the Hole is the Horde parallel to Alliance Val'kyr Incursion."
+    },
+    {
+      "id": "ql-andorhal-alliance",
+      "title": "Andorhal Campaign (Alliance)",
+      "faction": "alliance",
+      "wiki_storyline_parts": [1, 2, 7],
+      "start_anchor": "Hero's Call: Western Plaguelands!",
+      "alternate_start_anchors": ["The Battle for Andorhal"],
+      "significance": "Mirrored Alliance arc; finale (Alas, Andorhal) ends in Forsaken victory and Alliance failure to hold the city.",
+      "chain_refs": [
+        "quest-hero-s-call-western-plaguelands",
+        "quest-scourge-first-horde-later",
+        "quest-go-fletch",
+        "quest-a-mighty-hunger",
+        "quest-those-that-couldn-t-let-go",
+        "quest-uther-s-blessing",
+        "quest-the-abandoned-crypt",
+        "quest-ambushed-western-plaguelands",
+        "quest-the-writhing-haunt-quest",
+        "quest-this-is-our-army",
+        "quest-combat-training",
+        "quest-the-depravity-of-the-forsaken"
+      ],
+      "overflow_chain_refs": [
+        "quest-the-battle-resumes",
+        "quest-ashes-to-ashes-quest",
+        "quest-supporting-the-troops",
+        "quest-val-kyr-incursion",
+        "quest-brother-against-brother-western-plaguelands",
+        "quest-aradne-quest",
+        "quest-alas-andorhal"
+      ],
+      "shared_beat_refs": [
+        "quest-the-endless-flow",
+        "quest-scholomancer",
+        "quest-araj-the-summoner-quest",
+        "quest-brute-strength",
+        "quest-war-machines",
+        "quest-victory-for-now"
+      ],
+      "wiki_refs": [
+        "/wiki/Hero%27s_Call:_Western_Plaguelands!",
+        "/wiki/Scourge_First..._Horde_Later",
+        "/wiki/Go_Fletch!",
+        "/wiki/A_Mighty_Hunger",
+        "/wiki/Those_That_Couldn%27t_Let_Go",
+        "/wiki/Uther%27s_Blessing",
+        "/wiki/The_Abandoned_Crypt",
+        "/wiki/Ambushed!_(Western_Plaguelands)",
+        "/wiki/The_Writhing_Haunt_(quest)",
+        "/wiki/This_Is_Our_Army",
+        "/wiki/Combat_Training",
+        "/wiki/The_Depravity_of_the_Forsaken"
+      ],
+      "overflow_wiki_refs": [
+        "/wiki/The_Battle_Resumes!",
+        "/wiki/Ashes_to_Ashes_(quest)",
+        "/wiki/Supporting_the_Troops",
+        "/wiki/Val%27kyr_Incursion",
+        "/wiki/Brother_Against_Brother_(Western_Plaguelands)",
+        "/wiki/Aradne_(quest)",
+        "/wiki/Alas,_Andorhal"
+      ],
+      "zone_page_gold_id": "ql-andorhal-alliance"
+    },
+    {
+      "id": "ql-menders-stead-healing",
+      "title": "The Mender's Stead / Healing the Plaguelands",
+      "faction": "shared",
+      "wiki_storyline_parts": [3],
+      "start_anchor": "A New Era for the Plaguelands",
+      "significance": "Part 3: post-Cataclysm restoration at the Mender's Stead.",
+      "chain_refs": [
+        "quest-a-new-era-for-the-plaguelands",
+        "quest-i-ain-t-sayin-you-a-gourd-digger",
+        "quest-zen-kiki-the-druid",
+        "quest-a-different-approach"
+      ],
+      "overflow_chain_refs": [],
+      "shared_beat_refs": [],
+      "wiki_refs": [
+        "/wiki/A_New_Era_for_the_Plaguelands",
+        "/wiki/I_Ain%27t_Sayin%27_You_a_Gourd-Digger...",
+        "/wiki/Zen%27Kiki,_the_Druid",
+        "/wiki/A_Different_Approach"
+      ],
+      "overflow_wiki_refs": [],
+      "zone_page_gold_id": "ql-menders-stead-healing"
+    },
+    {
+      "id": "ql-hearthglen-tirion-legacy",
+      "title": "Hearthglen / Tirion Fordring's Legacy",
+      "faction": "shared",
+      "wiki_storyline_parts": [5],
+      "start_anchor": "An Audience with the Highlord",
+      "significance": "Part 5: Tirion audience and Fordring legacy at Hearthglen.",
+      "chain_refs": [
+        "quest-an-audience-with-the-highlord",
+        "quest-it-s-about-time",
+        "quest-drudges-sigh",
+        "quest-taelan-fordring-s-legacy",
+        "quest-unusual-behavior-even-for-gnolls",
+        "quest-the-good-people-of-hearthglen",
+        "quest-bagging-bisp",
+        "quest-turning-yourself-in"
+      ],
+      "overflow_chain_refs": [],
+      "shared_beat_refs": [],
+      "wiki_refs": [
+        "/wiki/An_Audience_with_the_Highlord",
+        "/wiki/It%27s_About_Time!",
+        "/wiki/Drudges..._*Sigh*",
+        "/wiki/Taelan_Fordring%27s_Legacy",
+        "/wiki/Unusual_Behavior..._Even_For_Gnolls",
+        "/wiki/The_Good_People_of_Hearthglen",
+        "/wiki/Bagging_Bisp",
+        "/wiki/Turning_Yourself_In"
+      ],
+      "overflow_wiki_refs": [],
+      "zone_page_gold_id": "ql-hearthglen-tirion-legacy"
+    }
+  ],
+  "excluded_arcs": [
+    {
+      "id": "ql-northridge-redpine",
+      "title": "Northridge Lumber Mill / Redpine gnoll conflict",
+      "wiki_storyline_parts": [4],
+      "exclude_reason": "local_worldbuilding_only",
+      "significance": "Part 4 local reconstruction— not pilot-significant as a major card.",
+      "chain_refs": [
+        "quest-northridge-lumber-mill-quest",
+        "quest-learning-the-ropes",
+        "quest-too-close-for-comfort",
+        "quest-this-means-war-wild-arachnid-roundup",
+        "quest-redpine-thievery",
+        "quest-a-gnoll-s-resolve"
+      ],
+      "wiki_refs": [
+        "/wiki/Northridge_Lumber_Mill_(quest)",
+        "/wiki/Learning_the_Ropes",
+        "/wiki/Too_Close_for_Comfort",
+        "/wiki/This_Means_WAR_(Wild_Arachnid_Roundup)",
+        "/wiki/Redpine_Thievery",
+        "/wiki/A_Gnoll%27s_Resolve"
+      ]
+    },
+    {
+      "id": "ql-gahrrons-withering-cleanup",
+      "title": "Gahrron's Withering / renewed plague cleanup",
+      "wiki_storyline_parts": [6],
+      "exclude_reason": "thematic_duplicate_of_menders_stead",
+      "significance": "Part 6 cauldron chain— overlaps Part 3 with lower pilot priority.",
+      "chain_refs": [
+        "quest-the-long-trip-home",
+        "quest-memories-from-a-lost-past",
+        "quest-gahrron-s-withering-cauldron",
+        "quest-return-to-the-stead",
+        "quest-desperate-acts",
+        "quest-students-of-krastinov",
+        "quest-zen-kiki-and-the-cultists"
+      ],
+      "wiki_refs": [
+        "/wiki/The_Long_Trip_Home",
+        "/wiki/Memories_from_a_Lost_Past",
+        "/wiki/Gahrron%27s_Withering_Cauldron",
+        "/wiki/Return_to_the_Stead",
+        "/wiki/Desperate_Acts",
+        "/wiki/Students_of_Krastinov",
+        "/wiki/Zen%27Kiki_and_the_Cultists"
+      ]
+    }
+  ],
+  "andorhal_entry_breadcrumbs": {
+    "description": "Optional zone-entry quests parallel to Hero's Call / Warchief's Command.",
+    "chain_refs": ["quest-the-battle-for-andorhal"],
+    "wiki_refs": ["/wiki/The_Battle_for_Andorhal"]
+  },
+  "pipeline_gap_analysis": {
+    "expected_included_card_count": 4,
+    "cross_faction_shared_card_refs": ["quest-combat-training"],
+    "current_v3_cluster_ids": [
+      "western-plaguelands-alliance",
+      "western-plaguelands-horde",
+      "western-plaguelands-shared"
+    ]
+  }
+}

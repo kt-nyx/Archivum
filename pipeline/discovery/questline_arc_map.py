@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Any
 
+from pipeline.discovery.pilot_questline_registry import WPL_ZONE_ID, load_registry
 from pipeline.discovery.storyline_html import _slugify
 
-_WPL_ZONE_ID = "zone-western-plaguelands"
-_WPL_REGISTRY_PATH = Path("tests/fixtures/pilot/western_plaguelands_questline_registry.json")
+_WPL_ZONE_ID = WPL_ZONE_ID
 
 _ARC_KEYWORD_RULES: tuple[tuple[str, frozenset[str]], ...] = (
     ("andorhal", frozenset({"andorhal"})),
@@ -28,10 +26,7 @@ _WPL_REGISTRY_RULES: tuple[tuple[str, str, frozenset[str]], ...] = (
 
 
 def load_pilot_questline_registry(zone_id: str) -> dict[str, Any] | None:
-    if zone_id != _WPL_ZONE_ID or not _WPL_REGISTRY_PATH.exists():
-        return None
-    blob = json.loads(_WPL_REGISTRY_PATH.read_text(encoding="utf-8"))
-    return blob if isinstance(blob, dict) else None
+    return load_registry(zone_id)
 
 
 def _match_registry_arc(

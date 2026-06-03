@@ -9,8 +9,11 @@ from pipeline.discovery.questline_cluster import cluster_zone_questlines
 from pipeline.discovery.questline_significance import score_zone_questline_clusters
 
 FIXTURE_DIR = Path("tests/fixtures/clustering")
-REGISTRY_PATH = Path("tests/fixtures/pilot/western_plaguelands_questline_registry.json")
 ZONE_ID = "zone-western-plaguelands"
+
+from pipeline.discovery.pilot_questline_registry import load_registry
+
+REGISTRY = load_registry(ZONE_ID) or {}
 
 
 def _load_wpl() -> tuple[list[dict], list[dict]]:
@@ -24,7 +27,7 @@ def _load_wpl() -> tuple[list[dict], list[dict]]:
 
 
 def _registry_anchors_by_faction() -> dict[tuple[str, str], str]:
-    registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+    registry = REGISTRY
     anchors: dict[tuple[str, str], str] = {}
     for arc in registry.get("included_arcs", []):
         faction = str(arc.get("faction", "shared")).strip().lower()

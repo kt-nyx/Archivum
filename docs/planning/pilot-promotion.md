@@ -54,7 +54,8 @@ Iterate without release gate (WARN pointer caps allowed):
 ```bash
 uv run lore-pipeline run --run-id test-run-wpl-1 --fact-check-profile off -v
 uv run python scripts/check_run_semantics.py artifacts/runs/test-run-wpl-1
-uv run python scripts/check_run_semantics.py artifacts/runs/test-run-wpl-1 --strict
+uv run python scripts/check_run_semantics.py artifacts/runs/test-run-wpl-1 --strict --pilot-questline-gate
+uv run python scripts/questline_quality_report.py artifacts/runs/test-run-wpl-1
 ```
 
 Fast validate-only loop (skip LLM draft re-run):
@@ -76,7 +77,26 @@ uv run lore-pipeline run --run-id test-run-wpl-1 --fact-check-profile off --rele
 - `check_run_semantics.py` PASS (zone + instance + glossary)
 - `check_run_semantics.py --strict` PASS (release gate + fact-check off parity)
 - `instance_quality_report.py` clean (no FAIL instances; see instance gate below)
+- `questline_quality_report.py` PASS (pilot strict questline structural gate; see questline gate below)
 - Qualitative spot-check vs canvas golden examples (parent_continent, questlines, locations, Scholomance key_characters)
+
+## Questline gate (Slice E)
+
+Score and archive questline-card quality with the WPL pilot registry (structural parity with
+[`pipeline/data/pilot/western_plaguelands_questline_registry.json`](../pipeline/data/pilot/western_plaguelands_questline_registry.json);
+no verbatim CTA match required):
+
+```bash
+uv run python scripts/questline_quality_report.py artifacts/runs/test-run-wpl-1
+# promotion (WARN also fails) + before/after diff archived with rationale:
+uv run python scripts/questline_quality_report.py artifacts/runs/run-western-plaguelands --gate
+uv run python scripts/diff_zone_questline_runs.py \
+  --baseline artifacts/runs/run-western-plaguelands-prev \
+  --candidate artifacts/runs/run-western-plaguelands --notes promotion-rationale.txt
+```
+
+Pilot registry structural checks run automatically for `zone-western-plaguelands` in
+`check_run_semantics.py` (override with `--pilot-questline-gate` / `--no-pilot-questline-gate`).
 
 ## Instance gate
 
@@ -100,7 +120,7 @@ After dev gate is green:
 uv run lore-pipeline run --run-id run-western-plaguelands --fact-check-profile off --release-gate -v
 uv run python scripts/check_run_semantics.py artifacts/runs/run-western-plaguelands
 uv run python scripts/check_run_semantics.py artifacts/runs/run-western-plaguelands --strict
-LORE_PILOT_RUN_ROOT=artifacts/runs/run-western-plaguelands uv run pytest tests/test_run_storyline_artifacts.py -q
+LORE_PILOT_RUN_ROOT=artifacts/runs/run-western-plaguelands uv run pytest tests/test_run_storyline_artifacts.py tests/test_run_pilot_questline_draft.py -q
 ```
 
 ## Flags and tools
@@ -113,6 +133,9 @@ LORE_PILOT_RUN_ROOT=artifacts/runs/run-western-plaguelands uv run pytest tests/t
 | `check_run_semantics.py` | Zone-agnostic semantic acceptance (preferred over deprecated `check_pilot_semantics.py`) |
 | `--strict` | Re-validates all `drafts/*/*.json` with shared validation context (`release_gate=True`, `fact_check_profile=off`) |
 | `LORE_PILOT_RUN_ROOT` | Points artifact regression tests at the promoted CI run tree |
+| `--pilot-questline-gate` | WPL registry structural checks in `check_run_semantics` (default on for Western Plaguelands) |
+| `questline_quality_report.py` | Aggregates release-gate validate + questline promotion gate into a per-zone scorecard |
+| `diff_zone_questline_runs.py` | Archives before/after questline card field diffs between two run roots |
 
 ## Unit tests
 

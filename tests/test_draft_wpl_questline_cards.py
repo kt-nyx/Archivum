@@ -13,7 +13,7 @@ from pipeline.generate.draft.card_lint import lint_cta_hook
 from pipeline.generate.draft.wiki_first import build_zone_page
 
 FIXTURE_DIR = Path("tests/fixtures/clustering")
-REGISTRY_PATH = Path("tests/fixtures/pilot/western_plaguelands_questline_registry.json")
+from pipeline.discovery.pilot_questline_registry import load_registry
 ZONE_ID = "zone-western-plaguelands"
 
 
@@ -28,7 +28,7 @@ def _load_wpl() -> tuple[list[dict], list[dict]]:
 
 
 def _registry_anchor_by_card_id() -> dict[str, str]:
-    registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+    registry = load_registry(ZONE_ID) or {}
     return {str(arc["id"]): str(arc["start_anchor"]) for arc in registry.get("included_arcs", [])}
 
 

@@ -19,7 +19,11 @@ from pipeline.validate.engine import validate_payload
 from tests.test_validation_engine import _validation_ready_zone_page_payload
 
 PILOT_DIR = Path("tests/fixtures/pilot")
-REGISTRY_PATH = PILOT_DIR / "western_plaguelands_questline_registry.json"
+from pipeline.discovery.pilot_questline_registry import load_registry, registry_path_for_zone
+
+REGISTRY_PATH = registry_path_for_zone("zone-western-plaguelands") or (
+    PILOT_DIR / "western_plaguelands_questline_registry.json"
+)
 ZONE_PAGE_GOLD_PATH = PILOT_DIR / "zone_page_western_plaguelands_gold.json"
 SOURCE_MANIFEST_PATH = PILOT_DIR / "source_manifest.json"
 _FILLER_RE = re.compile(r"\blocated in\b|\bis a zone\b|\bis located\b", re.IGNORECASE)
@@ -27,6 +31,9 @@ _MAX_CHAIN_REFS = 12
 
 
 def _load_registry() -> dict:
+    registry = load_registry("zone-western-plaguelands")
+    if registry is not None:
+        return registry
     return json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
 
 
