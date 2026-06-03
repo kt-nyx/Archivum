@@ -48,7 +48,7 @@ const INSTANCE_SLICES = [
   {
     id: "slice-i5",
     content: "Slice I5 — Prompting, generation, lint, semantics, and release-gate alignment (instance only)",
-    status: "pending" as const,
+    status: "completed" as const,
   },
   {
     id: "slice-i6",
@@ -491,32 +491,41 @@ export default function InstanceMasterPlanCanvas() {
         </Stack>
       </CollapsibleSection>
 
-      <CollapsibleSection title="Slice I5 — Generation quality + gates" count={10}>
+      <CollapsibleSection title="Slice I5 — Generation quality + gates (shipped)" count={10}>
         <Stack gap={12}>
           <H3>Intent</H3>
           <Text>
-            Lock instance-specific quality rules in prompts, lint, and semantics so promotion decisions are objective.
+            Lock instance-specific quality rules across prompts, deterministic lint, semantics, and the release gate
+            so promotion decisions are objective and reproducible.
           </Text>
 
-          <H3>Instance quality checks to add or tighten</H3>
+          <H3>Locked decisions (this session)</H3>
+          <Text>
+            Full prompt work: unify Compendium Voice across all instance prompts and add a shared
+            anti-passthrough / anti-meta clause. Role diversity FAILs only when an ally/neutral candidate inside the
+            top-N ranked window is dropped from the emitted cast; WARN when the only ally/neutral signal is ranked
+            outside the window.
+          </Text>
+
+          <H3>Implementation (shipped)</H3>
           <Table
-            headers={["Check", "Rule", "Severity"]}
+            headers={["Area", "What shipped"]}
             rows={[
-              ["Character minimum", "If valid candidate pool exists, key_characters must be non-empty", "Fail"],
-              ["Role diversity", "Do not emit enemy-only list when clear ally/neutral signal exists", "Warn/Fail"],
-              ["Summary quality", "Character summary cannot be empty boilerplate", "Fail"],
-              ["Lore density", "Overview/story sections cannot be raw passthrough fragments", "Fail"],
-              ["Provenance cap", "Section and card provenance pointer counts stay within configured cap", "Warn/Fail"],
+              ["Centralized config + shared roster", "INSTANCE_PROVENANCE_POINTER_CAP in contracts/models.py is the single source of truth for the provenance cap (validate + check_run_semantics). build_instance_key_character_roster() in wiki_first.py is the one deterministic roster builder shared by page assembly and the decision sidecar."],
+              ["Compendium Voice unification + anti-passthrough", "compendium_voice.py adds INSTANCE_AT_A_GLANCE_VOICE / INSTANCE_OVERVIEW_VOICE / KEY_CHARACTER_VOICE / INSTANCE_FACTION_VOICE, a shared NO_META_NO_PASSTHROUGH clause, and an instance_system_prompt() builder. Instance overview, key-character, instance at-a-glance, and instance-scoped faction prompts route through it; zone prompts and classifier prompts unchanged; NO_LLM fallbacks unaffected."],
+              ["Deterministic detectors", "instance_lint.py adds lint_passthrough_fragment (mid-sentence lowercase start, missing terminal punctuation, list-bullet residue) and assess_role_diversity (fail-on-dropped-in-window / warn-on-signal-only-outside). Passthrough lint wired into the overview + key-character finalize retry loops so drafts self-correct before the gate."],
+              ["Release gate parity", "validate/rules/structure.py HARD_FAILs instance overview/history passthrough fragments and generic overview/key-character boilerplate; provenance.py reads the centralized cap (WARN default / HARD_FAIL at release gate)."],
+              ["Semantics + decision sidecar", "draft_writer emits data/decisions/instance_key_character_decisions.json (full ranked roster + emitted flag). check_run_semantics consumes it for role-diversity (fail/warn), a pool-aware character minimum, and overview/history passthrough parity, all using the centralized cap."],
             ]}
           />
 
-          <H3>Acceptance gate</H3>
+          <H3>Acceptance gate (met)</H3>
           <Table
-            headers={["Check", "Pass condition"]}
+            headers={["Check", "Result"]}
             rows={[
-              ["Lint/semantics tests", "All new instance-specific checks are covered and green"],
-              ["Pilot run behavior", "Known instance pain points are explicitly improved in output deltas"],
-              ["Gate determinism", "Same input run yields same pass/fail state for release gate"],
+              ["Lint/semantics tests", "All five instance checks (character minimum, role diversity, summary boilerplate, passthrough, provenance cap) covered and green across instance_lint, validation engine, and check_run_semantics suites"],
+              ["Flagged behaviors", "Enemy-only-with-dropped-ally FAILs; ally-only-outside-window WARNs; overview/history passthrough fragments and generic boilerplate HARD_FAIL at the gate and in semantics"],
+              ["Gate determinism", "All new checks are pure functions of payload + sidecar; identical input yields identical pass/fail. Full pytest suite green; no new ruff violations in production source"],
             ]}
           />
         </Stack>

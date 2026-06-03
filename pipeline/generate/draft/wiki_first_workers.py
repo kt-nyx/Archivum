@@ -11,6 +11,11 @@ from pipeline.generate.draft.compendium_voice import (
     AT_A_GLANCE_VOICE,
     CURRENTLY_VOICE,
     HISTORY_VOICE,
+    INSTANCE_AT_A_GLANCE_VOICE,
+    INSTANCE_FACTION_VOICE,
+    INSTANCE_OVERVIEW_VOICE,
+    KEY_CHARACTER_VOICE,
+    instance_system_prompt,
     zone_system_prompt,
 )
 from pipeline.generate.draft.llm import llm_json_with_retry
@@ -35,7 +40,9 @@ def _format_evidence_block(items: list[dict[str, Any]], *, max_items: int = 8) -
     return "\n".join(lines)
 
 
-def synthesize_at_a_glance(items: list[dict[str, Any]], *, max_words: int = 45) -> tuple[str, list[str]]:
+def synthesize_at_a_glance(
+    items: list[dict[str, Any]], *, max_words: int = 45, subject: str | None = None
+) -> tuple[str, list[str]]:
     if not items:
         return "", []
     prepared = precompress_at_a_glance_evidence(items)
@@ -45,6 +52,24 @@ def synthesize_at_a_glance(items: list[dict[str, Any]], *, max_words: int = 45) 
         return trim_words(clean_wiki_snippet(str(best.get("snippet", ""))), max_words), [
             str(best.get("source_id", ""))
         ]
+    if subject:
+        system_prompt = instance_system_prompt(
+            field_voice=INSTANCE_AT_A_GLANCE_VOICE,
+            task_lines=(
+                f"Write a concise at-a-glance caption for instance '{subject}' using ONLY the "
+                f"evidence snippets. Maximum {max_words} words. Do not list bosses, factions, or "
+                "wings. No extrapolation."
+            ),
+        )
+    else:
+        system_prompt = zone_system_prompt(
+            field_voice=AT_A_GLANCE_VOICE,
+            task_lines=(
+                f"Write a concise zone at-a-glance summary using ONLY the evidence snippets. "
+                f"Maximum {max_words} words. Do not list locations, characters, factions, or patch/reputation meta. "
+                "No extrapolation."
+            ),
+        )
     result = llm_json_with_retry(
         required_keys=("summary", "used_evidence_ids"),
         response_json_schema={
@@ -56,14 +81,7 @@ def synthesize_at_a_glance(items: list[dict[str, Any]], *, max_words: int = 45) 
                 "used_evidence_ids": {"type": "array", "items": {"type": "string"}},
             },
         },
-        system_prompt=zone_system_prompt(
-            field_voice=AT_A_GLANCE_VOICE,
-            task_lines=(
-                f"Write a concise zone at-a-glance summary using ONLY the evidence snippets. "
-                f"Maximum {max_words} words. Do not list locations, characters, factions, or patch/reputation meta. "
-                "No extrapolation."
-            ),
-        ),
+        system_prompt=system_prompt,
         user_prompt=f"Evidence:\n{_format_evidence_block(prepared, max_items=12)}",
         response_schema_name="wiki_first_at_a_glance",
         substep="wiki_first_at_a_glance",
@@ -202,6 +220,7 @@ def synthesize_faction_summary(
     zone_name: str,
     max_words: int = 40,
     subregion_tokens: list[str] | None = None,
+    instance_name: str | None = None,
 ) -> tuple[str, list[str]]:
     if not items:
         return "", []
@@ -215,6 +234,23 @@ def synthesize_faction_summary(
             zone_name=zone_name,
             subregion_tokens=subregion_tokens,
         )
+    if instance_name:
+        system_prompt = instance_system_prompt(
+            field_voice=INSTANCE_FACTION_VOICE,
+            task_lines=(
+                f"Write a faction-role summary for faction '{faction_name}' in instance "
+                f"'{instance_name}' using ONLY evidence. Maximum {max_words} words. "
+                "Use present tense for active roles; past tense for defunct leadership when "
+                "evidence is historical."
+            ),
+        )
+    else:
+        system_prompt = (
+            f"Write a zone-role summary for faction '{faction_name}' in zone '{zone_name}' using ONLY evidence. "
+            f"Maximum {max_words} words. Describe what this faction does in this zone only. "
+            "Use present tense for active roles; past tense for defunct leadership when evidence is historical. "
+            "Do not copy generic faction wiki ledes, geography lists, reputation/achievement meta, or out-of-zone plot."
+        )
     result = llm_json_with_retry(
         required_keys=("summary", "used_evidence_ids"),
         response_json_schema={
@@ -226,12 +262,7 @@ def synthesize_faction_summary(
                 "used_evidence_ids": {"type": "array", "items": {"type": "string"}},
             },
         },
-        system_prompt=(
-            f"Write a zone-role summary for faction '{faction_name}' in zone '{zone_name}' using ONLY evidence. "
-            f"Maximum {max_words} words. Describe what this faction does in this zone only. "
-            "Use present tense for active roles; past tense for defunct leadership when evidence is historical. "
-            "Do not copy generic faction wiki ledes, geography lists, reputation/achievement meta, or out-of-zone plot."
-        ),
+        system_prompt=system_prompt,
         user_prompt=f"Evidence:\n{_format_evidence_block(items)}",
         response_schema_name="wiki_first_faction_summary",
         substep="wiki_first_faction_summary",
@@ -375,10 +406,12 @@ def synthesize_instance_overview(
                 "used_evidence_ids": {"type": "array", "items": {"type": "string"}},
             },
         },
-        system_prompt=(
-            f"Write an in-universe story-context overview for instance '{instance_name}' using ONLY evidence. "
-            f"Target 170-{max_words} words. Explain significance, stakes, and narrative role. "
-            "Do not write quest walkthrough steps, loot tables, achievement meta, or player instructions."
+        system_prompt=instance_system_prompt(
+            field_voice=INSTANCE_OVERVIEW_VOICE,
+            task_lines=(
+                f"Write an in-universe story-context overview for instance '{instance_name}' "
+                f"using ONLY evidence. Target 170-{max_words} words."
+            ),
         ),
         user_prompt=f"Evidence:\n{_format_evidence_block(items, max_items=12)}",
         response_schema_name="wiki_first_instance_overview",
@@ -421,11 +454,13 @@ def synthesize_key_character_summary(
                 "used_evidence_ids": {"type": "array", "items": {"type": "string"}},
             },
         },
-        system_prompt=(
-            f"Write a key-character card summary for '{boss_name}' in instance '{instance_name}' "
-            f"using ONLY evidence. Maximum {max_words} words. Describe who they are and their role in "
-            "this instance: whether they oppose, aid, or are neutral toward adventurers, and why they "
-            "matter to the instance's story. No generic stubs, loot, or player tactics."
+        system_prompt=instance_system_prompt(
+            field_voice=KEY_CHARACTER_VOICE,
+            task_lines=(
+                f"Write a key-character card summary for '{boss_name}' in instance "
+                f"'{instance_name}' using ONLY evidence. Maximum {max_words} words. "
+                "No generic stubs."
+            ),
         ),
         user_prompt=f"Evidence:\n{_format_evidence_block(items)}",
         response_schema_name="wiki_first_key_character_summary",

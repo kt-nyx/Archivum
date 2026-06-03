@@ -33,3 +33,49 @@ HISTORY_VOICE = (
 def zone_system_prompt(*, field_voice: str, task_lines: str) -> str:
     """Compose a zone-core synthesis system prompt from Compendium Voice fragments."""
     return f"{COMPENDIUM_VOICE_CORE} {field_voice} {task_lines}".strip()
+
+
+# Shared anti-passthrough / anti-meta clause for instance prose. Stronger than the core
+# voice note: forbids verbatim source fragments AND every player-facing meta category.
+NO_META_NO_PASSTHROUGH = (
+    "Synthesize from the evidence in your own words — never copy source fragments, "
+    "list bullets, or sentence shapes verbatim, and never start mid-sentence. "
+    "Exclude all player-facing meta: loot, drops, quest walkthrough steps, achievements, "
+    "patch notes, reputation/grind language, dungeon-journal tactics, difficulty modes, "
+    "and encounter mechanics or boss ability descriptions."
+)
+
+INSTANCE_AT_A_GLANCE_VOICE = (
+    "Instance identity caption. 1–2 sentences naming what this place is and why it matters "
+    "in the world. State its nature and significance, not its mechanics. "
+    'Example shape: "Carved into the roots of the World Tree, this sanctum guards the '
+    'secrets the night elves would not surrender."'
+)
+
+INSTANCE_OVERVIEW_VOICE = (
+    "Instance story-context overview. Explain the narrative significance, stakes, and the "
+    "world-events that make this place matter. Trace why adventurers come here and what hangs "
+    "in the balance — not how to clear it. Readable in-universe prose, no walkthrough framing."
+)
+
+KEY_CHARACTER_VOICE = (
+    "Key-character card. State who this figure is and their role within the instance's story — "
+    "whether they oppose, aid, or stand neutral toward those who enter, and why they matter. "
+    "Characterize motive and significance, not combat tactics or abilities."
+)
+
+INSTANCE_FACTION_VOICE = (
+    "Faction role within this instance. Describe what this faction is and what it does here in "
+    "the instance's story — its stake, allegiance, and aims. Name opposing factions when "
+    "evidence supports it. No geography lists or out-of-instance plot."
+)
+
+
+def instance_system_prompt(*, field_voice: str, task_lines: str) -> str:
+    """Compose an instance synthesis system prompt.
+
+    Mirrors ``zone_system_prompt`` but always prepends the shared
+    ``NO_META_NO_PASSTHROUGH`` clause so every instance prose field carries identical
+    anti-passthrough / anti-meta discipline.
+    """
+    return f"{COMPENDIUM_VOICE_CORE} {NO_META_NO_PASSTHROUGH} {field_voice} {task_lines}".strip()

@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from pipeline.contracts.models import (
+    INSTANCE_PROVENANCE_POINTER_CAP,
     Asset,
     Character,
     Faction,
@@ -211,7 +212,7 @@ def _pointer_cap_issues(
     *,
     path: str,
     validation_context: Mapping[str, Any] | None,
-    max_count: int = 3,
+    max_count: int = INSTANCE_PROVENANCE_POINTER_CAP,
 ) -> list[ValidationIssue]:
     if len(pointers) <= max_count:
         return []

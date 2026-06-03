@@ -1172,6 +1172,78 @@ def test_instance_page_story_context_pointer_cap_passes_at_three() -> None:
     )
 
 
+def test_instance_page_overview_passthrough_hard_fails() -> None:
+    payload = _valid_instance_page_payload()
+    payload["overview"] = (
+        "and the school's halls still echo with necromantic rituals while adventurers press deeper"
+    )
+    report = validate_payload("instance_page", payload)
+    assert report.passed is False
+    passthrough_issues = [
+        issue
+        for issue in report.issues
+        if issue.code == "structure.instance_page_overview_passthrough"
+    ]
+    assert passthrough_issues
+    assert all(issue.severity == ValidationSeverity.HARD_FAIL for issue in passthrough_issues)
+
+
+def test_instance_page_generic_overview_hard_fails() -> None:
+    payload = _valid_instance_page_payload()
+    payload["overview"] = (
+        "Scholomance contains key enemies and encounter stakes captured from Warcraft Wiki."
+    )
+    report = validate_payload("instance_page", payload)
+    codes = {issue.code for issue in report.issues}
+    assert "structure.instance_page_generic_overview" in codes
+
+
+def test_instance_page_generic_key_character_hard_fails() -> None:
+    payload = _valid_instance_page_payload()
+    payload["key_characters"] = [
+        {
+            "id": "character-gandling",
+            "name": "Darkmaster Gandling",
+            "summary": (
+                "Darkmaster Gandling is a key enemy presence tied to the instance narrative."
+            ),
+            "role": "enemy",
+            "wiki_ref": None,
+            "decision_reason_codes": [],
+            "thumbnail_asset_id": None,
+        }
+    ]
+    report = validate_payload("instance_page", payload)
+    codes = {issue.code for issue in report.issues}
+    assert "structure.instance_page_generic_key_character" in codes
+
+
+def test_instance_pointer_cap_uses_centralized_constant() -> None:
+    from pipeline.contracts.models import INSTANCE_PROVENANCE_POINTER_CAP
+
+    payload = _valid_instance_page_payload()
+    payload["provenance"]["story_context"] = [
+        {
+            "source_id": "src-instance",
+            "locator": f"section:overview paragraph:{index}",
+            "revision_id": "mw:99",
+            "excerpt_hash": f"sha1:instancepage{index:07d}",
+        }
+        for index in range(1, INSTANCE_PROVENANCE_POINTER_CAP + 2)
+    ]
+    report = validate_payload(
+        "instance_page", payload, validation_context={"release_gate": True}
+    )
+    cap_issues = [
+        issue
+        for issue in report.issues
+        if issue.code == "provenance.pointer_cap_exceeded"
+        and issue.path == "$.provenance.story_context"
+    ]
+    assert cap_issues
+    assert all(issue.severity == ValidationSeverity.HARD_FAIL for issue in cap_issues)
+
+
 def test_zone_page_fact_check_uses_zone_id_as_entity_id() -> None:
     payload = _valid_zone_page_payload()
     report = validate_payload(

@@ -588,6 +588,9 @@ ZONE_MIN_MAJOR_LANDMARKS = 3
 ZONE_MAX_MAJOR_LANDMARKS = 8
 INSTANCE_MIN_KEY_CHARACTERS = 2
 INSTANCE_MAX_KEY_CHARACTERS = 10
+# Max provenance pointers per instance section/card. WARN by default, HARD_FAIL at the
+# release gate; single source of truth shared by validate and check_run_semantics.
+INSTANCE_PROVENANCE_POINTER_CAP = 3
 CHARACTER_MAX_PAGE_WORDS = 200
 SUB_ZONE_MAX_QUESTLINE_CARDS = 3
 ZONE_MIN_QUESTLINE_INCLUSION_SCORE = 8

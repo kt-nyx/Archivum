@@ -272,3 +272,71 @@ def test_classify_lore_relevance_llm_rejects_out_of_enum(monkeypatch) -> None:
     )
     assert verdict == "unrelated"
 
+
+def _capture_system_prompt(monkeypatch):
+    monkeypatch.delenv("WOW_LORE_WIKI_FIRST_NO_LLM", raising=False)
+    import pipeline.generate.draft.wiki_first_workers as workers
+
+    captured: dict[str, str] = {}
+    ready = type("S", (), {"openai_ready": True})()
+    monkeypatch.setattr(workers, "load_ai_settings", lambda: ready)
+
+    def fake_llm(**kwargs):
+        captured["system_prompt"] = kwargs.get("system_prompt", "")
+        return {"summary": "Synthesized instance prose for the test.", "used_evidence_ids": ["s1"]}
+
+    monkeypatch.setattr(workers, "llm_json_with_retry", fake_llm)
+    return captured
+
+
+def test_instance_overview_prompt_uses_compendium_voice_and_anti_passthrough(monkeypatch) -> None:
+    from pipeline.generate.draft.compendium_voice import NO_META_NO_PASSTHROUGH
+
+    captured = _capture_system_prompt(monkeypatch)
+    synthesize_instance_overview(
+        [{"snippet": "The vault guards forbidden relics.", "source_id": "s1"}],
+        instance_name="Archive Vault",
+    )
+    assert "Compendium Voice" in captured["system_prompt"]
+    assert NO_META_NO_PASSTHROUGH in captured["system_prompt"]
+
+
+def test_key_character_prompt_uses_compendium_voice_and_anti_passthrough(monkeypatch) -> None:
+    from pipeline.generate.draft.compendium_voice import NO_META_NO_PASSTHROUGH
+
+    captured = _capture_system_prompt(monkeypatch)
+    synthesize_key_character_summary(
+        [{"snippet": "The archivist hoards the vault's secrets.", "source_id": "s1"}],
+        boss_name="Archivist Maelor",
+        instance_name="Archive Vault",
+    )
+    assert "Compendium Voice" in captured["system_prompt"]
+    assert NO_META_NO_PASSTHROUGH in captured["system_prompt"]
+
+
+def test_instance_at_a_glance_subject_uses_instance_voice(monkeypatch) -> None:
+    from pipeline.generate.draft.compendium_voice import NO_META_NO_PASSTHROUGH
+
+    captured = _capture_system_prompt(monkeypatch)
+    synthesize_at_a_glance(
+        [{"snippet": "A sanctum beneath the World Tree.", "source_id": "s1"}],
+        max_words=45,
+        subject="Archive Vault",
+    )
+    assert "Compendium Voice" in captured["system_prompt"]
+    assert NO_META_NO_PASSTHROUGH in captured["system_prompt"]
+
+
+def test_faction_summary_instance_subject_uses_instance_voice(monkeypatch) -> None:
+    from pipeline.generate.draft.compendium_voice import NO_META_NO_PASSTHROUGH
+
+    captured = _capture_system_prompt(monkeypatch)
+    synthesize_faction_summary(
+        [{"snippet": "The Scarlet Crusade holds the vault.", "source_id": "s1"}],
+        faction_name="Scarlet Crusade",
+        zone_name="Tirisfal",
+        instance_name="Archive Vault",
+    )
+    assert "Compendium Voice" in captured["system_prompt"]
+    assert NO_META_NO_PASSTHROUGH in captured["system_prompt"]
+

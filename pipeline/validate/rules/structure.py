@@ -19,6 +19,11 @@ from pipeline.contracts.models import (
     ZonePage,
 )
 from pipeline.generate.draft.instance_link_lint import is_generic_instance_link_summary
+from pipeline.generate.draft.instance_lint import (
+    is_generic_key_character_summary,
+    is_generic_overview,
+    lint_passthrough_fragment,
+)
 from pipeline.validate.types import ValidationIssue, ValidationSeverity
 
 
@@ -532,6 +537,47 @@ def _validate_instance_page(instance_page: InstancePage) -> list[ValidationIssue
                 path="$.history_sections",
             )
         )
+    overview = instance_page.overview.strip()
+    if overview and lint_passthrough_fragment(overview):
+        issues.append(
+            ValidationIssue(
+                code="structure.instance_page_overview_passthrough",
+                message="overview reads like a copied source fragment, not synthesized prose",
+                severity=ValidationSeverity.HARD_FAIL,
+                path="$.overview",
+            )
+        )
+    if overview and is_generic_overview(overview):
+        issues.append(
+            ValidationIssue(
+                code="structure.instance_page_generic_overview",
+                message="overview reads like generic boilerplate filler",
+                severity=ValidationSeverity.HARD_FAIL,
+                path="$.overview",
+            )
+        )
+    for index, section in enumerate(instance_page.history_sections):
+        body = section.body.strip()
+        if body and lint_passthrough_fragment(body):
+            issues.append(
+                ValidationIssue(
+                    code="structure.instance_page_history_passthrough",
+                    message="history section body reads like a copied source fragment",
+                    severity=ValidationSeverity.HARD_FAIL,
+                    path=f"$.history_sections[{index}].body",
+                )
+            )
+    for index, card in enumerate(instance_page.key_characters):
+        summary = card.summary.strip()
+        if summary and is_generic_key_character_summary(summary):
+            issues.append(
+                ValidationIssue(
+                    code="structure.instance_page_generic_key_character",
+                    message="key_characters summary reads like a generic stub",
+                    severity=ValidationSeverity.HARD_FAIL,
+                    path=f"$.key_characters[{index}].summary",
+                )
+            )
     issues.extend(
         _validate_enriched_glossary_refs(
             instance_page.glossary_refs,

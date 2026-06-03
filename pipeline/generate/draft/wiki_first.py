@@ -14,6 +14,7 @@ from pipeline.generate.draft.instance_lint import (
     lint_at_a_glance as lint_instance_at_a_glance,
     lint_key_character_summary,
     lint_overview,
+    lint_passthrough_fragment,
 )
 from pipeline.discovery.entity_typing import normalize_title
 from pipeline.discovery.geography import resolve_parent_continent
@@ -428,13 +429,91 @@ def _build_instance_evidence_pools(
     }
 
 
+def _extract_instance_structured_links(
+    snapshots: list[dict[str, Any]] | None, instance_id: str
+) -> list[dict[str, Any]]:
+    if not snapshots:
+        return []
+    for snapshot in snapshots:
+        if (
+            str(snapshot.get("entity_id", "")).strip() == instance_id
+            and str(snapshot.get("entity_type", "")).strip() == "instance"
+            and not str(snapshot.get("auxiliary_role", "")).strip()
+        ):
+            raw_links = snapshot.get("structured_links", [])
+            if isinstance(raw_links, list):
+                return [row for row in raw_links if isinstance(row, dict)]
+            break
+    return []
+
+
+def build_instance_key_character_roster(
+    *,
+    instance_id: str,
+    instance_name: str,
+    evidence_rows: list[dict[str, Any]],
+    section_blocks: list[dict[str, Any]] | None = None,
+    snapshots: list[dict[str, Any]] | None = None,
+    pools: dict[str, list[dict[str, Any]]] | None = None,
+    parent_zone_evidence_rows: list[dict[str, Any]] | None = None,
+) -> list[BossCandidate]:
+    """Deterministic key-character roster for an instance.
+
+    Single source of truth shared by ``build_instance_page`` (page assembly) and the
+    draft-writer decision sidecar, so the emitted cast and the role-diversity check key
+    off the exact same ranked candidate set.
+    """
+    if pools is None:
+        pools = _build_instance_evidence_pools(
+            evidence_rows,
+            instance_name=instance_name,
+            parent_zone_evidence_rows=parent_zone_evidence_rows,
+        )
+    blocks = section_blocks if isinstance(section_blocks, list) else []
+    structured_links = _extract_instance_structured_links(snapshots, instance_id)
+    boss_candidates = collect_boss_candidates(
+        section_blocks=blocks,
+        instance_name=instance_name,
+        boss_pool_items=pools["boss_pool"],
+        structured_links=structured_links,
+    )
+    if not boss_candidates:
+        narrative_pool = pools["overview_pool"] + pools["at_a_glance_pool"]
+        narrative_candidates = mine_narrative_character_candidates(
+            blocks,
+            instance_name=instance_name,
+            structured_links=structured_links,
+            narrative_pool=narrative_pool,
+            max_count=INSTANCE_MAX_KEY_CHARACTERS,
+        )
+        if narrative_candidates:
+            selected_names = select_key_characters_from_narrative(
+                [
+                    {"name": candidate.name, "wiki_url": candidate.wiki_url}
+                    for candidate in narrative_candidates
+                ],
+                instance_name=instance_name,
+                max_count=INSTANCE_MAX_KEY_CHARACTERS,
+            )
+            selected_keys = {normalize_title(value) for value in selected_names}
+            chosen = [
+                candidate
+                for candidate in narrative_candidates
+                if normalize_title(candidate.name) in selected_keys
+            ] or narrative_candidates
+            boss_candidates = chosen[:INSTANCE_MAX_KEY_CHARACTERS]
+    return boss_candidates
+
+
 def _finalize_instance_at_a_glance(
     *,
     instance_name: str,
     at_pool: list[dict[str, Any]],
     evidence_rows: list[dict[str, Any]],
 ) -> tuple[str, list[str], list[dict[str, Any]]]:
-    text, used = synthesize_at_a_glance(at_pool, max_words=MAX_AT_A_GLANCE_WORDS)
+    text, used = synthesize_at_a_glance(
+        at_pool, max_words=MAX_AT_A_GLANCE_WORDS, subject=instance_name
+    )
     producing_pool = at_pool
     if lint_instance_at_a_glance(text, instance_name=instance_name):
         text, used = fallback_at_a_glance(at_pool)
@@ -476,10 +555,10 @@ def _finalize_instance_overview(
 
     for pool in pools_to_try:
         text, used = synthesize_instance_overview(pool, instance_name=instance_name)
-        if not lint_overview(text, instance_name=instance_name):
+        if not lint_overview(text, instance_name=instance_name) and not lint_passthrough_fragment(text):
             return text, used, pool
         text, used = fallback_instance_overview(pool, instance_name=instance_name)
-        if not lint_overview(text, instance_name=instance_name):
+        if not lint_overview(text, instance_name=instance_name) and not lint_passthrough_fragment(text):
             return text, used, pool
     return "", [], []
 
@@ -514,13 +593,17 @@ def _finalize_key_characters(
                 boss_name=candidate.name,
                 instance_name=instance_name,
             )
-            if lint_key_character_summary(summary, boss_name=candidate.name, instance_name=instance_name):
+            if lint_key_character_summary(
+                summary, boss_name=candidate.name, instance_name=instance_name
+            ) or lint_passthrough_fragment(summary):
                 summary, used = fallback_key_character_summary(
                     pool,
                     boss_name=candidate.name,
                     instance_name=instance_name,
                 )
-            if lint_key_character_summary(summary, boss_name=candidate.name, instance_name=instance_name):
+            if lint_key_character_summary(
+                summary, boss_name=candidate.name, instance_name=instance_name
+            ) or lint_passthrough_fragment(summary):
                 continue
             pointers = _cap_card_pointers(
                 _pointers_for_source_ids(pool, used, revision_map),
@@ -622,6 +705,7 @@ def build_instance_major_factions(
         questline_rows=[],
         revision_map=revision_map,
         faction_profile_targets=scoped_targets,
+        instance_name=instance_name,
     )
 
 
@@ -773,6 +857,7 @@ def _finalize_faction_card(
     *,
     zone_name: str,
     subregion_tokens: list[str],
+    instance_name: str | None = None,
 ) -> tuple[dict[str, Any] | None, list[str], list[dict[str, Any]]]:
     pools_to_try = finalize_evidence_pools(candidate)
     if not pools_to_try:
@@ -785,6 +870,7 @@ def _finalize_faction_card(
             zone_name=zone_name,
             max_words=40,
             subregion_tokens=subregion_tokens,
+            instance_name=instance_name,
         )
         summary = ensure_sentence_terminator(summary)
         if not lint_faction_summary(summary, zone_name=zone_name, subregion_tokens=subregion_tokens):
@@ -827,6 +913,7 @@ def build_major_factions(
     questline_rows: list[dict[str, Any]],
     revision_map: dict[str, str],
     faction_profile_targets: list[dict[str, Any]] | None = None,
+    instance_name: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, str]]]]:
     subregion_tokens = extract_subregion_tokens(pools.get("location_seed_pool", []), zone_name=zone_name)
     candidates = collect_faction_candidates(
@@ -850,6 +937,7 @@ def build_major_factions(
             candidate,
             zone_name=zone_name,
             subregion_tokens=subregion_tokens,
+            instance_name=instance_name,
         )
         if card is None:
             continue
@@ -1587,46 +1675,14 @@ def build_instance_page(
     blocks = section_blocks if section_blocks is not None else fact_pack.get("section_blocks", [])
     if not isinstance(blocks, list):
         blocks = []
-    structured_links: list[dict[str, Any]] = []
-    if snapshots:
-        for snapshot in snapshots:
-            if (
-                str(snapshot.get("entity_id", "")).strip() == instance_id
-                and str(snapshot.get("entity_type", "")).strip() == "instance"
-                and not str(snapshot.get("auxiliary_role", "")).strip()
-            ):
-                raw_links = snapshot.get("structured_links", [])
-                if isinstance(raw_links, list):
-                    structured_links = [row for row in raw_links if isinstance(row, dict)]
-                break
-    boss_candidates = collect_boss_candidates(
-        section_blocks=blocks,
+    boss_candidates = build_instance_key_character_roster(
+        instance_id=instance_id,
         instance_name=name,
-        boss_pool_items=pools["boss_pool"],
-        structured_links=structured_links,
+        evidence_rows=evidence_rows,
+        section_blocks=blocks,
+        snapshots=snapshots,
+        pools=pools,
     )
-    if not boss_candidates:
-        narrative_pool = pools["overview_pool"] + pools["at_a_glance_pool"]
-        narrative_candidates = mine_narrative_character_candidates(
-            blocks,
-            instance_name=name,
-            structured_links=structured_links,
-            narrative_pool=narrative_pool,
-            max_count=INSTANCE_MAX_KEY_CHARACTERS,
-        )
-        if narrative_candidates:
-            selected_names = select_key_characters_from_narrative(
-                [{"name": candidate.name, "wiki_url": candidate.wiki_url} for candidate in narrative_candidates],
-                instance_name=name,
-                max_count=INSTANCE_MAX_KEY_CHARACTERS,
-            )
-            selected_keys = {normalize_title(value) for value in selected_names}
-            chosen = [
-                candidate
-                for candidate in narrative_candidates
-                if normalize_title(candidate.name) in selected_keys
-            ] or narrative_candidates
-            boss_candidates = chosen[:INSTANCE_MAX_KEY_CHARACTERS]
     key_characters, key_character_provenance, character_used = _finalize_key_characters(
         instance_name=name,
         boss_candidates=boss_candidates,

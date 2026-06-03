@@ -14,7 +14,11 @@ from pipeline.generate.draft import generate_entity_draft, is_valid_draft
 from pipeline.generate.draft.llm import draft_chat_json_completion, set_draft_verbose
 from pipeline.generate.draft.mode import draft_pipeline_mode
 from pipeline.generate.draft.trace import DraftTraceContext
-from pipeline.generate.draft.wiki_first import build_instance_page, build_zone_page
+from pipeline.generate.draft.wiki_first import (
+    build_instance_key_character_roster,
+    build_instance_page,
+    build_zone_page,
+)
 
 # Re-export for tests that patch chat_json_completion on this module.
 __all__ = [
@@ -23,6 +27,50 @@ __all__ = [
     "run_draft_writer",
     "set_draft_verbose",
 ]
+
+
+def _decision_name_key(value: str) -> str:
+    return " ".join(str(value).strip().casefold().split())
+
+
+def _build_key_character_decision_row(
+    *,
+    instance_id: str,
+    instance_name: str,
+    scoped_evidence: list[dict[str, Any]],
+    parent_zone_evidence: list[dict[str, Any]],
+    section_blocks: list[dict[str, Any]] | None,
+    snapshots: list[dict[str, Any]],
+    emitted_cards: list,
+) -> dict[str, Any]:
+    """Decision sidecar row: the full ranked roster + which candidates were emitted.
+
+    Uses the same deterministic roster builder as ``build_instance_page`` so the
+    role-diversity check in ``check_run_semantics`` keys off the identical candidate set.
+    """
+    roster = build_instance_key_character_roster(
+        instance_id=instance_id,
+        instance_name=instance_name,
+        evidence_rows=scoped_evidence,
+        section_blocks=section_blocks,
+        snapshots=snapshots,
+        parent_zone_evidence_rows=parent_zone_evidence,
+    )
+    emitted_keys = {
+        _decision_name_key(card.get("name", ""))
+        for card in emitted_cards
+        if isinstance(card, dict)
+    }
+    candidates = [
+        {
+            "name": candidate.name,
+            "role": candidate.role or "uncertain",
+            "significance": getattr(candidate, "significance", None),
+            "emitted": _decision_name_key(candidate.name) in emitted_keys,
+        }
+        for candidate in roster
+    ]
+    return {"instance_id": instance_id, "candidates": candidates}
 
 
 def run_draft_writer(
@@ -137,6 +185,7 @@ def run_draft_writer(
         entity_type = str(fact_pack.get("entity_type", ""))
         entity_id = str(fact_pack.get("entity_id", path.stem))
         if entity_type in {"zone", "instance"} and evidence_rows:
+            instance_key_character_decisions: dict[str, Any] | None = None
             scoped_evidence = [
                 row for row in evidence_rows if str(row.get("subject_id", "")).strip() == entity_id
             ]
@@ -212,6 +261,23 @@ def run_draft_writer(
                     section_blocks=instance_section_blocks,
                     snapshots=source_snapshots,
                 )
+                # Mirror build_instance_page's input resolution exactly so the sidecar roster
+                # is identical to the roster the page assembly used (name string + section
+                # blocks fallback to the fact pack when no instance snapshot was found).
+                roster_section_blocks = (
+                    instance_section_blocks
+                    if instance_section_blocks is not None
+                    else enriched_fact_pack.get("section_blocks", [])
+                )
+                instance_key_character_decisions = _build_key_character_decision_row(
+                    instance_id=entity_id,
+                    instance_name=str(enriched_fact_pack.get("name", entity_id)),
+                    scoped_evidence=scoped_evidence,
+                    parent_zone_evidence=parent_zone_evidence,
+                    section_blocks=roster_section_blocks,
+                    snapshots=source_snapshots,
+                    emitted_cards=draft.get("key_characters", []),
+                )
             entity_dir = stage_dir / f"{entity_type}_page"
             entity_dir.mkdir(parents=True, exist_ok=True)
             out_path = entity_dir / f"{entity_id}.json"
@@ -226,6 +292,8 @@ def run_draft_writer(
             }
             if isinstance(overflow, list):
                 decision["questline_overflow"] = overflow
+            if instance_key_character_decisions is not None:
+                decision["instance_key_character_decisions"] = instance_key_character_decisions
             return out_path, decision
         settings = load_ai_settings()
         trace = DraftTraceContext(
@@ -273,6 +341,7 @@ def run_draft_writer(
 
     outputs: list[Path] = []
     decisions: list[dict[str, object]] = []
+    instance_key_character_decisions: list[dict[str, Any]] = []
     with ThreadPoolExecutor(max_workers=max_entity_concurrency) as executor:
         futures = [executor.submit(_write, path) for path in fact_pack_paths]
         for future in futures:
@@ -280,6 +349,9 @@ def run_draft_writer(
             if output_path is not None:
                 outputs.append(output_path)
             if decision is not None:
+                kc_decision = decision.pop("instance_key_character_decisions", None)
+                if isinstance(kc_decision, dict):
+                    instance_key_character_decisions.append(kc_decision)
                 decisions.append(decision)
                 overflow = decision.pop("questline_overflow", None)
                 if isinstance(overflow, list):
@@ -296,6 +368,12 @@ def run_draft_writer(
                             )
     (stage_dir / "draft_decisions.json").write_text(
         json.dumps(decisions, indent=2),
+        encoding="utf-8",
+    )
+    decisions_dir = context.data_dir / "decisions"
+    decisions_dir.mkdir(parents=True, exist_ok=True)
+    (decisions_dir / "instance_key_character_decisions.json").write_text(
+        json.dumps(instance_key_character_decisions, indent=2),
         encoding="utf-8",
     )
     return outputs

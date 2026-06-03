@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from pipeline.generate.draft.instance_lint import (
+    assess_role_diversity,
     fallback_instance_overview,
     is_generic_overview,
     lint_key_character_summary,
     lint_overview,
+    lint_passthrough_fragment,
 )
 
 
@@ -43,3 +45,76 @@ def test_lint_key_character_summary_requires_boss_anchor() -> None:
         instance_name="Archive Vault",
     )
     assert any("boss name" in issue for issue in issues)
+
+
+def test_lint_passthrough_fragment_flags_mid_sentence_and_unterminated() -> None:
+    issues = lint_passthrough_fragment("and the keep fell to the Scourge")
+    assert any("mid-sentence" in issue for issue in issues)
+    assert any("terminal punctuation" in issue for issue in issues)
+
+
+def test_lint_passthrough_fragment_flags_bullet_markers() -> None:
+    issues = lint_passthrough_fragment("- The keep fell to the Scourge.")
+    assert any("list-bullet" in issue for issue in issues)
+
+
+def test_lint_passthrough_fragment_passes_clean_prose() -> None:
+    assert lint_passthrough_fragment("The keep fell to the Scourge during the Third War.") == []
+
+
+def test_lint_passthrough_fragment_ignores_empty() -> None:
+    assert lint_passthrough_fragment("   ") == []
+
+
+def test_assess_role_diversity_fail_on_dropped_in_window() -> None:
+    emitted = [{"name": "Enemy One", "role": "enemy"}]
+    roster = [
+        {"name": "Enemy One", "role": "enemy"},
+        {"name": "Ally Two", "role": "ally"},
+    ]
+    severity, reason = assess_role_diversity(emitted, roster, window=10)
+    assert severity == "fail"
+    assert "Ally Two" in reason
+
+
+def test_assess_role_diversity_warn_when_signal_only_outside_window() -> None:
+    emitted = [{"name": "Enemy One", "role": "enemy"}]
+    roster = [
+        {"name": "Enemy One", "role": "enemy"},
+        {"name": "Ally Two", "role": "ally"},
+    ]
+    severity, _ = assess_role_diversity(emitted, roster, window=1)
+    assert severity == "warn"
+
+
+def test_assess_role_diversity_ok_when_cast_includes_ally() -> None:
+    emitted = [{"name": "Ally Two", "role": "ally"}]
+    roster = [
+        {"name": "Enemy One", "role": "enemy"},
+        {"name": "Ally Two", "role": "ally"},
+    ]
+    severity, _ = assess_role_diversity(emitted, roster, window=10)
+    assert severity == "ok"
+
+
+def test_assess_role_diversity_ok_when_no_ally_available() -> None:
+    emitted = [{"name": "Enemy One", "role": "enemy"}]
+    roster = [
+        {"name": "Enemy One", "role": "enemy"},
+        {"name": "Enemy Two", "role": "enemy"},
+    ]
+    severity, _ = assess_role_diversity(emitted, roster, window=10)
+    assert severity == "ok"
+
+
+def test_assess_role_diversity_uses_emitted_card_role_over_stale_roster() -> None:
+    # The emitted card was upgraded to ally by the LLM tiebreaker, but the roster sidecar
+    # still records the pre-LLM "uncertain". The emitted ally must win => ok, even though a
+    # different ally candidate was dropped from the in-window roster.
+    emitted = [{"name": "Tribunal Voice", "role": "ally"}]
+    roster = [
+        {"name": "Tribunal Voice", "role": "uncertain"},
+        {"name": "Helping Hand", "role": "ally"},
+    ]
+    severity, _ = assess_role_diversity(emitted, roster, window=10)
+    assert severity == "ok"

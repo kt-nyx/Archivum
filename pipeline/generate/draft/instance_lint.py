@@ -36,6 +36,11 @@ _PATCH_NOTES_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Passthrough-fragment shapes (complementary to similarity checks): a copied mid-sentence
+# source fragment, an unterminated clause, or list-bullet residue.
+_BULLET_MARKER_RE = re.compile(r"(?:^|\n)[ \t]*(?:[\u2022\u25E6\u25AA\u2023\u2043*]|-|\d+[.)])\s+")
+_FIRST_LETTER_RE = re.compile(r"[^\W\d_]", re.UNICODE)
+
 
 def ensure_sentence_terminator(text: str) -> str:
     cleaned = text.strip()
@@ -126,6 +131,95 @@ def lint_key_character_summary(text: str, *, boss_name: str = "", instance_name:
     if instance_name and instance_name.lower() not in cleaned.lower() and words < MIN_KEY_CHARACTER_WORDS:
         issues.append("key enemy summary lacks instance context")
     return issues
+
+
+def lint_passthrough_fragment(text: str) -> list[str]:
+    """Detect copied/passthrough source-fragment shapes in synthesized prose.
+
+    Complementary to the similarity gate: flags fragments that *look* lifted rather than
+    synthesized — a mid-sentence lowercase start, a missing terminal terminator, or
+    embedded list-bullet markers. Empty/whitespace input is not a passthrough issue (a
+    separate emptiness check owns that), so it returns no issues.
+    """
+    issues: list[str] = []
+    cleaned = text.strip()
+    if not cleaned:
+        return issues
+    match = _FIRST_LETTER_RE.search(cleaned)
+    if match and match.group(0).islower():
+        issues.append("passthrough fragment: starts mid-sentence (lowercase)")
+    if cleaned[-1] not in ".?!\"'":
+        issues.append("passthrough fragment: missing terminal punctuation")
+    if _BULLET_MARKER_RE.search(cleaned):
+        issues.append("passthrough fragment: contains list-bullet markers")
+    return issues
+
+
+def _role_of(item: object) -> str:
+    if isinstance(item, dict):
+        return str(item.get("role", "") or "").strip().lower()
+    return str(getattr(item, "role", "") or "").strip().lower()
+
+
+def _name_key(item: object) -> str:
+    if isinstance(item, dict):
+        raw = item.get("name", "")
+    else:
+        raw = getattr(item, "name", "")
+    return " ".join(str(raw).strip().casefold().split())
+
+
+def assess_role_diversity(
+    emitted_cards: list,
+    roster: list,
+    *,
+    window: int | None = None,
+) -> tuple[str, str]:
+    """Assess whether an ally/neutral candidate was unfairly dropped from the cast.
+
+    Returns ``(severity, reason)`` where severity is ``"ok"``, ``"warn"``, or ``"fail"``.
+    Decision (per slice I5): an all-enemy emitted cast FAILs only when an ally/neutral
+    candidate sits inside the top-``window`` ranked roster yet is absent from the cast;
+    it WARNs when the only ally/neutral signal is ranked outside the window; otherwise OK.
+    """
+    from pipeline.contracts.models import INSTANCE_MAX_KEY_CHARACTERS
+
+    if window is None:
+        window = INSTANCE_MAX_KEY_CHARACTERS
+    if not emitted_cards:
+        return "ok", "no emitted cast"
+    emitted_keys = {_name_key(card) for card in emitted_cards}
+    # Determine whether the cast is all-enemy from the emitted cards' OWN roles. The card
+    # role is authoritative (it reflects the post-LLM-tiebreaker decision); fall back to the
+    # roster role only when an emitted card carries no role of its own.
+    roster_role_by_key = {_name_key(c): _role_of(c) for c in roster}
+    emitted_roles = {
+        _role_of(card) or roster_role_by_key.get(_name_key(card)) for card in emitted_cards
+    }
+    if {"ally", "neutral"} & emitted_roles:
+        return "ok", "emitted cast includes an ally/neutral character"
+
+    in_window = roster[:window]
+    out_window = roster[window:]
+    dropped_in_window = [
+        c
+        for c in in_window
+        if _role_of(c) in {"ally", "neutral"} and _name_key(c) not in emitted_keys
+    ]
+    if dropped_in_window:
+        names = ", ".join(_display_name(c) for c in dropped_in_window)
+        return "fail", f"all-enemy cast dropped in-window ally/neutral candidate(s): {names}"
+    signal_out_window = [c for c in out_window if _role_of(c) in {"ally", "neutral"}]
+    if signal_out_window:
+        names = ", ".join(_display_name(c) for c in signal_out_window)
+        return "warn", f"all-enemy cast; ally/neutral signal only outside window: {names}"
+    return "ok", "no ally/neutral candidate available"
+
+
+def _display_name(item: object) -> str:
+    if isinstance(item, dict):
+        return str(item.get("name", "")).strip()
+    return str(getattr(item, "name", "")).strip()
 
 
 def fallback_instance_overview(

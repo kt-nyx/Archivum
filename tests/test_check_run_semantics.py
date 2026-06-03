@@ -599,6 +599,7 @@ def _write_instance_semantics_run(
     instance_draft: dict[str, object],
     boss_pool_snippet: str = "/wiki/Darkmaster_Gandling",
     section_blocks: list[dict[str, object]] | None = None,
+    key_character_decisions: list[dict[str, object]] | None = None,
 ) -> Path:
     run_root = tmp_path / "run-instance-semantics"
     zone_id = "zone-western-plaguelands"
@@ -657,6 +658,12 @@ def _write_instance_semantics_run(
                 ],
                 indent=2,
             ),
+            encoding="utf-8",
+        )
+    if key_character_decisions is not None:
+        (run_root / "data" / "decisions").mkdir(parents=True, exist_ok=True)
+        (run_root / "data" / "decisions" / "instance_key_character_decisions.json").write_text(
+            json.dumps(key_character_decisions, indent=2),
             encoding="utf-8",
         )
     return run_root
@@ -820,6 +827,125 @@ def test_check_run_fails_when_two_boss_candidates_but_one_key_character(tmp_path
             {
                 "section_role": "adventurers",
                 "text": "Bosses include /wiki/Darkmaster_Gandling and /wiki/Jandice_Barov.",
+            }
+        ],
+    )
+    with pytest.raises(SemanticCheckError, match="below minimum 2"):
+        check_run(run_root, zone_id="zone-western-plaguelands")
+
+
+def _enemy_card(card_id: str, name: str) -> dict[str, object]:
+    return {
+        "id": card_id,
+        "name": name,
+        "role": "enemy",
+        "summary": (
+            f"{name} commands Scholomance faculty and anchors the instance's necromantic hierarchy "
+            "within its haunted halls, directing hostile instructors and preserving grim curricula."
+        ),
+    }
+
+
+def test_check_run_fails_when_ally_dropped_from_all_enemy_cast(tmp_path: Path) -> None:
+    draft = _minimal_instance_draft(
+        key_characters=[
+            _enemy_card("character-darkmaster-gandling", "Darkmaster Gandling"),
+            _enemy_card("character-warden-voss", "Warden Voss"),
+        ],
+        provenance={
+            "identity_header": [{"source_id": "src-instance", "locator": "section:lead paragraph:1"}],
+            "story_context": [{"source_id": "src-instance", "locator": "section:history paragraph:1"}],
+            "key_characters": {
+                "character-darkmaster-gandling": [
+                    {"source_id": "src-instance", "locator": "section:scholomance_faculty paragraph:1"}
+                ],
+                "character-warden-voss": [
+                    {"source_id": "src-instance", "locator": "section:scholomance_faculty paragraph:2"}
+                ],
+            },
+        },
+    )
+    run_root = _write_instance_semantics_run(
+        tmp_path,
+        instance_draft=draft,
+        key_character_decisions=[
+            {
+                "instance_id": "instance-scholomance",
+                "candidates": [
+                    {"name": "Darkmaster Gandling", "role": "enemy", "emitted": True},
+                    {"name": "Warden Voss", "role": "enemy", "emitted": True},
+                    {"name": "Lorekeeper Polkelt", "role": "ally", "emitted": False},
+                ],
+            }
+        ],
+    )
+    with pytest.raises(SemanticCheckError, match="role diversity"):
+        check_run(run_root, zone_id="zone-western-plaguelands")
+
+
+def test_check_run_warns_when_ally_only_outside_window(tmp_path: Path, capsys) -> None:
+    draft = _minimal_instance_draft(
+        key_characters=[
+            _enemy_card("character-darkmaster-gandling", "Darkmaster Gandling"),
+            _enemy_card("character-warden-voss", "Warden Voss"),
+        ],
+        provenance={
+            "identity_header": [{"source_id": "src-instance", "locator": "section:lead paragraph:1"}],
+            "story_context": [{"source_id": "src-instance", "locator": "section:history paragraph:1"}],
+            "key_characters": {
+                "character-darkmaster-gandling": [
+                    {"source_id": "src-instance", "locator": "section:scholomance_faculty paragraph:1"}
+                ],
+                "character-warden-voss": [
+                    {"source_id": "src-instance", "locator": "section:scholomance_faculty paragraph:2"}
+                ],
+            },
+        },
+    )
+    candidates = [
+        {"name": f"Enemy {index}", "role": "enemy", "emitted": index < 2}
+        for index in range(10)
+    ]
+    candidates[0]["name"] = "Darkmaster Gandling"
+    candidates[1]["name"] = "Warden Voss"
+    candidates.append({"name": "Lorekeeper Polkelt", "role": "ally", "emitted": False})
+    run_root = _write_instance_semantics_run(
+        tmp_path,
+        instance_draft=draft,
+        key_character_decisions=[
+            {"instance_id": "instance-scholomance", "candidates": candidates}
+        ],
+    )
+    check_run(run_root, zone_id="zone-western-plaguelands")
+    captured = capsys.readouterr()
+    assert "WARN: instance role diversity" in captured.out
+
+
+def test_check_run_fails_pool_aware_minimum_from_sidecar(tmp_path: Path) -> None:
+    draft = _minimal_instance_draft(
+        key_characters=[
+            _enemy_card("character-darkmaster-gandling", "Darkmaster Gandling"),
+        ],
+        provenance={
+            "identity_header": [{"source_id": "src-instance", "locator": "section:lead paragraph:1"}],
+            "story_context": [{"source_id": "src-instance", "locator": "section:history paragraph:1"}],
+            "key_characters": {
+                "character-darkmaster-gandling": [
+                    {"source_id": "src-instance", "locator": "section:scholomance_faculty paragraph:1"}
+                ]
+            },
+        },
+    )
+    run_root = _write_instance_semantics_run(
+        tmp_path,
+        instance_draft=draft,
+        key_character_decisions=[
+            {
+                "instance_id": "instance-scholomance",
+                "candidates": [
+                    {"name": "Darkmaster Gandling", "role": "enemy", "emitted": True},
+                    {"name": "Warden Voss", "role": "enemy", "emitted": False},
+                ],
             }
         ],
     )

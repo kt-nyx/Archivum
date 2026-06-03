@@ -908,16 +908,22 @@ def _check_instance_drafts(run_root: Path) -> None:
     if not draft_dir.exists():
         return
 
-    from pipeline.contracts.models import INSTANCE_MAX_KEY_CHARACTERS, INSTANCE_MIN_KEY_CHARACTERS
+    from pipeline.contracts.models import (
+        INSTANCE_MAX_KEY_CHARACTERS,
+        INSTANCE_MIN_KEY_CHARACTERS,
+        INSTANCE_PROVENANCE_POINTER_CAP,
+    )
     from pipeline.discovery.instance_bosses import collect_boss_candidates, valid_boss_names_from_pool_items
     from pipeline.generate.draft.faction_lint import lint_faction_summary
     from pipeline.generate.draft.instance_lint import (
+        assess_role_diversity,
         is_generic_at_a_glance,
         is_generic_key_character_summary,
         is_generic_overview,
         lint_at_a_glance as lint_instance_at_a_glance,
         lint_key_character_summary,
         lint_overview,
+        lint_passthrough_fragment,
     )
     from pipeline.generate.draft.prose_lint import (
         lint_history_sections,
@@ -934,6 +940,21 @@ def _check_instance_drafts(run_root: Path) -> None:
             row = json.loads(line)
             if isinstance(row, dict):
                 evidence_rows.append(row)
+
+    # Deterministic key-character roster sidecar emitted by the draft writer. Lets the
+    # role-diversity and pool-aware-minimum checks key off the exact ranked candidate set
+    # used during page assembly rather than re-deriving it here.
+    kc_decisions_by_instance: dict[str, list[dict[str, Any]]] = {}
+    kc_decisions_path = run_root / "data" / "decisions" / "instance_key_character_decisions.json"
+    kc_decisions_blob = _load_json(kc_decisions_path)
+    if isinstance(kc_decisions_blob, list):
+        for row in kc_decisions_blob:
+            if not isinstance(row, dict):
+                continue
+            decision_instance_id = str(row.get("instance_id", "")).strip()
+            candidates = [c for c in row.get("candidates", []) if isinstance(c, dict)]
+            if decision_instance_id:
+                kc_decisions_by_instance[decision_instance_id] = candidates
 
     for draft_path in sorted(draft_dir.glob("instance-*.json")):
         draft = _load_json(draft_path)
@@ -989,10 +1010,18 @@ def _check_instance_drafts(run_root: Path) -> None:
             _fail(f"instance overview reads like generic stub: {instance_id!r}")
         for issue in lint_overview(overview, instance_name=instance_name):
             _fail(f"instance overview quality check failed for {instance_id!r}: {issue}")
+        for issue in lint_passthrough_fragment(overview):
+            _fail(f"instance overview passthrough check failed for {instance_id!r}: {issue}")
 
         history = draft.get("history_sections") or []
         for issue in lint_history_sections(history, max_sections=MAX_HISTORY_SECTIONS):
             _fail(f"instance history_sections quality check failed for {instance_id!r}: {issue}")
+        for section in history:
+            if not isinstance(section, dict):
+                continue
+            body = str(section.get("body", "")).strip()
+            for issue in lint_passthrough_fragment(body):
+                _fail(f"instance history passthrough failed for {instance_id!r}: {issue}")
 
         eligible_history_blocks = sum(
             len(row.get("evidence_items", []))
@@ -1042,11 +1071,26 @@ def _check_instance_drafts(run_root: Path) -> None:
                 f"instance key_characters exceeds cap for {instance_id!r} "
                 f"({len(key_characters)} > {INSTANCE_MAX_KEY_CHARACTERS})"
             )
-        if len(boss_candidates) >= INSTANCE_MIN_KEY_CHARACTERS and len(key_characters) < INSTANCE_MIN_KEY_CHARACTERS:
+        roster_candidates = kc_decisions_by_instance.get(instance_id)
+        # Pool-aware minimum: prefer the deterministic sidecar roster size (the true
+        # candidate pool the page assembly saw) over re-deriving boss candidates here.
+        if roster_candidates is not None:
+            pool_size = len(roster_candidates)
+            pool_label = "roster candidates"
+        else:
+            pool_size = len(boss_candidates)
+            pool_label = "boss candidates"
+        if pool_size >= INSTANCE_MIN_KEY_CHARACTERS and len(key_characters) < INSTANCE_MIN_KEY_CHARACTERS:
             _fail(
                 f"instance key_characters count {len(key_characters)} below minimum {INSTANCE_MIN_KEY_CHARACTERS} "
-                f"despite {len(boss_candidates)} boss candidates for {instance_id!r}"
+                f"despite {pool_size} {pool_label} for {instance_id!r}"
             )
+        if roster_candidates is not None:
+            severity, reason = assess_role_diversity(key_characters, roster_candidates)
+            if severity == "fail":
+                _fail(f"instance role diversity check failed for {instance_id!r}: {reason}")
+            elif severity == "warn":
+                print(f"WARN: instance role diversity for {instance_id!r}: {reason}")
         for card in key_characters:
             summary = str(card.get("summary", "")).strip()
             boss_name = str(card.get("name", "")).strip()
@@ -1062,15 +1106,15 @@ def _check_instance_drafts(run_root: Path) -> None:
         provenance = draft.get("provenance") or {}
         identity_header = provenance.get("identity_header") or []
         story_context = provenance.get("story_context") or []
-        if len(identity_header) > 3:
+        if len(identity_header) > INSTANCE_PROVENANCE_POINTER_CAP:
             _fail(
-                f"instance identity_header provenance exceeds cap ({len(identity_header)} > 3) "
-                f"for {instance_id!r}"
+                f"instance identity_header provenance exceeds cap "
+                f"({len(identity_header)} > {INSTANCE_PROVENANCE_POINTER_CAP}) for {instance_id!r}"
             )
-        if len(story_context) > 3:
+        if len(story_context) > INSTANCE_PROVENANCE_POINTER_CAP:
             _fail(
-                f"instance story_context provenance exceeds cap ({len(story_context)} > 3) "
-                f"for {instance_id!r}"
+                f"instance story_context provenance exceeds cap "
+                f"({len(story_context)} > {INSTANCE_PROVENANCE_POINTER_CAP}) for {instance_id!r}"
             )
         if at_a_glance and not identity_header:
             _fail(f"instance at_a_glance missing identity_header provenance: {instance_id!r}")
