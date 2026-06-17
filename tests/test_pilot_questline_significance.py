@@ -1,33 +1,22 @@
-"""Map WPL pilot registry included/excluded arcs to cluster title keyword expectations."""
+"""WPL pilot inclusion is driven by registry-arc quest membership (no keyword tables)."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
+from pipeline.discovery.pilot_questline_registry import load_registry
 from pipeline.discovery.questline_cluster import cluster_zone_questlines
 from pipeline.discovery.questline_significance import score_zone_questline_clusters
 
-from pipeline.discovery.pilot_questline_registry import load_registry
 FIXTURE_DIR = Path("tests/fixtures/clustering")
 ZONE_ID = "zone-western-plaguelands"
 
-_INCLUDED_KEYWORDS = (
-    ("ql-andorhal-alliance", ("andorhal",), "alliance"),
-    ("ql-andorhal-horde", ("andorhal",), "horde"),
-    ("ql-menders-stead-healing", ("mender", "cenarion"), "shared"),
-    ("ql-hearthglen-tirion-legacy", ("hearthglen", "tirion"), "shared"),
-)
-_EXCLUDED_KEYWORDS = (
-    ("ql-northridge-redpine", ("northridge", "lumber", "redpine")),
-    ("ql-gahrrons-withering-cleanup", ("gahrron", "withering", "cauldron")),
-)
 
-
-def test_registry_arcs_match_significance_inclusion_by_title_keywords() -> None:
+def test_inclusion_is_driven_by_registry_arc_membership() -> None:
     registry = load_registry(ZONE_ID)
     assert registry is not None
-    assert int(registry["pipeline_gap_analysis"]["expected_included_card_count"]) == 4
+    assert int(registry["pipeline_gap_analysis"]["expected_included_card_count"]) == 3
 
     roster = json.loads((FIXTURE_DIR / "western_plaguelands_roster_v3.json").read_text(encoding="utf-8"))
     records = [
@@ -48,25 +37,29 @@ def test_registry_arcs_match_significance_inclusion_by_title_keywords() -> None:
     cluster_rows = [
         row for row in decisions if str(row.get("subject_type", "")) == "questline_cluster"
     ]
+    included_ids = set(ranking["included_cluster_ids"])
 
-    def find_cluster(keywords: tuple[str, ...], faction: str = "") -> dict | None:
-        for row in cluster_rows:
-            title = str((row.get("features") or {}).get("cluster_title", "")).lower()
-            if not any(keyword in title for keyword in keywords):
-                continue
-            if faction and str((row.get("features") or {}).get("faction", "")).lower() != faction:
-                continue
-            return row
-        return None
+    # Every included cluster binds to an included registry arc; every excluded one does not.
+    # No keyword titles involved — membership overlap is the sole inclusion signal.
+    for row in cluster_rows:
+        features = row.get("features") or {}
+        arc_id = str(features.get("registry_arc_id", "")).strip()
+        subject_id = str(row.get("subject_id", ""))
+        if subject_id in included_ids:
+            assert row["final_decision"] == "include"
+            assert arc_id, f"included cluster {subject_id} has no registry arc"
+        else:
+            assert row["final_decision"] == "exclude"
 
-    for arc_id, keywords, faction in _INCLUDED_KEYWORDS:
-        row = find_cluster(keywords, faction)
-        assert row is not None, f"missing cluster for included arc {arc_id}"
-        assert row["final_decision"] == "include", arc_id
-        assert str(row["subject_id"]) in ranking["included_cluster_ids"], arc_id
-
-    for arc_id, keywords in _EXCLUDED_KEYWORDS:
-        row = find_cluster(keywords)
-        assert row is not None, f"missing cluster for excluded arc {arc_id}"
-        assert row["final_decision"] == "exclude", arc_id
-        assert str(row["subject_id"]) not in ranking["included_cluster_ids"], arc_id
+    included_arcs = {
+        str(
+            (next(r for r in cluster_rows if str(r["subject_id"]) == cid).get("features") or {}).get(
+                "registry_arc_id", ""
+            )
+        )
+        for cid in included_ids
+    }
+    assert "ql-andorhal-alliance" in included_arcs
+    assert "ql-andorhal-horde" in included_arcs
+    # Mender's Stead is no longer an included arc; nothing binds to it.
+    assert "ql-menders-stead-healing" not in included_arcs

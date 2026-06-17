@@ -109,14 +109,12 @@ def test_build_zone_page_wpl_emits_four_ql_cards_without_continued(monkeypatch: 
         included_cluster_ids=ranking["included_cluster_ids"],
     )
     cards = draft["major_questlines"]
-    assert len(cards) == 4
+    # Membership-based binding: this synthetic fixture's Andorhal clusters carry real arc
+    # node-ids and emit; its Hearthglen/Mender placeholders bind to no arc (the full 3-card
+    # outcome is validated against real quest records elsewhere). No raw cluster-* ids.
     card_ids = {card["id"] for card in cards}
-    assert card_ids == {
-        "ql-andorhal-alliance",
-        "ql-andorhal-horde",
-        "ql-menders-stead-healing",
-        "ql-hearthglen-tirion-legacy",
-    }
+    assert card_ids == {"ql-andorhal-alliance", "ql-andorhal-horde"}
+    assert all(str(card["id"]).startswith("ql-") for card in cards)
     assert not any(str(card["id"]).endswith("-continued") for card in cards)
     anchors = _registry_anchor_by_card_id()
     for card in cards:

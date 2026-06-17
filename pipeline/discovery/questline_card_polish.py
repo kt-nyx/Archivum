@@ -7,7 +7,10 @@ from pathlib import Path
 from typing import Any
 
 from pipeline.discovery.questline_anchor import resolve_cluster_start_anchor
-from pipeline.discovery.questline_arc_map import load_pilot_questline_registry, map_cluster_to_card_id
+from pipeline.discovery.questline_arc_map import (
+    load_pilot_questline_registry,
+    map_cluster_to_card_id,
+)
 
 _ALGORITHM_VERSION = "v1-card-polish"
 
@@ -55,6 +58,11 @@ def build_zone_questline_card_metadata(
         )
         cluster_title = str(summary.get("title", cluster_id))
         faction = str(summary.get("faction", "shared"))
+        member_node_ids = [
+            str(row.get("node_id", "")).strip()
+            for row in quest_rows
+            if str(row.get("node_id", "")).strip()
+        ]
         start_anchor = resolve_cluster_start_anchor(
             cluster_id=cluster_id,
             ordered_quest_rows=quest_rows,
@@ -65,8 +73,15 @@ def build_zone_questline_card_metadata(
             cluster_id=cluster_id,
             cluster_title=cluster_title,
             faction=faction,
+            member_node_ids=member_node_ids,
             registry=registry,
         )
+        if not card_id:
+            # Cluster matched no included registry arc (pilot zone): drop it — never emit a
+            # raw cluster-* card. The inclusion filter in scoring normally prevents this,
+            # but guard here too so a stray cluster can't leak a non-ql id.
+            unmapped_count += 1
+            continue
         if registry_arc_id and registry:
             for arc in registry.get("included_arcs", []):
                 if isinstance(arc, dict) and str(arc.get("id", "")).strip() == registry_arc_id:
@@ -76,8 +91,6 @@ def build_zone_questline_card_metadata(
                     break
         if registry_arc_id:
             mapped_registry_count += 1
-        elif card_id.startswith("cluster-"):
-            unmapped_count += 1
         if any(keyword in start_anchor.lower() for keyword in ("hero's call", "warchief", "new era", "audience")):
             entry_anchor_count += 1
         metadata_rows.append(

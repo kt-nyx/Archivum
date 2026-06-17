@@ -154,7 +154,7 @@ def test_zone_page_gold_matches_questline_card_v2_contract() -> None:
     gold = _load_zone_page_gold()
     assert gold["entity_type"] == "zone_page"
     cards = gold["major_questlines"]
-    assert len(cards) == 4
+    assert len(cards) == 3
     for card in cards:
         parsed = QuestlineCardV2.model_validate(card)
         assert parsed.cta_hook
@@ -219,7 +219,6 @@ def test_registry_chain_refs_derive_from_wiki_titles() -> None:
     [
         "ql-andorhal-horde",
         "ql-andorhal-alliance",
-        "ql-menders-stead-healing",
         "ql-hearthglen-tirion-legacy",
     ],
 )

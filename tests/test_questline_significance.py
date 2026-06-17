@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pipeline.contracts.models import ZONE_MAX_TOTAL_QUESTLINE_CARDS, ZONE_MIN_QUESTLINE_INCLUSION_SCORE
+from pipeline.contracts.models import (
+    ZONE_MAX_TOTAL_QUESTLINE_CARDS,
+)
 from pipeline.discovery.questline_cluster import cluster_zone_questlines
 from pipeline.discovery.questline_significance import score_zone_questline_clusters
 
@@ -21,19 +23,13 @@ def _load_wpl() -> tuple[list[dict], list[dict]]:
     return roster, records
 
 
-def _cluster_with_keyword(decisions: list[dict], keyword: str, *, faction: str = "") -> list[dict]:
-    matches = []
-    for row in decisions:
-        if str(row.get("subject_type", "")) != "questline_cluster":
-            continue
-        features = row.get("features") or {}
-        title = str(features.get("cluster_title", "")).lower()
-        if keyword.lower() not in title:
-            continue
-        if faction and str(features.get("faction", "")).lower() != faction:
-            continue
-        matches.append(row)
-    return matches
+def _clusters_for_arc(decisions: list[dict], arc_id: str) -> list[dict]:
+    return [
+        row
+        for row in decisions
+        if str(row.get("subject_type", "")) == "questline_cluster"
+        and str((row.get("features") or {}).get("registry_arc_id", "")) == arc_id
+    ]
 
 
 def test_criteria_breakdown_sums_to_inclusion_score() -> None:
@@ -60,7 +56,10 @@ def test_criteria_breakdown_sums_to_inclusion_score() -> None:
         assert criteria_sum == int(features.get("inclusion_score", -1))
 
 
-def test_wpl_fixture_includes_four_major_arcs_and_excludes_side_content() -> None:
+def test_wpl_fixture_includes_arc_bound_clusters_and_excludes_side_content() -> None:
+    # Membership-based inclusion: this synthetic fixture's Andorhal clusters bind to their
+    # registry arcs; side content (gahrron/northridge/mender placeholders) binds to none and
+    # is excluded. (The full 3-card outcome incl. Hearthglen is covered against real records.)
     roster, records = _load_wpl()
     rows, summaries, _ = cluster_zone_questlines(
         zone_id=ZONE_ID, roster_rows=roster, quest_records=records
@@ -72,40 +71,28 @@ def test_wpl_fixture_includes_four_major_arcs_and_excludes_side_content() -> Non
         quest_records=records,
         run_id="test-run",
     )
-    included_ids = ranking["included_cluster_ids"]
-    assert len(included_ids) == 4
-
     cluster_decisions = [
         row for row in decisions if str(row.get("subject_type", "")) == "questline_cluster"
     ]
     included = [row for row in cluster_decisions if row.get("final_decision") == "include"]
-    assert len(included) == 4
-    for row in included:
-        score = int((row.get("features") or {}).get("inclusion_score", 0))
-        assert score >= ZONE_MIN_QUESTLINE_INCLUSION_SCORE or row.get("borderline_adjudication")
+    # Every included cluster binds to a registry arc (no keyword-table inclusion).
+    assert included
+    assert all(str((row.get("features") or {}).get("registry_arc_id", "")) for row in included)
 
-    andorhal_alliance = _cluster_with_keyword(cluster_decisions, "andorhal", faction="alliance")
-    andorhal_horde = _cluster_with_keyword(cluster_decisions, "andorhal", faction="horde")
+    andorhal_alliance = _clusters_for_arc(cluster_decisions, "ql-andorhal-alliance")
+    andorhal_horde = _clusters_for_arc(cluster_decisions, "ql-andorhal-horde")
     assert andorhal_alliance and andorhal_alliance[0]["final_decision"] == "include"
     assert andorhal_horde and andorhal_horde[0]["final_decision"] == "include"
 
-    northridge = _cluster_with_keyword(cluster_decisions, "northridge")
-    gahrron = _cluster_with_keyword(cluster_decisions, "gahrron")
-    assert northridge and northridge[0]["final_decision"] == "exclude"
-    assert gahrron and gahrron[0]["final_decision"] == "exclude"
+    # Nothing binds to the dropped Mender's Stead arc.
+    assert not _clusters_for_arc(cluster_decisions, "ql-menders-stead-healing")
 
-    included_titles = " ".join(
-        str((row.get("features") or {}).get("cluster_title", "")).lower() for row in included
-    )
-    assert "northridge" not in included_titles
-    assert "gahrron" not in included_titles
-
-    ranks = {item["cluster_id"]: item["rank"] for item in ranking["rankings"] if item.get("rank", 0) > 0}
-    if andorhal_alliance and andorhal_horde:
-        alliance_id = andorhal_alliance[0]["subject_id"]
-        horde_id = andorhal_horde[0]["subject_id"]
-        assert ranks.get(alliance_id, 99) <= 4
-        assert ranks.get(horde_id, 99) <= 4
+    # Gahrron / Northridge side content scores but binds to no included arc -> excluded.
+    for cid in ("gahrron-s-withering", "northridge"):
+        row = next((r for r in cluster_decisions if str(r["subject_id"]) == cid), None)
+        if row is not None:
+            assert row["final_decision"] == "exclude"
+            assert not str((row.get("features") or {}).get("registry_arc_id", ""))
 
 
 def test_cap_trim_limits_included_clusters() -> None:

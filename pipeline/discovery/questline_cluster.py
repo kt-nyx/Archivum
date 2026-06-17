@@ -20,15 +20,13 @@ from pipeline.discovery.storyline_html import _slugify
 _ALGORITHM_VERSION = "v1-prereq-graph"
 _ORPHAN_CLUSTER_ID = "orphan"
 _LEVEL_PREFIX_RE = re.compile(r"^\[[0-9]+(?:-[0-9]+)?\]\s*")
-_TITLE_KEYWORD_HINTS: tuple[tuple[str, str], ...] = (
-    ("andorhal", "Battle for Andorhal"),
-    ("mender", "Mender's Stead"),
-    ("hearthglen", "Hearthglen"),
-    ("tirion", "Hearthglen"),
-    ("gahrron", "Gahrron's Withering"),
-    ("northridge", "Northridge Lumber Mill"),
-    ("cenarion", "Mender's Stead"),
-)
+# Strip wiki disambiguation parentheticals (e.g. "Stormwind (faction)" -> "Stormwind") so
+# a reputation-org page name can't carry a "(faction)" suffix into a cluster title/id.
+_DISAMBIG_PARENS_RE = re.compile(r"\s*\((?:faction|quest|disambiguation)\)\s*$", re.IGNORECASE)
+
+
+def _strip_disambiguation(title: str) -> str:
+    return _DISAMBIG_PARENS_RE.sub("", title).strip()
 
 
 def normalize_quest_title(title: str) -> str:
@@ -330,44 +328,50 @@ def _infer_cluster_title(
     roster_by_node: dict[str, dict[str, Any]],
     faction: str,
 ) -> str:
-    titles: list[str] = []
-    for node_id in members:
-        roster = roster_by_node.get(node_id, {})
-        record = records_by_node.get(node_id, {})
-        title = str(record.get("quest_title", "") or roster.get("title", "")).strip()
-        if title:
-            titles.append(title.lower())
-        location = str(record.get("start_location", "")).strip()
-        if location:
-            titles.append(location.lower())
-    blob = " ".join(titles)
-    for keyword, label in _TITLE_KEYWORD_HINTS:
-        if keyword in blob:
-            if faction == "alliance":
-                return f"{label} (Alliance)"
-            if faction == "horde":
-                return f"{label} (Horde)"
-            return label
+    """Derive a structural cluster title (no zone keyword tables).
 
-    org_counts: dict[str, int] = defaultdict(int)
-    for node_id in members:
-        org = str(records_by_node.get(node_id, {}).get("reputation_org", "")).strip()
-        if org:
-            org_counts[org] += 1
-    if org_counts:
-        dominant_org = sorted(org_counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
-        return dominant_org
+    Preference order: a shared start location (hub name) -> a dominant reputation org for
+    *multi-quest* clusters -> the first quest's title. Single-quest clusters never take an
+    org name as their title, so unrelated breadcrumb singletons that merely share a
+    reputation faction (e.g. "Stormwind (faction)") cannot collapse into one fake cluster.
+    Wiki disambiguation suffixes are stripped from the result.
+    """
 
+    def _faction_tag(label: str) -> str:
+        label = _strip_disambiguation(label) or "Questline"
+        if faction == "alliance":
+            return f"{label} (Alliance)"
+        if faction == "horde":
+            return f"{label} (Horde)"
+        return label
+
+    location_counts: dict[str, int] = defaultdict(int)
     for node_id in members:
         location = str(records_by_node.get(node_id, {}).get("start_location", "")).strip()
         if location:
-            return location
+            location_counts[location] += 1
+    if location_counts:
+        dominant_location = sorted(location_counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+        return _faction_tag(dominant_location)
+
+    if len(members) > 1:
+        org_counts: dict[str, int] = defaultdict(int)
+        for node_id in members:
+            org = str(records_by_node.get(node_id, {}).get("reputation_org", "")).strip()
+            if org:
+                org_counts[org] += 1
+        if org_counts:
+            dominant_org = sorted(org_counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+            return _faction_tag(dominant_org)
+
+    for node_id in members:
         category = str(records_by_node.get(node_id, {}).get("category", "")).strip()
         if category:
-            return category
+            return _faction_tag(category)
 
     first = roster_by_node.get(members[0], {})
-    return str(first.get("title", "Questline"))
+    record_title = str(records_by_node.get(members[0], {}).get("quest_title", "")).strip()
+    return _faction_tag(record_title or str(first.get("title", "Questline")))
 
 
 def _cluster_id_from_title(title: str, faction: str) -> str:

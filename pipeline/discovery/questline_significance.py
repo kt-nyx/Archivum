@@ -10,8 +10,12 @@ from pipeline.contracts.models import (
     ZONE_MIN_TOTAL_QUESTLINE_CARDS,
 )
 from pipeline.discovery.location_discovery import name_in_seed_text
+from pipeline.discovery.questline_arc_map import (
+    load_pilot_questline_registry,
+    match_registry_arc_by_membership,
+)
 
-_ALGORITHM_VERSION = "v1-questline-significance"
+_ALGORITHM_VERSION = "v2-questline-structural"
 _WPL_PILOT_ZONE_ID = "zone-western-plaguelands"
 _WPL_PILOT_MAX_CARDS = 4
 
@@ -24,35 +28,6 @@ _CRITERIA = (
     "player_discoverability",
 )
 
-_ANDORHAL_KEYWORDS = frozenset({"andorhal", "warchief", "hero's call", "reckoning", "alas"})
-_MENDER_KEYWORDS = frozenset({"mender", "cenarion", "plaguelands restoration", "zen'kiki"})
-_HEARTHGLEN_KEYWORDS = frozenset({"hearthglen", "tirion", "fordring", "highlord"})
-_NORTHRIDGE_KEYWORDS = frozenset({"northridge", "lumber", "redpine", "gnoll"})
-_GAHRRON_KEYWORDS = frozenset({"gahrron", "cauldron", "renewed plague", "withering"})
-_INSTANCE_KEYWORDS = frozenset({"scholomancer", "araj", "scholomance"})
-_ENTRY_KEYWORDS = frozenset(
-    {"hero's call", "warchief's command", "new era for the plaguelands", "audience with the highlord"}
-)
-
-
-def _normalize_blob(*parts: str) -> str:
-    return " ".join(part.strip().lower() for part in parts if part.strip())
-
-
-def _cluster_blob(
-    summary: dict[str, Any],
-    member_records: list[dict[str, Any]],
-    member_rows: list[dict[str, Any]],
-) -> str:
-    title = str(summary.get("title", ""))
-    quest_titles = [
-        str(record.get("quest_title", "") or row.get("title", ""))
-        for record, row in zip(member_records, member_rows, strict=False)
-    ]
-    locations = [str(record.get("start_location", "")) for record in member_records]
-    npcs = [str(record.get("start_npc", "")) for record in member_records]
-    return _normalize_blob(title, *quest_titles, *locations, *npcs)
-
 
 def _presence_breadth_score(quest_count: int) -> int:
     if quest_count >= 7:
@@ -60,10 +35,6 @@ def _presence_breadth_score(quest_count: int) -> int:
     if quest_count >= 2:
         return 1
     return 0
-
-
-def _keyword_hits(blob: str, keywords: frozenset[str]) -> int:
-    return sum(1 for keyword in keywords if keyword in blob)
 
 
 def _extract_cluster_features(
@@ -74,7 +45,6 @@ def _extract_cluster_features(
     seed_text: str,
     storyline_html: str,
 ) -> dict[str, Any]:
-    blob = _cluster_blob(summary, member_records, member_rows)
     quest_count = int(summary.get("quest_count", len(member_records)) or 0)
     npcs = {
         str(record.get("start_npc", "")).strip()
@@ -94,7 +64,6 @@ def _extract_cluster_features(
     if member_rows:
         cluster_order = int(member_rows[0].get("cluster_order", 0) or 0)
     return {
-        "blob": blob,
         "quest_count": quest_count,
         "npc_count": len(npcs),
         "org_count": len(orgs),
@@ -102,78 +71,28 @@ def _extract_cluster_features(
         "cluster_order": cluster_order,
         "seed_mention": name_in_seed_text(str(summary.get("title", "")), seed_text)
         or any(name_in_seed_text(npc, seed_text) for npc in npcs),
-        "andorhal_hits": _keyword_hits(blob, _ANDORHAL_KEYWORDS),
-        "mender_hits": _keyword_hits(blob, _MENDER_KEYWORDS),
-        "hearthglen_hits": _keyword_hits(blob, _HEARTHGLEN_KEYWORDS),
-        "northridge_hits": _keyword_hits(blob, _NORTHRIDGE_KEYWORDS),
-        "gahrron_hits": _keyword_hits(blob, _GAHRRON_KEYWORDS),
-        "instance_hits": _keyword_hits(blob, _INSTANCE_KEYWORDS),
-        "entry_hits": _keyword_hits(blob, _ENTRY_KEYWORDS),
         "storyline_html_len": len(storyline_html.strip()),
     }
 
 
-def _hard_reject_reasons(
-    features: dict[str, Any],
-    *,
-    mender_cluster_present: bool,
-) -> list[str]:
-    blob = str(features.get("blob", ""))
-    if features.get("northridge_hits", 0) >= 1 and features.get("andorhal_hits", 0) == 0:
-        return ["local_side_content"]
-    if (
-        features.get("gahrron_hits", 0) >= 1
-        and features.get("mender_hits", 0) == 0
-        and mender_cluster_present
-    ):
-        return ["thematic_duplicate_of_menders_stead"]
-    if "northridge" in blob and "lumber" in blob and features.get("quest_count", 0) <= 3:
-        return ["local_side_content"]
-    if features.get("gahrron_hits", 0) >= 2 and mender_cluster_present:
-        return ["thematic_duplicate_of_menders_stead"]
-    return []
-
-
 def _score_criteria(features: dict[str, Any]) -> dict[str, int]:
+    """Structural scoring only — no zone-specific keyword tables.
+
+    Signals: chain length (presence/consequence proxies), named cast breadth, whether the
+    cluster is named in the zone seed text, reputation-faction anchoring, and a resolvable
+    chain start (player discoverability).
+    """
     quest_count = int(features.get("quest_count", 0))
     npc_count = int(features.get("npc_count", 0))
-    blob = str(features.get("blob", ""))
+    org_count = int(features.get("org_count", 0))
 
-    narrative = 0
-    if features.get("andorhal_hits", 0) >= 1:
-        narrative = 2
-    elif features.get("mender_hits", 0) >= 1 or features.get("hearthglen_hits", 0) >= 1:
-        narrative = 2
-    elif features.get("seed_mention"):
-        narrative = 1
-
+    narrative = 2 if features.get("seed_mention") else (1 if quest_count >= 5 else 0)
     presence = _presence_breadth_score(quest_count)
-
-    named_cast = 0
-    if npc_count >= 3:
-        named_cast = 2
-    elif npc_count >= 1:
-        named_cast = 1
-
-    consequence = 0
-    if any(token in blob for token in ("reckoning", "alas", "andorhal", "battle for")):
-        consequence = 2
-    elif features.get("mender_hits", 0) >= 1 or features.get("hearthglen_hits", 0) >= 1:
-        consequence = 2
-    elif features.get("andorhal_hits", 0) >= 1:
-        consequence = 1
-
-    instance_rel = 0
-    if features.get("instance_hits", 0) >= 2:
-        instance_rel = 2
-    elif features.get("instance_hits", 0) >= 1:
-        instance_rel = 1
-
-    discoverability = 0
-    if features.get("entry_hits", 0) >= 1 or features.get("has_chain_start"):
-        discoverability = 2
-    elif quest_count >= 2:
-        discoverability = 1
+    named_cast = 2 if npc_count >= 3 else (1 if npc_count >= 1 else 0)
+    consequence = 2 if quest_count >= 7 else (1 if quest_count >= 4 else 0)
+    # Reputation-faction anchoring stands in for narrative significance (zone-agnostic).
+    instance_rel = 1 if org_count >= 1 else 0
+    discoverability = 2 if features.get("has_chain_start") else (1 if quest_count >= 2 else 0)
 
     return {
         "narrative_centrality": narrative,
@@ -185,22 +104,6 @@ def _score_criteria(features: dict[str, Any]) -> dict[str, int]:
     }
 
 
-def _borderline_ruling(features: dict[str, Any], inclusion_score: int) -> str:
-    quest_count = int(features.get("quest_count", 0))
-    npc_count = int(features.get("npc_count", 0))
-    if inclusion_score >= 7 and quest_count >= 3 and npc_count >= 1:
-        return "include"
-    if inclusion_score >= 7 and (
-        features.get("andorhal_hits", 0) >= 1
-        or features.get("mender_hits", 0) >= 1
-        or features.get("hearthglen_hits", 0) >= 1
-    ):
-        return "include"
-    if features.get("andorhal_hits", 0) >= 1 or features.get("mender_hits", 0) >= 1:
-        return "include"
-    return "exclude"
-
-
 def _score_single_cluster(
     summary: dict[str, Any],
     *,
@@ -208,11 +111,13 @@ def _score_single_cluster(
     member_rows: list[dict[str, Any]],
     seed_text: str,
     storyline_html: str,
-    mender_cluster_present: bool,
     run_id: str,
+    registry_arc_id: str | None,
+    has_registry: bool,
 ) -> dict[str, Any]:
     cluster_id = str(summary.get("cluster_id", "")).strip()
     zone_id = str(summary.get("zone_id", "")).strip()
+    faction = str(summary.get("faction", "shared"))
     features = _extract_cluster_features(
         summary,
         member_records=member_records,
@@ -220,40 +125,43 @@ def _score_single_cluster(
         seed_text=seed_text,
         storyline_html=storyline_html,
     )
-    hard_reject_reasons = _hard_reject_reasons(features, mender_cluster_present=mender_cluster_present)
     criteria = _score_criteria(features)
     inclusion_score = sum(criteria.values())
-    score = round(inclusion_score / 12.0, 3)
+    score = round(inclusion_score / 11.0, 3)
     feature_payload: dict[str, float | int | str | bool] = {
         "quest_count": int(features.get("quest_count", 0)),
         "npc_count": int(features.get("npc_count", 0)),
         "cluster_order": int(features.get("cluster_order", 0)),
         "seed_mention": bool(features.get("seed_mention")),
         "inclusion_score": inclusion_score,
-        "faction": str(summary.get("faction", "shared")),
+        "faction": faction,
         "cluster_title": str(summary.get("title", cluster_id)),
+        "registry_arc_id": registry_arc_id or "",
     }
     for key, value in criteria.items():
         feature_payload[f"criterion_{key}"] = int(value)
 
-    if hard_reject_reasons:
-        final_decision = "exclude"
-        reason_codes = list(hard_reject_reasons)
-        borderline = None
+    borderline = None
+    if has_registry:
+        # Pilot zones: the curated registry (data, not code keywords) is the inclusion
+        # oracle. A cluster is included iff its quest membership binds it to an included
+        # arc; everything else is dropped. Structural score only drives ranking/cap order.
+        if registry_arc_id:
+            final_decision = "include"
+            reason_codes = ["registry_arc_match", f"arc:{registry_arc_id}"]
+        else:
+            final_decision = "exclude"
+            reason_codes = ["no_registry_arc_match"]
     elif inclusion_score >= ZONE_MIN_QUESTLINE_INCLUSION_SCORE:
         final_decision = "include"
         reason_codes = ["score_threshold_met"]
-        borderline = None
     elif inclusion_score <= 5:
         final_decision = "exclude"
         reason_codes = ["below_exclusion_threshold"]
-        borderline = None
     else:
-        borderline = {
-            "prompt_class": "questline_inclusion_borderline",
-            "ruling": _borderline_ruling(features, inclusion_score),
-        }
-        final_decision = borderline["ruling"]
+        ruling = "include" if int(features.get("quest_count", 0)) >= 3 else "exclude"
+        borderline = {"prompt_class": "questline_inclusion_borderline", "ruling": ruling}
+        final_decision = ruling
         reason_codes = ["borderline_adjudicated", f"score_{inclusion_score}"]
 
     return {
@@ -262,8 +170,8 @@ def _score_single_cluster(
         "run_id": run_id,
         "algorithm_version": _ALGORITHM_VERSION,
         "features": feature_payload,
-        "hard_reject": bool(hard_reject_reasons),
-        "hard_reject_reasons": hard_reject_reasons,
+        "hard_reject": False,
+        "hard_reject_reasons": [],
         "score": score,
         "thresholds": {
             "include_min_score": ZONE_MIN_QUESTLINE_INCLUSION_SCORE,
@@ -379,21 +287,10 @@ def score_zone_questline_clusters(
         for summary in cluster_summaries
         if str(summary.get("zone_id", "")).strip() == zone_id and summary.get("cluster_id")
     ]
-    mender_present = any(
-        _keyword_hits(
-            _cluster_blob(
-                summary,
-                [
-                    records_by_node.get(node_id, {})
-                    for node_id in summary.get("quest_node_ids", [])
-                ],
-                rows_by_cluster.get(str(summary.get("cluster_id", "")), []),
-            ),
-            _MENDER_KEYWORDS,
-        )
-        >= 1
-        for summary in zone_summaries
-    )
+    # The curated registry (when present) is the inclusion oracle for this zone: clusters
+    # bind to included arcs by quest-membership overlap, not by keyword tables.
+    registry = load_pilot_questline_registry(zone_id)
+    has_registry = registry is not None
 
     scored: list[dict[str, Any]] = []
     for summary in zone_summaries:
@@ -404,6 +301,12 @@ def score_zone_questline_clusters(
             rows_by_cluster.get(cluster_id, []),
             key=lambda row: int(row.get("order_in_cluster", 0) or 0),
         )
+        matched_arc = match_registry_arc_by_membership(
+            node_ids,
+            faction=str(summary.get("faction", "shared")),
+            registry=registry,
+        )
+        registry_arc_id = str(matched_arc.get("id", "")).strip() if matched_arc else None
         scored.append(
             _score_single_cluster(
                 summary,
@@ -411,10 +314,35 @@ def score_zone_questline_clusters(
                 member_rows=member_rows,
                 seed_text=seed_text,
                 storyline_html=storyline_html,
-                mender_cluster_present=mender_present,
                 run_id=run_id,
+                registry_arc_id=registry_arc_id,
+                has_registry=has_registry,
             )
         )
+
+    # One card per registry arc: when several clusters bind to the same included arc
+    # (e.g. an entry-breadcrumb fragment plus the main chain both map to the Andorhal
+    # campaign), keep only the richest cluster and supersede the rest.
+    if has_registry:
+        best_by_arc: dict[str, tuple[tuple[int, int], str]] = {}
+        for row in scored:
+            features = row.get("features") or {}
+            arc_id = str(features.get("registry_arc_id", "")).strip()
+            if not arc_id or str(row.get("final_decision", "")) != "include":
+                continue
+            rank_key = (int(features.get("quest_count", 0)), int(features.get("inclusion_score", 0)))
+            current = best_by_arc.get(arc_id)
+            if current is None or rank_key > current[0]:
+                best_by_arc[arc_id] = (rank_key, str(row.get("subject_id", "")))
+        keep_ids = {subject_id for _key, subject_id in best_by_arc.values()}
+        for row in scored:
+            features = row.get("features") or {}
+            arc_id = str(features.get("registry_arc_id", "")).strip()
+            if arc_id and str(row.get("final_decision", "")) == "include" and str(
+                row.get("subject_id", "")
+            ) not in keep_ids:
+                row["final_decision"] = "exclude"
+                row["reason_codes"] = ["superseded_by_richer_arc_cluster", f"arc:{arc_id}"]
 
     effective_pilot_cap = pilot_max_cards
     if zone_id == _WPL_PILOT_ZONE_ID and effective_pilot_cap is None:

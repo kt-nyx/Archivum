@@ -177,30 +177,6 @@
       "zone_page_gold_id": "ql-andorhal-alliance"
     },
     {
-      "id": "ql-menders-stead-healing",
-      "title": "The Mender's Stead / Healing the Plaguelands",
-      "faction": "shared",
-      "wiki_storyline_parts": [3],
-      "start_anchor": "A New Era for the Plaguelands",
-      "significance": "Part 3: post-Cataclysm restoration at the Mender's Stead.",
-      "chain_refs": [
-        "quest-a-new-era-for-the-plaguelands",
-        "quest-i-ain-t-sayin-you-a-gourd-digger",
-        "quest-zen-kiki-the-druid",
-        "quest-a-different-approach"
-      ],
-      "overflow_chain_refs": [],
-      "shared_beat_refs": [],
-      "wiki_refs": [
-        "/wiki/A_New_Era_for_the_Plaguelands",
-        "/wiki/I_Ain%27t_Sayin%27_You_a_Gourd-Digger...",
-        "/wiki/Zen%27Kiki,_the_Druid",
-        "/wiki/A_Different_Approach"
-      ],
-      "overflow_wiki_refs": [],
-      "zone_page_gold_id": "ql-menders-stead-healing"
-    },
-    {
       "id": "ql-hearthglen-tirion-legacy",
       "title": "Hearthglen / Tirion Fordring's Legacy",
       "faction": "shared",
@@ -281,6 +257,25 @@
         "/wiki/Students_of_Krastinov",
         "/wiki/Zen%27Kiki_and_the_Cultists"
       ]
+    },
+    {
+      "id": "ql-menders-stead-healing",
+      "title": "The Mender's Stead / Healing the Plaguelands",
+      "wiki_storyline_parts": [3],
+      "exclude_reason": "structural_minor_arc",
+      "significance": "Part 3 restoration arc — a short, non-seed-mentioned chain that does not clear the structural inclusion bar (run review 2026-06).",
+      "chain_refs": [
+        "quest-a-new-era-for-the-plaguelands",
+        "quest-i-ain-t-sayin-you-a-gourd-digger",
+        "quest-zen-kiki-the-druid",
+        "quest-a-different-approach"
+      ],
+      "wiki_refs": [
+        "/wiki/A_New_Era_for_the_Plaguelands",
+        "/wiki/I_Ain%27t_Sayin%27_You_a_Gourd-Digger...",
+        "/wiki/Zen%27Kiki,_the_Druid",
+        "/wiki/A_Different_Approach"
+      ]
     }
   ],
   "andorhal_entry_breadcrumbs": {
@@ -289,7 +284,7 @@
     "wiki_refs": ["/wiki/The_Battle_for_Andorhal"]
   },
   "pipeline_gap_analysis": {
-    "expected_included_card_count": 4,
+    "expected_included_card_count": 3,
     "cross_faction_shared_card_refs": ["quest-combat-training"],
     "current_v3_cluster_ids": [
       "western-plaguelands-alliance",

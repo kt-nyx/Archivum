@@ -8,15 +8,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from pipeline.common.text_normalize import clean_wiki_snippet
-from pipeline.generate.draft.instance_link_lint import trim_instance_link_summary
-from pipeline.generate.draft.instance_lint import (
-    fallback_instance_overview,
-    fallback_key_character_summary,
-    lint_at_a_glance as lint_instance_at_a_glance,
-    lint_key_character_summary,
-    lint_overview,
-    lint_passthrough_fragment,
-)
+from pipeline.common.wiki_evidence_filters import cap_history_pool
+from pipeline.contracts.models import INSTANCE_MAX_KEY_CHARACTERS, ZONE_MAX_TOTAL_QUESTLINE_CARDS
 from pipeline.discovery.entity_typing import normalize_title
 from pipeline.discovery.geography import resolve_parent_continent
 from pipeline.discovery.instance_bosses import (
@@ -30,31 +23,56 @@ from pipeline.discovery.instance_bosses import (
     prefilter_character_pool,
 )
 from pipeline.discovery.world_registry import entry_kinds
-from pipeline.contracts.models import INSTANCE_MAX_KEY_CHARACTERS, ZONE_MAX_TOTAL_QUESTLINE_CARDS
+from pipeline.generate.draft.card_lint import (
+    finalize_cta_hook,
+    strip_zone_name_from_cta,
+)
 from pipeline.generate.draft.faction_lint import ensure_sentence_terminator, lint_faction_summary
 from pipeline.generate.draft.faction_scoring import (
-    FactionCandidate,
     MAX_FACTION_CARDS,
+    FactionCandidate,
     candidates_for_finalize,
     collect_faction_candidates,
     fallback_faction_summary,
     finalize_evidence_pools,
 )
+from pipeline.generate.draft.instance_link_lint import trim_instance_link_summary
+from pipeline.generate.draft.instance_lint import (
+    fallback_instance_overview,
+    fallback_key_character_summary,
+    lint_key_character_summary,
+    lint_overview,
+    lint_passthrough_fragment,
+)
+from pipeline.generate.draft.instance_lint import (
+    lint_at_a_glance as lint_instance_at_a_glance,
+)
 from pipeline.generate.draft.location_lint import (
     ensure_sentence_terminator as ensure_location_sentence_terminator,
+)
+from pipeline.generate.draft.location_lint import (
+    fallback_location_summary,
     lint_location_summary,
 )
 from pipeline.generate.draft.location_scoring import (
-    LocationCandidate,
     MAX_LOCATION_CARDS,
+    LocationCandidate,
     _decision_reason_codes,
-    candidates_for_finalize as location_candidates_for_finalize,
     collect_location_candidates,
     extract_subregion_tokens,
+)
+from pipeline.generate.draft.location_scoring import (
+    candidates_for_finalize as location_candidates_for_finalize,
+)
+from pipeline.generate.draft.location_scoring import (
     finalize_evidence_pools as finalize_location_evidence_pools,
 )
-from pipeline.generate.draft.location_lint import fallback_location_summary
-from pipeline.common.wiki_evidence_filters import cap_history_pool
+from pipeline.generate.draft.lore_selection import (
+    build_sparse_lore_rescue_pool,
+    dedupe_lore_items,
+    filter_relevant_lore_items,
+    is_instance_lore_sparse,
+)
 from pipeline.generate.draft.prose_election import (
     fallback_at_a_glance,
     fallback_currently,
@@ -72,26 +90,19 @@ from pipeline.generate.draft.prose_lint import (
     lint_currently,
     lint_history_sections,
 )
-from pipeline.generate.draft.card_lint import finalize_cta_hook, lint_cta_hook, strip_zone_name_from_cta
-from pipeline.generate.draft.lore_selection import (
-    build_sparse_lore_rescue_pool,
-    dedupe_lore_items,
-    filter_relevant_lore_items,
-    is_instance_lore_sparse,
-)
 from pipeline.generate.draft.provenance import build_revision_index, collect_sources_manifest
 from pipeline.generate.draft.wiki_first_workers import (
     classify_key_character_role_llm,
+    select_key_characters_from_pool,
     synthesize_at_a_glance,
     synthesize_card_summary,
-    synthesize_questline_cta_hook,
     synthesize_currently,
     synthesize_faction_summary,
     synthesize_history_sections,
     synthesize_instance_overview,
     synthesize_key_character_summary,
     synthesize_location_summary,
-    select_key_characters_from_pool,
+    synthesize_questline_cta_hook,
 )
 
 
@@ -1241,6 +1252,27 @@ def _split_chain_refs(chain_refs: list[str]) -> tuple[list[str], list[str]]:
     return chain_refs[:_MAX_CHAIN_REFS], chain_refs[_MAX_CHAIN_REFS:]
 
 
+def _lead_chain_with_anchor(
+    quests: list[dict[str, Any]], start_anchor: str
+) -> list[dict[str, Any]]:
+    """Reorder so the start-anchor quest leads the chain (#9: anchor == chain head).
+
+    No-op when the anchor isn't found among the quests, so a chain whose entry quest is
+    not in the cluster keeps its prerequisite order untouched.
+    """
+    if not start_anchor.strip() or len(quests) < 2:
+        return quests
+    target = normalize_title(start_anchor)
+    for index, quest in enumerate(quests):
+        if not isinstance(quest, dict):
+            continue
+        if normalize_title(str(quest.get("title", ""))) == target:
+            if index == 0:
+                return quests
+            return [quests[index], *quests[:index], *quests[index + 1 :]]
+    return quests
+
+
 def _append_questline_card(
     *,
     major_questlines: list[dict[str, Any]],
@@ -1551,6 +1583,7 @@ def build_zone_page(
         )
         card_id_override = str(card_meta.get("card_id", "")).strip()
         suppress_continued_card = bool(card_meta.get("suppress_continued_card"))
+        quests = _lead_chain_with_anchor(quests, start_anchor)
         chain_refs = [str(row.get("node_id", "")) for row in quests if isinstance(row, dict) and row.get("node_id")]
         wiki_refs = [
             str(row.get("source_link", ""))

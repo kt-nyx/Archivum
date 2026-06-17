@@ -87,30 +87,6 @@
       ]
     },
     {
-      "id": "ql-menders-stead-healing",
-      "title": "The Mender's Stead / Healing the Plaguelands",
-      "faction": "shared",
-      "cta_hook": "Help the Argent Crusade and Cenarion Circle at the Mender's Stead test whether poisoned soil can heal and prove these blighted fields can recover after decades of plague.",
-      "start_anchor": "A New Era for the Plaguelands",
-      "chain_refs": [
-        "quest-a-new-era-for-the-plaguelands",
-        "quest-i-ain-t-sayin-you-a-gourd-digger",
-        "quest-zen-kiki-the-druid",
-        "quest-a-different-approach"
-      ],
-      "include_decision": "include",
-      "reason_codes": [
-        "pilot_gold",
-        "zone_restoration_arc"
-      ],
-      "wiki_refs": [
-        "/wiki/A_New_Era_for_the_Plaguelands",
-        "/wiki/I_Ain%27t_Sayin%27_You_a_Gourd-Digger...",
-        "/wiki/Zen%27Kiki,_the_Druid",
-        "/wiki/A_Different_Approach"
-      ]
-    },
-    {
       "id": "ql-hearthglen-tirion-legacy",
       "title": "Hearthglen / Tirion Fordring's Legacy",
       "faction": "shared",

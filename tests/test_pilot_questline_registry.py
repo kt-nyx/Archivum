@@ -26,7 +26,6 @@ def test_load_registry_included_and_excluded_ids() -> None:
     assert included == {
         "ql-andorhal-alliance",
         "ql-andorhal-horde",
-        "ql-menders-stead-healing",
         "ql-hearthglen-tirion-legacy",
     }
     assert "ql-northridge-redpine" in excluded
@@ -36,6 +35,6 @@ def test_load_registry_included_and_excluded_ids() -> None:
 def test_structural_expectations_for_wpl() -> None:
     expectations = structural_expectations_for_zone(WPL_ZONE_ID)
     assert expectations is not None
-    assert expectations.expected_card_count == 4
+    assert expectations.expected_card_count == 3
     anchors = anchor_by_card_id(load_registry(WPL_ZONE_ID) or {})
     assert anchors["ql-andorhal-alliance"] == "Hero's Call: Western Plaguelands!"
