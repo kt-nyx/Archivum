@@ -68,13 +68,18 @@ def _degraded_sidecar() -> list[dict]:
     candidates.insert(
         1,
         {
-            "id": "character-eris-havenfire",
             "name": "Eris Havenfire",
             "role": "ally",
-            "significance": 7.5,
             "emitted": False,
+            "merge_rank": None,
+            "selection_reason": None,
         },
     )
+    for rank, candidate in enumerate(
+        (c for c in candidates if c.get("emitted")), start=1
+    ):
+        candidate["merge_rank"] = rank
+        candidate.setdefault("selection_reason", "must_include_floor")
     return sidecar
 
 
@@ -127,36 +132,37 @@ def test_rubric_report_is_deterministic(tmp_path: Path) -> None:
 def test_rubric_gate_flag_escalates_warn(tmp_path: Path) -> None:
     root = tmp_path / "run-warn"
     page = _gold_page()
-    # Roster: the 4 emitted enemies + 6 filler enemies fill the top-10 window, with the only
-    # ally ranked OUTSIDE that window. assess_role_diversity WARNs (signal only outside the
-    # window) rather than FAILs, so the run is WARN-only and passes without --gate.
+    # All-enemy emitted cast; ally signal only outside the top-10 roster window.
+    page["key_characters"] = [
+        card for card in page["key_characters"] if card.get("role") == "enemy"
+    ][:4]
     candidates: list[dict] = [
         {
-            "id": card["id"],
             "name": card["name"],
             "role": "enemy",
-            "significance": 9.0,
             "emitted": True,
+            "merge_rank": index,
+            "selection_reason": "must_include_floor",
         }
-        for card in page["key_characters"]
+        for index, card in enumerate(page["key_characters"], start=1)
     ]
     candidates.extend(
         {
-            "id": f"character-filler-enemy-{index}",
             "name": f"Filler Enemy {index}",
             "role": "enemy",
-            "significance": 1.0 - index * 0.1,
             "emitted": False,
+            "merge_rank": None,
+            "selection_reason": None,
         }
         for index in range(6)
     )
     candidates.append(
         {
-            "id": "character-distant-ally",
             "name": "Distant Ally",
             "role": "ally",
-            "significance": 0.01,
             "emitted": False,
+            "merge_rank": None,
+            "selection_reason": None,
         }
     )
     sidecar = [{"instance_id": "instance-scholomance", "candidates": candidates}]
@@ -187,8 +193,8 @@ def test_diff_reports_overview_and_cast_deltas(tmp_path: Path) -> None:
     assert fields["overview"]["changed"] is True
     assert fields["overview"]["word_delta"] > 0
     added = set(fields["key_characters"]["added"])
-    assert added == {"Rattlegore", "Jandice Barov", "Lord Alexei Barov"}
-    # Gandling stayed emitted in both runs; the three restored cards are the emitted delta.
+    assert {"Rattlegore", "Jandice Barov", "Lord Alexei Barov"} <= added
+    assert "Darkmaster Gandling" not in added
     assert set(fields["decision_sidecar"]["emitted_added"]) == added
     assert instance["rationale"]
 

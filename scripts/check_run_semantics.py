@@ -985,6 +985,7 @@ def _check_instance_drafts(run_root: Path) -> None:
     from pipeline.generate.draft.faction_lint import lint_faction_summary
     from pipeline.generate.draft.instance_lint import (
         assess_role_diversity,
+        cast_registry_place_violations,
         is_generic_at_a_glance,
         is_generic_key_character_summary,
         is_generic_overview,
@@ -1125,6 +1126,12 @@ def _check_instance_drafts(run_root: Path) -> None:
         )
 
         key_characters = [row for row in draft.get("key_characters") or [] if isinstance(row, dict)]
+        for message in cast_registry_place_violations(
+            str(card.get("name", "")).strip()
+            for card in key_characters
+            if str(card.get("name", "")).strip()
+        ):
+            _fail(f"instance cast includes registry place: {message} ({instance_id!r})")
         valid_boss_pool_names = valid_boss_names_from_pool_items(
             boss_pool_items,
             instance_name=instance_name,

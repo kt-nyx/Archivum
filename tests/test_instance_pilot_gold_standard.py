@@ -14,6 +14,7 @@ from pathlib import Path
 from pipeline.contracts.models import INSTANCE_MIN_KEY_CHARACTERS, InstancePage
 from pipeline.generate.draft.instance_lint import (
     assess_role_diversity,
+    cast_registry_place_violations,
     is_generic_at_a_glance,
     is_generic_key_character_summary,
     is_generic_overview,
@@ -31,6 +32,33 @@ SOURCE_MANIFEST_PATH = PILOT_DIR / "source_manifest.json"
 
 _INSTANCE_NAME = "Scholomance"
 _GATE_CONTEXT = {"release_gate": True, "fact_check_profile": "off"}
+_RUN_DRAFT = Path("artifacts/runs/test-run-wpl-1/data/drafts/instance_page/instance-scholomance.json")
+_RUN_SIDECAR = Path(
+    "artifacts/runs/test-run-wpl-1/data/decisions/instance_key_character_decisions.json"
+)
+
+# Option F S0 acceptance (Scholomance pilot only — not used in production code).
+_MUST_EMIT = frozenset(
+    {
+        "Darkmaster Gandling",
+        "Rattlegore",
+        "Jandice Barov",
+        "Lord Alexei Barov",
+    }
+)
+_MUST_NOT_EMIT = frozenset(
+    {
+        "Caer Darrow",
+        "Chamber of Summoning",
+        "Viewing Room",
+        "Acolyte",
+        "Risen Guard",
+        "Boneweaver",
+        "Bored Student",
+        "Candlestick Mage",
+    }
+)
+_SIDECAR_ONLY_OK = frozenset({"Kirtonos the Herald", "Ras Frostwhisper"})
 
 
 def _load_gold() -> dict:
@@ -53,7 +81,7 @@ def test_instance_gold_matches_contract() -> None:
     assert parsed.parent_zone_id == "zone-western-plaguelands"
     assert parsed.instance_type == "dungeon"
     assert INSTANCE_MIN_KEY_CHARACTERS <= len(parsed.key_characters)
-    assert {card.role for card in parsed.key_characters} == {"enemy"}
+    assert {card.role for card in parsed.key_characters} <= {"enemy", "ally", "neutral"}
 
 
 def test_instance_gold_passes_release_gate() -> None:
@@ -110,3 +138,56 @@ def test_instance_gold_sidecar_emitted_matches_cast() -> None:
     # The roster is a superset that documents non-emitted candidates too.
     assert len(roster) >= len(gold_names)
     assert {c["name"] for c in roster} >= gold_names
+
+
+def test_instance_gold_sidecar_schema() -> None:
+    roster = _load_roster()
+    gold_names = {card["name"] for card in _load_gold()["key_characters"]}
+    for candidate in roster:
+        assert "significance" not in candidate
+        if candidate.get("emitted"):
+            assert candidate["name"] in gold_names
+            assert candidate.get("merge_rank") is not None
+            assert candidate.get("selection_reason") in {
+                "must_include_floor",
+                "llm_selected",
+            }
+        else:
+            assert candidate.get("merge_rank") is None
+            assert candidate.get("selection_reason") is None
+
+
+def test_instance_gold_must_emit_cast() -> None:
+    emitted = {card["name"] for card in _load_gold()["key_characters"]}
+    assert _MUST_EMIT <= emitted
+
+
+def test_instance_gold_must_not_emit() -> None:
+    emitted = {card["name"] for card in _load_gold()["key_characters"]}
+    assert not emitted & _MUST_NOT_EMIT
+
+
+def test_instance_gold_no_registry_places_in_cast() -> None:
+    emitted = [card["name"] for card in _load_gold()["key_characters"]]
+    assert cast_registry_place_violations(emitted) == []
+
+
+def test_instance_gold_sidecar_only_candidates() -> None:
+    roster = _load_roster()
+    by_name = {c["name"]: c for c in roster}
+    for name in _SIDECAR_ONLY_OK:
+        if name not in by_name:
+            continue
+        assert by_name[name].get("emitted") is False
+
+
+def test_test_run_wpl1_scholomance_matches_s0_acceptance() -> None:
+    import pytest
+
+    if not _RUN_DRAFT.exists():
+        pytest.skip("requires local test-run-wpl-1 draft")
+    page = json.loads(_RUN_DRAFT.read_text(encoding="utf-8"))
+    emitted = {card["name"] for card in page.get("key_characters") or []}
+    assert _MUST_EMIT <= emitted
+    assert not emitted & _MUST_NOT_EMIT
+    assert cast_registry_place_violations(emitted) == []

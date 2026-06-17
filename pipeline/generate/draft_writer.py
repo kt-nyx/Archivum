@@ -17,10 +17,11 @@ from pipeline.generate.draft.trace import DraftTraceContext
 from pipeline.discovery.questline_card_polish import load_questline_card_metadata
 from pipeline.discovery.questline_significance import load_included_cluster_ids_by_zone
 from pipeline.generate.draft.wiki_first import (
-    build_instance_key_character_roster,
+    build_instance_key_character_selection,
     build_instance_page,
     build_zone_page,
 )
+from pipeline.discovery.instance_bosses import classify_character_role
 
 # Re-export for tests that patch chat_json_completion on this module.
 __all__ = [
@@ -45,12 +46,12 @@ def _build_key_character_decision_row(
     snapshots: list[dict[str, Any]],
     emitted_cards: list,
 ) -> dict[str, Any]:
-    """Decision sidecar row: the full ranked roster + which candidates were emitted.
+    """Decision sidecar: full prefiltered pool + merge ranks for emitted cast.
 
-    Uses the same deterministic roster builder as ``build_instance_page`` so the
-    role-diversity check in ``check_run_semantics`` keys off the identical candidate set.
+    List order is emitted-first (merge order), then offline-ranked remainder; the first
+    INSTANCE_MAX_KEY_CHARACTERS entries are the role-diversity window for assess_role_diversity.
     """
-    roster = build_instance_key_character_roster(
+    selection = build_instance_key_character_selection(
         instance_id=instance_id,
         instance_name=instance_name,
         evidence_rows=scoped_evidence,
@@ -63,15 +64,24 @@ def _build_key_character_decision_row(
         for card in emitted_cards
         if isinstance(card, dict)
     }
-    candidates = [
-        {
+    merge_rank_by_name = {
+        candidate.name: index
+        for index, candidate in enumerate(selection.cast, start=1)
+    }
+    candidates = []
+    for candidate in selection.pool:
+        emitted = _decision_name_key(candidate.name) in emitted_keys
+        role = candidate.role or "uncertain"
+        if role == "uncertain":
+            role, _reason = classify_character_role(candidate, instance_name=instance_name)
+        row = {
             "name": candidate.name,
-            "role": candidate.role or "uncertain",
-            "significance": getattr(candidate, "significance", None),
-            "emitted": _decision_name_key(candidate.name) in emitted_keys,
+            "role": role,
+            "emitted": emitted,
+            "merge_rank": merge_rank_by_name.get(candidate.name) if emitted else None,
+            "selection_reason": selection.selection_reasons.get(candidate.name) if emitted else None,
         }
-        for candidate in roster
-    ]
+        candidates.append(row)
     return {"instance_id": instance_id, "candidates": candidates}
 
 

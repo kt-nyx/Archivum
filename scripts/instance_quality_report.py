@@ -26,6 +26,7 @@ from typing import Any
 from pipeline.contracts.models import INSTANCE_MIN_KEY_CHARACTERS
 from pipeline.generate.draft.instance_lint import (
     assess_role_diversity,
+    cast_registry_place_violations,
     is_generic_at_a_glance,
     is_generic_key_character_summary,
     is_generic_overview,
@@ -184,6 +185,18 @@ def _prose_findings(payload: dict[str, Any], instance_name: str) -> list[Finding
     return findings
 
 
+def _cast_findings(payload: dict[str, Any]) -> list[Finding]:
+    findings: list[Finding] = []
+    emitted_names = [
+        str(card.get("name", "")).strip()
+        for card in payload.get("key_characters") or []
+        if isinstance(card, dict) and str(card.get("name", "")).strip()
+    ]
+    for message in cast_registry_place_violations(emitted_names):
+        findings.append(Finding("fail", "semantics.cast_registry_place", message))
+    return findings
+
+
 def _roster_findings(
     payload: dict[str, Any], roster: list[dict[str, Any]] | None
 ) -> list[Finding]:
@@ -219,6 +232,7 @@ def evaluate_instance(
     instance_name = str(payload.get("name", instance_id)).strip() or instance_id
     findings = _gate_findings(payload, instance_id, run_root)
     findings.extend(_prose_findings(payload, instance_name))
+    findings.extend(_cast_findings(payload))
     findings.extend(_roster_findings(payload, roster))
     return InstanceScore(
         instance_id=instance_id,

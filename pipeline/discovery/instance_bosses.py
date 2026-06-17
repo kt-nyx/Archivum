@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from collections.abc import Callable
 from typing import Any
 
 from pipeline.discovery.entity_typing import _DATING_CONVENTION_TITLE_RE, normalize_title
@@ -37,10 +38,20 @@ _BOSS_SECTION_EXACT = frozenset(
         "bosses",
         "denizens",
         "inhabitants",
-        "scholomance_faculty",
     }
 )
-_GEOGRAPHY_KINDS = frozenset({"zone", "continent", "capital", "region", "instance"})
+# Boss-class section roles for must-include floor (Option F). Not used for roster harvest.
+HIGH_CONFIDENCE_BOSS_SECTION_TOKENS = (
+    "boss",
+    "encounter",
+    "dungeon_journal",
+    "adventure_guide",
+)
+# Registry kinds that mark a link as a location/geography, never an individual character.
+# Shared by both the roster path (should_reject_boss_title) and the narrative path
+# (_looks_like_person) so the two filters can never drift. Includes "place" so instance
+# subzones/areas (e.g. Caer Darrow, Chamber of Summoning) are rejected as candidates.
+_NON_CHARACTER_KINDS = frozenset({"place", "zone", "instance", "continent", "capital", "region"})
 _REJECT_TITLES = frozenset(
     {
         "adventurers",
@@ -73,6 +84,12 @@ class BossCandidate:
 
 def _normalize_role(section_role: str) -> str:
     return re.sub(r"\s+", " ", section_role.strip()).lower().replace(" ", "_")
+
+
+def is_high_confidence_boss_section(section_role: str) -> bool:
+    """True when boss_pool evidence should contribute to the must-include floor."""
+    lowered = _normalize_role(section_role)
+    return any(token in lowered for token in HIGH_CONFIDENCE_BOSS_SECTION_TOKENS)
 
 
 def is_boss_section_role(section_role: str) -> bool:
@@ -145,7 +162,7 @@ def should_reject_boss_title(title: str, *, instance_name: str = "") -> bool:
     if _DATING_CONVENTION_TITLE_RE.search(title):
         return True
     kinds = entry_kinds(title)
-    if kinds & _GEOGRAPHY_KINDS:
+    if kinds & _NON_CHARACTER_KINDS:
         return True
     return False
 
@@ -188,10 +205,14 @@ def valid_boss_names_from_pool_items(
     boss_pool_items: list[dict[str, Any]],
     *,
     instance_name: str = "",
+    section_filter: Callable[[str], bool] | None = None,
 ) -> set[str]:
     """Derive normalized boss names from boss_pool evidence snippets."""
     names: set[str] = set()
     for item in boss_pool_items:
+        section_role = str(item.get("section_role", "boss_pool"))
+        if section_filter is not None and not section_filter(section_role):
+            continue
         for title, _url in _extract_wiki_links(str(item.get("snippet", ""))):
             if should_reject_boss_title(title, instance_name=instance_name):
                 continue
@@ -381,7 +402,56 @@ def _rank_candidates(
     return sorted(candidates, key=lambda row: (-row.significance, row.name.lower()))
 
 
-def collect_boss_candidates(
+def _candidate_path_key(
+    candidate: BossCandidate,
+    *,
+    canonical_index: dict[str, str] | None = None,
+) -> str:
+    href_path = _wiki_path_from_url(candidate.wiki_url)
+    canonical_path = (canonical_index or {}).get(href_path.lower(), "")
+    identity_path = (canonical_path or href_path).lower()
+    if identity_path:
+        return f"path:{identity_path}"
+    return f"title:{normalize_title(candidate.name)}"
+
+
+def _merge_profile_pools(
+    existing: BossCandidate,
+    incoming: BossCandidate,
+) -> None:
+    seen = {
+        (str(item.get("snippet", "")), str(item.get("section_role", "")))
+        for item in existing.profile_pool or []
+    }
+    for item in incoming.profile_pool or []:
+        signature = (str(item.get("snippet", "")), str(item.get("section_role", "")))
+        if signature in seen:
+            continue
+        existing.profile_pool.append(item)
+        seen.add(signature)
+
+
+def _merge_candidate_into(
+    merged: dict[str, BossCandidate],
+    incoming: BossCandidate,
+    *,
+    canonical_index: dict[str, str],
+    order: list[str],
+) -> None:
+    key = _candidate_path_key(incoming, canonical_index=canonical_index)
+    if key not in merged:
+        merged[key] = incoming
+        order.append(key)
+        return
+    existing = merged[key]
+    if is_boss_section_role(incoming.source_section_role) and not is_boss_section_role(
+        existing.source_section_role
+    ):
+        existing.source_section_role = incoming.source_section_role
+    _merge_profile_pools(existing, incoming)
+
+
+def _collect_roster_candidates(
     *,
     section_blocks: list[dict[str, Any]],
     instance_name: str,
@@ -397,8 +467,6 @@ def collect_boss_candidates(
         href_path = _wiki_path_from_url(url)
         canonical_path = canonical_index.get(href_path.lower(), "")
         display_title = title
-        # A redirect alias resolves to a different canonical page: prefer the real
-        # name and url so "Razuvious" and "Instructor Razuvious" collapse to one.
         if canonical_path and canonical_path.lower() != href_path.lower():
             canonical_title = _title_from_wiki_path(canonical_path)
             if canonical_title and not should_reject_boss_title(
@@ -418,7 +486,6 @@ def collect_boss_candidates(
             key = f"title:{normalize_title(display_title)}"
         if key in candidates:
             existing = candidates[key]
-            # Upgrade to a roster role if the first sighting was a weaker context.
             new_is_roster = is_boss_section_role(role)
             if new_is_roster and not is_boss_section_role(existing.source_section_role):
                 existing.source_section_role = role
@@ -468,7 +535,268 @@ def collect_boss_candidates(
             boss_pool_items=boss_pool_items,
             section_blocks=section_blocks,
         )
-    return _rank_candidates(collected, instance_name=instance_name)
+    return collected
+
+
+def collect_boss_candidates(
+    *,
+    section_blocks: list[dict[str, Any]],
+    instance_name: str,
+    boss_pool_items: list[dict[str, Any]] | None = None,
+    structured_links: list[dict[str, Any]] | None = None,
+) -> list[BossCandidate]:
+    """Ranked roster candidates (legacy emit path until Option F S3 wire-up)."""
+    return _rank_candidates(
+        _collect_roster_candidates(
+            section_blocks=section_blocks,
+            instance_name=instance_name,
+            boss_pool_items=boss_pool_items,
+            structured_links=structured_links,
+        ),
+        instance_name=instance_name,
+    )
+
+
+def _candidates_from_pool_items(
+    pool_items: list[dict[str, Any]],
+    *,
+    instance_name: str,
+    default_section_role: str,
+) -> list[BossCandidate]:
+    """Mine person-like wiki links from evidence pool snippets (history/overview)."""
+    results: list[BossCandidate] = []
+    seen: set[str] = set()
+    for item in pool_items:
+        if not isinstance(item, dict):
+            continue
+        snippet = str(item.get("snippet", ""))
+        section_role = str(item.get("section_role", default_section_role))
+        for title, url in _extract_wiki_links(snippet):
+            if should_reject_boss_title(title, instance_name=instance_name):
+                continue
+            if not _looks_like_person(title):
+                continue
+            key = normalize_title(title)
+            if key in seen:
+                continue
+            seen.add(key)
+            boss_id = _slug_id(title)
+            if not boss_id:
+                continue
+            candidate = BossCandidate(
+                boss_id=boss_id,
+                name=title,
+                wiki_url=url,
+                source_section_role=section_role,
+            )
+            candidate.profile_pool = [
+                {**item, "snippet": _plain_snippet(snippet), "section_role": section_role}
+            ]
+            results.append(candidate)
+    return results
+
+
+def collect_character_pool(
+    *,
+    section_blocks: list[dict[str, Any]],
+    instance_name: str,
+    boss_pool_items: list[dict[str, Any]] | None = None,
+    structured_links: list[dict[str, Any]] | None = None,
+    narrative_pool: list[dict[str, Any]] | None = None,
+    history_pool: list[dict[str, Any]] | None = None,
+) -> list[BossCandidate]:
+    """Unified wiki-linked candidate pool: roster + narrative + history (unranked)."""
+    boss_pool_items = boss_pool_items or []
+    canonical_index = _canonical_index_from_structured_links(structured_links)
+    roster = _collect_roster_candidates(
+        section_blocks=section_blocks,
+        instance_name=instance_name,
+        boss_pool_items=boss_pool_items,
+        structured_links=structured_links,
+    )
+    narrative = mine_narrative_character_candidates(
+        section_blocks,
+        instance_name=instance_name,
+        structured_links=structured_links,
+        narrative_pool=narrative_pool,
+        max_count=100,
+        apply_rank=False,
+    )
+    evidence_items = list(history_pool or []) + list(narrative_pool or [])
+    history_candidates = _candidates_from_pool_items(
+        evidence_items,
+        instance_name=instance_name,
+        default_section_role="history_digest",
+    )
+
+    merged: dict[str, BossCandidate] = {}
+    order: list[str] = []
+    for candidate in roster + narrative + history_candidates:
+        _merge_candidate_into(
+            merged, candidate, canonical_index=canonical_index, order=order
+        )
+
+    combined_pool_items = boss_pool_items + list(narrative_pool or []) + list(history_pool or [])
+    result = [merged[key] for key in order]
+    for candidate in result:
+        candidate.profile_pool = _profile_pool_for_boss(
+            candidate.name,
+            boss_pool_items=combined_pool_items,
+            section_blocks=section_blocks,
+        )
+    return result
+
+
+def prefilter_character_pool(
+    candidates: list[BossCandidate],
+    *,
+    instance_name: str,
+) -> list[BossCandidate]:
+    """Drop registry/meta rejects; preserve discovery order."""
+    return [
+        candidate
+        for candidate in candidates
+        if not should_reject_boss_title(candidate.name, instance_name=instance_name)
+    ]
+
+
+def must_include_key_character_names(
+    *,
+    boss_pool_items: list[dict[str, Any]],
+    pool: list[BossCandidate],
+    instance_name: str,
+) -> list[str]:
+    """Boss-class boss_pool names intersected with the prefiltered pool (stable sort)."""
+    boss_class_names = valid_boss_names_from_pool_items(
+        boss_pool_items,
+        instance_name=instance_name,
+        section_filter=is_high_confidence_boss_section,
+    )
+    pool_by_norm = {normalize_title(candidate.name): candidate.name for candidate in pool}
+    return sorted(
+        [pool_by_norm[name] for name in boss_class_names if name in pool_by_norm],
+        key=normalize_title,
+    )
+
+
+def _looks_like_multi_token_proper_name(title: str) -> bool:
+    words = [word for word in title.split() if re.search(r"[A-Za-z]", word)]
+    return len(words) >= 2 and all(word[0].isupper() for word in words)
+
+
+def _llm_prompt_rank_key(candidate: BossCandidate) -> tuple[int, int, int, str]:
+    kinds = entry_kinds(candidate.name)
+    person_first = 0 if "person" in kinds else 1
+    multi_token = 0 if _looks_like_multi_token_proper_name(candidate.name) else 1
+    return (
+        person_first,
+        multi_token,
+        -_section_weight(candidate.source_section_role),
+        candidate.name.lower(),
+    )
+
+
+def _mention_frequency_in_text(title: str, narrative_text: str) -> int:
+    """Count word-boundary mentions of a character title in narrative prose."""
+    lowered = narrative_text.lower()
+    if not lowered:
+        return 0
+    count = len(re.findall(rf"\b{re.escape(title.lower())}\b", lowered))
+    if count == 0:
+        last_token = title.split()[-1].lower() if title.split() else ""
+        if len(last_token) >= 4:
+            count = len(re.findall(rf"\b{re.escape(last_token)}\b", lowered))
+    return count
+
+
+def deterministic_pool_order(
+    pool: list[BossCandidate],
+    *,
+    narrative_text: str = "",
+    exclude_normalized_names: set[str] | None = None,
+) -> list[str]:
+    """Offline cast ordering: mention frequency, then section weight, then name."""
+    exclude = exclude_normalized_names or set()
+    eligible = [
+        candidate
+        for candidate in pool
+        if normalize_title(candidate.name) not in exclude
+    ]
+
+    def _sort_key(candidate: BossCandidate) -> tuple[int, int, str]:
+        return (
+            -_mention_frequency_in_text(candidate.name, narrative_text),
+            -_section_weight(candidate.source_section_role),
+            candidate.name.lower(),
+        )
+
+    return [candidate.name for candidate in sorted(eligible, key=_sort_key)]
+
+
+def merge_key_character_cast(
+    pool: list[BossCandidate],
+    *,
+    must_include_names: list[str],
+    llm_ordered_names: list[str],
+    max_count: int = 10,
+) -> tuple[list[str], dict[str, str]]:
+    """Floor-first merge of must-include and LLM-ordered cast names."""
+    pool_by_name = {candidate.name: candidate for candidate in pool}
+    floor_names = list(must_include_names)
+    if len(floor_names) > max_count:
+        floor_names = floor_names[:max_count]
+
+    merged: list[str] = []
+    reasons: dict[str, str] = {}
+
+    for name in floor_names:
+        if name in pool_by_name and len(merged) < max_count:
+            merged.append(name)
+            reasons[name] = "must_include_floor"
+
+    for name in llm_ordered_names:
+        if name in pool_by_name and name not in merged and len(merged) < max_count:
+            merged.append(name)
+            reasons[name] = "llm_selected"
+
+    return merged, reasons
+
+
+def merged_cast_candidates(
+    pool: list[BossCandidate],
+    merged_names: list[str],
+    *,
+    instance_name: str = "",
+) -> list[BossCandidate]:
+    """Map merged display names to pool rows with deterministic roles (no significance sort)."""
+    pool_by_name = {candidate.name: candidate for candidate in pool}
+    cast: list[BossCandidate] = []
+    for name in merged_names:
+        candidate = pool_by_name.get(name)
+        if candidate is None:
+            continue
+        candidate.role, candidate.role_reason = classify_character_role(
+            candidate, instance_name=instance_name
+        )
+        cast.append(candidate)
+    return cast
+
+
+def cap_pool_for_llm_prompt(
+    pool: list[BossCandidate],
+    *,
+    must_include_names: list[str],
+    limit: int = 40,
+) -> list[BossCandidate]:
+    """Deterministic top-N for LLM prompt; must-includes are always present."""
+    if len(pool) <= limit:
+        return list(pool)
+    must_keys = {normalize_title(name) for name in must_include_names}
+    must_rows = [candidate for candidate in pool if normalize_title(candidate.name) in must_keys]
+    others = [candidate for candidate in pool if normalize_title(candidate.name) not in must_keys]
+    remaining = max(0, limit - len(must_rows))
+    ranked_others = sorted(others, key=_llm_prompt_rank_key)
+    return must_rows + ranked_others[:remaining]
 
 
 _NARRATIVE_SECTION_TOKENS = (
@@ -522,9 +850,6 @@ _PERSON_HONORIFICS = frozenset(
         "prime",
     }
 )
-
-# Registry kinds that mark a link as a location, never an individual character.
-_LOCATION_KINDS = frozenset({"place", "zone", "instance", "continent", "capital", "region"})
 
 # Multi-word capitalized titles that are factions/forces/concepts, not individual characters.
 _NON_PERSON_NARRATIVE_TITLES = frozenset(
@@ -621,13 +946,32 @@ def _is_narrative_role(section_role: str) -> bool:
     return any(token in lowered for token in _NARRATIVE_SECTION_TOKENS)
 
 
+def _row_is_narrative_row(row: dict[str, Any]) -> bool:
+    if _is_narrative_role(str(row.get("section_role", "other"))):
+        return True
+    parent = str(row.get("parent_section_role", "")).strip()
+    return bool(parent) and _is_narrative_role(parent)
+
+
+def _narrative_structured_link(row: dict[str, Any]) -> bool:
+    """Accept roster-bearing links or narrative-history links; skip lead/patch nav."""
+    if row_has_roster_role(row):
+        return True
+    if not _row_is_narrative_row(row):
+        return False
+    section = _normalize_role(str(row.get("section_role", "other")))
+    if section in {"lead", "patch_changes"} or section.startswith("patch"):
+        return False
+    return True
+
+
 def _looks_like_person(title: str) -> bool:
     """Heuristic person/NPC detector for narrative-fallback link mining."""
     norm = normalize_title(title)
     if norm in _NON_PERSON_NARRATIVE_TITLES or norm in _GENERIC_NON_PERSON_WORDS:
         return False
     kinds = entry_kinds(title)
-    if kinds & _LOCATION_KINDS:
+    if kinds & _NON_CHARACTER_KINDS:
         return False
     words = title.split()
     if not words:
@@ -655,6 +999,7 @@ def mine_narrative_character_candidates(
     structured_links: list[dict[str, Any]] | None = None,
     narrative_pool: list[dict[str, Any]] | None = None,
     max_count: int = 10,
+    apply_rank: bool = True,
 ) -> list[BossCandidate]:
     """Deterministic grounding: mine person-like /wiki/ links from narrative content.
 
@@ -666,16 +1011,10 @@ def mine_narrative_character_candidates(
     first_seen: dict[str, tuple[str, str]] = {}
     order: list[str] = []
 
-    def _row_is_narr(row: dict[str, Any]) -> bool:
-        if _is_narrative_role(str(row.get("section_role", "other"))):
-            return True
-        parent = str(row.get("parent_section_role", "")).strip()
-        return bool(parent) and _is_narrative_role(parent)
-
     narrative_text = " ".join(
         _plain_snippet(str(block.get("text", "")))
         for block in section_blocks
-        if isinstance(block, dict) and _row_is_narr(block)
+        if isinstance(block, dict) and _row_is_narrative_row(block)
     ).lower()
 
     def _accept(title: str, url: str) -> None:
@@ -691,13 +1030,13 @@ def mine_narrative_character_candidates(
     for block in section_blocks:
         if not isinstance(block, dict):
             continue
-        if not _row_is_narr(block):
+        if not _row_is_narrative_row(block):
             continue
         for title, url in _extract_wiki_links(str(block.get("text", ""))):
             _accept(title, url)
 
     for row in structured_links or []:
-        if not isinstance(row, dict) or not _row_is_narr(row):
+        if not isinstance(row, dict) or not _narrative_structured_link(row):
             continue
         href = str(row.get("href", "")).strip()
         if not href.startswith("/wiki/"):
@@ -709,17 +1048,13 @@ def mine_narrative_character_candidates(
         url = href if href.startswith("http") else f"https://warcraft.wiki.gg/wiki/{path}"
         _accept(title, url)
 
-    def _mention_frequency(title: str) -> int:
-        if not narrative_text:
-            return 0
-        count = len(re.findall(rf"\b{re.escape(title.lower())}\b", narrative_text))
-        if count == 0:
-            last_token = title.split()[-1].lower() if title.split() else ""
-            if len(last_token) >= 4:
-                count = len(re.findall(rf"\b{re.escape(last_token)}\b", narrative_text))
-        return count
-
-    ranked = sorted(order, key=lambda key: (-_mention_frequency(first_seen[key][0]), key))
+    ranked = sorted(
+        order,
+        key=lambda key: (
+            -_mention_frequency_in_text(first_seen[key][0], narrative_text),
+            key,
+        ),
+    )
     results: list[BossCandidate] = []
     for key in ranked[:max_count]:
         title, url = first_seen[key]
@@ -738,4 +1073,6 @@ def mine_narrative_character_candidates(
             section_blocks=section_blocks,
         )
         results.append(candidate)
-    return _rank_candidates(results, instance_name=instance_name)
+    if apply_rank:
+        return _rank_candidates(results, instance_name=instance_name)
+    return results

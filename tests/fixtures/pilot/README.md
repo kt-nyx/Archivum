@@ -47,9 +47,10 @@ detector, and the manifest alignment for `instance-scholomance`. It is the regre
 for instance generation quality (Slice I6).
 
 Companion **`instance_key_character_decisions_scholomance_gold.json`** mirrors the
-`data/decisions/instance_key_character_decisions.json` sidecar: the full ranked key-character
-roster with an `emitted` flag per candidate. Used by the role-diversity and pool-aware
-minimum checks.
+`data/decisions/instance_key_character_decisions.json` sidecar: the full prefiltered candidate
+pool with `emitted`, `merge_rank` (emitted cast order), and `selection_reason`
+(`must_include_floor` / `llm_selected`). List order is emitted-first, then offline-ranked
+remainder. Used by role-diversity and pool-aware minimum checks.
 
 Validated by `tests/test_instance_pilot_gold_standard.py`; exercised offline by the pilot
 tooling smoke in `tests/test_instance_pilot_tooling.py`. See

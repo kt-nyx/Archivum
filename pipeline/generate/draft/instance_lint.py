@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
+from pathlib import Path
 
 from pipeline.generate.draft.prose_lint import (
     has_currently_meta,
@@ -220,6 +222,25 @@ def _display_name(item: object) -> str:
     if isinstance(item, dict):
         return str(item.get("name", "")).strip()
     return str(getattr(item, "name", "")).strip()
+
+
+def cast_registry_place_violations(
+    emitted_names: Iterable[str],
+    *,
+    registry_path: Path | None = None,
+) -> list[str]:
+    """Return human-readable violations for registry ``place`` titles in the emitted cast."""
+    from pipeline.discovery.world_registry import entry_kinds
+
+    violations: list[str] = []
+    for raw in emitted_names:
+        name = str(raw).strip()
+        if not name:
+            continue
+        kinds = entry_kinds(name, path=registry_path)
+        if "place" in kinds:
+            violations.append(f"{name!r} is a registry place, not a character")
+    return violations
 
 
 def fallback_instance_overview(

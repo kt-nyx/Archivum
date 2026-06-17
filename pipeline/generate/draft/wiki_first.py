@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from dataclasses import dataclass, field
 from typing import Any
 
 from pipeline.common.text_normalize import clean_wiki_snippet
@@ -20,8 +21,13 @@ from pipeline.discovery.entity_typing import normalize_title
 from pipeline.discovery.geography import resolve_parent_continent
 from pipeline.discovery.instance_bosses import (
     BossCandidate,
-    collect_boss_candidates,
-    mine_narrative_character_candidates,
+    cap_pool_for_llm_prompt,
+    collect_character_pool,
+    deterministic_pool_order,
+    merge_key_character_cast,
+    merged_cast_candidates,
+    must_include_key_character_names,
+    prefilter_character_pool,
 )
 from pipeline.discovery.world_registry import entry_kinds
 from pipeline.contracts.models import INSTANCE_MAX_KEY_CHARACTERS, ZONE_MAX_TOTAL_QUESTLINE_CARDS
@@ -85,7 +91,7 @@ from pipeline.generate.draft.wiki_first_workers import (
     synthesize_instance_overview,
     synthesize_key_character_summary,
     synthesize_location_summary,
-    select_key_characters_from_narrative,
+    select_key_characters_from_pool,
 )
 
 
@@ -448,6 +454,141 @@ def _extract_instance_structured_links(
     return []
 
 
+_POOL_SELECTION_CONTEXT_MAX_CHARS = 800
+
+
+@dataclass
+class InstanceKeyCharacterSelection:
+    """Option F cast selection: merged emit list + full prefiltered pool for sidecar."""
+
+    cast: list[BossCandidate] = field(default_factory=list)
+    pool: list[BossCandidate] = field(default_factory=list)
+    selection_reasons: dict[str, str] = field(default_factory=dict)
+    context_text: str = ""
+
+
+def _instance_key_character_context_text(pools: dict[str, list[dict[str, Any]]]) -> str:
+    parts: list[str] = []
+    for item in pools.get("overview_pool", []) + pools.get("at_a_glance_pool", []):
+        snippet = clean_wiki_snippet(str(item.get("snippet", "")))
+        if snippet:
+            parts.append(snippet)
+    combined = " ".join(parts).strip()
+    return combined[:_POOL_SELECTION_CONTEXT_MAX_CHARS]
+
+
+def _order_sidecar_pool_candidates(
+    pool: list[BossCandidate],
+    *,
+    cast_names: list[str],
+    context_text: str,
+) -> list[BossCandidate]:
+    """Emitted cast first (merge order), then non-emitted by offline rank (diversity window)."""
+    pool_by_name = {candidate.name: candidate for candidate in pool}
+    cast_keys = {normalize_title(name) for name in cast_names}
+    ordered: list[BossCandidate] = []
+    seen: set[str] = set()
+    for name in cast_names:
+        candidate = pool_by_name.get(name)
+        if candidate is None:
+            continue
+        key = normalize_title(candidate.name)
+        if key in seen:
+            continue
+        ordered.append(candidate)
+        seen.add(key)
+    remaining = [candidate for candidate in pool if normalize_title(candidate.name) not in cast_keys]
+    for name in deterministic_pool_order(remaining, narrative_text=context_text):
+        candidate = pool_by_name.get(name)
+        if candidate is None:
+            continue
+        key = normalize_title(candidate.name)
+        if key in seen:
+            continue
+        ordered.append(candidate)
+        seen.add(key)
+    return ordered
+
+
+def build_instance_key_character_selection(
+    *,
+    instance_id: str,
+    instance_name: str,
+    evidence_rows: list[dict[str, Any]],
+    section_blocks: list[dict[str, Any]] | None = None,
+    snapshots: list[dict[str, Any]] | None = None,
+    pools: dict[str, list[dict[str, Any]]] | None = None,
+    parent_zone_evidence_rows: list[dict[str, Any]] | None = None,
+) -> InstanceKeyCharacterSelection:
+    """Option F: pool → prefilter → floor → LLM → merge."""
+    if pools is None:
+        pools = _build_instance_evidence_pools(
+            evidence_rows,
+            instance_name=instance_name,
+            parent_zone_evidence_rows=parent_zone_evidence_rows,
+        )
+    blocks = section_blocks if isinstance(section_blocks, list) else []
+    structured_links = _extract_instance_structured_links(snapshots, instance_id)
+    narrative_pool = pools["overview_pool"] + pools["at_a_glance_pool"]
+    history_pool = pools.get("history_pool", [])
+    context_text = _instance_key_character_context_text(pools)
+
+    raw_pool = collect_character_pool(
+        section_blocks=blocks,
+        instance_name=instance_name,
+        boss_pool_items=pools["boss_pool"],
+        structured_links=structured_links,
+        narrative_pool=narrative_pool,
+        history_pool=history_pool,
+    )
+    pool = prefilter_character_pool(raw_pool, instance_name=instance_name)
+    if not pool:
+        return InstanceKeyCharacterSelection(context_text=context_text)
+
+    floor = must_include_key_character_names(
+        boss_pool_items=pools["boss_pool"],
+        pool=pool,
+        instance_name=instance_name,
+    )
+    if len(floor) > INSTANCE_MAX_KEY_CHARACTERS:
+        floor = floor[:INSTANCE_MAX_KEY_CHARACTERS]
+
+    llm_names: list[str] = []
+    remaining = INSTANCE_MAX_KEY_CHARACTERS - len(floor)
+    if remaining > 0:
+        prompt_pool = cap_pool_for_llm_prompt(
+            pool,
+            must_include_names=floor,
+            limit=40,
+        )
+        llm_names = select_key_characters_from_pool(
+            prompt_pool,
+            instance_name=instance_name,
+            context_text=context_text,
+            max_count=remaining,
+            exclude_names=floor,
+        )
+
+    merged_names, selection_reasons = merge_key_character_cast(
+        pool,
+        must_include_names=floor,
+        llm_ordered_names=llm_names,
+        max_count=INSTANCE_MAX_KEY_CHARACTERS,
+    )
+    cast = merged_cast_candidates(pool, merged_names, instance_name=instance_name)
+    sidecar_pool = _order_sidecar_pool_candidates(
+        pool,
+        cast_names=merged_names,
+        context_text=context_text,
+    )
+    return InstanceKeyCharacterSelection(
+        cast=cast,
+        pool=sidecar_pool,
+        selection_reasons=selection_reasons,
+        context_text=context_text,
+    )
+
+
 def build_instance_key_character_roster(
     *,
     instance_id: str,
@@ -458,52 +599,16 @@ def build_instance_key_character_roster(
     pools: dict[str, list[dict[str, Any]]] | None = None,
     parent_zone_evidence_rows: list[dict[str, Any]] | None = None,
 ) -> list[BossCandidate]:
-    """Deterministic key-character roster for an instance.
-
-    Single source of truth shared by ``build_instance_page`` (page assembly) and the
-    draft-writer decision sidecar, so the emitted cast and the role-diversity check key
-    off the exact same ranked candidate set.
-    """
-    if pools is None:
-        pools = _build_instance_evidence_pools(
-            evidence_rows,
-            instance_name=instance_name,
-            parent_zone_evidence_rows=parent_zone_evidence_rows,
-        )
-    blocks = section_blocks if isinstance(section_blocks, list) else []
-    structured_links = _extract_instance_structured_links(snapshots, instance_id)
-    boss_candidates = collect_boss_candidates(
-        section_blocks=blocks,
+    """Merged cast order for page assembly (Option F)."""
+    return build_instance_key_character_selection(
+        instance_id=instance_id,
         instance_name=instance_name,
-        boss_pool_items=pools["boss_pool"],
-        structured_links=structured_links,
-    )
-    if not boss_candidates:
-        narrative_pool = pools["overview_pool"] + pools["at_a_glance_pool"]
-        narrative_candidates = mine_narrative_character_candidates(
-            blocks,
-            instance_name=instance_name,
-            structured_links=structured_links,
-            narrative_pool=narrative_pool,
-            max_count=INSTANCE_MAX_KEY_CHARACTERS,
-        )
-        if narrative_candidates:
-            selected_names = select_key_characters_from_narrative(
-                [
-                    {"name": candidate.name, "wiki_url": candidate.wiki_url}
-                    for candidate in narrative_candidates
-                ],
-                instance_name=instance_name,
-                max_count=INSTANCE_MAX_KEY_CHARACTERS,
-            )
-            selected_keys = {normalize_title(value) for value in selected_names}
-            chosen = [
-                candidate
-                for candidate in narrative_candidates
-                if normalize_title(candidate.name) in selected_keys
-            ] or narrative_candidates
-            boss_candidates = chosen[:INSTANCE_MAX_KEY_CHARACTERS]
-    return boss_candidates
+        evidence_rows=evidence_rows,
+        section_blocks=section_blocks,
+        snapshots=snapshots,
+        pools=pools,
+        parent_zone_evidence_rows=parent_zone_evidence_rows,
+    ).cast
 
 
 def _finalize_instance_at_a_glance(
@@ -570,6 +675,7 @@ def _finalize_key_characters(
     boss_candidates: list[BossCandidate],
     boss_pool: list[dict[str, Any]],
     revision_map: dict[str, str],
+    selection_reasons: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, str]]], set[str]]:
     cards: list[dict[str, Any]] = []
     provenance_map: dict[str, list[dict[str, str]]] = {}
@@ -641,6 +747,9 @@ def _finalize_key_characters(
                 if role != "uncertain":
                     role_reason = "llm_tiebreaker"
             reason_codes: list[str] = []
+            selection_reason = (selection_reasons or {}).get(candidate.name)
+            if selection_reason:
+                reason_codes.append(selection_reason)
             if candidate.source_section_role:
                 reason_codes.append(candidate.source_section_role)
             if role_reason:
@@ -1750,7 +1859,7 @@ def build_instance_page(
     blocks = section_blocks if section_blocks is not None else fact_pack.get("section_blocks", [])
     if not isinstance(blocks, list):
         blocks = []
-    boss_candidates = build_instance_key_character_roster(
+    key_character_selection = build_instance_key_character_selection(
         instance_id=instance_id,
         instance_name=name,
         evidence_rows=evidence_rows,
@@ -1760,9 +1869,10 @@ def build_instance_page(
     )
     key_characters, key_character_provenance, character_used = _finalize_key_characters(
         instance_name=name,
-        boss_candidates=boss_candidates,
+        boss_candidates=key_character_selection.cast,
         boss_pool=pools["boss_pool"],
         revision_map=revision_map,
+        selection_reasons=key_character_selection.selection_reasons,
     )
     used_source_ids.update(character_used)
 

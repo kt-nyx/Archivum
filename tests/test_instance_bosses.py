@@ -1,11 +1,22 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from pipeline.discovery.instance_bosses import (
     BossCandidate,
+    _BOSS_SECTION_EXACT,
+    cap_pool_for_llm_prompt,
     classify_character_role,
     collect_boss_candidates,
+    collect_character_pool,
+    deterministic_pool_order,
+    is_high_confidence_boss_section,
+    must_include_key_character_names,
+    prefilter_character_pool,
     should_reject_boss_title,
 )
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "instance"
 
 
 def test_collect_boss_candidates_from_structured_links() -> None:
@@ -113,9 +124,21 @@ def test_rejects_geography_and_instance_self_titles() -> None:
     assert should_reject_boss_title("Eastern Kingdoms", instance_name="Archive Vault")
 
 
+def test_rejects_place_kind_instance_subzones() -> None:
+    # Registry tags these as kind "place"; the roster path must reject them so instance
+    # subzones/areas never leak into key_characters (Scholomance regression).
+    assert should_reject_boss_title("Caer Darrow")
+    assert should_reject_boss_title("Chamber of Summoning")
+    assert should_reject_boss_title("Viewing Room")
+    # Guard against over-rejection: a genuine character is still accepted.
+    assert not should_reject_boss_title("Darkmaster Gandling")
+
+
 def test_faculty_and_denizens_section_roles_match() -> None:
     from pipeline.discovery.instance_bosses import is_boss_section_role
 
+    assert "scholomance_faculty" not in _BOSS_SECTION_EXACT
+    assert not is_high_confidence_boss_section("scholomance_faculty")
     assert is_boss_section_role("scholomance_faculty")
     assert is_boss_section_role("denizens")
     assert is_boss_section_role("dungeon_journal")
@@ -318,3 +341,213 @@ def test_redirect_alias_links_collapse_to_one_candidate() -> None:
     )
     assert len(candidates) == 1
     assert candidates[0].name == "Instructor Razuvious"
+
+
+def test_deterministic_pool_order_uses_mention_frequency() -> None:
+    pool = [
+        BossCandidate(
+            boss_id="character-loken",
+            name="Loken",
+            wiki_url="https://warcraft.wiki.gg/wiki/Loken",
+            source_section_role="bosses",
+        ),
+        BossCandidate(
+            boss_id="character-thorim",
+            name="Thorim",
+            wiki_url="https://warcraft.wiki.gg/wiki/Thorim",
+            source_section_role="denizens",
+        ),
+    ]
+    ordered = deterministic_pool_order(
+        pool,
+        narrative_text="Thorim Thorim speaks while Loken is named once.",
+    )
+    assert ordered[0] == "Thorim"
+
+
+def test_deterministic_pool_order_tiebreaks_on_section_weight() -> None:
+    pool = [
+        BossCandidate(
+            boss_id="character-trash",
+            name="Trash Mob",
+            wiki_url="https://warcraft.wiki.gg/wiki/Trash_Mob",
+            source_section_role="denizens",
+        ),
+        BossCandidate(
+            boss_id="character-marquee",
+            name="Marquee Boss",
+            wiki_url="https://warcraft.wiki.gg/wiki/Marquee_Boss",
+            source_section_role="dungeon_journal",
+        ),
+    ]
+    ordered = deterministic_pool_order(pool, narrative_text="")
+    assert ordered[0] == "Marquee Boss"
+
+
+def test_high_confidence_boss_section_tokens() -> None:
+    assert is_high_confidence_boss_section("dungeon_journal")
+    assert is_high_confidence_boss_section("encounters")
+    assert not is_high_confidence_boss_section("denizens")
+    assert not is_high_confidence_boss_section("faculty")
+
+
+def test_collect_character_pool_from_faculty_html() -> None:
+    html = (FIXTURES / "scholomance_faculty_section.html").read_text(encoding="utf-8")
+    pool = collect_character_pool(
+        section_blocks=[{"section_role": "scholomance_faculty", "text": html}],
+        instance_name="Scholomance",
+    )
+    names = {row.name for row in pool}
+    assert "Darkmaster Gandling" in names
+    assert "Jandice Barov" in names
+
+
+def test_collect_character_pool_includes_history_links() -> None:
+    pool = collect_character_pool(
+        section_blocks=[],
+        instance_name="Scholomance",
+        history_pool=[
+            {
+                "snippet": (
+                    "House Barov lingered as [[/wiki/Lord_Alexei_Barov|Lord Alexei Barov]] "
+                    "within the academy vaults."
+                ),
+                "section_role": "history_digest",
+                "source_id": "src-instance",
+            }
+        ],
+    )
+    names = {row.name for row in pool}
+    assert "Lord Alexei Barov" in names
+
+
+def test_prefilter_character_pool_drops_places() -> None:
+    pool = [
+        BossCandidate(
+            boss_id="character-caer-darrow",
+            name="Caer Darrow",
+            wiki_url="https://warcraft.wiki.gg/wiki/Caer_Darrow",
+            source_section_role="denizens",
+        ),
+        BossCandidate(
+            boss_id="character-darkmaster-gandling",
+            name="Darkmaster Gandling",
+            wiki_url="https://warcraft.wiki.gg/wiki/Darkmaster_Gandling",
+            source_section_role="bosses",
+        ),
+    ]
+    filtered = prefilter_character_pool(pool, instance_name="Scholomance")
+    names = {row.name for row in filtered}
+    assert "Caer Darrow" not in names
+    assert "Darkmaster Gandling" in names
+
+
+def test_must_include_from_boss_class_boss_pool() -> None:
+    boss_pool = [
+        {
+            "snippet": "Final encounter: /wiki/Darkmaster_Gandling",
+            "section_role": "dungeon_journal",
+            "source_id": "src-instance",
+        }
+    ]
+    pool = collect_character_pool(
+        section_blocks=[],
+        instance_name="Scholomance",
+        boss_pool_items=boss_pool,
+    )
+    pool = prefilter_character_pool(pool, instance_name="Scholomance")
+    must_include = must_include_key_character_names(
+        boss_pool_items=boss_pool,
+        pool=pool,
+        instance_name="Scholomance",
+    )
+    assert must_include == ["Darkmaster Gandling"]
+
+
+def test_must_include_excludes_faculty_only_boss_pool() -> None:
+    boss_pool = [
+        {
+            "snippet": "Faculty wing: /wiki/Darkmaster_Gandling",
+            "section_role": "scholomance_faculty",
+            "source_id": "src-instance",
+        }
+    ]
+    pool = collect_character_pool(
+        section_blocks=[],
+        instance_name="Scholomance",
+        boss_pool_items=boss_pool,
+    )
+    pool = prefilter_character_pool(pool, instance_name="Scholomance")
+    must_include = must_include_key_character_names(
+        boss_pool_items=boss_pool,
+        pool=pool,
+        instance_name="Scholomance",
+    )
+    assert must_include == []
+
+
+def test_must_include_skips_names_not_in_pool() -> None:
+    boss_pool = [
+        {
+            "snippet": "Journal lists /wiki/Rattlegore",
+            "section_role": "dungeon_journal",
+            "source_id": "src-instance",
+        }
+    ]
+    pool = [
+        BossCandidate(
+            boss_id="character-darkmaster-gandling",
+            name="Darkmaster Gandling",
+            wiki_url="https://warcraft.wiki.gg/wiki/Darkmaster_Gandling",
+            source_section_role="bosses",
+        ),
+    ]
+    must_include = must_include_key_character_names(
+        boss_pool_items=boss_pool,
+        pool=pool,
+        instance_name="Scholomance",
+    )
+    assert must_include == []
+
+
+def test_cap_pool_for_llm_prompt_includes_must_includes() -> None:
+    pool = [
+        BossCandidate(
+            boss_id=f"character-trash-{index}",
+            name=f"Trash Mob {index}",
+            wiki_url=f"https://warcraft.wiki.gg/wiki/Trash_Mob_{index}",
+            source_section_role="denizens",
+        )
+        for index in range(50)
+    ]
+    pool.append(
+        BossCandidate(
+            boss_id="character-marquee-boss",
+            name="Marquee Boss",
+            wiki_url="https://warcraft.wiki.gg/wiki/Marquee_Boss",
+            source_section_role="bosses",
+            profile_pool=[
+                {
+                    "snippet": "Marquee Boss is the final boss of the instance.",
+                    "section_role": "bosses",
+                }
+            ],
+        )
+    )
+    pool.append(
+        BossCandidate(
+            boss_id="character-floor-boss",
+            name="Floor Boss",
+            wiki_url="https://warcraft.wiki.gg/wiki/Floor_Boss",
+            source_section_role="dungeon_journal",
+        )
+    )
+    capped = cap_pool_for_llm_prompt(
+        pool,
+        must_include_names=["Floor Boss", "Marquee Boss"],
+        limit=40,
+    )
+    capped_names = {row.name for row in capped}
+    assert "Floor Boss" in capped_names
+    assert "Marquee Boss" in capped_names
+    assert len(capped) == 40

@@ -3,46 +3,291 @@
     "instance_id": "instance-scholomance",
     "candidates": [
       {
-        "id": "character-darkmaster-gandling",
         "name": "Darkmaster Gandling",
         "role": "enemy",
-        "significance": 9.5,
-        "emitted": true
+        "emitted": true,
+        "merge_rank": 1,
+        "selection_reason": "llm_selected"
       },
       {
-        "id": "character-rattlegore",
-        "name": "Rattlegore",
-        "role": "enemy",
-        "significance": 7.0,
-        "emitted": true
+        "name": "Instructor Chillheart",
+        "role": "uncertain",
+        "emitted": true,
+        "merge_rank": 2,
+        "selection_reason": "llm_selected"
       },
       {
-        "id": "character-jandice-barov",
         "name": "Jandice Barov",
-        "role": "enemy",
-        "significance": 6.5,
-        "emitted": true
+        "role": "uncertain",
+        "emitted": true,
+        "merge_rank": 3,
+        "selection_reason": "llm_selected"
       },
       {
-        "id": "character-lord-alexei-barov",
+        "name": "Lilian Voss",
+        "role": "uncertain",
+        "emitted": true,
+        "merge_rank": 4,
+        "selection_reason": "llm_selected"
+      },
+      {
+        "name": "Rattlegore",
+        "role": "uncertain",
+        "emitted": true,
+        "merge_rank": 5,
+        "selection_reason": "llm_selected"
+      },
+      {
+        "name": "Doctor Theolen Krastinov",
+        "role": "enemy",
+        "emitted": true,
+        "merge_rank": 6,
+        "selection_reason": "llm_selected"
+      },
+      {
+        "name": "Professor Slate",
+        "role": "enemy",
+        "emitted": true,
+        "merge_rank": 7,
+        "selection_reason": "llm_selected"
+      },
+      {
+        "name": "Ravenian",
+        "role": "uncertain",
+        "emitted": true,
+        "merge_rank": 8,
+        "selection_reason": "llm_selected"
+      },
+      {
+        "name": "Weldon Barov",
+        "role": "uncertain",
+        "emitted": true,
+        "merge_rank": 9,
+        "selection_reason": "llm_selected"
+      },
+      {
         "name": "Lord Alexei Barov",
-        "role": "enemy",
-        "significance": 6.0,
-        "emitted": true
+        "role": "uncertain",
+        "emitted": true,
+        "merge_rank": 10,
+        "selection_reason": "llm_selected"
       },
       {
-        "id": "character-kirtonos-the-herald",
-        "name": "Kirtonos the Herald",
-        "role": "enemy",
-        "significance": 5.5,
-        "emitted": false
+        "name": "Barov",
+        "role": "uncertain",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
       },
       {
-        "id": "character-ras-frostwhisper",
+        "name": "Second War",
+        "role": "uncertain",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Third War",
+        "role": "uncertain",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "World of Warcraft",
+        "role": "uncertain",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Acolyte",
+        "role": "enemy",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Boneweaver",
+        "role": "enemy",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Bored Student",
+        "role": "enemy",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Candlestick Mage",
+        "role": "enemy",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Expired Test Subject",
+        "role": "enemy",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Flesh Horror",
+        "role": "enemy",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Fresh Test Subject",
+        "role": "enemy",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Grandmaster Architect Holmberg",
+        "role": "enemy",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Krastinovian Carver",
+        "role": "enemy",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Meat Graft",
+        "role": "enemy",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Reanimated Corpse",
+        "role": "enemy",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Risen Guard",
+        "role": "enemy",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Scholomance Acolyte",
+        "role": "enemy",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Scholomance Neophyte",
+        "role": "enemy",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Woven Boneguard",
+        "role": "enemy",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Abomination",
+        "role": "uncertain",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Ancient Arkhana",
+        "role": "uncertain",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Barovian Family Sword",
+        "role": "uncertain",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Fourth War",
+        "role": "uncertain",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Kharmeera",
+        "role": "uncertain",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Lich",
+        "role": "uncertain",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Lich King",
+        "role": "uncertain",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Mathias Shaw",
+        "role": "uncertain",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Necromancer",
+        "role": "uncertain",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
         "name": "Ras Frostwhisper",
-        "role": "enemy",
-        "significance": 5.0,
-        "emitted": false
+        "role": "uncertain",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Shadow Council",
+        "role": "uncertain",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
+      },
+      {
+        "name": "Thondroril",
+        "role": "uncertain",
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
       }
     ]
   }
