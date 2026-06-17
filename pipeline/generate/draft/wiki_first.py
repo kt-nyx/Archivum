@@ -617,13 +617,21 @@ def _finalize_instance_at_a_glance(
     at_pool: list[dict[str, Any]],
     evidence_rows: list[dict[str, Any]],
 ) -> tuple[str, list[str], list[dict[str, Any]]]:
+    def _rejected(candidate: str) -> bool:
+        # Reject lint failures AND copied/truncated source fragments (mid-sentence start,
+        # missing terminal punctuation) — the at_a_glance path previously skipped the
+        # passthrough check the overview path applies.
+        return bool(
+            lint_instance_at_a_glance(candidate, instance_name=instance_name)
+        ) or bool(lint_passthrough_fragment(candidate))
+
     text, used = synthesize_at_a_glance(
         at_pool, max_words=MAX_AT_A_GLANCE_WORDS, subject=instance_name
     )
     producing_pool = at_pool
-    if lint_instance_at_a_glance(text, instance_name=instance_name):
+    if _rejected(text):
         text, used = fallback_at_a_glance(at_pool)
-        if lint_instance_at_a_glance(text, instance_name=instance_name):
+        if _rejected(text):
             text, used = "", []
     if not text:
         rescue_pool = at_pool or select_at_a_glance_pool(
@@ -631,7 +639,7 @@ def _finalize_instance_at_a_glance(
         )
         producing_pool = rescue_pool
         text, used = fallback_at_a_glance(rescue_pool)
-        if lint_instance_at_a_glance(text, instance_name=instance_name):
+        if _rejected(text):
             text, used = "", []
             producing_pool = []
     return text, used, producing_pool
@@ -860,17 +868,22 @@ def _finalize_at_a_glance(
     at_pool: list[dict[str, Any]],
     evidence_rows: list[dict[str, Any]],
 ) -> tuple[str, list[str]]:
+    def _rejected(candidate: str) -> bool:
+        return bool(lint_at_a_glance(candidate, zone_name=zone_name)) or bool(
+            lint_passthrough_fragment(candidate)
+        )
+
     text, used = synthesize_at_a_glance(at_pool, max_words=MAX_AT_A_GLANCE_WORDS)
-    if lint_at_a_glance(text, zone_name=zone_name):
+    if _rejected(text):
         text, used = fallback_at_a_glance(at_pool)
-        if lint_at_a_glance(text, zone_name=zone_name):
+        if _rejected(text):
             text, used = "", []
     if not text:
         rescue_pool = at_pool or select_at_a_glance_pool(
             _iter_evidence_items(evidence_rows, {"at_a_glance_input", "history_digest"})
         )
         text, used = fallback_at_a_glance(rescue_pool)
-        if lint_at_a_glance(text, zone_name=zone_name):
+        if _rejected(text):
             text, used = "", []
     if not text:
         text = f"{zone_name} was a contested region shaped by war and later recovery efforts."
@@ -1748,6 +1761,7 @@ def build_instance_page(
     faction_profile_targets: list[dict[str, Any]] | None = None,
     section_blocks: list[dict[str, Any]] | None = None,
     snapshots: list[dict[str, Any]] | None = None,
+    selection_sink: list[InstanceKeyCharacterSelection] | None = None,
 ) -> dict[str, Any]:
     instance_id = str(fact_pack.get("entity_id", "instance-unknown"))
     name = str(fact_pack.get("name", instance_id))
@@ -1867,6 +1881,9 @@ def build_instance_page(
         snapshots=snapshots,
         pools=pools,
     )
+    # Single source of truth: the draft writer reuses this selection to build the decision
+    # sidecar (popped before serialization), so the page-emitted cast and the sidecar merge
+    # ranks can never diverge from two independent LLM passes.
     key_characters, key_character_provenance, character_used = _finalize_key_characters(
         instance_name=name,
         boss_candidates=key_character_selection.cast,
@@ -1926,4 +1943,9 @@ def build_instance_page(
     }
     sources = collect_sources_manifest(page_entity, revision_map, source_urls)
     page_entity["sources"] = sources or _source_entries(fact_pack)
+    # Hand the computed selection back to the caller (the draft writer) so the decision
+    # sidecar reuses it instead of recomputing via a second, divergent LLM pass. Kept off
+    # the returned dict so the page stays JSON-serializable for every other caller.
+    if selection_sink is not None:
+        selection_sink.append(key_character_selection)
     return page_entity

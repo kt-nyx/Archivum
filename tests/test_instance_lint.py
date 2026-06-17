@@ -4,6 +4,7 @@ from pipeline.generate.draft.instance_lint import (
     assess_role_diversity,
     fallback_instance_overview,
     is_generic_overview,
+    lint_at_a_glance,
     lint_key_character_summary,
     lint_overview,
     lint_passthrough_fragment,
@@ -45,6 +46,36 @@ def test_lint_key_character_summary_requires_boss_anchor() -> None:
         instance_name="Archive Vault",
     )
     assert any("boss name" in issue for issue in issues)
+
+
+def test_lint_at_a_glance_flags_missing_anchor_for_in_range_text() -> None:
+    # A normal-length at_a_glance that never names the instance must be flagged (the
+    # anchor check was previously dead for text at/above the word minimum).
+    text = (
+        "Six months passed and the keep became decrepit, its halls overrun by dark undead "
+        "beings while servants were twisted into grim experiments of plague and ruin."
+    )
+    issues = lint_at_a_glance(text, instance_name="Scholomance")
+    assert any("instance anchor" in issue for issue in issues)
+
+
+def test_lint_at_a_glance_accepts_anchored_abstract() -> None:
+    text = (
+        "Hidden in the ruins of Caer Darrow, Scholomance is a blighted school of necromancy "
+        "whose dark teachings endured long after Lordaeron fell."
+    )
+    assert lint_at_a_glance(text, instance_name="Scholomance") == []
+
+
+def test_lint_key_character_summary_flags_hollow_characterization() -> None:
+    text = (
+        "Professor Slate is remembered in Scholomance as a bored student, neither guardian "
+        "nor champion, but a sign of how its learning was twisted into stagnation and ruin."
+    )
+    issues = lint_key_character_summary(
+        text, boss_name="Professor Slate", instance_name="Scholomance"
+    )
+    assert any("hollow" in issue for issue in issues)
 
 
 def test_lint_passthrough_fragment_flags_mid_sentence_and_unterminated() -> None:

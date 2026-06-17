@@ -137,10 +137,12 @@ def test_sidecar_rows_include_merge_rank() -> None:
     from pipeline.generate.draft_writer import _build_key_character_decision_row
 
     build_meta = {"source_id": "src-instance", "source_kind": "seed"}
-    row = _build_key_character_decision_row(
+    # Single-source contract: the sidecar reuses the selection the page emitted from,
+    # so build it once here and feed it in (the writer does the same via selection_sink).
+    selection = build_instance_key_character_selection(
         instance_id="instance-test",
         instance_name="Test Keep",
-        scoped_evidence=[
+        evidence_rows=[
             {
                 "subject_id": "instance-test",
                 "field_name": "boss_pool",
@@ -153,7 +155,6 @@ def test_sidecar_rows_include_merge_rank() -> None:
                 "build_meta": build_meta,
             },
         ],
-        parent_zone_evidence=[],
         section_blocks=[
             {
                 "section_role": "denizens",
@@ -161,6 +162,11 @@ def test_sidecar_rows_include_merge_rank() -> None:
             }
         ],
         snapshots=[],
+    )
+    row = _build_key_character_decision_row(
+        instance_id="instance-test",
+        instance_name="Test Keep",
+        selection=selection,
         emitted_cards=[{"name": "Floor Boss"}],
     )
     candidates = row["candidates"]
@@ -171,3 +177,7 @@ def test_sidecar_rows_include_merge_rank() -> None:
     assert "significance" not in emitted[0]
     non_emitted = [item for item in candidates if not item["emitted"]]
     assert all(item["merge_rank"] is None for item in non_emitted)
+    # Single-source invariant: every emitted sidecar row carries a merge_rank, and the
+    # emitted set equals the page-emitted cast (no emitted&&merge_rank==null divergence).
+    assert all(item["merge_rank"] is not None for item in emitted)
+    assert {item["name"] for item in emitted} == {"Floor Boss"}

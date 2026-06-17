@@ -33,6 +33,15 @@ _GENERIC_OVERVIEW = re.compile(
 _GENERIC_ENEMY = re.compile(
     r"\bis a key enemy presence tied to the instance narrative\b", re.IGNORECASE
 )
+# Hollow / non-notable characterizations that signal a weak key-character pick or a poor
+# LLM summary (e.g. Professor Slate "a bored student … neither guardian nor champion").
+_HOLLOW_SUMMARY_RE = re.compile(
+    r"\bneither\b[^.?!]*?\bnor\b"
+    r"|\bbored student\b"
+    r"|\bsmall but telling\b"
+    r"|\bhollow academic\b",
+    re.IGNORECASE,
+)
 _PATCH_NOTES_RE = re.compile(
     r"\b(patch|hotfix|achievement|dungeon journal|player.?guide|walkthrough)\b",
     re.IGNORECASE,
@@ -88,7 +97,7 @@ def lint_at_a_glance(text: str, *, instance_name: str = "") -> list[str]:
         issues.append("at_a_glance reads like generic filler")
     if has_currently_meta(cleaned) or _PATCH_NOTES_RE.search(cleaned):
         issues.append("at_a_glance contains player/meta framing")
-    if instance_name and instance_name.lower() not in cleaned.lower() and words < MIN_AT_A_GLANCE_WORDS:
+    if instance_name and instance_name.lower() not in cleaned.lower():
         issues.append("at_a_glance lacks instance anchor")
     return issues
 
@@ -128,6 +137,8 @@ def lint_key_character_summary(text: str, *, boss_name: str = "", instance_name:
         issues.append(f"key enemy summary exceeds {MAX_KEY_CHARACTER_WORDS} words ({words})")
     if is_generic_key_character_summary(cleaned):
         issues.append("key enemy summary reads like generic stub")
+    if _HOLLOW_SUMMARY_RE.search(cleaned):
+        issues.append("key enemy summary reads as hollow/non-notable characterization")
     if boss_name and boss_name.lower() not in cleaned.lower():
         issues.append("key enemy summary lacks boss name anchor")
     if instance_name and instance_name.lower() not in cleaned.lower() and words < MIN_KEY_CHARACTER_WORDS:

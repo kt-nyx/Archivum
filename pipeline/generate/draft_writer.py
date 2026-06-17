@@ -17,7 +17,7 @@ from pipeline.generate.draft.trace import DraftTraceContext
 from pipeline.discovery.questline_card_polish import load_questline_card_metadata
 from pipeline.discovery.questline_significance import load_included_cluster_ids_by_zone
 from pipeline.generate.draft.wiki_first import (
-    build_instance_key_character_selection,
+    InstanceKeyCharacterSelection,
     build_instance_page,
     build_zone_page,
 )
@@ -40,25 +40,16 @@ def _build_key_character_decision_row(
     *,
     instance_id: str,
     instance_name: str,
-    scoped_evidence: list[dict[str, Any]],
-    parent_zone_evidence: list[dict[str, Any]],
-    section_blocks: list[dict[str, Any]] | None,
-    snapshots: list[dict[str, Any]],
+    selection: InstanceKeyCharacterSelection,
     emitted_cards: list,
 ) -> dict[str, Any]:
     """Decision sidecar: full prefiltered pool + merge ranks for emitted cast.
 
+    The ``selection`` is the *same* object ``build_instance_page`` emitted the cast from, so
+    the sidecar merge ranks always agree with the page (no second, divergent LLM pass).
     List order is emitted-first (merge order), then offline-ranked remainder; the first
     INSTANCE_MAX_KEY_CHARACTERS entries are the role-diversity window for assess_role_diversity.
     """
-    selection = build_instance_key_character_selection(
-        instance_id=instance_id,
-        instance_name=instance_name,
-        evidence_rows=scoped_evidence,
-        section_blocks=section_blocks,
-        snapshots=snapshots,
-        parent_zone_evidence_rows=parent_zone_evidence,
-    )
     emitted_keys = {
         _decision_name_key(card.get("name", ""))
         for card in emitted_cards
@@ -284,6 +275,7 @@ def run_draft_writer(
                             if isinstance(blocks, list):
                                 instance_section_blocks = [row for row in blocks if isinstance(row, dict)]
                             break
+                selection_sink: list[InstanceKeyCharacterSelection] = []
                 draft = build_instance_page(
                     enriched_fact_pack,
                     scoped_evidence,
@@ -292,24 +284,17 @@ def run_draft_writer(
                     faction_profile_targets=faction_profile_targets,
                     section_blocks=instance_section_blocks,
                     snapshots=source_snapshots,
+                    selection_sink=selection_sink,
                 )
-                # Mirror build_instance_page's input resolution exactly so the sidecar roster
-                # is identical to the roster the page assembly used (name string + section
-                # blocks fallback to the fact pack when no instance snapshot was found).
-                roster_section_blocks = (
-                    instance_section_blocks
-                    if instance_section_blocks is not None
-                    else enriched_fact_pack.get("section_blocks", [])
-                )
-                instance_key_character_decisions = _build_key_character_decision_row(
-                    instance_id=entity_id,
-                    instance_name=str(enriched_fact_pack.get("name", entity_id)),
-                    scoped_evidence=scoped_evidence,
-                    parent_zone_evidence=parent_zone_evidence,
-                    section_blocks=roster_section_blocks,
-                    snapshots=source_snapshots,
-                    emitted_cards=draft.get("key_characters", []),
-                )
+                # Reuse the exact selection the page emitted from. Guarantees the sidecar
+                # merge ranks match the page cast (no second, divergent LLM pass).
+                if selection_sink:
+                    instance_key_character_decisions = _build_key_character_decision_row(
+                        instance_id=entity_id,
+                        instance_name=str(enriched_fact_pack.get("name", entity_id)),
+                        selection=selection_sink[0],
+                        emitted_cards=draft.get("key_characters", []),
+                    )
             entity_dir = stage_dir / f"{entity_type}_page"
             entity_dir.mkdir(parents=True, exist_ok=True)
             out_path = entity_dir / f"{entity_id}.json"

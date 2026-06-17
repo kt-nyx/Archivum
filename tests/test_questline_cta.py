@@ -4,11 +4,32 @@ import os
 
 import pytest
 
-from pipeline.generate.draft.card_lint import lint_cta_hook
+from pipeline.generate.draft.card_lint import finalize_cta_hook, lint_cta_hook
 from pipeline.generate.draft.wiki_first_workers import (
     filter_early_chain_evidence_pool,
     synthesize_questline_cta_hook,
 )
+
+
+def test_finalize_cta_hook_trims_to_complete_sentence() -> None:
+    # An over-budget two-sentence hook keeps the first complete sentence instead of
+    # chopping the second mid-clause into "...answer the Warchief's."
+    hook = (
+        "Hunt down the rebel and hold the Forsaken line in a town where the Alliance still "
+        "claws at victory; the war for Andorhal hangs on ruthless resolve. Press the campaign "
+        "west and answer the Warchief's command before the front collapses."
+    )
+    out = finalize_cta_hook(hook)
+    assert out.endswith((".", "!", "?"))
+    assert not out.rstrip(".").endswith("Warchief's")
+    assert lint_cta_hook(out) == []
+
+
+def test_lint_cta_hook_flags_possessive_truncation() -> None:
+    assert any(
+        "truncated" in issue
+        for issue in lint_cta_hook("Press the campaign west and answer the Warchief's.")
+    )
 
 
 def test_filter_early_chain_evidence_pool_limits_to_chain_heads() -> None:

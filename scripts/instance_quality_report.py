@@ -141,6 +141,8 @@ def _prose_findings(payload: dict[str, Any], instance_name: str) -> list[Finding
             )
         for issue in lint_at_a_glance(at_a_glance, instance_name=instance_name):
             findings.append(Finding("fail", "semantics.at_a_glance_lint", issue))
+        for issue in lint_passthrough_fragment(at_a_glance):
+            findings.append(Finding("fail", "semantics.at_a_glance_passthrough", issue))
 
     overview = str(payload.get("overview", "")).strip()
     if not overview:
@@ -197,6 +199,61 @@ def _cast_findings(payload: dict[str, Any]) -> list[Finding]:
     return findings
 
 
+def _sidecar_coherence_findings(
+    payload: dict[str, Any], roster: list[dict[str, Any]]
+) -> list[Finding]:
+    """Assert the page cast and the decision sidecar agree (single-source invariant).
+
+    Catches the class of bug where the page and sidecar were derived from two divergent
+    selections: an emitted row without a ``merge_rank``, a ranked row not marked emitted,
+    or the page ``key_characters`` set differing from the sidecar's emitted set.
+    """
+    findings: list[Finding] = []
+
+    def _key(value: object) -> str:
+        return " ".join(str(value).strip().casefold().split())
+
+    for candidate in roster:
+        name = str(candidate.get("name", "")).strip()
+        emitted = bool(candidate.get("emitted"))
+        has_rank = candidate.get("merge_rank") is not None
+        if emitted and not has_rank:
+            findings.append(
+                Finding(
+                    "fail",
+                    "semantics.sidecar_emitted_without_rank",
+                    f"{name!r} is emitted but has no merge_rank (page/sidecar divergence)",
+                )
+            )
+        if has_rank and not emitted:
+            findings.append(
+                Finding(
+                    "fail",
+                    "semantics.sidecar_rank_without_emit",
+                    f"{name!r} has merge_rank but is not marked emitted",
+                )
+            )
+
+    page_names = {
+        _key(c.get("name", ""))
+        for c in payload.get("key_characters") or []
+        if isinstance(c, dict)
+    }
+    sidecar_emitted = {_key(c.get("name", "")) for c in roster if c.get("emitted")}
+    if page_names != sidecar_emitted:
+        only_page = sorted(page_names - sidecar_emitted)
+        only_sidecar = sorted(sidecar_emitted - page_names)
+        findings.append(
+            Finding(
+                "fail",
+                "semantics.page_sidecar_cast_mismatch",
+                "page key_characters disagree with sidecar emitted set "
+                f"(page-only: {only_page}; sidecar-only: {only_sidecar})",
+            )
+        )
+    return findings
+
+
 def _roster_findings(
     payload: dict[str, Any], roster: list[dict[str, Any]] | None
 ) -> list[Finding]:
@@ -215,6 +272,7 @@ def _roster_findings(
                 f"{INSTANCE_MIN_KEY_CHARACTERS} despite {pool_size} roster candidates",
             )
         )
+    findings.extend(_sidecar_coherence_findings(payload, roster))
     severity, reason = assess_role_diversity(key_characters, roster)
     if severity == "fail":
         findings.append(Finding("fail", "semantics.role_diversity", reason))

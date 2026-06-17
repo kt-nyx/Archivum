@@ -134,6 +134,21 @@ def test_rejects_place_kind_instance_subzones() -> None:
     assert not should_reject_boss_title("Darkmaster Gandling")
 
 
+def test_rejects_events_meta_and_generic_class_nouns() -> None:
+    # Non-character titles that leak from narrative/history link mining (the registry does
+    # not classify them locally): war/era events, game/meta pages, generic creature classes.
+    for title in ("Second War", "Third War", "Fourth War", "the Great War"):
+        assert should_reject_boss_title(title), title
+    for title in ("World of Warcraft", "Warcraft"):
+        assert should_reject_boss_title(title), title
+    for title in ("Lich", "Necromancer", "Abomination", "Ghoul"):
+        assert should_reject_boss_title(title), title
+    # Multi-word proper names that *contain* a generic noun are still kept.
+    assert not should_reject_boss_title("Lich King")
+    assert not should_reject_boss_title("Lord Alexei Barov")
+    assert not should_reject_boss_title("Ras Frostwhisper")
+
+
 def test_faculty_and_denizens_section_roles_match() -> None:
     from pipeline.discovery.instance_bosses import is_boss_section_role
 
@@ -494,12 +509,14 @@ def test_must_include_skips_names_not_in_pool() -> None:
             "source_id": "src-instance",
         }
     ]
+    # Pool candidate has a non-boss-class section role, so neither the boss_pool link
+    # (Rattlegore, not in pool) nor the candidate's own role floors anything.
     pool = [
         BossCandidate(
             boss_id="character-darkmaster-gandling",
             name="Darkmaster Gandling",
             wiki_url="https://warcraft.wiki.gg/wiki/Darkmaster_Gandling",
-            source_section_role="bosses",
+            source_section_role="history_digest",
         ),
     ]
     must_include = must_include_key_character_names(
@@ -508,6 +525,31 @@ def test_must_include_skips_names_not_in_pool() -> None:
         instance_name="Scholomance",
     )
     assert must_include == []
+
+
+def test_must_include_floors_candidate_with_boss_class_section_role() -> None:
+    # Source 2: a pool candidate whose own discovery section role is a high-confidence
+    # boss-class section is floored even when boss_pool snippets carry no /wiki/ links.
+    pool = [
+        BossCandidate(
+            boss_id="character-darkmaster-gandling",
+            name="Darkmaster Gandling",
+            wiki_url="https://warcraft.wiki.gg/wiki/Darkmaster_Gandling",
+            source_section_role="adventure_guide_edit",
+        ),
+        BossCandidate(
+            boss_id="character-bystander",
+            name="Bystander",
+            wiki_url="https://warcraft.wiki.gg/wiki/Bystander",
+            source_section_role="narrative_fallback",
+        ),
+    ]
+    must_include = must_include_key_character_names(
+        boss_pool_items=[{"snippet": "No links here.", "section_role": "other"}],
+        pool=pool,
+        instance_name="Scholomance",
+    )
+    assert must_include == ["Darkmaster Gandling"]
 
 
 def test_cap_pool_for_llm_prompt_includes_must_includes() -> None:

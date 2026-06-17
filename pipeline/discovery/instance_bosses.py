@@ -68,6 +68,28 @@ _REJECT_TITLES = frozenset(
         "trivia",
     }
 )
+# Non-character titles that the (sparse) world registry does not classify but which leak
+# into the candidate pool from narrative/history link mining: game/meta pages and generic
+# creature-class common nouns. Universal WoW terms only — not zone/instance specific.
+_NON_CHARACTER_TITLES = frozenset(
+    {
+        "world of warcraft",
+        "warcraft",
+        "lich",
+        "necromancer",
+        "abomination",
+        "ghoul",
+        "skeleton",
+        "zombie",
+        "geist",
+        "banshee",
+    }
+)
+# War/era event titles ("Second War", "the Third War", "Fourth War", "Great War").
+_EVENT_ERA_RE = re.compile(
+    r"^(?:the\s+)?(?:first|second|third|fourth|fifth|great)\s+war$",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -159,7 +181,9 @@ def should_reject_boss_title(title: str, *, instance_name: str = "") -> bool:
         return True
     if lowered in _REJECT_TITLES:
         return True
-    if _DATING_CONVENTION_TITLE_RE.search(title):
+    if lowered in _NON_CHARACTER_TITLES:
+        return True
+    if _EVENT_ERA_RE.search(title) or _DATING_CONVENTION_TITLE_RE.search(title):
         return True
     kinds = entry_kinds(title)
     if kinds & _NON_CHARACTER_KINDS:
@@ -666,15 +690,32 @@ def must_include_key_character_names(
     pool: list[BossCandidate],
     instance_name: str,
 ) -> list[str]:
-    """Boss-class boss_pool names intersected with the prefiltered pool (stable sort)."""
-    boss_class_names = valid_boss_names_from_pool_items(
-        boss_pool_items,
-        instance_name=instance_name,
-        section_filter=is_high_confidence_boss_section,
-    )
+    """Boss-class names guaranteed into the cast (stable sort), from two sources.
+
+    1. Wiki-linked names harvested from boss-class boss_pool snippets, and
+    2. prefiltered pool candidates whose *own* discovery ``source_section_role`` is a
+       high-confidence boss-class section (Adventure Guide / Dungeon Journal / boss /
+       encounter rosters).
+
+    Source 2 makes structurally-obvious bosses deterministic even when boss_pool snippets
+    carry no ``/wiki/`` links (the common case for this ingest revision). S0-compliant tokens
+    only — no zone/instance keywords drive the floor.
+    """
     pool_by_norm = {normalize_title(candidate.name): candidate.name for candidate in pool}
+    must_norm: set[str] = {
+        name
+        for name in valid_boss_names_from_pool_items(
+            boss_pool_items,
+            instance_name=instance_name,
+            section_filter=is_high_confidence_boss_section,
+        )
+        if name in pool_by_norm
+    }
+    for candidate in pool:
+        if is_high_confidence_boss_section(candidate.source_section_role):
+            must_norm.add(normalize_title(candidate.name))
     return sorted(
-        [pool_by_norm[name] for name in boss_class_names if name in pool_by_norm],
+        [pool_by_norm[name] for name in must_norm if name in pool_by_norm],
         key=normalize_title,
     )
 
