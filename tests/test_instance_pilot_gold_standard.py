@@ -49,6 +49,7 @@ _MUST_EMIT = frozenset(
 )
 _MUST_NOT_EMIT = frozenset(
     {
+        # Places / trash (registry + role filters).
         "Caer Darrow",
         "Chamber of Summoning",
         "Viewing Room",
@@ -57,6 +58,12 @@ _MUST_NOT_EMIT = frozenset(
         "Boneweaver",
         "Bored Student",
         "Candlestick Mage",
+        # S3: Classic-only Scholomance NPCs (removed in the Mists retail revamp).
+        "Doctor Theolen Krastinov",
+        "Professor Slate",
+        "Ravenian",
+        "Weldon Barov",
+        "Lord Alexei Barov",
     }
 )
 _SIDECAR_ONLY_OK = frozenset({"Kirtonos the Herald", "Ras Frostwhisper"})

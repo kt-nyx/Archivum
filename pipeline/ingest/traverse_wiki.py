@@ -12,14 +12,20 @@ from typing import Any
 
 from pipeline.common import wiki_html
 from pipeline.common.io import write_json
+from pipeline.common.retail import is_classic_categorized
 from pipeline.common.run_context import RunContext
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.contracts.models import QuestRecord
 from pipeline.discovery.entity_typing import (
     is_bogus_traversal_link,
     is_valid_quest_graph_link,
+    normalize_title,
     should_reject_location_title,
     should_skip_registry_traversal,
+)
+from pipeline.discovery.instance_bosses import (
+    collect_character_pool,
+    prefilter_character_pool,
 )
 from pipeline.discovery.lore_sources import (
     classify_lore_retail_eligibility,
@@ -30,9 +36,11 @@ from pipeline.discovery.quest_lore import build_quest_lore_record
 from pipeline.discovery.quest_record import build_quest_record
 from pipeline.discovery.storyline_parser import _to_entity_id, _wiki_title
 from pipeline.ingest.fetch_wiki import (
+    _category_lookup_key,
     _fetch_url_text,
     _validate_manifest_schema,
     build_structured_links_from_sections,
+    fetch_categories_for_titles,
 )
 from pipeline.ingest.normalize_source import run_normalize_source
 
@@ -573,6 +581,106 @@ def _persist_traverse_state(
     return outputs
 
 
+def _title_from_wiki_url(url: str) -> str:
+    """Return the spaced page title from a ``/wiki/Title`` url/href ('' when none)."""
+    value = str(url or "").strip()
+    if "/wiki/" not in value:
+        return ""
+    path = value.split("/wiki/", 1)[-1].split("#", 1)[0].strip().strip("/")
+    return path.replace("_", " ").strip()
+
+
+def _instance_seed_snapshots(snapshots: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        snap
+        for snap in snapshots
+        if isinstance(snap, dict)
+        and str(snap.get("entity_type", "")).strip() == "instance"
+        and not str(snap.get("auxiliary_role", "")).strip()
+    ]
+
+
+def _instance_character_candidates(snapshot: dict[str, Any]) -> list[tuple[str, str]]:
+    """Mine ``(normalized_name, page_title)`` character candidates from an instance page."""
+    blocks = snapshot.get("section_blocks") or []
+    if not isinstance(blocks, list):
+        blocks = []
+    structured = snapshot.get("structured_links") or []
+    if not isinstance(structured, list):
+        structured = []
+    instance_name = str(snapshot.get("name", ""))
+    pool = prefilter_character_pool(
+        collect_character_pool(
+            section_blocks=blocks,
+            instance_name=instance_name,
+            structured_links=structured,
+        ),
+        instance_name=instance_name,
+    )
+    candidates: list[tuple[str, str]] = []
+    for candidate in pool:
+        title = _title_from_wiki_url(candidate.wiki_url)
+        if title:
+            candidates.append((normalize_title(candidate.name), title))
+    return candidates
+
+
+def _exclude_classic_instance_characters(
+    snapshots: list[dict[str, Any]],
+    report_rows: list[dict[str, Any]],
+) -> None:
+    """S3 authoritative pass: tag each instance's Classic-categorized cast candidates.
+
+    Mines every instance seed page's character candidates, batch-fetches their wiki
+    categories, and records the Classic/legacy/removed ones on the snapshot as
+    ``classic_excluded_characters`` so the offline draft stage can drop them from the
+    cast. Network failures degrade to no exclusions (best-effort).
+    """
+    instances = _instance_seed_snapshots(snapshots)
+    if not instances:
+        return
+    per_instance: dict[int, list[tuple[str, str]]] = {}
+    title_by_key: dict[str, str] = {}
+    for snap in instances:
+        candidates = _instance_character_candidates(snap)
+        per_instance[id(snap)] = candidates
+        for _norm, title in candidates:
+            title_by_key[_category_lookup_key(title)] = title
+    if not title_by_key:
+        return
+    try:
+        categories = fetch_categories_for_titles(sorted(title_by_key.values()))
+    except Exception as exc:  # noqa: BLE001 - best-effort network category check
+        report_rows.append(
+            {
+                "status": "skipped",
+                "link": "<classic-category-check>",
+                "reason": f"category_fetch_failed:{exc!r}",
+                "role": "classic_filter",
+            }
+        )
+        return
+    for snap in instances:
+        excluded = sorted(
+            {
+                norm
+                for norm, title in per_instance[id(snap)]
+                if is_classic_categorized(categories.get(_category_lookup_key(title), []))
+            }
+        )
+        if excluded:
+            snap["classic_excluded_characters"] = excluded
+            report_rows.append(
+                {
+                    "status": "excluded_classic",
+                    "link": str(snap.get("url", "")),
+                    "reason": "classic_category",
+                    "role": "classic_filter",
+                    "names": excluded,
+                }
+            )
+
+
 def _ordered_v3_quest_nodes(v3_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     quests = [row for row in v3_rows if isinstance(row, dict) and row.get("node_type") == "quest"]
     quests.sort(
@@ -825,6 +933,8 @@ def run_traverse_seed(context: RunContext) -> dict[str, Path]:
                 )
                 continue
             _increment(instance_id, aux_role)
+
+    _exclude_classic_instance_characters(snapshots, report_rows)
 
     return _persist_traverse_state(
         context,

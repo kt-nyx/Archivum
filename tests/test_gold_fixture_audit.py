@@ -1,8 +1,9 @@
 """WS-E: gold-fixture audit regression guard + Classic-contamination acceptance (D-3).
 
 The offline audit must stay clean (gold fixtures retail-correct + contract-valid). The
-run-draft test is an xfail acceptance criterion that flips to passing once S3 (the
-retail/Classic crawl filter) excludes Classic-only entities from the live cast.
+run-draft test is the S3 acceptance criterion: with the retail/Classic crawl filter landed,
+a regenerated live cast must contain no Classic-only entities. It skips when no local draft
+is present (the ``test-run-wpl-1`` draft is gitignored and OpenAI-gated to regenerate).
 """
 
 from __future__ import annotations
@@ -43,12 +44,9 @@ def test_zone_questline_gold_audit_clean() -> None:
     assert [f for f in audit_zone_questline_gold() if f.level == "error"] == []
 
 
-@pytest.mark.xfail(
-    reason="S3 retail/Classic crawl filter not yet implemented; the live run still ingests "
-    "Classic-only Scholomance NPCs. Flip to strict once S3 lands.",
-    strict=False,
-)
 def test_run_draft_excludes_classic_bosses() -> None:
+    # S3 acceptance: a freshly regenerated live Scholomance cast must carry no Classic-only
+    # NPCs. Skips when no local draft is present (gitignored; regenerating it is OpenAI-gated).
     if not _RUN_DRAFT.exists():
         pytest.skip("requires local test-run-wpl-1 draft")
     page = json.loads(_RUN_DRAFT.read_text(encoding="utf-8"))

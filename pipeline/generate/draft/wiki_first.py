@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from pipeline.common.retail import KNOWN_CLASSIC_ENTITIES
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.common.wiki_evidence_filters import cap_history_pool
 from pipeline.contracts.models import INSTANCE_MAX_KEY_CHARACTERS, ZONE_MAX_TOTAL_QUESTLINE_CARDS
@@ -465,6 +466,29 @@ def _extract_instance_structured_links(
     return []
 
 
+def _classic_excluded_names(
+    snapshots: list[dict[str, Any]] | None, instance_id: str
+) -> set[str]:
+    """S3 retail/Classic cast exclusion set (normalized names).
+
+    Union of the known-Classic backstop denylist and the instance snapshot's
+    ``classic_excluded_characters`` (the authoritative wiki-category exclusions captured
+    during traverse). Names are normalized to match ``prefilter_character_pool``.
+    """
+    excluded = {normalize_title(name) for name in KNOWN_CLASSIC_ENTITIES}
+    for snapshot in snapshots or []:
+        if (
+            str(snapshot.get("entity_id", "")).strip() == instance_id
+            and str(snapshot.get("entity_type", "")).strip() == "instance"
+            and not str(snapshot.get("auxiliary_role", "")).strip()
+        ):
+            names = snapshot.get("classic_excluded_characters", [])
+            if isinstance(names, list):
+                excluded.update(normalize_title(str(name)) for name in names)
+            break
+    return excluded
+
+
 _POOL_SELECTION_CONTEXT_MAX_CHARS = 800
 
 
@@ -552,7 +576,11 @@ def build_instance_key_character_selection(
         narrative_pool=narrative_pool,
         history_pool=history_pool,
     )
-    pool = prefilter_character_pool(raw_pool, instance_name=instance_name)
+    pool = prefilter_character_pool(
+        raw_pool,
+        instance_name=instance_name,
+        excluded_normalized_names=_classic_excluded_names(snapshots, instance_id),
+    )
     if not pool:
         return InstanceKeyCharacterSelection(context_text=context_text)
 

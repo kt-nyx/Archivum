@@ -30,6 +30,7 @@ from urllib.parse import quote
 import httpx
 
 from pipeline.common.io import read_json
+from pipeline.common.retail import CLASSIC_CATEGORY_MARKERS, KNOWN_CLASSIC_ENTITIES
 from pipeline.ingest.fetch_wiki import _categories_from_parse_blob
 from pipeline.validate.engine import validate_payload
 
@@ -38,22 +39,9 @@ INSTANCE_GOLD = PILOT_DIR / "instance_page_scholomance_gold.json"
 ZONE_QUESTLINE_GOLD = PILOT_DIR / "zone_page_western_plaguelands_gold.json"
 QUESTLINE_REGISTRY = PILOT_DIR / "western_plaguelands_questline_registry.json"
 
-# Authoritative retail-eligibility is the wiki category (use --online). This denylist is a
-# documented offline backstop for known Classic-only entities that lack a "(Classic)" marker
-# in their wiki ref (e.g. original-Scholomance bosses/NPCs). Keep it small and justified.
-KNOWN_CLASSIC_ENTITIES: frozenset[str] = frozenset(
-    {
-        "ravenian",
-        "doctor theolen krastinov",
-        "professor slate",
-        "weldon barov",
-        "lord alexei barov",
-        "kirtonos the herald",
-        "ras frostwhisper",
-    }
-)
-# Categories that mark a page as non-retail (substring match, case-insensitive).
-CLASSIC_CATEGORY_MARKERS: tuple[str, ...] = ("classic", "removed", "legacy", "warcraft iii")
+# Retail-eligibility signals are centralized in pipeline.common.retail (S3):
+# - KNOWN_CLASSIC_ENTITIES: documented offline backstop denylist (clean-href Classic NPCs).
+# - CLASSIC_CATEGORY_MARKERS: authoritative wiki-category substrings (used by --online).
 
 
 @dataclass(frozen=True)

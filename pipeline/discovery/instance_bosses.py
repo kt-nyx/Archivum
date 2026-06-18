@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from pipeline.common import wiki_html
+from pipeline.common.retail import is_non_retail_title
 from pipeline.common.text_ids import slugify
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.discovery.entity_typing import _DATING_CONVENTION_TITLE_RE, normalize_title
@@ -183,6 +184,8 @@ def should_reject_boss_title(title: str, *, instance_name: str = "") -> bool:
     if lowered in _REJECT_TITLES:
         return True
     if lowered in _NON_CHARACTER_TITLES:
+        return True
+    if is_non_retail_title(title):
         return True
     if _EVENT_ERA_RE.search(title) or _DATING_CONVENTION_TITLE_RE.search(title):
         return True
@@ -676,12 +679,20 @@ def prefilter_character_pool(
     candidates: list[BossCandidate],
     *,
     instance_name: str,
+    excluded_normalized_names: set[str] | None = None,
 ) -> list[BossCandidate]:
-    """Drop registry/meta rejects; preserve discovery order."""
+    """Drop registry/meta rejects (and any S3-excluded names); preserve discovery order.
+
+    ``excluded_normalized_names`` carries the S3 retail/Classic exclusion set: the
+    page's Classic-categorized candidates (captured at traverse) unioned with the
+    known-Classic backstop denylist. Names are compared via ``normalize_title``.
+    """
+    excluded = excluded_normalized_names or set()
     return [
         candidate
         for candidate in candidates
         if not should_reject_boss_title(candidate.name, instance_name=instance_name)
+        and normalize_title(candidate.name) not in excluded
     ]
 
 

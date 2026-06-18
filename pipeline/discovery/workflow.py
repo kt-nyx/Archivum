@@ -9,6 +9,7 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 
 from pipeline.common.io import read_json, write_json
+from pipeline.common.retail import is_classic_categorized
 from pipeline.common.run_context import RunContext
 from pipeline.common.text_ids import slugify
 from pipeline.contracts.models import DecisionArtifact
@@ -123,7 +124,11 @@ def _to_entity_id(prefix: str, title: str) -> str:
     return f"{prefix}-{slug}" if slug else prefix
 
 
-def _classify_retail_eligibility(text: str) -> str:
+def _classify_retail_eligibility(text: str, categories: list[str] | None = None) -> str:
+    # Wiki categories are the authoritative retail-eligibility signal (INGEST-CAT); the
+    # body-text keyword markers remain as a fallback when categories are absent.
+    if categories and is_classic_categorized(categories):
+        return "ineligible_classic_only"
     lowered = text.lower()
     if any(marker in lowered for marker in _CLASSIC_ONLY_MARKERS):
         return "ineligible_classic_only"
@@ -340,6 +345,9 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
         entity_name = str(snapshot.get("name", "")).strip()
         source_row = manifest_by_source.get(source_id, {})
         body_text = str(snapshot.get("body", ""))
+        snapshot_categories = snapshot.get("categories", [])
+        if not isinstance(snapshot_categories, list):
+            snapshot_categories = []
         wiki_url = str(snapshot.get("url", ""))
         section_blocks = snapshot.get("section_blocks", [])
         if not isinstance(section_blocks, list):
@@ -373,7 +381,7 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
                 "page_id": None,
                 "redirect_chain": [],
                 "disambiguation_state": "none",
-                "retail_eligibility": _classify_retail_eligibility(body_text),
+                "retail_eligibility": _classify_retail_eligibility(body_text, snapshot_categories),
             }
         )
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -71,6 +72,90 @@ def _categories_from_parse_blob(parse_blob: dict[str, Any]) -> list[str]:
         if name and name not in names:
             names.append(name)
     return names
+
+
+def _category_lookup_key(title: str) -> str:
+    """Normalize a page title/path for category-map lookup (spaces, casefold)."""
+    return str(title or "").replace("_", " ").strip().casefold()
+
+
+def fetch_categories_for_titles(
+    titles: Iterable[str],
+    *,
+    source_class: str = "warcraft_wiki",
+    origin: str = "https://warcraft.wiki.gg",
+    batch_size: int = 20,
+    retries: int = 0,
+) -> dict[str, list[str]]:
+    """Return ``{lookup_key -> [category names]}`` for many wiki titles in batches.
+
+    Uses MediaWiki ``action=query&prop=categories`` (the authoritative retail-eligibility
+    signal for S3). Title normalization and redirects are resolved so a requested title
+    maps to its canonical page's categories. ``retries=0`` by default so an offline caller
+    fails fast; callers should treat any raised error as "no category data".
+    """
+    profile = profile_for_source_class(source_class)
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw_title in titles:
+        title = str(raw_title or "").replace("_", " ").strip()
+        key = title.casefold()
+        if title and key not in seen:
+            seen.add(key)
+            cleaned.append(title)
+
+    result: dict[str, list[str]] = {}
+    for start in range(0, len(cleaned), batch_size):
+        batch = cleaned[start : start + batch_size]
+        params = {
+            "action": "query",
+            "prop": "categories",
+            "cllimit": "max",
+            "redirects": "1",
+            "titles": "|".join(batch),
+            "formatversion": "2",
+            "format": "json",
+        }
+        api_url = f"{origin}/api.php?{urlencode(params)}"
+        raw = http.get_text(
+            api_url,
+            headers={"User-Agent": _INGEST_USER_AGENT},
+            timeout=profile.timeout_seconds,
+            retries=retries,
+            backoff_base=profile.retry_backoff_seconds,
+        )
+        data = json.loads(raw)
+        query = data.get("query")
+        if not isinstance(query, dict):
+            continue
+        # from -> to aliasing across both normalization and redirect hops.
+        alias: dict[str, str] = {}
+        for row in (query.get("normalized") or []) + (query.get("redirects") or []):
+            if isinstance(row, dict) and row.get("from"):
+                alias[_category_lookup_key(str(row.get("from")))] = str(row.get("to") or "")
+        cats_by_title: dict[str, list[str]] = {}
+        for page in query.get("pages") or []:
+            if not isinstance(page, dict):
+                continue
+            names = []
+            for entry in page.get("categories") or []:
+                if not isinstance(entry, dict):
+                    continue
+                name = str(entry.get("title") or entry.get("*") or "")
+                name = name.split(":", 1)[-1].replace("_", " ").strip()
+                if name:
+                    names.append(name)
+            cats_by_title[_category_lookup_key(str(page.get("title") or ""))] = names
+        for original in batch:
+            key = _category_lookup_key(original)
+            target = key
+            for _ in range(3):  # follow normalization -> redirect chain
+                nxt = alias.get(target)
+                if not nxt:
+                    break
+                target = _category_lookup_key(nxt)
+            result[key] = cats_by_title.get(target, cats_by_title.get(key, []))
+    return result
 
 
 def fetch_wiki_html(url: str, source_class: str) -> str:
