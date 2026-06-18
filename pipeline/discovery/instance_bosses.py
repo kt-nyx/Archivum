@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
 
+from pipeline.common import wiki_html
+from pipeline.common.text_ids import slugify
+from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.discovery.entity_typing import _DATING_CONVENTION_TITLE_RE, normalize_title
 from pipeline.discovery.world_registry import entry_kinds
-from pipeline.common.text_normalize import clean_wiki_snippet
 
 _WIKI_LINK_RE = re.compile(r"/wiki/([^|\s\]#<>\"']+)")
 _WIKITEXT_LINK_RE = re.compile(r"\[\[([^|\]#]+)(?:\|[^\]]+)?\]\]")
-_HTML_TAG_RE = re.compile(r"<[^>]+>")
 _BOSS_SECTION_TOKENS = (
     "adventurer",
     "encounter",
@@ -169,7 +170,7 @@ def _canonical_index_from_structured_links(
 
 
 def _slug_id(name: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    slug = slugify(name)
     return f"character-{slug}" if slug else ""
 
 
@@ -245,7 +246,7 @@ def valid_boss_names_from_pool_items(
 
 
 def _plain_snippet(text: str) -> str:
-    return clean_wiki_snippet(_HTML_TAG_RE.sub(" ", text))
+    return clean_wiki_snippet(wiki_html.strip_tags(text))
 
 
 def _profile_pool_for_boss(

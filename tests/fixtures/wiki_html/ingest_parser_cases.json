@@ -1,0 +1,282 @@
+{
+  "instance": {
+    "html": "\n<table class=\"infobox darktable\"><tbody>\n<tr><th>End boss</th><td><a href=\"/wiki/Loken\" title=\"Loken\">Loken</a></td></tr>\n<tr><td>INFOBOX_ONLY_SENTINEL</td></tr>\n</tbody></table>\n<table class=\"mw-collapsible mw-collapsed\"><tbody>\n<tr><th>Bosses</th></tr>\n<tr><td>\n<a href=\"/wiki/General_Bjarngrim\" title=\"General Bjarngrim\">General Bjarngrim</a>\n<a href=\"/wiki/Loken\" title=\"Loken\">Loken</a>\n</td></tr>\n</tbody></table>\n<p>The Halls of Lightning is a five-man wing where\n<a href=\"/wiki/Loken\" title=\"Loken\">Loken</a> made his last stand.</p>\n<h2><span class=\"mw-headline\">Dungeon denizens</span></h2>\n<h3><span class=\"mw-headline\">Bosses</span></h3>\n<ul>\n<li><a href=\"/wiki/General_Bjarngrim\" title=\"General Bjarngrim\">General Bjarngrim</a></li>\n<li><a href=\"/wiki/Volkhan\" title=\"Volkhan\">Volkhan</a></li>\n<li><a href=\"/wiki/Ionar\" title=\"Ionar\">Ionar</a></li>\n<li><a href=\"/wiki/Loken\" title=\"Loken\">Loken</a></li>\n</ul>\n<h3><span class=\"mw-headline\">Encounters</span></h3>\n<table class=\"darktable\"><tbody>\n<tr><td><a href=\"/wiki/General_Bjarngrim\" title=\"General Bjarngrim\">General Bjarngrim</a></td>\n<td><a href=\"/wiki/Stormforged_Reaver\" title=\"Stormforged Reaver\">Stormforged Reaver</a></td></tr>\n</tbody></table>\n<h2><span class=\"mw-headline\">External links</span></h2>\n<table class=\"navbox\"><tbody><tr><td>\nNAVBOX_ONLY_SENTINEL\n<a href=\"/wiki/Ulduar\" title=\"Ulduar\">Ulduar</a>\n</td></tr></tbody></table>\n",
+    "sections": [
+      {
+        "section_role": "lead",
+        "parent_section_role": "lead",
+        "text": "Bosses",
+        "block_type": "table_cell"
+      },
+      {
+        "section_role": "lead",
+        "parent_section_role": "lead",
+        "text": "General Bjarngrim Loken",
+        "block_type": "table_cell"
+      },
+      {
+        "section_role": "lead",
+        "parent_section_role": "lead",
+        "text": "The Halls of Lightning is a five-man wing where Loken made his last stand.",
+        "block_type": "paragraph"
+      },
+      {
+        "section_role": "bosses",
+        "parent_section_role": "dungeon_denizens",
+        "text": "General Bjarngrim",
+        "block_type": "list_item"
+      },
+      {
+        "section_role": "bosses",
+        "parent_section_role": "dungeon_denizens",
+        "text": "Volkhan",
+        "block_type": "list_item"
+      },
+      {
+        "section_role": "bosses",
+        "parent_section_role": "dungeon_denizens",
+        "text": "Ionar",
+        "block_type": "list_item"
+      },
+      {
+        "section_role": "bosses",
+        "parent_section_role": "dungeon_denizens",
+        "text": "Loken",
+        "block_type": "list_item"
+      },
+      {
+        "section_role": "encounters",
+        "parent_section_role": "dungeon_denizens",
+        "text": "General Bjarngrim",
+        "block_type": "table_cell"
+      },
+      {
+        "section_role": "encounters",
+        "parent_section_role": "dungeon_denizens",
+        "text": "Stormforged Reaver",
+        "block_type": "table_cell"
+      }
+    ],
+    "links": [
+      "/wiki/Loken",
+      "/wiki/General_Bjarngrim",
+      "/wiki/Volkhan",
+      "/wiki/Ionar",
+      "/wiki/Stormforged_Reaver",
+      "/wiki/Ulduar"
+    ],
+    "structured": [
+      {
+        "href": "/wiki/Loken",
+        "section_role": "lead",
+        "label": "Loken",
+        "parent_section_role": "lead"
+      },
+      {
+        "href": "/wiki/General_Bjarngrim",
+        "section_role": "lead",
+        "label": "General Bjarngrim",
+        "parent_section_role": "lead"
+      },
+      {
+        "href": "/wiki/General_Bjarngrim",
+        "section_role": "bosses",
+        "label": "General Bjarngrim",
+        "parent_section_role": "dungeon_denizens"
+      },
+      {
+        "href": "/wiki/Volkhan",
+        "section_role": "bosses",
+        "label": "Volkhan",
+        "parent_section_role": "dungeon_denizens"
+      },
+      {
+        "href": "/wiki/Ionar",
+        "section_role": "bosses",
+        "label": "Ionar",
+        "parent_section_role": "dungeon_denizens"
+      },
+      {
+        "href": "/wiki/Loken",
+        "section_role": "bosses",
+        "label": "Loken",
+        "parent_section_role": "dungeon_denizens"
+      },
+      {
+        "href": "/wiki/General_Bjarngrim",
+        "section_role": "encounters",
+        "label": "General Bjarngrim",
+        "parent_section_role": "dungeon_denizens"
+      },
+      {
+        "href": "/wiki/Stormforged_Reaver",
+        "section_role": "encounters",
+        "label": "Stormforged Reaver",
+        "parent_section_role": "dungeon_denizens"
+      },
+      {
+        "href": "/wiki/Ulduar",
+        "section_role": "other",
+        "label": "Ulduar"
+      }
+    ],
+    "body": "The Halls of Lightning is a five-man wing where Loken made his last stand.",
+    "locator": "section:lead paragraph:1"
+  },
+  "entities": {
+    "html": "<p>Foo &amp; Bar&#160;baz &#39;q&#39;</p><h2><span>History</span></h2><p>A&amp;B and C&#160;D</p>",
+    "sections": [
+      {
+        "section_role": "lead",
+        "parent_section_role": "lead",
+        "text": "Foo & Bar baz 'q'",
+        "block_type": "paragraph"
+      },
+      {
+        "section_role": "history",
+        "parent_section_role": "history",
+        "text": "A&B and C D",
+        "block_type": "paragraph"
+      }
+    ],
+    "links": [],
+    "structured": [],
+    "body": "Foo & Bar baz 'q'\nA&B and C D",
+    "locator": "section:lead paragraph:1"
+  },
+  "nested_list": {
+    "html": "<h2><span>Roster</span></h2><ul><li>Alpha<ul><li>Beta</li></ul></li><li>Gamma</li></ul>",
+    "sections": [
+      {
+        "section_role": "roster",
+        "parent_section_role": "roster",
+        "text": "Alpha Beta",
+        "block_type": "list_item"
+      },
+      {
+        "section_role": "roster",
+        "parent_section_role": "roster",
+        "text": "Gamma",
+        "block_type": "list_item"
+      }
+    ],
+    "links": [],
+    "structured": [],
+    "body": "Roster Alpha Beta Gamma",
+    "locator": "section:lead paragraph:1"
+  },
+  "rpg": {
+    "html": "<h2><span>In the RPG</span></h2><h3><span>Lore</span></h3><p>rpg paragraph text</p><h2><span>History</span></h2><p>real history</p>",
+    "sections": [
+      {
+        "section_role": "in_the_rpg_lore",
+        "parent_section_role": "in_the_rpg",
+        "text": "rpg paragraph text",
+        "block_type": "paragraph"
+      },
+      {
+        "section_role": "history",
+        "parent_section_role": "history",
+        "text": "real history",
+        "block_type": "paragraph"
+      }
+    ],
+    "links": [],
+    "structured": [],
+    "body": "rpg paragraph text\nreal history",
+    "locator": "section:lore paragraph:1"
+  },
+  "stray_h1": {
+    "html": "<h1 class=\"firstHeading\">Halls of Lightning</h1><p>Introductory prose about the instance.</p><h2><span class=\"mw-headline\">History</span></h2><p>History prose.</p>",
+    "sections": [
+      {
+        "section_role": "lead",
+        "parent_section_role": "lead",
+        "text": "Introductory prose about the instance.",
+        "block_type": "paragraph"
+      },
+      {
+        "section_role": "history",
+        "parent_section_role": "history",
+        "text": "History prose.",
+        "block_type": "paragraph"
+      }
+    ],
+    "links": [],
+    "structured": [],
+    "body": "Introductory prose about the instance.\nHistory prose.",
+    "locator": "section:halls_of_lightning paragraph:1"
+  },
+  "multi_para": {
+    "html": "<p>First para.</p><h2><span>History</span></h2><p>Second &amp; para.</p><p>Third para.</p>",
+    "sections": [
+      {
+        "section_role": "lead",
+        "parent_section_role": "lead",
+        "text": "First para.",
+        "block_type": "paragraph"
+      },
+      {
+        "section_role": "history",
+        "parent_section_role": "history",
+        "text": "Second & para.",
+        "block_type": "paragraph"
+      },
+      {
+        "section_role": "history",
+        "parent_section_role": "history",
+        "text": "Third para.",
+        "block_type": "paragraph"
+      }
+    ],
+    "links": [],
+    "structured": [],
+    "body": "First para.\nSecond & para.\nThird para.",
+    "locator": "section:lead paragraph:1"
+  },
+  "nested_table": {
+    "html": "<h2><span>Denizens</span></h2><table class=\"darktable\"><tbody><tr><td>Outer <table class=\"navbox\"><tr><td>NESTED_CHROME</td></tr></table> tail</td></tr></tbody></table>",
+    "sections": [
+      {
+        "section_role": "denizens",
+        "parent_section_role": "denizens",
+        "text": "Outer NESTED_CHROME tail",
+        "block_type": "table_cell"
+      }
+    ],
+    "links": [],
+    "structured": [],
+    "body": "Denizens Outer NESTED_CHROME tail",
+    "locator": "section:lead paragraph:1"
+  },
+  "links_filter": {
+    "html": "<p><a href=\"/wiki/Good_Link\">good</a> <a href=\"https://warcraft.wiki.gg/wiki/Full\">full</a> <a href=\"https://example.com/x\">ext</a> <a href=\"#frag\">frag</a></p>",
+    "sections": [
+      {
+        "section_role": "lead",
+        "parent_section_role": "lead",
+        "text": "good full ext frag",
+        "block_type": "paragraph"
+      }
+    ],
+    "links": [
+      "/wiki/Good_Link",
+      "https://warcraft.wiki.gg/wiki/Full"
+    ],
+    "structured": [
+      {
+        "href": "https://warcraft.wiki.gg/wiki/Full",
+        "section_role": "lead",
+        "label": "Full",
+        "parent_section_role": "lead"
+      },
+      {
+        "href": "/wiki/Good_Link",
+        "section_role": "other",
+        "label": "Good Link"
+      }
+    ],
+    "body": "good full ext frag",
+    "locator": "section:lead paragraph:1"
+  }
+}

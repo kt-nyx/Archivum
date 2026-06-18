@@ -2,64 +2,31 @@
 
 from __future__ import annotations
 
-import re
 from collections import defaultdict
 from typing import Any
 
-from pipeline.discovery.storyline_html import _clean_text, _slugify
+from pipeline.common.text_ids import slugify
+from pipeline.discovery.storyline_html import anchor_index_map, collect_heading_events
 
 _GENERIC_CLUSTER_TITLES = frozenset({"main storylines", "main storyline", ""})
 _MAX_CLUSTER_QUESTS = 15
-_TABLE_HEADING_RE = re.compile(r"<th[^>]*>(.*?)</th>", re.IGNORECASE | re.DOTALL)
-_BOLD_HEADING_RE = re.compile(r"<b[^>]*>(.*?)</b>", re.IGNORECASE | re.DOTALL)
-_THUMB_CAPTION_RE = re.compile(
-    r'<div[^>]*class="[^"]*thumbcaption[^"]*"[^>]*>(.*?)</div>',
-    re.IGNORECASE | re.DOTALL,
-)
-_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _slugify(text: str) -> str:
+    return slugify(text) or "cluster-main"
 
 
 def _is_generic_cluster_title(title: str) -> bool:
     return title.strip().lower() in _GENERIC_CLUSTER_TITLES
 
 
-def _hub_heading_events(html: str) -> list[tuple[int, str, str, int]]:
-    """Return (offset, slug, title, heading_level) sorted by offset."""
-    events: list[tuple[int, str, str, int]] = []
-    for match in re.finditer(r"<h([23])[^>]*>(.*?)</h\1>", html, re.IGNORECASE | re.DOTALL):
-        title = _clean_text(match.group(2))
-        if title:
-            level = int(match.group(1))
-            events.append((match.start(), _slugify(title), title, level))
-    for match in _TABLE_HEADING_RE.finditer(html):
-        title = _clean_text(match.group(1))
-        if title and len(title.split()) >= 2:
-            events.append((match.start(), _slugify(title), title, 4))
-    for match in _THUMB_CAPTION_RE.finditer(html):
-        title = _clean_text(match.group(1))
-        if title and len(title.split()) >= 2:
-            events.append((match.start(), _slugify(title), title, 5))
-    for match in _BOLD_HEADING_RE.finditer(html):
-        title = _clean_text(match.group(1))
-        if title and 2 <= len(title.split()) <= 8 and title[0].isupper():
-            events.append((match.start(), _slugify(title), title, 6))
-    events.sort(key=lambda row: row[0])
-    deduped: list[tuple[int, str, str, int]] = []
-    seen_slugs: set[str] = set()
-    for event in events:
-        if event[1] in seen_slugs:
-            continue
-        seen_slugs.add(event[1])
-        deduped.append(event)
-    return deduped
-
-
 def infer_hub_titles(rows: list[dict[str, Any]], html: str) -> list[dict[str, Any]]:
     if not rows:
         return rows
-    headings = _hub_heading_events(html)
+    headings = collect_heading_events(html)
     if not headings:
         return rows
+    anchor_offsets = anchor_index_map(html)
     updated: list[dict[str, Any]] = []
     for row in rows:
         if str(row.get("node_type", "")) != "quest":
@@ -71,7 +38,7 @@ def infer_hub_titles(rows: list[dict[str, Any]], html: str) -> list[dict[str, An
             updated.append(out)
             continue
         source_link = str(out.get("source_link", ""))
-        offset = html.find(source_link) if source_link else -1
+        offset = anchor_offsets.get(source_link.split("#", 1)[0], -1) if source_link else -1
         if offset < 0:
             updated.append(out)
             continue

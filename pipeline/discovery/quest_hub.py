@@ -5,18 +5,19 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from pipeline.common import wiki_html
 from pipeline.discovery.entity_typing import is_valid_quest_graph_link
 from pipeline.discovery.quest_lore import extract_quest_lore, lore_word_count
 
-_LIST_ITEM_RE = re.compile(r"<li[^>]*>(.*?)</li>", re.IGNORECASE | re.DOTALL)
-_QUESTLINK_RE = re.compile(
-    r'<a\s+[^>]*class="[^"]*questlink[^"]*"[^>]*href="(/wiki/[^"#]+)"',
-    re.IGNORECASE,
-)
+# Text-level href scan for block text (already tag-stripped); not HTML-structure parsing.
 _HREF_RE = re.compile(r'href="(/wiki/[^"#]+)"', re.IGNORECASE)
-_TAG_RE = re.compile(r"<[^>]+>")
 _HUB_LORE_WORD_THRESHOLD = 80
 _MAX_HUB_CHILDREN = 2
+
+
+def _normalized_wiki_link(href: str) -> str:
+    value = str(href).strip()
+    return value.split("#", 1)[0] if value.startswith("/wiki/") else ""
 
 
 def _normalize_wiki_href(link: str) -> str:
@@ -32,18 +33,23 @@ def _normalize_wiki_href(link: str) -> str:
 
 
 def _quest_links_from_html(html: str) -> list[str]:
+    root = wiki_html.soup(html)
     links: list[str] = []
     seen: set[str] = set()
-    for list_item in _LIST_ITEM_RE.findall(html):
-        for match in _QUESTLINK_RE.finditer(list_item):
-            href = str(match.group(1)).strip()
+    # Prefer questlink anchors inside list items.
+    for list_item in root.find_all("li"):
+        for anchor in list_item.find_all("a", href=True):
+            if not any("questlink" in cls for cls in (anchor.get("class") or [])):
+                continue
+            href = _normalized_wiki_link(str(anchor["href"]))
             if href and href not in seen:
                 seen.add(href)
                 links.append(href)
     if len(links) >= 2:
         return links
-    for match in _HREF_RE.finditer(html):
-        href = str(match.group(1)).strip()
+    # Fallback: every wiki anchor in document order.
+    for anchor in root.find_all("a", href=True):
+        href = _normalized_wiki_link(str(anchor["href"]))
         if href and href not in seen:
             seen.add(href)
             links.append(href)
@@ -132,8 +138,7 @@ def is_quest_hub_page(
         return False
     lore_words = lore_word_count(extract_quest_lore(section_blocks))
     if parse_html.strip() and lore_words == 0:
-        stripped = _TAG_RE.sub(" ", parse_html)
-        stripped = " ".join(stripped.split())
+        stripped = wiki_html.strip_tags(parse_html)
         if len(stripped.split()) < _HUB_LORE_WORD_THRESHOLD:
             return True
     return lore_words < _HUB_LORE_WORD_THRESHOLD

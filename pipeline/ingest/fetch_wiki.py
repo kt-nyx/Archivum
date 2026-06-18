@@ -9,18 +9,19 @@ from __future__ import annotations
 
 import json
 import re
-import time
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, TypedDict
-from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlunparse
-from urllib.request import Request, urlopen
 
+import httpx
 from jsonschema import Draft202012Validator
 
+from pipeline.common import http, wiki_html
+from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext
+from pipeline.common.text_ids import slugify
 from pipeline.ingest.retrieval_profiles import RetrievalProfile, profile_for_source_class
 
 _INGEST_USER_AGENT = "wow-lore-ingest/1.0"
@@ -29,39 +30,8 @@ _INGEST_USER_AGENT = "wow-lore-ingest/1.0"
 # Extend when adding another MediaWiki-backed farm; non-MediaWiki wikis need a separate adapter.
 _MEDIAWIKI_PARSE_SOURCE_CLASSES: frozenset[str] = frozenset({"warcraft_wiki"})
 
-PARAGRAPH_RE = re.compile(r"<p[^>]*>(.*?)</p>", re.IGNORECASE | re.DOTALL)
-BLOCK_RE = re.compile(r"<(h[1-6]|p)[^>]*>(.*?)</\1>", re.IGNORECASE | re.DOTALL)
-TAG_RE = re.compile(r"<[^>]+>")
-HREF_RE = re.compile(r'<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', re.IGNORECASE | re.DOTALL)
 REVISION_RE = re.compile(r'"wgRevisionId"\s*:\s*([0-9]+)')
 _PARSE_HTML_CAP = 524288
-
-# Document-order content elements used for section_blocks. Headings update the
-# current section; paragraphs, list items, and content-table cells become blocks.
-# Lists/tables matter because Warcraft Wiki rosters (bosses, dungeon denizens,
-# encounters) are authored as <ul>/<li> and <table> rows, not <p> prose.
-SECTION_BLOCK_RE = re.compile(
-    r"<(?P<h>h[1-6])\b[^>]*>(?P<htext>.*?)</(?P=h)>"
-    r"|<p\b[^>]*>(?P<ptext>.*?)</p>"
-    r"|<li\b[^>]*>(?P<litext>.*?)</li>"
-    r"|<t(?P<cell>[dh])\b[^>]*>(?P<celltext>.*?)</t(?P=cell)>",
-    re.IGNORECASE | re.DOTALL,
-)
-_TABLE_OPEN_RE = re.compile(r"<table\b[^>]*>", re.IGNORECASE)
-_TABLE_TOKEN_RE = re.compile(r"<table\b|</table\s*>", re.IGNORECASE)
-_TABLE_CLASS_RE = re.compile(r'class\s*=\s*"([^"]*)"', re.IGNORECASE)
-# Chrome tables (infoboxes, navboxes, ToCs, message boxes) carry navigation and
-# metadata, not roster content; capturing their cells would pollute the lead and
-# section blocks, so they are removed before the section walk.
-_EXCLUDED_TABLE_CLASS_TOKENS = (
-    "infobox",
-    "navbox",
-    "toc",
-    "metadata",
-    "mbox",
-    "noprint",
-    "navigation",
-)
 
 
 def _cap_parse_html(html: str) -> str:
@@ -231,21 +201,18 @@ def _validate_manifest_row(row: dict[str, Any], index: int) -> ValidatedManifest
 
 
 def _normalize_locator_section(value: str) -> str:
-    section = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
-    return section or "lead"
+    return slugify(value, separator="_") or "lead"
 
 
 def _extract_main_text(html: str, *, max_chars: int) -> tuple[str, str]:
-    paragraphs = PARAGRAPH_RE.findall(html)
-    cleaned_chunks: list[str] = []
     first_locator = "section:lead paragraph:1"
     current_section = "lead"
     paragraph_index_by_section: dict[str, int] = {"lead": 0}
-    for tag_name, raw_value in BLOCK_RE.findall(html):
-        cleaned = " ".join(TAG_RE.sub(" ", raw_value).split())
+    for block in wiki_html.iter_tagged_text(html, ("h1", "h2", "h3", "h4", "h5", "h6", "p")):
+        cleaned = block["text"]
         if not cleaned:
             continue
-        if tag_name.lower().startswith("h"):
+        if block["tag"].startswith("h"):
             current_section = _normalize_locator_section(cleaned)
             paragraph_index_by_section.setdefault(current_section, 0)
             continue
@@ -257,14 +224,9 @@ def _extract_main_text(html: str, *, max_chars: int) -> tuple[str, str]:
                 f"section:{current_section} paragraph:{paragraph_index_by_section[current_section]}"
             )
             break
-    for paragraph in paragraphs:
-        stripped = TAG_RE.sub(" ", paragraph)
-        collapsed = " ".join(stripped.split())
-        if collapsed:
-            cleaned_chunks.append(collapsed)
+    cleaned_chunks = wiki_html.paragraph_texts(html)
     if not cleaned_chunks:
-        fallback = TAG_RE.sub(" ", html)
-        cleaned_chunks = [" ".join(fallback.split())]
+        cleaned_chunks = [wiki_html.strip_tags(html)]
     text = "\n".join(cleaned_chunks)
     return text[:max_chars], first_locator
 
@@ -337,89 +299,39 @@ def _apply_rpg_section_prefix(section: str, *, in_rpg: bool) -> str:
     return f"in_the_rpg_{section}"
 
 
-def _is_excluded_table(open_tag: str) -> bool:
-    """True for navigation/metadata tables (infobox, navbox, toc, ...) we drop."""
-    class_match = _TABLE_CLASS_RE.search(open_tag)
-    if not class_match:
-        return False
-    classes = class_match.group(1).lower()
-    return any(token in classes for token in _EXCLUDED_TABLE_CLASS_TOKENS)
-
-
-def _find_table_end(html: str, start: int) -> int:
-    """Return index past the </table> matching the <table> at ``start`` (nesting-aware)."""
-    depth = 0
-    for token in _TABLE_TOKEN_RE.finditer(html, start):
-        if token.group(0).lower().startswith("</"):
-            depth -= 1
-            if depth <= 0:
-                return token.end()
-        else:
-            depth += 1
-    return len(html)
-
-
-def _strip_excluded_tables(html: str) -> str:
-    """Remove chrome tables (and their nested content) before the section walk."""
-    out: list[str] = []
-    index = 0
-    while True:
-        match = _TABLE_OPEN_RE.search(html, index)
-        if not match:
-            out.append(html[index:])
-            break
-        out.append(html[index : match.start()])
-        end = _find_table_end(html, match.start())
-        if not _is_excluded_table(match.group(0)):
-            out.append(html[match.start() : end])
-        index = end
-    return "".join(out)
+_BLOCK_TYPE_BY_TAG = {"p": "paragraph", "li": "list_item", "td": "table_cell", "th": "table_cell"}
 
 
 def _extract_sections_and_links(
     html: str, *, max_links: int = 300
 ) -> tuple[list[dict[str, str]], list[str], list[dict[str, str]]]:
     sections: list[dict[str, str]] = []
-    links: list[str] = []
     current_section = "lead"
     current_top_section = "lead"
     in_rpg = False
-    walk_html = _strip_excluded_tables(html)
-    for match in SECTION_BLOCK_RE.finditer(walk_html):
-        heading_tag = match.group("h")
-        if heading_tag is not None:
-            cleaned = " ".join(TAG_RE.sub(" ", match.group("htext") or "").split())
+    # wiki_html.content_blocks drops chrome tables and folds nested blocks into their
+    # ancestor, mirroring the previous regex section walk.
+    for block in wiki_html.content_blocks(html):
+        tag = block["tag"]
+        cleaned = block["text"]
+        if tag.startswith("h"):
             if not cleaned:
                 continue
-            heading_level = _heading_level(heading_tag)
+            heading_level = _heading_level(tag)
             # Parse-API fragments have no <h1> page title; ignore stray level-1
             # headings so they never override the lead section.
             if heading_level == 1:
                 continue
             normalized = _normalize_locator_section(cleaned)
             if heading_level <= 2:
-                if normalized in {"in_the_rpg", "in_the_rpg_edit"}:
-                    in_rpg = True
-                    current_section = normalized
-                else:
-                    in_rpg = False
-                    current_section = normalized
+                in_rpg = normalized in {"in_the_rpg", "in_the_rpg_edit"}
+                current_section = normalized
                 current_top_section = current_section
             elif in_rpg:
                 current_section = _apply_rpg_section_prefix(normalized, in_rpg=True)
             else:
                 current_section = normalized
             continue
-        if match.group("ptext") is not None:
-            raw_value = match.group("ptext")
-            block_type = "paragraph"
-        elif match.group("litext") is not None:
-            raw_value = match.group("litext")
-            block_type = "list_item"
-        else:
-            raw_value = match.group("celltext")
-            block_type = "table_cell"
-        cleaned = " ".join(TAG_RE.sub(" ", raw_value or "").split())
         if not cleaned:
             continue
         section_role = _apply_rpg_section_prefix(current_section, in_rpg=in_rpg)
@@ -429,22 +341,12 @@ def _extract_sections_and_links(
                 "section_role": section_role,
                 "parent_section_role": parent_section_role,
                 "text": cleaned,
-                "block_type": block_type,
+                "block_type": _BLOCK_TYPE_BY_TAG[tag],
             }
         )
-    for href, label_raw in HREF_RE.findall(html):
-        href_value = href.strip()
-        if not href_value:
-            continue
-        if href_value.startswith("/wiki/"):
-            links.append(href_value)
-        elif "warcraft.wiki.gg/wiki/" in href_value:
-            links.append(href_value)
-        if len(links) >= max_links:
-            break
-    deduped_links = list(dict.fromkeys(links))
-    structured = build_structured_links_from_sections(sections, deduped_links)
-    return sections, deduped_links, structured
+    links = wiki_html.extract_links(html, max_links=max_links)
+    structured = build_structured_links_from_sections(sections, links)
+    return sections, links, structured
 
 
 def _mediawiki_parse_ingest_eligible(url: str, source_class: str) -> bool:
@@ -494,9 +396,13 @@ def _fetch_mediawiki_via_parse_api(
         params["page"] = title
 
     api_url = f"{origin}/api.php?{urlencode(params)}"
-    request = Request(api_url, headers={"User-Agent": _INGEST_USER_AGENT})
-    with urlopen(request, timeout=profile.timeout_seconds) as response:  # noqa: S310
-        raw = response.read().decode("utf-8", errors="replace")
+    raw = http.get_text(
+        api_url,
+        headers={"User-Agent": _INGEST_USER_AGENT},
+        timeout=profile.timeout_seconds,
+        retries=profile.retries,
+        backoff_base=profile.retry_backoff_seconds,
+    )
     data = json.loads(raw)
     if "error" in data:
         err = data["error"]
@@ -533,37 +439,35 @@ def _fetch_url_text(
     url: str, source_class: str, *, include_parsetree: bool = False
 ) -> tuple[Any, ...]:
     profile = profile_for_source_class(source_class)
-    last_error: Exception | None = None
     use_parse_api = _mediawiki_parse_ingest_eligible(url, source_class)
-    for attempt in range(profile.retries + 1):
-        try:
-            if use_parse_api:
-                return _fetch_mediawiki_via_parse_api(
-                    url, profile, include_parsetree=include_parsetree
-                )
-            request = Request(url, headers={"User-Agent": _INGEST_USER_AGENT})
-            with urlopen(request, timeout=profile.timeout_seconds) as response:  # noqa: S310
-                html = response.read().decode("utf-8", errors="replace")
-            body, locator = _extract_main_text(html, max_chars=profile.max_chars)
-            sections, links, structured = _extract_sections_and_links(html)
-            revision_match = REVISION_RE.search(html)
-            if revision_match:
-                revision_id = f"mw:{revision_match.group(1)}"
-            else:
-                revision_id = "sha256:" + sha256(html.encode("utf-8")).hexdigest()[:16]
-            if include_parsetree:
-                # Non-MediaWiki/HTML fallback has no parse tree available.
-                return body, revision_id, locator, sections, links, structured, html, ""
-            return body, revision_id, locator, sections, links, structured, html
-        except (HTTPError, URLError, TimeoutError, ValueError) as exc:
-            last_error = exc
-            if attempt < profile.retries:
-                time.sleep(profile.retry_backoff_seconds * (2**attempt))
-            continue
-    msg = f"unable to fetch source url '{url}'"
-    if last_error is not None:
-        msg = f"{msg}: {last_error!r}"
-    raise RuntimeError(msg)
+    # Transient transport/timeout/HTTP-status errors are retried inside http.get_text
+    # (exponential backoff). MediaWiki "API error"/"empty parse" RuntimeErrors are not
+    # retried and propagate unchanged.
+    try:
+        if use_parse_api:
+            return _fetch_mediawiki_via_parse_api(
+                url, profile, include_parsetree=include_parsetree
+            )
+        html = http.get_text(
+            url,
+            headers={"User-Agent": _INGEST_USER_AGENT},
+            timeout=profile.timeout_seconds,
+            retries=profile.retries,
+            backoff_base=profile.retry_backoff_seconds,
+        )
+        body, locator = _extract_main_text(html, max_chars=profile.max_chars)
+        sections, links, structured = _extract_sections_and_links(html)
+        revision_match = REVISION_RE.search(html)
+        if revision_match:
+            revision_id = f"mw:{revision_match.group(1)}"
+        else:
+            revision_id = "sha256:" + sha256(html.encode("utf-8")).hexdigest()[:16]
+        if include_parsetree:
+            # Non-MediaWiki/HTML fallback has no parse tree available.
+            return body, revision_id, locator, sections, links, structured, html, ""
+        return body, revision_id, locator, sections, links, structured, html
+    except (httpx.HTTPError, ValueError) as exc:
+        raise RuntimeError(f"unable to fetch source url '{url}': {exc!r}") from exc
 
 
 def _build_revision_pinned_url(url: str, requested_revision_id: str) -> str:
@@ -650,7 +554,7 @@ def run_fetch_wiki(context: RunContext) -> Path:
 
     stage_dir = context.stage_dir("ingest")
     output_path = stage_dir / "source_snapshots.json"
-    output_path.write_text(json.dumps(snapshots, indent=2), encoding="utf-8")
+    write_json(output_path, snapshots)
     raw_ndjson_path = raw_dir / "source_snapshots.ndjson"
     raw_ndjson_path.write_text(
         "\n".join(json.dumps(snapshot) for snapshot in snapshots) + "\n",

@@ -3,26 +3,16 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Iterator
+from typing import Any
 
+from bs4.element import Tag
+
+from pipeline.common import wiki_html
+from pipeline.common.text_ids import slugify
 from pipeline.discovery.entity_typing import is_valid_quest_graph_link
 from pipeline.discovery.storyline_parser import _to_entity_id, _wiki_title
 
-_HEADING_RE = re.compile(r"<h([23])[^>]*>(.*?)</h\1>", re.IGNORECASE | re.DOTALL)
-_TABLE_HEADING_RE = re.compile(r"<th[^>]*>(.*?)</th>", re.IGNORECASE | re.DOTALL)
-_BOLD_HEADING_RE = re.compile(r"<b[^>]*>(.*?)</b>", re.IGNORECASE | re.DOTALL)
-_THUMB_CAPTION_RE = re.compile(
-    r'<div[^>]*class="[^"]*thumbcaption[^"]*"[^>]*>(.*?)</div>',
-    re.IGNORECASE | re.DOTALL,
-)
-_TAG_RE = re.compile(r"<[^>]+>")
 _LEVEL_RE = re.compile(r"\[[0-9]+(?:-[0-9]+)?\]")
-_LIST_ITEM_RE = re.compile(r"<li[^>]*>(.*?)</li>", re.IGNORECASE | re.DOTALL)
-_QUEST_ROW_RE = re.compile(
-    r'<span[^>]*class="[^"]*questlong-prefix[^"]*"[^>]*>(.*?)</span>\s*'
-    r'<a\s+[^>]*href="(/wiki/[^"#]+)"',
-    re.IGNORECASE | re.DOTALL,
-)
 _ICON_FACTION = (
     ("alliance", "alliance_15"),
     ("horde", "horde_15"),
@@ -32,42 +22,35 @@ _ICON_FACTION = (
 
 
 def _slugify(text: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
-    return slug or "cluster-main"
+    return slugify(text) or "cluster-main"
 
 
-def _clean_text(raw: str) -> str:
-    return " ".join(_TAG_RE.sub(" ", raw).split()).strip()
+def _clean(element: Tag) -> str:
+    return " ".join(element.get_text(" ").split()).strip()
 
 
-def _collect_headings(html: str) -> list[tuple[int, str, str, int]]:
-    """Return (offset, slug, title, heading_level) sorted by document order."""
-    events: list[tuple[int, str, str, int]] = []
-    for match in _HEADING_RE.finditer(html):
-        title = _clean_text(match.group(2))
-        if title:
-            events.append((match.start(), _slugify(title), title, int(match.group(1))))
-    for match in _TABLE_HEADING_RE.finditer(html):
-        title = _clean_text(match.group(1))
-        if title and len(title.split()) >= 2:
-            events.append((match.start(), _slugify(title), title, 4))
-    for match in _THUMB_CAPTION_RE.finditer(html):
-        title = _clean_text(match.group(1))
-        if title and len(title.split()) >= 2:
-            events.append((match.start(), _slugify(title), title, 5))
-    for match in _BOLD_HEADING_RE.finditer(html):
-        title = _clean_text(match.group(1))
+def _has_class(element: Tag, token: str) -> bool:
+    return token in (element.get("class") or [])
+
+
+def _heading_candidate(element: Tag) -> tuple[str, str, int] | None:
+    """Return (slug, title, heading_level) when an element qualifies as a cluster heading."""
+    name = element.name.lower()
+    if name in {"h2", "h3"}:
+        title = _clean(element)
+        return (_slugify(title), title, int(name[1])) if title else None
+    if name == "th":
+        title = _clean(element)
+        return (_slugify(title), title, 4) if title and len(title.split()) >= 2 else None
+    if name == "div" and _has_class(element, "thumbcaption"):
+        title = _clean(element)
+        return (_slugify(title), title, 5) if title and len(title.split()) >= 2 else None
+    if name == "b":
+        title = _clean(element)
         if title and 2 <= len(title.split()) <= 8 and title[0].isupper():
-            events.append((match.start(), _slugify(title), title, 6))
-    events.sort(key=lambda row: row[0])
-    deduped: list[tuple[int, str, str, int]] = []
-    seen_slugs: set[str] = set()
-    for event in events:
-        if event[1] in seen_slugs:
-            continue
-        seen_slugs.add(event[1])
-        deduped.append(event)
-    return deduped
+            return (_slugify(title), title, 6)
+        return None
+    return None
 
 
 def _faction_from_icon_chunk(icon_chunk: str, anchor_chunk: str = "") -> str:
@@ -79,19 +62,51 @@ def _faction_from_icon_chunk(icon_chunk: str, anchor_chunk: str = "") -> str:
 
 
 def _level_range_from_chunk(html_chunk: str) -> str | None:
-    match = _LEVEL_RE.search(_TAG_RE.sub(" ", html_chunk))
+    match = _LEVEL_RE.search(wiki_html.strip_tags(html_chunk))
     if not match:
         return None
     return match.group(0).strip()
 
 
-def _iter_list_item_quest_matches(html: str) -> Iterator[tuple[int, re.Match[str]]]:
-    """Yield quest row matches that appear inside storyline list items only."""
-    for list_item in _LIST_ITEM_RE.finditer(html):
-        item_html = list_item.group(1)
-        item_offset = list_item.start(1)
-        for quest_match in _QUEST_ROW_RE.finditer(item_html):
-            yield item_offset + quest_match.start(), quest_match
+def _following_quest_anchor(span: Tag) -> Tag | None:
+    """Return the anchor that immediately follows ``span`` (whitespace only between)."""
+    for sibling in span.next_siblings:
+        if isinstance(sibling, Tag):
+            if sibling.name.lower() == "a" and str(sibling.get("href", "")).startswith("/wiki/"):
+                return sibling
+            return None
+        if str(sibling).strip():
+            return None
+    return None
+
+
+def collect_heading_events(html: str) -> list[tuple[int, str, str, int]]:
+    """Return deduped cluster headings as ``(doc_index, slug, title, heading_level)``.
+
+    Document-order index replaces the previous character offset; it is stable across calls
+    on the same HTML, so it can be compared against :func:`anchor_index_map` values.
+    """
+    headings: list[tuple[int, str, str, int]] = []
+    seen_slugs: set[str] = set()
+    for index, element in enumerate(wiki_html.soup(html).descendants):
+        if not isinstance(element, Tag):
+            continue
+        candidate = _heading_candidate(element)
+        if candidate is not None and candidate[0] not in seen_slugs:
+            seen_slugs.add(candidate[0])
+            headings.append((index, candidate[0], candidate[1], candidate[2]))
+    return headings
+
+
+def anchor_index_map(html: str) -> dict[str, int]:
+    """Map ``/wiki/...`` href (without fragment) to its first document-order index."""
+    out: dict[str, int] = {}
+    for index, element in enumerate(wiki_html.soup(html).descendants):
+        if isinstance(element, Tag) and element.name.lower() == "a":
+            href = str(element.get("href", "")).split("#", 1)[0]
+            if href and href not in out:
+                out[href] = index
+    return out
 
 
 def parse_storyline_html(
@@ -104,30 +119,43 @@ def parse_storyline_html(
     if not html.strip():
         return []
 
-    rows: list[dict[str, Any]] = []
     default_cluster_id = "cluster-main"
     default_cluster_title = "Main storylines"
-    cluster_order_counters: dict[str, int] = {}
-    seen_hrefs: set[str] = set()
 
-    headings = _collect_headings(html)
+    # Deduped headings + quest rows (questlong-prefix span + following anchor, inside a list
+    # item), tagged with monotonic document-order indices so cluster assignment matches the
+    # old character-offset walk.
+    headings = collect_heading_events(html)
+    quest_events: list[tuple[int, Tag, Tag]] = []
+    for index, element in enumerate(wiki_html.soup(html).descendants):
+        if (
+            isinstance(element, Tag)
+            and element.name.lower() == "span"
+            and _has_class(element, "questlong-prefix")
+            and element.find_parent("li") is not None
+        ):
+            anchor = _following_quest_anchor(element)
+            if anchor is not None:
+                quest_events.append((index, element, anchor))
 
-    def cluster_for_offset(offset: int) -> tuple[str, str, int, int]:
+    def cluster_for_index(index: int) -> tuple[str, str, int, int]:
         if not headings:
             return default_cluster_id, default_cluster_title, 1, 2
         active = headings[0]
         for heading in headings:
-            if heading[0] <= offset:
+            if heading[0] <= index:
                 active = heading
             else:
                 break
         slug, title, heading_level = active[1], active[2], active[3]
-        order = next((index + 1 for index, item in enumerate(headings) if item[1] == slug), 1)
+        order = next((i + 1 for i, item in enumerate(headings) if item[1] == slug), 1)
         return slug, title, order, heading_level
 
-    for absolute_offset, quest_match in _iter_list_item_quest_matches(html):
-        icon_chunk = quest_match.group(1)
-        href = quest_match.group(2)
+    rows: list[dict[str, Any]] = []
+    cluster_order_counters: dict[str, int] = {}
+    seen_hrefs: set[str] = set()
+    for index, span, anchor in quest_events:
+        href = str(anchor.get("href", ""))
         normalized_href = href.split("#", 1)[0]
         if normalized_href in seen_hrefs:
             continue
@@ -138,10 +166,9 @@ def parse_storyline_html(
         if not title:
             continue
         seen_hrefs.add(normalized_href)
-        cid, ctitle, corder, heading_level = cluster_for_offset(absolute_offset)
+        cid, ctitle, corder, heading_level = cluster_for_index(index)
         cluster_order_counters[cid] = cluster_order_counters.get(cid, 0) + 1
-        order_in_cluster = cluster_order_counters[cid]
-        block = quest_match.group(0)
+        chunk = str(span)
         rows.append(
             {
                 "zone_id": zone_id,
@@ -152,9 +179,9 @@ def parse_storyline_html(
                 "node_id": _to_entity_id("quest", title),
                 "title": title,
                 "node_type": "quest",
-                "faction_binding": _faction_from_icon_chunk(icon_chunk, block),
-                "level_range": _level_range_from_chunk(block),
-                "order_in_cluster": order_in_cluster,
+                "faction_binding": _faction_from_icon_chunk(chunk, str(anchor)),
+                "level_range": _level_range_from_chunk(chunk),
+                "order_in_cluster": cluster_order_counters[cid],
                 "source_link": normalized_href,
             }
         )
