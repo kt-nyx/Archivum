@@ -193,7 +193,7 @@ def test_diff_reports_overview_and_cast_deltas(tmp_path: Path) -> None:
     assert fields["overview"]["changed"] is True
     assert fields["overview"]["word_delta"] > 0
     added = set(fields["key_characters"]["added"])
-    assert {"Rattlegore", "Jandice Barov", "Lord Alexei Barov"} <= added
+    assert {"Rattlegore", "Jandice Barov", "Lilian Voss"} <= added
     assert "Darkmaster Gandling" not in added
     assert set(fields["decision_sidecar"]["emitted_added"]) == added
     assert instance["rationale"]

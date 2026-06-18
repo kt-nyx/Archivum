@@ -146,71 +146,6 @@
         "role:enemy:llm_tiebreaker"
       ],
       "thumbnail_asset_id": null
-    },
-    {
-      "id": "character-doctor-theolen-krastinov",
-      "name": "Doctor Theolen Krastinov",
-      "summary": "Doctor Theolen Krastinov is a grotesque flesh-horror and carver whose name lingers through Scholomance as a rare, infamous presence. He stands as a twisted remnant of the school’s necromantic horrors, bound to the place by the butcheries and grafts that made him a terror.",
-      "role": "enemy",
-      "wiki_ref": "https://warcraft.wiki.gg/wiki/Doctor_Theolen_Krastinov",
-      "decision_reason_codes": [
-        "llm_selected",
-        "dungeon_denizens_edit",
-        "role:enemy:enemy_section"
-      ],
-      "thumbnail_asset_id": null
-    },
-    {
-      "id": "character-professor-slate",
-      "name": "Professor Slate",
-      "summary": "Professor Slate is an undead instructor of Scholomance who commands elemental magic in the academy halls, standing as a hostile guardian of the school's corrupted curriculum.",
-      "role": "enemy",
-      "wiki_ref": "https://warcraft.wiki.gg/wiki/Professor_Slate",
-      "decision_reason_codes": [
-        "llm_selected",
-        "dungeon_denizens_edit",
-        "role:enemy:enemy_section"
-      ],
-      "thumbnail_asset_id": null
-    },
-    {
-      "id": "character-ravenian",
-      "name": "Ravenian",
-      "summary": "Ravenian is one of Kel’Thuzad’s most formidable agents, lurking in Scholomance as a predator among the dead. Bound to the Scourge’s will, it preys on weakness within the school’s shadowed halls, making it a savage reminder that Scholomance remains a place of death and corruption.",
-      "role": "enemy",
-      "wiki_ref": "https://warcraft.wiki.gg/wiki/Ravenian",
-      "decision_reason_codes": [
-        "llm_selected",
-        "narrative_fallback",
-        "role:enemy:llm_tiebreaker"
-      ],
-      "thumbnail_asset_id": null
-    },
-    {
-      "id": "character-weldon-barov",
-      "name": "Weldon Barov",
-      "summary": "Weldon Barov, once tied to Scholomance by blood and memory, returns beside Alexi to reclaim their former home from the Scourge. He stands as an ally to those who enter, driven by a personal reckoning with the dark legacy that consumed the academy.",
-      "role": "ally",
-      "wiki_ref": "https://warcraft.wiki.gg/wiki/Weldon_Barov",
-      "decision_reason_codes": [
-        "llm_selected",
-        "narrative_fallback",
-        "role:ally:llm_tiebreaker"
-      ],
-      "thumbnail_asset_id": null
-    },
-    {
-      "id": "character-lord-alexei-barov",
-      "name": "Lord Alexei Barov",
-      "summary": "A tormented lord of Caer Darrow, Lord Alexei Barov aids those who enter Scholomance only because he believes Darkmaster Gandling’s death may break the curse on his home and let his spirit rest at last. He stands as a desperate ally, bound to the school’s lingering blight.",
-      "role": "ally",
-      "wiki_ref": "https://warcraft.wiki.gg/wiki/Lord_Alexei_Barov",
-      "decision_reason_codes": [
-        "llm_selected",
-        "narrative_fallback",
-        "role:ally:llm_tiebreaker"
-      ],
-      "thumbnail_asset_id": null
     }
   ],
   "major_factions": [],
@@ -223,11 +158,6 @@
       "term_id": "term-scholomance",
       "label": "Scholomance",
       "wiki_url": "https://warcraft.wiki.gg/wiki/Scholomance"
-    },
-    {
-      "term_id": "term-ravenian",
-      "label": "Ravenian",
-      "wiki_url": "https://warcraft.wiki.gg/wiki/Ravenian"
     },
     {
       "term_id": "term-andorhal",
@@ -376,100 +306,6 @@
           "revision_id": "mw:6519872",
           "excerpt_hash": "sha256:9eb70324cfcbb06d"
         }
-      ],
-      "character-doctor-theolen-krastinov": [
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:instances_or_dungeons paragraph:1",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:979f4c2fb1c9caf8"
-        },
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:dungeon_denizens_edit paragraph:2",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:979f4c2fb1c9caf8"
-        },
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:loot_edit paragraph:3",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:8272985f7ee80942"
-        }
-      ],
-      "character-professor-slate": [
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:instances_or_dungeons paragraph:1",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:ab548eb9e1e496f0"
-        },
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:dungeon_denizens_edit paragraph:2",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:ab548eb9e1e496f0"
-        }
-      ],
-      "character-ravenian": [
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:other paragraph:1",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:0d452228cf1e0063"
-        },
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:other paragraph:2",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:0d452228cf1e0063"
-        },
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:other paragraph:3",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:0d452228cf1e0063"
-        }
-      ],
-      "character-weldon-barov": [
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:other paragraph:1",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:17de33b9bcf3bebc"
-        },
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:other paragraph:2",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:17de33b9bcf3bebc"
-        },
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:other paragraph:3",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:17de33b9bcf3bebc"
-        }
-      ],
-      "character-lord-alexei-barov": [
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:other paragraph:1",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:f6f8652201dcf7df"
-        },
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:other paragraph:2",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:f6f8652201dcf7df"
-        },
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:other paragraph:3",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:f6f8652201dcf7df"
-        }
       ]
     },
     "major_factions": {},
@@ -480,14 +316,6 @@
           "locator": "section:instances_or_dungeons paragraph:1",
           "revision_id": "mw:6519872",
           "excerpt_hash": "sha256:5a00f098f258fd20"
-        }
-      ],
-      "term-ravenian": [
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:other paragraph:1",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:0d452228cf1e0063"
         }
       ],
       "term-andorhal": [

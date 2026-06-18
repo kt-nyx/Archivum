@@ -41,9 +41,10 @@ _RUN_SIDECAR = Path(
 _MUST_EMIT = frozenset(
     {
         "Darkmaster Gandling",
-        "Rattlegore",
+        "Instructor Chillheart",
         "Jandice Barov",
-        "Lord Alexei Barov",
+        "Lilian Voss",
+        "Rattlegore",
     }
 )
 _MUST_NOT_EMIT = frozenset(

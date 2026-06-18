@@ -40,37 +40,37 @@
       {
         "name": "Doctor Theolen Krastinov",
         "role": "enemy",
-        "emitted": true,
-        "merge_rank": 6,
-        "selection_reason": "llm_selected"
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
       },
       {
         "name": "Professor Slate",
         "role": "enemy",
-        "emitted": true,
-        "merge_rank": 7,
-        "selection_reason": "llm_selected"
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
       },
       {
         "name": "Ravenian",
         "role": "uncertain",
-        "emitted": true,
-        "merge_rank": 8,
-        "selection_reason": "llm_selected"
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
       },
       {
         "name": "Weldon Barov",
         "role": "uncertain",
-        "emitted": true,
-        "merge_rank": 9,
-        "selection_reason": "llm_selected"
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
       },
       {
         "name": "Lord Alexei Barov",
         "role": "uncertain",
-        "emitted": true,
-        "merge_rank": 10,
-        "selection_reason": "llm_selected"
+        "emitted": false,
+        "merge_rank": null,
+        "selection_reason": null
       },
       {
         "name": "Barov",
