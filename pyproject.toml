@@ -14,6 +14,10 @@ dependencies = [
   "typer>=0.16.0",
   "jsonschema>=4.26.0",
   "python-dotenv>=1.2.2",
+  "pyyaml>=6.0",
+  "httpx>=0.28",
+  "tenacity>=9.0",
+  "beautifulsoup4>=4.13",
 ]
 
 [dependency-groups]
@@ -22,6 +26,7 @@ dev = [
   "pytest>=8.3.0",
   "ruff>=0.11.0",
   "types-jsonschema>=4.26.0.20260508",
+  "types-PyYAML>=6.0",
 ]
 
 [project.scripts]
