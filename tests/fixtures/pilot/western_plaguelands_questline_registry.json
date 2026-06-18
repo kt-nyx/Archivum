@@ -51,9 +51,15 @@
       "id": "ql-andorhal-horde",
       "title": "Andorhal Campaign (Horde)",
       "faction": "horde",
-      "wiki_storyline_parts": [1, 2, 7],
+      "wiki_storyline_parts": [
+        1,
+        2,
+        7
+      ],
       "start_anchor": "Warchief's Command: Western Plaguelands!",
-      "alternate_start_anchors": ["The Battle for Andorhal"],
+      "alternate_start_anchors": [
+        "The Battle for Andorhal"
+      ],
       "significance": "The zone's most important Horde arc: Sylvanas' post-Wrath push to claim Andorhal, culminating in a Forsaken victory and The Reckoning punishing Koltira for mercy toward Thassarian.",
       "chain_refs": [
         "quest-warchief-s-command-western-plaguelands",
@@ -116,9 +122,15 @@
       "id": "ql-andorhal-alliance",
       "title": "Andorhal Campaign (Alliance)",
       "faction": "alliance",
-      "wiki_storyline_parts": [1, 2, 7],
+      "wiki_storyline_parts": [
+        1,
+        2,
+        7
+      ],
       "start_anchor": "Hero's Call: Western Plaguelands!",
-      "alternate_start_anchors": ["The Battle for Andorhal"],
+      "alternate_start_anchors": [
+        "The Battle for Andorhal"
+      ],
       "significance": "Mirrored Alliance arc; finale (Alas, Andorhal) ends in Forsaken victory and Alliance failure to hold the city.",
       "chain_refs": [
         "quest-hero-s-call-western-plaguelands",
@@ -180,7 +192,9 @@
       "id": "ql-hearthglen-tirion-legacy",
       "title": "Hearthglen / Tirion Fordring's Legacy",
       "faction": "shared",
-      "wiki_storyline_parts": [5],
+      "wiki_storyline_parts": [
+        5
+      ],
       "start_anchor": "An Audience with the Highlord",
       "significance": "Part 5: Tirion audience and Fordring legacy at Hearthglen.",
       "chain_refs": [
@@ -213,7 +227,9 @@
     {
       "id": "ql-northridge-redpine",
       "title": "Northridge Lumber Mill / Redpine gnoll conflict",
-      "wiki_storyline_parts": [4],
+      "wiki_storyline_parts": [
+        4
+      ],
       "exclude_reason": "local_worldbuilding_only",
       "significance": "Part 4 local reconstruction— not pilot-significant as a major card.",
       "chain_refs": [
@@ -236,7 +252,9 @@
     {
       "id": "ql-gahrrons-withering-cleanup",
       "title": "Gahrron's Withering / renewed plague cleanup",
-      "wiki_storyline_parts": [6],
+      "wiki_storyline_parts": [
+        6
+      ],
       "exclude_reason": "thematic_duplicate_of_menders_stead",
       "significance": "Part 6 cauldron chain— overlaps Part 3 with lower pilot priority.",
       "chain_refs": [
@@ -261,7 +279,9 @@
     {
       "id": "ql-menders-stead-healing",
       "title": "The Mender's Stead / Healing the Plaguelands",
-      "wiki_storyline_parts": [3],
+      "wiki_storyline_parts": [
+        3
+      ],
       "exclude_reason": "structural_minor_arc",
       "significance": "Part 3 restoration arc — a short, non-seed-mentioned chain that does not clear the structural inclusion bar (run review 2026-06).",
       "chain_refs": [
@@ -280,12 +300,18 @@
   ],
   "andorhal_entry_breadcrumbs": {
     "description": "Optional zone-entry quests parallel to Hero's Call / Warchief's Command.",
-    "chain_refs": ["quest-the-battle-for-andorhal"],
-    "wiki_refs": ["/wiki/The_Battle_for_Andorhal"]
+    "chain_refs": [
+      "quest-the-battle-for-andorhal"
+    ],
+    "wiki_refs": [
+      "/wiki/The_Battle_for_Andorhal"
+    ]
   },
   "pipeline_gap_analysis": {
     "expected_included_card_count": 3,
-    "cross_faction_shared_card_refs": ["quest-combat-training"],
+    "cross_faction_shared_card_refs": [
+      "quest-combat-training"
+    ],
     "current_v3_cluster_ids": [
       "western-plaguelands-alliance",
       "western-plaguelands-horde",

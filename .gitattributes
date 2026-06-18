@@ -1,0 +1,4 @@
+# Canonical JSON policy (refactor decision D-4): JSON is written with LF line
+# endings by pipeline.common.io.write_json; enforce LF on checkout/commit so
+# hand-authored fixtures and pipeline output do not diverge by line ending.
+*.json text eol=lf

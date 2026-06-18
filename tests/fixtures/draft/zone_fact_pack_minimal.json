@@ -27,8 +27,12 @@
       "excerpt_hash": "sha256:bbbbbbbb"
     }
   ],
-  "source_ids": ["src-wiki-wpl"],
-  "revision_ids": ["oldid:111"],
+  "source_ids": [
+    "src-wiki-wpl"
+  ],
+  "revision_ids": [
+    "oldid:111"
+  ],
   "source_urls": {
     "src-wiki-wpl": "https://warcraft.wiki.gg/wiki/Western_Plaguelands"
   },
