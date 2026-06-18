@@ -37,6 +37,19 @@ def test_content_blocks_excludes_chrome_and_folds_nested() -> None:
     assert texts == ["Outer Inner"]  # nested <li> folded into the outer block
 
 
+def test_parse_infobox_extracts_label_value_rows() -> None:
+    html = (
+        '<table class="infobox darktable">'
+        "<tr><th>Type</th><td>Dungeon</td></tr>"
+        '<tr><th>Expansion</th><td><a href="/wiki/Cataclysm">Cataclysm</a></td></tr>'
+        '<tr><td colspan="2">no header</td></tr>'
+        "<tr><th>Location</th></tr>"
+        "</table>"
+    )
+    assert wiki_html.parse_infobox(html) == {"Type": "Dungeon", "Expansion": "Cataclysm"}
+    assert wiki_html.parse_infobox("<p>no infobox</p>") == {}
+
+
 def test_iter_headings_and_list_items() -> None:
     html = "<h2>Alpha</h2><h3>Beta</h3><ul><li>one</li><li>two</li></ul>"
     assert wiki_html.iter_headings(html, levels=(2, 3)) == [

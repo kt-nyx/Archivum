@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
@@ -42,15 +43,42 @@ def _cap_parse_html(html: str) -> str:
     return html[:_PARSE_HTML_CAP]
 
 
+@dataclass
+class FetchedSource:
+    """Parsed result of fetching one wiki source (MediaWiki parse API or HTML fallback)."""
+
+    body: str
+    revision_id: str
+    locator: str
+    section_blocks: list[dict[str, str]]
+    wiki_links: list[str]
+    structured_links: list[dict[str, str]]
+    html: str
+    parse_tree: str = ""
+    categories: list[str] = field(default_factory=list)
+
+
+def _categories_from_parse_blob(parse_blob: dict[str, Any]) -> list[str]:
+    """Extract category names from a MediaWiki parse payload (formatversion 2 or legacy)."""
+    raw = parse_blob.get("categories")
+    names: list[str] = []
+    if not isinstance(raw, list):
+        return names
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("category") or entry.get("*") or "").replace("_", " ").strip()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
 def fetch_wiki_html(url: str, source_class: str) -> str:
     """Return raw parse HTML for a wiki URL (empty when unavailable)."""
     try:
-        result = _fetch_url_text(url, source_class)
-        if len(result) >= 7:
-            return str(result[6])
+        return _fetch_url_text(url, source_class).html
     except RuntimeError:
         return ""
-    return ""
 
 
 class SourceSnapshot(TypedDict):
@@ -68,6 +96,8 @@ class SourceSnapshot(TypedDict):
     section_blocks: list[dict[str, str]]
     wiki_links: list[str]
     structured_links: list[dict[str, str]]
+    categories: list[str]
+    infobox: dict[str, str]
     retrieval_mode: str
     selection_version: str
     policy_version: str
@@ -360,12 +390,11 @@ def _mediawiki_parse_ingest_eligible(url: str, source_class: str) -> bool:
 
 def _fetch_mediawiki_via_parse_api(
     url: str, profile: RetrievalProfile, *, include_parsetree: bool = False
-) -> tuple[Any, ...]:
+) -> FetchedSource:
     """Fetch article HTML via MediaWiki api.php action=parse (returns stable revid).
 
-    When ``include_parsetree`` is set, also request ``prop=parsetree`` and append
-    the parse-tree XML string as an 8th tuple element. Only the quest-traversal
-    path opts in, so other callers keep the historical 7-tuple shape.
+    Always requests ``prop=...|categories``; when ``include_parsetree`` is set also
+    requests ``prop=parsetree`` (only the quest-traversal path opts in).
     """
     parsed = urlparse(url)
     origin = f"{parsed.scheme}://{parsed.netloc}"
@@ -384,7 +413,7 @@ def _fetch_mediawiki_via_parse_api(
 
     params: dict[str, str] = {
         "action": "parse",
-        "prop": "text|revid|parsetree" if include_parsetree else "text|revid",
+        "prop": "text|revid|categories|parsetree" if include_parsetree else "text|revid|categories",
         "formatversion": "2",
         "format": "json",
     }
@@ -423,21 +452,30 @@ def _fetch_mediawiki_via_parse_api(
         revision_id = f"mw:{int(revid)}"
     body, locator = _extract_main_text(html_str, max_chars=profile.max_chars)
     sections, links, structured = _extract_sections_and_links(html_str)
+    categories = _categories_from_parse_blob(parse_blob)
+    parse_tree = ""
     if include_parsetree:
         raw_tree = parse_blob.get("parsetree")
         if isinstance(raw_tree, dict):
             parse_tree = str(raw_tree.get("*", ""))
         elif raw_tree is not None:
             parse_tree = str(raw_tree)
-        else:
-            parse_tree = ""
-        return body, revision_id, locator, sections, links, structured, html_str, parse_tree
-    return body, revision_id, locator, sections, links, structured, html_str
+    return FetchedSource(
+        body=body,
+        revision_id=revision_id,
+        locator=locator,
+        section_blocks=sections,
+        wiki_links=links,
+        structured_links=structured,
+        html=html_str,
+        parse_tree=parse_tree,
+        categories=categories,
+    )
 
 
 def _fetch_url_text(
     url: str, source_class: str, *, include_parsetree: bool = False
-) -> tuple[Any, ...]:
+) -> FetchedSource:
     profile = profile_for_source_class(source_class)
     use_parse_api = _mediawiki_parse_ingest_eligible(url, source_class)
     # Transient transport/timeout/HTTP-status errors are retried inside http.get_text
@@ -462,10 +500,16 @@ def _fetch_url_text(
             revision_id = f"mw:{revision_match.group(1)}"
         else:
             revision_id = "sha256:" + sha256(html.encode("utf-8")).hexdigest()[:16]
-        if include_parsetree:
-            # Non-MediaWiki/HTML fallback has no parse tree available.
-            return body, revision_id, locator, sections, links, structured, html, ""
-        return body, revision_id, locator, sections, links, structured, html
+        # Non-MediaWiki/HTML fallback has no parse-API categories or parse tree.
+        return FetchedSource(
+            body=body,
+            revision_id=revision_id,
+            locator=locator,
+            section_blocks=sections,
+            wiki_links=links,
+            structured_links=structured,
+            html=html,
+        )
     except (httpx.HTTPError, ValueError) as exc:
         raise RuntimeError(f"unable to fetch source url '{url}': {exc!r}") from exc
 
@@ -500,17 +544,14 @@ def run_fetch_wiki(context: RunContext) -> Path:
         requested_revision_id = row["requested_revision_id"]
         url = _build_revision_pinned_url(row["source_url"], requested_revision_id)
         source_class = row["source_class"]
-        fetch_result = _fetch_url_text(url, source_class)
-        if len(fetch_result) == 3:
-            body, revision_id, locator = fetch_result
-            section_blocks = []
-            wiki_links = []
-            structured_links: list[dict[str, str]] = []
-            raw_html = ""
-        else:
-            body, revision_id, locator, section_blocks, wiki_links, structured_links, raw_html = (
-                fetch_result
-            )
+        fetched = _fetch_url_text(url, source_class)
+        body = fetched.body
+        revision_id = fetched.revision_id
+        locator = fetched.locator
+        section_blocks = fetched.section_blocks
+        wiki_links = fetched.wiki_links
+        structured_links = fetched.structured_links
+        raw_html = fetched.html
         if requested_revision_id and revision_id.startswith("mw:"):
             normalized_requested = requested_revision_id
             if not normalized_requested.startswith("mw:"):
@@ -536,6 +577,8 @@ def run_fetch_wiki(context: RunContext) -> Path:
             "section_blocks": section_blocks,
             "wiki_links": wiki_links,
             "structured_links": structured_links,
+            "categories": fetched.categories,
+            "infobox": wiki_html.parse_infobox(raw_html),
             "retrieval_mode": "revision-pinned" if requested_revision_id else "live",
             "selection_version": row["selection_version"],
             "policy_version": row["policy_version"],

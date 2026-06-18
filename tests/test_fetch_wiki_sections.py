@@ -10,7 +10,20 @@ list/table capture, chrome-table exclusion, and structured-link role accuracy.
 from __future__ import annotations
 
 from pipeline.discovery.instance_bosses import collect_boss_candidates
-from pipeline.ingest.fetch_wiki import _extract_sections_and_links
+from pipeline.ingest.fetch_wiki import _categories_from_parse_blob, _extract_sections_and_links
+
+
+def test_categories_from_parse_blob_normalizes_and_dedupes() -> None:
+    blob = {
+        "categories": [
+            {"category": "Dungeons", "hidden": False},
+            {"category": "Western_Plaguelands"},
+            {"*": "Legacy", "hidden": ""},
+            {"category": "Dungeons"},
+        ]
+    }
+    assert _categories_from_parse_blob(blob) == ["Dungeons", "Western Plaguelands", "Legacy"]
+    assert _categories_from_parse_blob({}) == []
 
 INSTANCE_HTML = """
 <table class="infobox darktable"><tbody>

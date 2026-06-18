@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext
@@ -30,7 +31,7 @@ def _fallback_priority(row_index: int) -> int:
 def run_normalize_source(context: RunContext, snapshots_path: Path) -> Path:
     """Convert raw snapshots into a normalized source manifest."""
     snapshots = json.loads(snapshots_path.read_text(encoding="utf-8"))
-    manifest_entries: list[dict[str, str | int]] = []
+    manifest_entries: list[dict[str, Any]] = []
     for fallback_priority, source in enumerate(snapshots, start=1):
         priority = _normalized_priority(source.get("priority"))
         resolved_priority = (
@@ -50,6 +51,8 @@ def run_normalize_source(context: RunContext, snapshots_path: Path) -> Path:
                 "captured_at": source["captured_at"],
                 "source_class": source.get("source_class", "warcraft_wiki"),
                 "priority": resolved_priority,
+                "categories": source.get("categories", []),
+                "infobox": source.get("infobox", {}),
                 "retrieval_mode": source.get("retrieval_mode", "unknown"),
                 "selection_version": source.get("selection_version", "unknown"),
                 "policy_version": source.get("policy_version", "unknown"),

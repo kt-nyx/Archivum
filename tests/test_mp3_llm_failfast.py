@@ -6,6 +6,7 @@ from typing import Any, cast
 import pytest
 
 from pipeline.common.run_context import ensure_run_context
+from pipeline.ingest.fetch_wiki import FetchedSource
 from pipeline.orchestrator.stages import (
     run_coalesce_stage,
     run_draft_stage,
@@ -31,8 +32,8 @@ def _seed_pilot_manifest(context_root: Path) -> None:
 def _mock_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_fetch(
         url: str, source_class: str
-    ) -> tuple[str, str, str, list[dict[str, str]], list[str], list[dict[str, str]], str]:
-        return (
+    ) -> FetchedSource:
+        return FetchedSource(
             f"{source_class} source evidence for {url} with zone chronology and conflict context.",
             "mw:654321",
             "section:lead paragraph:1",
@@ -258,10 +259,10 @@ def test_ingest_uses_revision_pinned_oldid_url_when_revision_is_supplied(
     )
     captured_urls: list[str] = []
 
-    def fake_fetch(url: str, source_class: str) -> tuple[str, str, str, list, list, list, str]:
+    def fake_fetch(url: str, source_class: str) -> FetchedSource:
         _ = source_class
         captured_urls.append(url)
-        return ("Pinned revision body text.", "mw:123456", "section:lead paragraph:1", [], [], [], "")
+        return FetchedSource("Pinned revision body text.", "mw:123456", "section:lead paragraph:1", [], [], [], "")
 
     monkeypatch.setattr("pipeline.ingest.fetch_wiki._fetch_url_text", fake_fetch)
     run_ingest_stage(context)
@@ -284,8 +285,8 @@ def test_ingest_fails_when_requested_revision_does_not_match_fetched_revision(
         encoding="utf-8",
     )
 
-    def fake_fetch(_url: str, _source_class: str) -> tuple[str, str, str, list, list, list, str]:
-        return ("Body text.", "mw:222222", "section:lead paragraph:1", [], [], [], "")
+    def fake_fetch(_url: str, _source_class: str) -> FetchedSource:
+        return FetchedSource("Body text.", "mw:222222", "section:lead paragraph:1", [], [], [], "")
 
     monkeypatch.setattr("pipeline.ingest.fetch_wiki._fetch_url_text", fake_fetch)
     with pytest.raises(RuntimeError, match="expected revision"):
@@ -320,8 +321,8 @@ def test_ingest_priority_fallback_stays_within_contract_range_for_large_manifest
         encoding="utf-8",
     )
 
-    def fake_fetch(url: str, source_class: str) -> tuple[str, str, str, list, list, list, str]:
-        return (
+    def fake_fetch(url: str, source_class: str) -> FetchedSource:
+        return FetchedSource(
             f"{source_class} evidence for {url}",
             "mw:654321",
             "section:lead paragraph:1",

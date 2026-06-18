@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from pipeline.common import wiki_html
 from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext
 from pipeline.common.text_normalize import clean_wiki_snippet
@@ -176,6 +177,8 @@ def _snapshot_from_fetch(
     wiki_links: list[str],
     structured_links: list[dict[str, str]],
     captured_at: str,
+    categories: list[str] | None = None,
+    infobox: dict[str, str] | None = None,
     parse_html: str = "",
     parse_html_truncated: bool = False,
     quest_lore_blocks: list[dict[str, str]] | None = None,
@@ -204,6 +207,8 @@ def _snapshot_from_fetch(
         "section_blocks": cleaned_blocks,
         "wiki_links": wiki_links,
         "structured_links": structured_links,
+        "categories": categories or [],
+        "infobox": infobox or {},
         "retrieval_mode": "traversal",
         "selection_version": manifest_row["selection_version"],
         "policy_version": manifest_row["policy_version"],
@@ -254,16 +259,16 @@ def _upgrade_storyline_snapshot(
         )
         return existing
     try:
-        body, revision_id, locator, section_blocks, wiki_links, structured_from_fetch, raw_html = (
-            _fetch_url_text(url, "warcraft_wiki")
-        )
+        fetched = _fetch_url_text(url, "warcraft_wiki")
     except RuntimeError as exc:
         report_rows.append({"status": "error", "link": link, "reason": repr(exc), "role": "storyline"})
         return None
+    section_blocks = fetched.section_blocks
+    raw_html = fetched.html
     existing["auxiliary_role"] = "storyline"
-    existing["body"] = clean_wiki_snippet(body)
-    existing["revision_id"] = revision_id
-    existing["locator"] = locator
+    existing["body"] = clean_wiki_snippet(fetched.body)
+    existing["revision_id"] = fetched.revision_id
+    existing["locator"] = fetched.locator
     existing["section_blocks"] = [
         {
             "section_role": str(block.get("section_role", "other")),
@@ -271,10 +276,12 @@ def _upgrade_storyline_snapshot(
         }
         for block in section_blocks
     ]
-    existing["wiki_links"] = wiki_links
-    existing["structured_links"] = structured_from_fetch or build_structured_links_from_sections(
-        section_blocks, wiki_links
+    existing["wiki_links"] = fetched.wiki_links
+    existing["structured_links"] = fetched.structured_links or build_structured_links_from_sections(
+        section_blocks, fetched.wiki_links
     )
+    existing["categories"] = fetched.categories
+    existing["infobox"] = wiki_html.parse_infobox(raw_html)
     if raw_html:
         existing["parse_html_truncated"] = len(raw_html) > 524288
         existing["parse_html"] = raw_html[:524288]
@@ -421,17 +428,18 @@ def _fetch_and_append(
     )
     include_parsetree = auxiliary_role == "quest"
     try:
-        fetch_result = _fetch_url_text(url, "warcraft_wiki", include_parsetree=include_parsetree)
+        fetched = _fetch_url_text(url, "warcraft_wiki", include_parsetree=include_parsetree)
     except RuntimeError as exc:
         report_rows.append({"status": "error", "link": link, "reason": repr(exc), "role": auxiliary_role})
         return None
-    parse_tree = ""
-    if len(fetch_result) == 8:
-        body, revision_id, locator, section_blocks, wiki_links, structured_from_fetch, raw_html, parse_tree = (
-            fetch_result
-        )
-    else:
-        body, revision_id, locator, section_blocks, wiki_links, structured_from_fetch, raw_html = fetch_result
+    body = fetched.body
+    revision_id = fetched.revision_id
+    locator = fetched.locator
+    section_blocks = fetched.section_blocks
+    wiki_links = fetched.wiki_links
+    structured_from_fetch = fetched.structured_links
+    raw_html = fetched.html
+    parse_tree = fetched.parse_tree
     parse_html = ""
     parse_html_truncated = False
     if auxiliary_role == "storyline" and raw_html:
@@ -468,6 +476,8 @@ def _fetch_and_append(
         wiki_links=wiki_links,
         structured_links=structured_links,
         captured_at=captured_at,
+        categories=fetched.categories,
+        infobox=wiki_html.parse_infobox(raw_html),
         parse_html=parse_html,
         parse_html_truncated=parse_html_truncated,
         quest_lore_blocks=quest_lore_blocks if isinstance(quest_lore_blocks, list) else None,

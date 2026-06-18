@@ -114,6 +114,31 @@ def list_item_texts(html: str) -> list[str]:
     return [text for text in texts if text]
 
 
+def parse_infobox(html: str) -> dict[str, str]:
+    """Return label→value pairs from the first ``infobox`` table, decoded and collapsed.
+
+    Only rows carrying both a header cell and a value cell are kept; the first value
+    wins on duplicate labels. Returns ``{}`` when no infobox is present.
+    """
+    root = soup(html)
+    table = next(
+        (t for t in root.find_all("table") if "infobox" in " ".join(t.get("class") or []).lower()),
+        None,
+    )
+    if table is None:
+        return {}
+    fields: dict[str, str] = {}
+    for row in table.find_all("tr"):
+        header = row.find("th")
+        value = row.find("td")
+        if header is None or value is None:
+            continue
+        key = _collapse(header.get_text(" "))
+        if key and key not in fields:
+            fields[key] = _collapse(value.get_text(" "))
+    return fields
+
+
 def extract_links(html: str, *, max_links: int = 300) -> list[str]:
     """Return de-duplicated wiki link hrefs (``/wiki/...`` or ``warcraft.wiki.gg/wiki/...``)."""
     links: list[str] = []

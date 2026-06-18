@@ -9,6 +9,7 @@ from pipeline.common.run_context import ensure_run_context
 from pipeline.discovery.enrich import run_discovery_enrich
 from pipeline.discovery.storyline_html import parse_storyline_html
 from pipeline.discovery.workflow import run_discovery_workflow
+from pipeline.ingest.fetch_wiki import FetchedSource
 from pipeline.ingest.traverse_wiki import run_traverse_quests, run_traverse_seed
 
 STORYLINE_HTML = Path("tests/fixtures/storyline/western_plaguelands_storyline.html").read_text(encoding="utf-8")
@@ -31,8 +32,8 @@ QUEST_PARSETREE = (
 )
 
 
-def _quest_fetch_payload() -> tuple:
-    return (
+def _quest_fetch_payload() -> "FetchedSource":
+    return FetchedSource(
         "Quest page body with narrative description about the front lines.",
         "mw:100",
         "section:lead paragraph:1",
@@ -104,7 +105,7 @@ def test_traverse_fetches_v3_quests_from_graph_not_wiki_link_dump(
     def fake_fetch(url: str, source_class: str, *, include_parsetree: bool = False):
         fetched_urls.append(url)
         if "storyline" in url.lower():
-            return (
+            return FetchedSource(
                 "Storyline page body",
                 "mw:99",
                 "section:lead paragraph:1",
@@ -174,7 +175,7 @@ def test_traverse_resolves_hub_children_from_wiki_links(
 
     def fake_fetch(url: str, source_class: str, *, include_parsetree: bool = False):
         if "storyline" in url.lower():
-            return (
+            return FetchedSource(
                 "Storyline page body",
                 "mw:99",
                 "section:lead paragraph:1",
@@ -186,7 +187,7 @@ def test_traverse_resolves_hub_children_from_wiki_links(
         if "Quest_Hub" in url:
             # A hub/disambiguation page: no Questbox, but it links to child quests
             # that hub resolution must follow.
-            return (
+            return FetchedSource(
                 "Hub disambiguation page.",
                 "mw:101",
                 "section:lead paragraph:1",
@@ -287,7 +288,7 @@ def test_traverse_skips_defer_location_targets(
 
     def fake_fetch(url: str, source_class: str, *, include_parsetree: bool = False):
         fetched_urls.append(url)
-        return (
+        return FetchedSource(
             "Location profile body with enough narrative detail for enrichment.",
             "mw:200",
             "section:lead paragraph:1",
@@ -420,7 +421,7 @@ def test_traverse_fetches_linked_lore_page_not_instance_page_source(
 
     def fake_fetch(url: str, source_class: str, *, include_parsetree: bool = False):
         fetched_urls.append(url)
-        return (
+        return FetchedSource(
             "Lore page body with extended narrative history.",
             "mw:300",
             "section:lead paragraph:1",
@@ -458,7 +459,7 @@ def test_traverse_resolves_faction_disambiguation_variants(
 
     def fake_fetch(url: str, source_class: str, *, include_parsetree: bool = False):
         if "storyline" in url.lower():
-            return (
+            return FetchedSource(
                 "Storyline page body",
                 "mw:99",
                 "section:lead paragraph:1",
@@ -468,7 +469,7 @@ def test_traverse_resolves_faction_disambiguation_variants(
                 STORYLINE_HTML,
             )
         if url.rstrip("/").endswith("/Combat_Training"):
-            return (
+            return FetchedSource(
                 "Faction disambiguation page.",
                 "mw:201",
                 "section:lead paragraph:1",

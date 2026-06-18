@@ -6,6 +6,7 @@ import pytest
 
 from pipeline.coalesce.resolve_entities import run_resolve_entities
 from pipeline.common.run_context import ensure_run_context
+from pipeline.ingest.fetch_wiki import FetchedSource
 from pipeline.ingest.normalize_source import run_normalize_source
 from pipeline.orchestrator.stages import (
     run_coalesce_stage,
@@ -64,9 +65,9 @@ def _mock_generation_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
 
     def fake_fetch(
         url: str, source_class: str, *, include_parsetree: bool = False
-    ) -> tuple:
+    ) -> FetchedSource:
         if "storyline" in url.lower():
-            return (
+            return FetchedSource(
                 "Example Zone storyline overview.",
                 "mw:storyline",
                 "section:lead paragraph:1",
@@ -91,8 +92,8 @@ def _mock_generation_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
             "",
         )
         if include_parsetree:
-            return (*base, QUEST_PARSETREE)
-        return base
+            return FetchedSource(*base, parse_tree=QUEST_PARSETREE)
+        return FetchedSource(*base)
 
     def fake_coalesce_chat(*_args: object, **_kwargs: object) -> dict[str, object]:
         return {
