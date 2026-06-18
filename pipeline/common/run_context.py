@@ -6,10 +6,12 @@ import json
 import os
 import threading
 import uuid
-from hashlib import sha1
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from hashlib import sha1
 from pathlib import Path
+
+from pipeline.common.io import write_json
 
 _TRACE_FILE_LOCKS: dict[str, threading.Lock] = {}
 _TRACE_LOCKS_GUARD = threading.Lock()
@@ -126,7 +128,7 @@ def write_stage_manifest(
         "config_hash": config_hash,
     }
     manifest_path = context.stage_manifest_path(stage_name)
-    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    write_json(manifest_path, manifest)
     return manifest_path
 
 

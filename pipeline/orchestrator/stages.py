@@ -8,19 +8,20 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, cast
 
-from pipeline.coalesce.resolve_entities import run_resolve_entities
-from pipeline.common.run_context import RunContext, append_trace_event, write_stage_manifest
 from pipeline.addon import build_addon_bundle
+from pipeline.coalesce.resolve_entities import run_resolve_entities
+from pipeline.common.io import write_json
+from pipeline.common.run_context import RunContext, append_trace_event, write_stage_manifest
 from pipeline.discovery import run_discovery_workflow
 from pipeline.discovery.enrich import EnrichPhase, run_discovery_enrich
 from pipeline.discovery.instance_bosses import row_has_roster_role
 from pipeline.generate.draft_writer import run_draft_writer
 from pipeline.generate.extract_facts import run_extract_facts
+from pipeline.glossary.run_terms import build_run_terms
 from pipeline.ingest.fetch_wiki import run_fetch_wiki
 from pipeline.ingest.normalize_source import run_normalize_source
-from pipeline.ingest.wiki_redirects import annotate_snapshots_with_canonical_identity
 from pipeline.ingest.traverse_wiki import run_traverse_quests, run_traverse_seed
-from pipeline.glossary.run_terms import build_run_terms
+from pipeline.ingest.wiki_redirects import annotate_snapshots_with_canonical_identity
 from pipeline.linker.linker import run_glossary_linker
 from pipeline.validate.context import (
     build_entity_validation_context,
@@ -84,9 +85,9 @@ def _resolve_instance_roster_identities(
     except Exception as exc:  # noqa: BLE001 - resolution is a best-effort enhancement
         return {"redirect_resolution": "error", "redirect_error": repr(exc)}
 
-    snapshots_path.write_text(json.dumps(snapshots, indent=2), encoding="utf-8")
+    write_json(snapshots_path, snapshots)
     map_path = context.stage_dir("ingest") / "wiki_redirect_map.json"
-    map_path.write_text(json.dumps(run_map, indent=2), encoding="utf-8")
+    write_json(map_path, run_map)
     return {"redirect_resolution": "ok", "redirect_resolved_count": len(run_map)}
 
 
@@ -535,9 +536,7 @@ def run_validate_stage(
     report_dir.mkdir(parents=True, exist_ok=True)
 
     validation_report_path = report_dir / "validation_report.json"
-    validation_report_path.write_text(
-        json.dumps(
-            {
+    write_json(validation_report_path, {
                 "run_id": context.run_id,
                 "fact_check_profile": normalized_fact_check_profile,
                 "release_gate": release_gate,
@@ -548,16 +547,10 @@ def run_validate_stage(
                 "max_entity_concurrency": max_entity_concurrency,
                 "entity_reports": report_rows,
                 "passed": all_passed,
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+            })
 
     fact_check_report_path = report_dir / "fact_check_report.json"
-    fact_check_report_path.write_text(
-        json.dumps(
-            {
+    write_json(fact_check_report_path, {
                 "run_id": context.run_id,
                 "profile": normalized_fact_check_profile,
                 "web_search_enabled": fact_check_web_search,
@@ -567,11 +560,7 @@ def run_validate_stage(
                 "target_entity_count": len(fact_check_target_entity_ids),
                 "target_entity_ids": fact_check_target_entity_ids,
                 "entities": fact_check_rows,
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+            })
 
     summary_lines = [
         f"# Fact-check summary ({normalized_fact_check_profile})",

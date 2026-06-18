@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
+from pipeline.common.io import write_json
 from pipeline.generate.draft.common import claims_text, entity_header
 from pipeline.generate.draft.limits import cap_prompt_hint, load_draft_limits
 from pipeline.generate.draft.llm import llm_json_with_retry
@@ -48,7 +48,7 @@ def run_zone_plan(
     )
     if plan_path is not None:
         plan_path.parent.mkdir(parents=True, exist_ok=True)
-        plan_path.write_text(json.dumps(plan, indent=2), encoding="utf-8")
+        write_json(plan_path, plan)
     return plan
 
 
@@ -90,5 +90,5 @@ def run_sub_zone_plan(
     )
     if plan_path is not None:
         plan_path.parent.mkdir(parents=True, exist_ok=True)
-        plan_path.write_text(json.dumps(plan, indent=2), encoding="utf-8")
+        write_json(plan_path, plan)
     return plan

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from pipeline.common.text_sim import token_jaccard
 from pipeline.discovery.world_registry import entry_kinds
 
 _GEOGRAPHY_KINDS = frozenset({"zone", "continent", "capital", "region", "instance"})
@@ -65,18 +66,6 @@ def trim_words(text: str, max_words: int, *, ensure_terminal_punct: bool = False
     if ensure_terminal_punct and result and result[-1] not in ".?!":
         return f"{result}."
     return result
-
-
-def _token_set(value: str) -> set[str]:
-    return {token for token in re.findall(r"[a-z0-9]+", value.lower()) if len(token) >= 4}
-
-
-def token_jaccard_overlap(left: str, right: str) -> float:
-    left_tokens = _token_set(left)
-    right_tokens = _token_set(right)
-    if not left_tokens or not right_tokens:
-        return 0.0
-    return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
 
 
 def tense_marker_counts(text: str) -> tuple[int, int]:
@@ -146,7 +135,7 @@ def lint_currently(text: str, *, zone_name: str = "", at_a_glance: str = "") -> 
     if has_currently_meta(text):
         issues.append("currently contains reputation/achievement/player meta")
     if at_a_glance.strip():
-        overlap = token_jaccard_overlap(at_a_glance, text)
+        overlap = token_jaccard(at_a_glance, text)
         if overlap >= AT_A_GLANCE_CURRENTLY_OVERLAP_THRESHOLD:
             issues.append("currently substantially overlaps at_a_glance")
     words = word_count(text)

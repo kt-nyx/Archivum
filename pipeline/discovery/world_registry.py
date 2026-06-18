@@ -5,13 +5,16 @@ from __future__ import annotations
 import json
 import re
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
+
+import httpx
+
+from pipeline.common import http
+from pipeline.common.io import write_json
 
 _REGISTRY_VERSION = "2"
 _WIKI_API = "https://warcraft.wiki.gg/api.php"
@@ -243,7 +246,7 @@ def _load_category_cache(path: Path | None = None) -> dict[str, list[dict[str, A
 
 def _save_category_cache(cache: dict[str, list[dict[str, Any]]], path: Path | None = None) -> None:
     target = path or category_cache_path()
-    target.write_text(json.dumps(cache, indent=2) + "\n", encoding="utf-8")
+    write_json(target, cache)
 
 
 def _cache_key(category: str, cmtype: str | None) -> str:
@@ -277,19 +280,18 @@ def _fetch_category_members(
         if cmcontinue:
             params["cmcontinue"] = cmcontinue
         url = f"{_WIKI_API}?{urllib.parse.urlencode(params)}"
-        request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
         payload: dict[str, Any] | None = None
         for attempt in range(12):
             try:
-                with urllib.request.urlopen(request, timeout=60) as response:
-                    payload = json.loads(response.read().decode("utf-8"))
+                response = http.send("GET", url, headers={"User-Agent": _USER_AGENT}, timeout=60)
+                payload = response.json()
                 break
-            except urllib.error.HTTPError as exc:
-                if exc.code == 429 and attempt < 11:
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 429 and attempt < 11:
                     time.sleep(min(60.0, 5.0 * (2 ** min(attempt, 4))))
                     continue
                 raise RuntimeError(f"failed to fetch category {category!r}: {exc!r}") from exc
-            except urllib.error.URLError as exc:
+            except httpx.RequestError as exc:
                 raise RuntimeError(f"failed to fetch category {category!r}: {exc!r}") from exc
         if payload is None:
             raise RuntimeError(f"failed to fetch category {category!r}: empty payload")
@@ -452,7 +454,7 @@ def write_world_registry(
         cache_path=cache_path,
         use_cache=use_cache,
     )
-    target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    write_json(target, payload)
     return target
 
 

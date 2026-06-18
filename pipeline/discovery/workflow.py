@@ -8,20 +8,21 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-from pipeline.common.text_normalize import clean_wiki_snippet
+from pipeline.common.io import read_json, write_json
 from pipeline.common.run_context import RunContext
+from pipeline.common.text_ids import slugify
 from pipeline.contracts.models import DecisionArtifact
 from pipeline.discovery.entity_typing import should_reject_location_title
-from pipeline.discovery.lore_sources import (
-    build_instance_lore_candidates,
-    compute_instance_lore_density,
-)
 from pipeline.discovery.location_discovery import (
     HARD_REJECT_MARKERS,
     build_location_decision_row,
     build_zone_seed_text,
     classify_location_candidate,
     hard_reject_markers,
+)
+from pipeline.discovery.lore_sources import (
+    build_instance_lore_candidates,
+    compute_instance_lore_density,
 )
 
 _CLASSIC_ONLY_MARKERS = ("classic", "classic-only", "vanilla")
@@ -99,7 +100,7 @@ _LOCATION_INCLUDE_SECTION_WEIGHTS = {
 
 
 def _load_json(path: Path) -> Any:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return read_json(path)
 
 
 def _normalized_wiki_title(link: str) -> str:
@@ -118,7 +119,7 @@ def _normalized_wiki_slug(link: str) -> str:
 
 
 def _to_entity_id(prefix: str, title: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+    slug = slugify(title)
     return f"{prefix}-{slug}" if slug else prefix
 
 
@@ -613,45 +614,23 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
         "questline_inclusion_decisions": decisions_dir / "questline_inclusion_decisions.json",
         "evidence_packs": evidence_dir / "evidence_packs.jsonl",
     }
-    outputs["zone_coverage_registry"].write_text(json.dumps(zone_registry, indent=2), encoding="utf-8")
+    write_json(outputs["zone_coverage_registry"], zone_registry)
     outputs["canonical_entity_map"].write_text(
         "\n".join(json.dumps(row) for row in canonical_entities) + "\n", encoding="utf-8"
     )
-    outputs["zone_location_candidates"].write_text(
-        json.dumps(location_candidates, indent=2), encoding="utf-8"
-    )
-    outputs["zone_location_classification"].write_text(
-        json.dumps(location_classification, indent=2), encoding="utf-8"
-    )
-    outputs["zone_instance_registry"].write_text(
-        json.dumps(instance_registry, indent=2), encoding="utf-8"
-    )
-    outputs["instance_lore_source_map"].write_text(
-        json.dumps(instance_lore_source_map, indent=2), encoding="utf-8"
-    )
-    outputs["zone_quest_graph"].write_text(json.dumps(quest_graph, indent=2), encoding="utf-8")
-    outputs["zone_quest_graph_v3"].write_text(json.dumps([], indent=2), encoding="utf-8")
-    outputs["faction_profile_targets"].write_text(
-        json.dumps(faction_profile_targets, indent=2), encoding="utf-8"
-    )
-    outputs["location_profile_targets"].write_text(
-        json.dumps(location_profile_targets, indent=2), encoding="utf-8"
-    )
-    outputs["storyline_traversal_targets"].write_text(
-        json.dumps(storyline_traversal_targets, indent=2), encoding="utf-8"
-    )
-    outputs["lore_traversal_targets"].write_text(
-        json.dumps(lore_traversal_targets, indent=2), encoding="utf-8"
-    )
-    outputs["instance_zone_profiles"].write_text(
-        json.dumps(instance_zone_profiles, indent=2), encoding="utf-8"
-    )
-    outputs["location_significance_decisions"].write_text(
-        json.dumps(location_decisions, indent=2), encoding="utf-8"
-    )
-    outputs["questline_inclusion_decisions"].write_text(
-        json.dumps(questline_decisions, indent=2), encoding="utf-8"
-    )
+    write_json(outputs["zone_location_candidates"], location_candidates)
+    write_json(outputs["zone_location_classification"], location_classification)
+    write_json(outputs["zone_instance_registry"], instance_registry)
+    write_json(outputs["instance_lore_source_map"], instance_lore_source_map)
+    write_json(outputs["zone_quest_graph"], quest_graph)
+    write_json(outputs["zone_quest_graph_v3"], [])
+    write_json(outputs["faction_profile_targets"], faction_profile_targets)
+    write_json(outputs["location_profile_targets"], location_profile_targets)
+    write_json(outputs["storyline_traversal_targets"], storyline_traversal_targets)
+    write_json(outputs["lore_traversal_targets"], lore_traversal_targets)
+    write_json(outputs["instance_zone_profiles"], instance_zone_profiles)
+    write_json(outputs["location_significance_decisions"], location_decisions)
+    write_json(outputs["questline_inclusion_decisions"], questline_decisions)
     outputs["evidence_packs"].write_text("", encoding="utf-8")
 
     # Fail fast on contract drift for primary decision artifacts.

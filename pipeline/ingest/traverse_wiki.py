@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.contracts.models import QuestRecord
@@ -535,16 +536,13 @@ def _persist_traverse_state(
     ingest_dir = context.stage_dir("ingest")
     snapshots_path = ingest_dir / "source_snapshots.json"
     manifest_path = ingest_dir / "source_manifest.json"
-    snapshots_path.write_text(json.dumps(snapshots, indent=2), encoding="utf-8")
-    manifest_path.write_text(json.dumps(manifest_rows, indent=2), encoding="utf-8")
+    write_json(snapshots_path, snapshots)
+    write_json(manifest_path, manifest_rows)
     _validate_manifest_schema(manifest_rows)
     run_normalize_source(context, snapshots_path)
     report_path = context.data_dir / "ingest" / "traversal_report.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(
-        json.dumps({"run_id": context.run_id, "entries": report_rows}, indent=2),
-        encoding="utf-8",
-    )
+    write_json(report_path, {"run_id": context.run_id, "entries": report_rows})
     outputs = {
         "traversal_report": report_path,
         "source_snapshots": snapshots_path,

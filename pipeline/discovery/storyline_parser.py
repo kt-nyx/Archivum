@@ -6,6 +6,7 @@ import re
 from typing import Any
 from urllib.parse import unquote, urlparse
 
+from pipeline.common.text_ids import slugify
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.discovery.entity_typing import is_valid_quest_graph_link
 
@@ -20,7 +21,7 @@ def _wiki_title(link: str) -> str:
 
 
 def _to_entity_id(prefix: str, title: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+    slug = slugify(title)
     return f"{prefix}-{slug}" if slug else prefix
 
 

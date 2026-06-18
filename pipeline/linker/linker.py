@@ -8,6 +8,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
+from pipeline.common.config_loading import coerce_float, load_yaml_mapping
+from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext
 from pipeline.glossary.run_terms import (
     load_run_terms,
@@ -30,34 +32,16 @@ class LinkCandidate(TypedDict):
 
 
 def _load_linker_rules() -> dict[str, float]:
-    rules_path = Path(__file__).with_name("rules.yaml")
-    if not rules_path.exists():
-        return {
-            "direct_alias_match": 0.95,
-            "contextual_match": 0.85,
-        }
-    direct_alias_match = 0.95
-    contextual_match = 0.85
-    for raw_line in rules_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("direct_alias_match:"):
-            value = line.split(":", 1)[1].strip().strip('"')
-            try:
-                direct_alias_match = float(value)
-            except ValueError:
-                direct_alias_match = 0.95
-        elif line.startswith("contextual_match:"):
-            value = line.split(":", 1)[1].strip().strip('"')
-            try:
-                contextual_match = float(value)
-            except ValueError:
-                contextual_match = 0.85
-    return {
-        "direct_alias_match": direct_alias_match,
-        "contextual_match": contextual_match,
-    }
+    """Return alias-match thresholds from ``rules.yaml`` (alias_thresholds section)."""
+    defaults = {"direct_alias_match": 0.95, "contextual_match": 0.85}
+    data = load_yaml_mapping(Path(__file__).with_name("rules.yaml"))
+    thresholds = data.get("alias_thresholds")
+    rules = dict(defaults)
+    if isinstance(thresholds, dict):
+        for key, default in defaults.items():
+            if key in thresholds:
+                rules[key] = coerce_float(thresholds[key], default)
+    return rules
 
 
 def _word_count(payload: dict[str, Any]) -> int:
@@ -200,56 +184,31 @@ def _append_card_sections(
 
 
 def _load_category_preferences() -> dict[str, list[str]]:
-    preference_path = _repo_root() / "rules" / "category_preference.v1.yaml"
-    if not preference_path.exists():
-        return {}
+    """Return entity-type -> preferred category list from ``category_preference.v1.yaml``."""
+    data = load_yaml_mapping(_repo_root() / "rules" / "category_preference.v1.yaml")
+    preferences_raw = data.get("preferences")
     preferences: dict[str, list[str]] = {}
-    for raw_line in preference_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if (
-            not line
-            or line.startswith("#")
-            or line.startswith("version:")
-            or line.startswith("preferences:")
-        ):
-            continue
-        if ":" not in line:
-            continue
-        key, raw_values = line.split(":", 1)
-        values = [value.strip() for value in raw_values.strip().strip("[]").split(",")]
-        normalized = [value for value in values if value]
-        if normalized:
-            preferences[key.strip()] = normalized
+    if isinstance(preferences_raw, dict):
+        for key, values in preferences_raw.items():
+            if not isinstance(values, list):
+                continue
+            normalized = [str(value).strip() for value in values if str(value).strip()]
+            if normalized:
+                preferences[str(key).strip()] = normalized
     return preferences
 
 
 def _load_disambiguation_rules() -> dict[str, float]:
-    path = _repo_root() / "rules" / "disambiguation.v1.yaml"
-    min_margin = 0.1
-    require_manual_review_below = 0.8
-    if not path.exists():
-        return {
-            "min_margin": min_margin,
-            "require_manual_review_below": require_manual_review_below,
-        }
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if line.startswith("min_margin:"):
-            value = line.split(":", 1)[1].strip()
-            try:
-                min_margin = float(value)
-            except ValueError:
-                min_margin = 0.1
-        elif line.startswith("require_manual_review_below:"):
-            value = line.split(":", 1)[1].strip()
-            try:
-                require_manual_review_below = float(value)
-            except ValueError:
-                require_manual_review_below = 0.8
-    return {
-        "min_margin": min_margin,
-        "require_manual_review_below": require_manual_review_below,
-    }
+    """Return disambiguation thresholds from ``disambiguation.v1.yaml`` (policy section)."""
+    defaults = {"min_margin": 0.1, "require_manual_review_below": 0.8}
+    data = load_yaml_mapping(_repo_root() / "rules" / "disambiguation.v1.yaml")
+    policy = data.get("policy")
+    rules = dict(defaults)
+    if isinstance(policy, dict):
+        for key, default in defaults.items():
+            if key in policy:
+                rules[key] = coerce_float(policy[key], default)
+    return rules
 
 
 def _matching_sections(draft: dict[str, Any]) -> list[tuple[str, str]]:
@@ -698,7 +657,7 @@ def run_glossary_linker(
             draft["glossary_refs"] = glossary_payload
         else:
             draft["glossary"] = glossary_payload
-        draft_path.write_text(json.dumps(draft, indent=2), encoding="utf-8")
+        write_json(draft_path, draft)
         return {
             "entity_id": entity_id,
             "term_ids": output,
@@ -801,5 +760,5 @@ def run_glossary_linker(
     }
     stage_dir = context.stage_dir("linker")
     output_path = stage_dir / "linker_qa_report.json"
-    output_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    write_json(output_path, report)
     return output_path

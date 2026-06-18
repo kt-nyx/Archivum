@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
+from pipeline.common.io import read_json, write_json
 from pipeline.common.run_context import RunContext
 from pipeline.glossary.run_terms import load_run_terms, run_terms_metadata_map
 
 
 def _load_json(path: Path) -> Any:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return read_json(path)
 
 
 def _load_static_glossary_term_metadata() -> dict[str, dict[str, str]]:
@@ -92,7 +92,7 @@ def build_addon_bundle(context: RunContext) -> Path:
     for zone_path in zone_pages:
         payload = _load_json(zone_path)
         zone_id = str(payload.get("zone_id", zone_path.stem))
-        (zones_dir / f"{zone_id}.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        write_json((zones_dir / f"{zone_id}.json"), payload)
         for location in payload.get("location_cards", []):
             if not isinstance(location, dict):
                 continue
@@ -121,9 +121,7 @@ def build_addon_bundle(context: RunContext) -> Path:
     for instance_path in instance_pages:
         payload = _load_json(instance_path)
         instance_id = str(payload.get("instance_id", instance_path.stem))
-        (instances_dir / f"{instance_id}.json").write_text(
-            json.dumps(payload, indent=2), encoding="utf-8"
-        )
+        write_json((instances_dir / f"{instance_id}.json"), payload)
         for ref in payload.get("glossary_refs", []):
             if not isinstance(ref, dict):
                 continue
@@ -141,16 +139,10 @@ def build_addon_bundle(context: RunContext) -> Path:
             row.setdefault("wiki_url", fallback.get("wiki_url", ""))
             row.setdefault("category", fallback.get("category", ""))
 
-    (lookup_dir / "location_cards.json").write_text(
-        json.dumps(location_cards, indent=2), encoding="utf-8"
-    )
-    (lookup_dir / "glossary_refs.json").write_text(
-        json.dumps(glossary_refs, indent=2), encoding="utf-8"
-    )
-    (lookup_dir / "glossary_terms.json").write_text(
-        json.dumps(glossary_refs, indent=2), encoding="utf-8"
-    )
-    (nav_dir / "index.json").write_text(json.dumps(nav_edges, indent=2), encoding="utf-8")
+    write_json((lookup_dir / "location_cards.json"), location_cards)
+    write_json((lookup_dir / "glossary_refs.json"), glossary_refs)
+    write_json((lookup_dir / "glossary_terms.json"), glossary_refs)
+    write_json((nav_dir / "index.json"), nav_edges)
 
     manifest = {
         "schema_version": "v1",
@@ -159,14 +151,12 @@ def build_addon_bundle(context: RunContext) -> Path:
         "location_card_count": len(location_cards),
         "glossary_ref_count": len(glossary_refs),
     }
-    (output_root / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    write_json((output_root / "manifest.json"), manifest)
     validation_report = {"passed": False, "issues": ["validate_report_missing"]}
     validate_report_path = context.reports_dir / "validate" / "validation_report.json"
     if validate_report_path.exists():
         loaded_report = _load_json(validate_report_path)
         if isinstance(loaded_report, dict):
             validation_report = loaded_report
-    (output_root / "validation_report.json").write_text(
-        json.dumps(validation_report, indent=2), encoding="utf-8"
-    )
+    write_json((output_root / "validation_report.json"), validation_report)
     return output_root

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+from pipeline.common.text_sim import token_jaccard
 from pipeline.generate.draft.prose_lint import (
     AT_A_GLANCE_CURRENTLY_OVERLAP_THRESHOLD,
     lint_at_a_glance,
     lint_currently,
     lint_history_sections,
-    token_jaccard_overlap,
 )
 
 
@@ -107,6 +107,6 @@ def test_currently_rejects_at_a_glance_overlap() -> None:
         "Once the breadbasket of Lordaeron, these lands were consumed by the Scourge and left blighted "
         "for years before recovery efforts began after the Cataclysm and crusaders work to heal them."
     )
-    overlap = token_jaccard_overlap(at_a_glance, currently)
+    overlap = token_jaccard(at_a_glance, currently)
     assert overlap >= AT_A_GLANCE_CURRENTLY_OVERLAP_THRESHOLD
     assert any("overlaps at_a_glance" in issue for issue in lint_currently(currently, at_a_glance=at_a_glance))

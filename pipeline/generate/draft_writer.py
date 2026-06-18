@@ -9,19 +9,20 @@ from typing import Any
 
 from pipeline.ai.config import load_ai_settings
 from pipeline.ai.openai_client import chat_json_completion
+from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext
+from pipeline.discovery.instance_bosses import classify_character_role
+from pipeline.discovery.questline_card_polish import load_questline_card_metadata
+from pipeline.discovery.questline_significance import load_included_cluster_ids_by_zone
 from pipeline.generate.draft import generate_entity_draft, is_valid_draft
 from pipeline.generate.draft.llm import draft_chat_json_completion, set_draft_verbose
 from pipeline.generate.draft.mode import draft_pipeline_mode
 from pipeline.generate.draft.trace import DraftTraceContext
-from pipeline.discovery.questline_card_polish import load_questline_card_metadata
-from pipeline.discovery.questline_significance import load_included_cluster_ids_by_zone
 from pipeline.generate.draft.wiki_first import (
     InstanceKeyCharacterSelection,
     build_instance_page,
     build_zone_page,
 )
-from pipeline.discovery.instance_bosses import classify_character_role
 
 # Re-export for tests that patch chat_json_completion on this module.
 __all__ = [
@@ -299,7 +300,7 @@ def run_draft_writer(
             entity_dir.mkdir(parents=True, exist_ok=True)
             out_path = entity_dir / f"{entity_id}.json"
             overflow = draft.pop("draft_overflow_decisions", None)
-            out_path.write_text(json.dumps(draft, indent=2), encoding="utf-8")
+            write_json(out_path, draft)
             decision = {
                 "entity_id": entity_id,
                 "entity_type": f"{entity_type}_page",
@@ -342,7 +343,7 @@ def run_draft_writer(
         entity_dir = stage_dir / entity_type
         entity_dir.mkdir(parents=True, exist_ok=True)
         out_path = entity_dir / f"{draft['id']}.json"
-        out_path.write_text(json.dumps(draft, indent=2), encoding="utf-8")
+        write_json(out_path, draft)
         decision: dict[str, object] = {
             "entity_id": str(draft["id"]),
             "entity_type": entity_type,
@@ -383,14 +384,8 @@ def run_draft_writer(
                                     "cluster_id": str(row.get("cluster_id", "")),
                                 }
                             )
-    (stage_dir / "draft_decisions.json").write_text(
-        json.dumps(decisions, indent=2),
-        encoding="utf-8",
-    )
+    write_json((stage_dir / "draft_decisions.json"), decisions)
     decisions_dir = context.data_dir / "decisions"
     decisions_dir.mkdir(parents=True, exist_ok=True)
-    (decisions_dir / "instance_key_character_decisions.json").write_text(
-        json.dumps(instance_key_character_decisions, indent=2),
-        encoding="utf-8",
-    )
+    write_json((decisions_dir / "instance_key_character_decisions.json"), instance_key_character_decisions)
     return outputs

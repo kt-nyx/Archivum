@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from pydantic import BaseModel
 
+from pipeline.common.text_sim import token_jaccard
 from pipeline.contracts.models import (
     SUB_ZONE_MAX_QUESTLINE_CARDS,
     SUB_ZONE_MIN_QUESTLINE_INCLUSION_SCORE,
@@ -29,18 +29,6 @@ from pipeline.validate.types import ValidationIssue, ValidationSeverity
 
 def _non_empty_text(value: str) -> bool:
     return bool(value.strip())
-
-
-def _token_set(value: str) -> set[str]:
-    return {token for token in re.findall(r"[a-z0-9]+", value.lower()) if len(token) >= 4}
-
-
-def _jaccard_overlap(left: str, right: str) -> float:
-    left_tokens = _token_set(left)
-    right_tokens = _token_set(right)
-    if not left_tokens or not right_tokens:
-        return 0.0
-    return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
 
 
 def _validate_enriched_glossary_refs(
@@ -428,7 +416,7 @@ def _validate_zone_page(
             )
         )
     history_blob = " ".join(section.body for section in zone_page.history_sections)
-    overlap = _jaccard_overlap(zone_page.currently, history_blob)
+    overlap = token_jaccard(zone_page.currently, history_blob)
     if overlap >= 0.6:
         issues.append(
             ValidationIssue(

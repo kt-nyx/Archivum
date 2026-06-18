@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Any
 
+from pipeline.common.io import read_json
 from pipeline.common.run_context import RunContext
+from pipeline.common.text_ids import slugify
 
 WIKI_BASE = "https://warcraft.wiki.gg/wiki"
 
@@ -29,8 +30,7 @@ def _normalize_alias(text: str) -> str:
 
 
 def _term_slug(label: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")
-    return slug or "unknown"
+    return slugify(label) or "unknown"
 
 
 def _wiki_url(label: str, existing_url: str = "") -> str:
@@ -46,7 +46,7 @@ def _category_for_entity_type(entity_type: str) -> str:
 
 
 def _load_json(path: Path) -> Any:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return read_json(path)
 
 
 def _load_jsonl(path: Path) -> list[dict[str, Any]]:

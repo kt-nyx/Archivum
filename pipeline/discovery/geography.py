@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from pipeline.common.text_ids import slugify
 from pipeline.common.wiki_evidence_filters import is_simile_continent_mention
 
 # In-game UI parent continents (valid parent_continent outputs).
@@ -43,8 +44,7 @@ _SEED_FIELD_NAMES = frozenset(_FIELD_TIERS)
 
 
 def title_to_slug(title: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", title.strip().lower())
-    return slug.strip("-")
+    return slugify(title)
 
 
 def _is_seed_row(row: dict[str, Any]) -> bool:

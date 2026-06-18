@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from pipeline.common.io import write_json
 from pipeline.generate.draft.common import (
     entity_header,
     filter_claims_for_keywords,
@@ -191,4 +191,4 @@ def workers_snapshot_path(stage_dir: Path, entity_id: str) -> Path:
 
 def persist_workers_snapshot(path: Path, parts: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(parts, indent=2, default=list), encoding="utf-8")
+    write_json(path, parts)

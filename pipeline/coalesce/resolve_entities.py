@@ -11,39 +11,32 @@ from typing import Any
 from pipeline.ai.config import load_ai_settings
 from pipeline.ai.openai_client import chat_json_completion
 from pipeline.coalesce.confidence_model import compute_confidence
+from pipeline.common.config_loading import coerce_float, load_yaml_mapping
+from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext
 
 
 def _load_merge_rules() -> dict[str, object]:
-    rules_path = Path(__file__).with_name("merge_rules.yaml")
-    if not rules_path.exists():
-        return {
-            "confidence_threshold": 0.8,
-            "dedupe_strategy": "exact_text_then_source_overlap",
-            "contradiction_bias": "prefer_higher_revision_id",
-        }
-    confidence_threshold = 0.8
-    dedupe_strategy = "exact_text_then_source_overlap"
-    contradiction_bias = "prefer_higher_revision_id"
-    for raw_line in rules_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("confidence_threshold:"):
-            value = line.split(":", 1)[1].strip().strip('"')
-            try:
-                confidence_threshold = float(value)
-            except ValueError:
-                confidence_threshold = 0.8
-        elif line.startswith("dedupe_strategy:"):
-            dedupe_strategy = line.split(":", 1)[1].strip().strip('"')
-        elif line.startswith("contradiction_bias:"):
-            contradiction_bias = line.split(":", 1)[1].strip().strip('"')
-    return {
-        "confidence_threshold": confidence_threshold,
-        "dedupe_strategy": dedupe_strategy,
-        "contradiction_bias": contradiction_bias,
+    """Return flat merge policy from ``merge_rules.yaml`` (entity_resolution + claim_merge)."""
+    defaults: dict[str, object] = {
+        "confidence_threshold": 0.8,
+        "dedupe_strategy": "exact_text_then_source_overlap",
+        "contradiction_bias": "prefer_higher_revision_id",
     }
+    data = load_yaml_mapping(Path(__file__).with_name("merge_rules.yaml"))
+    entity_resolution = data.get("entity_resolution")
+    claim_merge = data.get("claim_merge")
+    rules = dict(defaults)
+    if isinstance(entity_resolution, dict) and "confidence_threshold" in entity_resolution:
+        rules["confidence_threshold"] = coerce_float(
+            entity_resolution["confidence_threshold"], 0.8
+        )
+    if isinstance(claim_merge, dict):
+        if claim_merge.get("dedupe_strategy"):
+            rules["dedupe_strategy"] = str(claim_merge["dedupe_strategy"])
+        if claim_merge.get("contradiction_bias"):
+            rules["contradiction_bias"] = str(claim_merge["contradiction_bias"])
+    return rules
 
 
 def _stable_entity_id(seed: str) -> str:
@@ -383,8 +376,5 @@ def run_resolve_entities(
         "\n".join(json.dumps(row) for row in coalesced_rows) + "\n",
         encoding="utf-8",
     )
-    (stage_dir / "coalesce_decisions.json").write_text(
-        json.dumps(decisions, indent=2),
-        encoding="utf-8",
-    )
+    write_json((stage_dir / "coalesce_decisions.json"), decisions)
     return output_path

@@ -7,24 +7,30 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Literal
 
+from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.common.wiki_evidence_filters import should_exclude_from_history
-from pipeline.contracts.models import DecisionArtifact, EvidencePack, QuestRecord, QuestlineClusterSummary
-from pipeline.discovery.quest_lore import extract_quest_lore
+from pipeline.contracts.models import (
+    DecisionArtifact,
+    EvidencePack,
+    QuestlineClusterSummary,
+    QuestRecord,
+)
+from pipeline.discovery.instance_bosses import is_boss_section_role
 from pipeline.discovery.location_discovery import (
     build_location_decision_row,
     build_zone_seed_text,
 )
-from pipeline.discovery.instance_bosses import is_boss_section_role
-from pipeline.discovery.questline_cluster import cluster_zone_questlines
+from pipeline.discovery.quest_lore import extract_quest_lore
+from pipeline.discovery.quest_roster import build_quest_roster
 from pipeline.discovery.questline_card_polish import build_zone_questline_card_metadata
+from pipeline.discovery.questline_cluster import cluster_zone_questlines
+from pipeline.discovery.questline_clustering import apply_cluster_layers
 from pipeline.discovery.questline_significance import (
     load_included_cluster_ids_by_zone,
     score_zone_questline_clusters,
 )
-from pipeline.discovery.questline_clustering import apply_cluster_layers
-from pipeline.discovery.quest_roster import build_quest_roster
 from pipeline.discovery.storyline_html import parse_storyline_html, v3_to_legacy_v1
 from pipeline.discovery.workflow import _load_json, _section_role
 
@@ -569,11 +575,9 @@ def run_discovery_enrich(
                 max_cluster_size = max(max_cluster_size, int(summary.get("quest_count", 0)))
 
         quest_graph = v3_to_legacy_v1(clustered_rows)
-        outputs["zone_quest_graph"].write_text(json.dumps(quest_graph, indent=2), encoding="utf-8")
-        outputs["zone_quest_graph_v3"].write_text(json.dumps(clustered_rows, indent=2), encoding="utf-8")
-        outputs["zone_quest_clusters"].write_text(
-            json.dumps(cluster_summaries, indent=2), encoding="utf-8"
-        )
+        write_json(outputs["zone_quest_graph"], quest_graph)
+        write_json(outputs["zone_quest_graph_v3"], clustered_rows)
+        write_json(outputs["zone_quest_clusters"], cluster_summaries)
         cluster_ids = {
             (str(row.get("zone_id", "")), str(row.get("cluster_id", "")))
             for row in clustered_rows
@@ -594,7 +598,7 @@ def run_discovery_enrich(
                 "quest_records_path": str(quest_records_path),
             }
         )
-        outputs["enrich_report"].write_text(json.dumps(report_payload, indent=2), encoding="utf-8")
+        write_json(outputs["enrich_report"], report_payload)
         outputs["quest_records"] = quest_records_path
         for row in cluster_summaries:
             QuestlineClusterSummary.model_validate(row)
@@ -645,12 +649,8 @@ def run_discovery_enrich(
                 if row.get("borderline_adjudication"):
                     borderline_total += 1
 
-        outputs["questline_inclusion_decisions"].write_text(
-            json.dumps(all_decisions, indent=2), encoding="utf-8"
-        )
-        outputs["zone_quest_cluster_rankings"].write_text(
-            json.dumps(all_rankings, indent=2), encoding="utf-8"
-        )
+        write_json(outputs["questline_inclusion_decisions"], all_decisions)
+        write_json(outputs["zone_quest_cluster_rankings"], all_rankings)
         for row in all_decisions:
             DecisionArtifact.model_validate(row)
 
@@ -670,7 +670,7 @@ def run_discovery_enrich(
                 "quest_records_path": str(quest_records_path),
             }
         )
-        outputs["enrich_report"].write_text(json.dumps(report_payload, indent=2), encoding="utf-8")
+        write_json(outputs["enrich_report"], report_payload)
         outputs["quest_records"] = quest_records_path
         return outputs
 
@@ -706,9 +706,7 @@ def run_discovery_enrich(
             for key, value in metrics.items():
                 aggregate_metrics[key] += int(value)
 
-        outputs["zone_questline_card_metadata"].write_text(
-            json.dumps(metadata_rows, indent=2), encoding="utf-8"
-        )
+        write_json(outputs["zone_questline_card_metadata"], metadata_rows)
         prior_report = _load_json(outputs["enrich_report"])
         report_payload = prior_report if isinstance(prior_report, dict) else {}
         report_payload.update(
@@ -725,7 +723,7 @@ def run_discovery_enrich(
                 "quest_records_path": str(quest_records_path),
             }
         )
-        outputs["enrich_report"].write_text(json.dumps(report_payload, indent=2), encoding="utf-8")
+        write_json(outputs["enrich_report"], report_payload)
         outputs["quest_records"] = quest_records_path
         return outputs
 
@@ -774,7 +772,7 @@ def run_discovery_enrich(
         outputs["evidence_packs"].write_text(
             "\n".join(json.dumps(row) for row in evidence_packs) + "\n", encoding="utf-8"
         )
-        outputs["enrich_report"].write_text(json.dumps(report_payload, indent=2), encoding="utf-8")
+        write_json(outputs["enrich_report"], report_payload)
         outputs["quest_records"] = quest_records_path
         for row in evidence_packs:
             EvidencePack.model_validate(row)
@@ -901,21 +899,15 @@ def run_discovery_enrich(
     )
     clusters_with_evidence, clusters_missing = _cluster_evidence_metrics(questline_graph_v3, evidence_packs)
 
-    outputs["zone_quest_graph"].write_text(json.dumps(quest_graph, indent=2), encoding="utf-8")
-    outputs["zone_quest_graph_v3"].write_text(json.dumps(questline_graph_v3, indent=2), encoding="utf-8")
-    outputs["location_significance_decisions"].write_text(
-        json.dumps(location_decisions, indent=2), encoding="utf-8"
-    )
-    outputs["questline_inclusion_decisions"].write_text(
-        json.dumps(questline_decisions, indent=2), encoding="utf-8"
-    )
+    write_json(outputs["zone_quest_graph"], quest_graph)
+    write_json(outputs["zone_quest_graph_v3"], questline_graph_v3)
+    write_json(outputs["location_significance_decisions"], location_decisions)
+    write_json(outputs["questline_inclusion_decisions"], questline_decisions)
     if phase in {"full", "roster"}:
         outputs["evidence_packs"].write_text(
             "\n".join(json.dumps(row) for row in evidence_packs) + "\n", encoding="utf-8"
         )
-    outputs["enrich_report"].write_text(
-        json.dumps(
-            {
+    write_json(outputs["enrich_report"], {
                 "run_id": context.run_id,
                 "enrich_phase": phase,
                 "snapshot_count": len(snapshots),
@@ -928,11 +920,7 @@ def run_discovery_enrich(
                 "storyline_zones": sorted(storyline_by_zone.keys()),
                 "clusters_with_quest_evidence": clusters_with_evidence,
                 "clusters_missing_evidence": clusters_missing,
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+            })
 
     for row in location_decisions + questline_decisions:
         DecisionArtifact.model_validate(row)

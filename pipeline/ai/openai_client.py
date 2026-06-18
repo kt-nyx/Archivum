@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+
+import httpx
 
 from pipeline.ai.config import AISettings
+from pipeline.common import http
 
 
 def chat_json_completion(
@@ -60,44 +61,34 @@ def chat_json_completion(
     if resolved_verbosity:
         body["verbosity"] = resolved_verbosity
     endpoint = f"{settings.openai_base_url.rstrip('/')}/chat/completions"
-    request = Request(
-        endpoint,
-        method="POST",
-        data=json.dumps(body).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {settings.openai_api_key}",
-            "Content-Type": "application/json",
-        },
-    )
     resolved_timeout = timeout_seconds
     if resolved_timeout is None:
         resolved_timeout = int(getattr(settings, "openai_request_timeout_seconds", 600))
     try:
-        with urlopen(request, timeout=resolved_timeout) as response:  # noqa: S310
-            payload = json.loads(response.read().decode("utf-8"))
-    except TimeoutError as exc:
+        response = http.send(
+            "POST",
+            endpoint,
+            headers={
+                "Authorization": f"Bearer {settings.openai_api_key}",
+                "Content-Type": "application/json",
+            },
+            content=json.dumps(body).encode("utf-8"),
+            timeout=resolved_timeout,
+        )
+        payload = response.json()
+    except httpx.TimeoutException as exc:
         raise RuntimeError(
             f"OpenAI chat completion timed out after {resolved_timeout}s while reading the "
             "HTTP response. Large structured outputs and reasoning models can be slow; set "
             "OPENAI_TIMEOUT_SECONDS higher (e.g. 900) or use a faster model."
         ) from exc
-    except HTTPError as exc:
-        try:
-            detail = exc.read().decode("utf-8", errors="replace")
-        except Exception:  # pragma: no cover - defensive
-            detail = ""
-        msg = f"OpenAI chat completion failed: HTTP {exc.code} {exc.reason}"
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text
+        msg = f"OpenAI chat completion failed: HTTP {exc.response.status_code} {exc.response.reason_phrase}"
         if detail.strip():
             msg = f"{msg}: {detail.strip()}"
         raise RuntimeError(msg) from exc
-    except URLError as exc:
-        reason = getattr(exc, "reason", None)
-        reason_str = repr(reason) if reason is not None else str(exc)
-        if isinstance(reason, TimeoutError) or "timed out" in reason_str.lower():
-            raise RuntimeError(
-                f"OpenAI chat completion timed out after {resolved_timeout}s ({exc!r}). "
-                "Increase OPENAI_TIMEOUT_SECONDS if the model is still generating."
-            ) from exc
+    except httpx.RequestError as exc:
         raise RuntimeError(f"OpenAI chat completion request failed: {exc!r}") from exc
     choices = payload.get("choices")
     if not isinstance(choices, list) or not choices:

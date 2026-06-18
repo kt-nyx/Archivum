@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext
 
 
@@ -68,7 +69,7 @@ def run_extract_facts(
             "source_urls": source_urls,
             "coalesce_mode": row.get("coalesce_mode", "unknown"),
         }
-        output_path.write_text(json.dumps(fact_pack, indent=2), encoding="utf-8")
+        write_json(output_path, fact_pack)
         return output_path
 
     outputs: list[Path] = []

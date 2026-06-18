@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext
 
 
@@ -60,11 +61,8 @@ def run_normalize_source(context: RunContext, snapshots_path: Path) -> Path:
 
     stage_dir = context.stage_dir("ingest")
     manifest_path = stage_dir / "source_manifest.json"
-    manifest_path.write_text(json.dumps(manifest_entries, indent=2), encoding="utf-8")
+    write_json(manifest_path, manifest_entries)
     raw_dir = context.data_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
-    (raw_dir / "source_manifest.json").write_text(
-        json.dumps(manifest_entries, indent=2),
-        encoding="utf-8",
-    )
+    write_json((raw_dir / "source_manifest.json"), manifest_entries)
     return manifest_path

@@ -7,8 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from pipeline.common.text_sim import max_similarity_against_sources
 from pipeline.validate.types import ValidationIssue, ValidationSeverity
-from pipeline.validate.validate_similarity import max_similarity_against_sources
 
 # Token-set Jaccard (`max_similarity_against_sources`) between a narrative section
 # and provenance-linked snapshot `body` text. Tuned conservatively: warn on elevated

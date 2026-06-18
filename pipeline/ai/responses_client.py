@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+
+import httpx
 
 from pipeline.ai.config import AISettings
 from pipeline.ai.openai_client import chat_json_completion
+from pipeline.common import http
 
 
 def responses_json_completion(
@@ -50,19 +51,19 @@ def responses_json_completion(
     if resolved_timeout is None:
         resolved_timeout = settings.openai_request_timeout_seconds
     endpoint = f"{settings.openai_base_url.rstrip('/')}/responses"
-    request = Request(
-        endpoint,
-        method="POST",
-        data=json.dumps(body).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {settings.openai_api_key}",
-            "Content-Type": "application/json",
-        },
-    )
     try:
-        with urlopen(request, timeout=resolved_timeout) as response:  # noqa: S310
-            payload = json.loads(response.read().decode("utf-8"))
-    except (TimeoutError, HTTPError, URLError):
+        response = http.send(
+            "POST",
+            endpoint,
+            headers={
+                "Authorization": f"Bearer {settings.openai_api_key}",
+                "Content-Type": "application/json",
+            },
+            content=json.dumps(body).encode("utf-8"),
+            timeout=resolved_timeout,
+        )
+        payload = response.json()
+    except httpx.HTTPError:
         return chat_json_completion(
             settings,
             system_prompt=instructions,
