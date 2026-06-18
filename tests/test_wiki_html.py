@@ -26,6 +26,22 @@ def test_extract_links_filters_and_dedupes() -> None:
     assert wiki_html.extract_links(html) == ["/wiki/A", "https://warcraft.wiki.gg/wiki/B"]
 
 
+def test_content_blocks_handles_nested_table_inside_chrome() -> None:
+    # Regression: a chrome table containing a nested table must not crash (decomposing the
+    # outer table detaches the inner one mid-iteration) and must drop all chrome content.
+    html = (
+        '<table class="navbox"><tr><td>'
+        "<table><tr><td>NESTED_CHROME</td></tr></table>OUTER_CHROME"
+        "</td></tr></table>"
+        "<p>Real body.</p>"
+    )
+    blocks = wiki_html.content_blocks(html)
+    joined = " ".join(b["text"] for b in blocks)
+    assert "NESTED_CHROME" not in joined
+    assert "OUTER_CHROME" not in joined
+    assert any("Real body." in b["text"] for b in blocks)
+
+
 def test_content_blocks_excludes_chrome_and_folds_nested() -> None:
     html = (
         '<table class="navbox"><tr><td>CHROME</td></tr></table>'

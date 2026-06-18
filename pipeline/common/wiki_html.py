@@ -57,11 +57,17 @@ def _drop_chrome_tables(root: BeautifulSoup) -> None:
     """Remove top-level chrome tables (and their nested content) in place.
 
     Only top-level tables are evaluated, matching the original ingest behavior where
-    a chrome table nested inside a kept content table stays with its parent.
+    a chrome table nested inside a kept content table stays with its parent. The chrome
+    tables are collected before any removal, because decomposing a table detaches any
+    nested tables still pending in the iteration.
     """
-    for table in root.find_all("table"):
-        if table.find_parent("table") is None and _table_is_chrome(table):
-            table.decompose()
+    chrome = [
+        table
+        for table in root.find_all("table")
+        if table.find_parent("table") is None and _table_is_chrome(table)
+    ]
+    for table in chrome:
+        table.decompose()
 
 
 def content_blocks(html: str, *, drop_chrome: bool = True) -> list[dict[str, str]]:
