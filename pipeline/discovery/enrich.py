@@ -25,8 +25,7 @@ from pipeline.discovery.location_discovery import (
 from pipeline.discovery.quest_lore import extract_quest_lore
 from pipeline.discovery.quest_roster import build_quest_roster
 from pipeline.discovery.questline_card_polish import build_zone_questline_card_metadata
-from pipeline.discovery.questline_cluster import cluster_zone_questlines
-from pipeline.discovery.questline_clustering import apply_cluster_layers
+from pipeline.discovery.questline_cluster import apply_cluster_layers, cluster_zone_questlines
 from pipeline.discovery.questline_significance import (
     load_included_cluster_ids_by_zone,
     score_zone_questline_clusters,

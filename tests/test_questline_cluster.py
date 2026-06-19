@@ -5,6 +5,7 @@ from pathlib import Path
 
 from pipeline.contracts.models import QuestlineClusterSummary
 from pipeline.discovery.questline_cluster import (
+    _MAX_CLUSTER_QUESTS,
     build_chain_adjacency,
     cluster_zone_questlines,
     connected_components,
@@ -13,7 +14,6 @@ from pipeline.discovery.questline_cluster import (
     resolve_title_to_node_id,
     topological_order,
 )
-from pipeline.discovery.questline_clustering import _MAX_CLUSTER_QUESTS
 
 FIXTURE_DIR = Path("tests/fixtures/clustering")
 ZONE_ID = "zone-western-plaguelands"
@@ -106,6 +106,68 @@ def test_resolve_title_to_node_id_prefers_faction_match() -> None:
         )
         == "quest-h"
     )
+
+
+def test_resolve_title_uses_fuzzy_fallback_for_near_miss() -> None:
+    title_index = {"the battle for andorhal": ["quest-andorhal"]}
+    resolved = resolve_title_to_node_id(
+        "The Battle for Andorhaal",  # doubled 'a' — exact normalization still misses
+        title_index=title_index,
+        prefer_faction="shared",
+        records_by_node={},
+        roster_by_node={},
+    )
+    assert resolved == "quest-andorhal"
+
+
+def test_resolve_title_fuzzy_rejects_distinct_sibling() -> None:
+    title_index = {"the battle for andorhal": ["quest-andorhal"]}
+    resolved = resolve_title_to_node_id(
+        "The Battle for Darrowshire",  # distinct quest, well below the cutoff
+        title_index=title_index,
+        prefer_faction="shared",
+        records_by_node={},
+        roster_by_node={},
+    )
+    assert resolved is None
+
+
+def test_section_comembership_merges_unchained_section_members() -> None:
+    """Quests sharing a real storyline heading section merge even without a prev/next edge."""
+    section = "the-battle-for-andorhal"
+    roster = [_quest_row("q1", "Alpha", 1), _quest_row("q2", "Beta", 2)]
+    for row in roster:
+        row["cluster_id"] = section
+    record_a = _record("q1", "Alpha")
+    record_a["category"] = "Region A"
+    record_b = _record("q2", "Beta")
+    record_b["category"] = "Region B"
+    rows, summaries, _unresolved = cluster_zone_questlines(
+        zone_id="zone-example",
+        roster_rows=roster,
+        quest_records=[record_a, record_b],
+    )
+    quest_clusters = {row["cluster_id"] for row in rows if row.get("node_type") == "quest"}
+    assert len(quest_clusters) == 1
+    assert len(summaries) == 1
+    assert summaries[0]["quest_count"] == 2
+
+
+def test_placeholder_section_keeps_unchained_quests_separate() -> None:
+    """The default/placeholder section bucket must not seed co-membership edges."""
+    # _quest_row defaults cluster_id to the placeholder 'unclustered'
+    roster = [_quest_row("q1", "Alpha", 1), _quest_row("q2", "Beta", 2)]
+    record_a = _record("q1", "Alpha")
+    record_a["category"] = "Region A"
+    record_b = _record("q2", "Beta")
+    record_b["category"] = "Region B"
+    rows, _summaries, _unresolved = cluster_zone_questlines(
+        zone_id="zone-example",
+        roster_rows=roster,
+        quest_records=[record_a, record_b],
+    )
+    quest_clusters = {row["cluster_id"] for row in rows if row.get("node_type") == "quest"}
+    assert len(quest_clusters) == 2
 
 
 def test_chain_components_form_on_synthetic_three_quest_chain() -> None:
