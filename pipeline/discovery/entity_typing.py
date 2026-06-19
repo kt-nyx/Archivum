@@ -5,8 +5,14 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
+from pipeline.common.discovery_vocab import (
+    faction_as_location_denylist,
+    location_meta_titles,
+    meta_page_denylist,
+    race_species_denylist,
+)
 from pipeline.discovery.world_registry import entry_kinds, registry_index
 
 TraverseRole = Literal[
@@ -24,55 +30,16 @@ _DATING_CONVENTION_TITLE_RE = re.compile(
 
 _GEOGRAPHY_SOURCE_ROLES = frozenset({"maps_subregions", "geography_edit", "geography", "subregion"})
 
-_RACE_SPECIES_DENYLIST = frozenset(
-    {
-        "human",
-        "gnoll",
-        "undead",
-        "night elf",
-        "blood elf",
-        "draenei",
-        "dwarf",
-        "gnome",
-        "troll",
-        "tauren",
-        "orc",
-        "goblin",
-        "worgen",
-        "pandaren",
-        "vulpera",
-        "mechagnome",
-        "dracthyr",
-    }
-)
+# WS-C: these title-matched denylists are externalized to
+# pipeline/data/discovery_classification_vocab.v1.json (D-6) — judged on the link
+# title before the target page is fetched, so no category/infobox signal exists.
+_RACE_SPECIES_DENYLIST = race_species_denylist()
 
-_META_PAGE_DENYLIST = frozenset(
-    {
-        "faction",
-        "category",
-        "world",
-        "class",
-        "race",
-        "quest",
-        "item",
-        "spell",
-        "ability",
-    }
-)
+_META_PAGE_DENYLIST = meta_page_denylist()
 
-_LOCATION_META_TITLES = frozenset({"lore", "adp"})
+_LOCATION_META_TITLES = location_meta_titles()
 
-_FACTION_AS_LOCATION_DENYLIST = frozenset(
-    {
-        "argent dawn",
-        "scourge",
-        "alliance",
-        "horde",
-        "forsaken",
-        "cult of the damned",
-        "crusade",
-    }
-)
+_FACTION_AS_LOCATION_DENYLIST = faction_as_location_denylist()
 
 _QUEST_GRAPH_REGISTRY_KINDS = frozenset(
     {"zone", "continent", "capital", "region", "instance", "person", "place"}

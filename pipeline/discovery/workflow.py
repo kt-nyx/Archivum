@@ -8,6 +8,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
+from pipeline.common.discovery_vocab import (
+    character_role_hints,
+    event_title_tokens,
+    faction_title_tokens,
+    non_location_title_tokens,
+)
 from pipeline.common.io import read_json, write_json
 from pipeline.common.retail import is_classic_categorized
 from pipeline.common.run_context import RunContext
@@ -47,50 +53,10 @@ _NOISE_LINK_PREFIXES = (
     "user:",
     "game guide/",
 )
-_FACTION_KEYWORDS = (
-    "crusade",
-    "horde",
-    "alliance",
-    "dawn",
-    "circle",
-    "cult",
-    "order",
-    "covenant",
-    "faction",
-    "forsaken",
-    "tribe",
-)
-_EVENT_KEYWORDS = (
-    "war",
-    "battle",
-    "invasion",
-    "scourging",
-    "cataclysm",
-    "event",
-)
-_CHARACTER_ROLE_HINTS = (
-    "king",
-    "queen",
-    "lord",
-    "lady",
-    "highlord",
-    "commander",
-    "inquisitor",
-    "master",
-)
-_NON_LOCATION_KEYWORDS = (
-    "warcraft",
-    "novel",
-    "novella",
-    "short stories",
-    "story",
-    "faction",
-    "class",
-    "mob",
-    "flight path",
-    "instance portal",
-    "rpg",
-)
+# WS-C: title-token classification vocab is externalized to
+# pipeline/data/discovery_classification_vocab.v1.json (D-6). These are the
+# pre-fetch fallback signals; the link's section role is the primary classifier
+# (see _infer_entity_type_for_link).
 _LOCATION_INCLUDE_SECTION_WEIGHTS = {
     "maps_subregions": 0.35,
     "instances_or_dungeons": 0.1,
@@ -258,22 +224,33 @@ def _is_likely_character_title(title: str) -> bool:
     parts = [part for part in re.split(r"\s+", title.strip()) if part]
     if len(parts) < 2:
         return False
+    role_hints = character_role_hints()
     return any(
-        part.lower() in _CHARACTER_ROLE_HINTS
+        part.lower() in role_hints
         or (part[:1].isupper() and part[1:].islower() and len(part) >= 3)
         for part in parts
     )
 
 
 def _infer_entity_type_for_link(title: str, inferred_section_role: str) -> str:
+    # WS-C: the link's section role (WS-A structural signal) is the primary
+    # classifier. The title-token fallbacks below only run when the section role
+    # is uninformative ("other"/"history") — that is the only point at which no
+    # category/section signal exists for the (not-yet-fetched) target page.
     lowered = title.lower()
     if "storyline" in lowered or "questline" in lowered or inferred_section_role == "quests_or_storyline":
         return "quest"
+    if inferred_section_role == "instances_or_dungeons":
+        return "instance"
+    if inferred_section_role == "notable_characters":
+        return "character"
+    if inferred_section_role == "maps_subregions":
+        return "location"
     if "(instance)" in lowered or " dungeon" in lowered or " raid" in lowered:
         return "instance"
-    if any(keyword in lowered for keyword in _FACTION_KEYWORDS):
+    if any(keyword in lowered for keyword in faction_title_tokens()):
         return "faction"
-    if any(keyword in lowered for keyword in _EVENT_KEYWORDS):
+    if any(keyword in lowered for keyword in event_title_tokens()):
         return "event"
     if _is_likely_character_title(title):
         return "character"
@@ -284,7 +261,7 @@ def _should_reject_location_candidate(title: str, entity_type: str) -> bool:
     lowered = title.lower()
     if entity_type != "location":
         return True
-    if any(keyword in lowered for keyword in _NON_LOCATION_KEYWORDS):
+    if any(keyword in lowered for keyword in non_location_title_tokens()):
         return True
     return False
 
@@ -483,6 +460,12 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
                 )
             else:
                 if reject_location or _should_reject_location_candidate(title, inferred_entity_type):
+                    continue
+                # WS-C: section-role-first typing now admits whole maps/subregions sections,
+                # which can include meta-placeholder pages ("Lore location", "Undisplayed
+                # location"). The downstream classification already hard-rejects these by name;
+                # apply the same gate here so they never become traversal targets/candidates.
+                if hard_reject_markers(title):
                     continue
                 location_candidates.append(
                     {

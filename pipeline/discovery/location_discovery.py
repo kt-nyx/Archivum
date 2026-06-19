@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import re
 from typing import Any
+
+from pipeline.common.discovery_vocab import location_hard_reject_tokens, location_rpg_tokens
+
 LOCATION_INCLUDE_MIN = 0.7
 
 LOCATION_INCLUDE_SECTION_WEIGHTS: dict[str, float] = {
@@ -14,9 +17,13 @@ LOCATION_INCLUDE_SECTION_WEIGHTS: dict[str, float] = {
     "other": 0.0,
 }
 
-HARD_REJECT_MARKERS = ("undisplayed", "lore", "removed", "warcraft iii", "other game")
+# WS-C: externalized to pipeline/data/discovery_classification_vocab.v1.json (D-6).
+# These score location candidates by name pre-fetch (no category available yet);
+# S3's category check in pipeline/common/retail.py is the authoritative post-fetch
+# retail signal.
+HARD_REJECT_MARKERS = location_hard_reject_tokens()
 
-_RPG_MARKERS = ("classic", "warcraft rpg", "novel", "novella")
+_RPG_MARKERS = location_rpg_tokens()
 _TITLE_CASE_TOKEN_RE = re.compile(r"^[A-Z][a-z]+(?:[''][a-z]+)?$")
 
 

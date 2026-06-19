@@ -4,17 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from pipeline.common.discovery_vocab import entry_quest_title_keywords
 from pipeline.discovery.questline_cluster import normalize_quest_title, resolve_title_to_node_id
 
-ENTRY_QUEST_TITLE_KEYWORDS = frozenset(
-    {
-        "hero's call",
-        "warchief's command",
-        "new era for the plaguelands",
-        "audience with the highlord",
-        "an audience with the highlord",
-    }
-)
+# WS-C: externalized to pipeline/data/discovery_classification_vocab.v1.json (D-6).
+# Chain heads are computed structurally (indegree 0); this list only PREFERS the
+# breadcrumb head by title. NOTE: contains WPL-specific titles flagged for the
+# cross-zone smoke test (likely S5 reconciliation).
+ENTRY_QUEST_TITLE_KEYWORDS = entry_quest_title_keywords()
 
 
 def _record_faction(record: dict[str, Any], roster_row: dict[str, Any]) -> str:

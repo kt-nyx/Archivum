@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from pipeline.common.draft_vocab import era_section_role_tokens
 from pipeline.generate.draft.faction_lint import trim_faction_summary
 from pipeline.generate.draft.prose_lint import has_currently_meta, word_count
 
@@ -16,18 +17,9 @@ ALLIANCE_HORDE_CONFLICT_THRESHOLD = 2
 
 _ALLIANCE_HORDE_IDS = frozenset({"faction-alliance", "faction-horde"})
 
-_ERA_TOKENS = (
-    "cataclysm",
-    "battle_for",
-    "dragonflight",
-    "war_within",
-    "legion",
-    "mists",
-    "wrath",
-    "burning_crusade",
-    "classic",
-    "shadowlands",
-)
+# WS-C: era tokens externalized + de-duplicated (shared with prose_election) in
+# pipeline/data/draft_classification_vocab.v1.json (D-6).
+_ERA_TOKENS = era_section_role_tokens()
 
 _HIGH_WEIGHT_ROLES = frozenset({"quests_edit", "quests", "quests_or_storyline"})
 _LEDE_ROLES = frozenset({"lead", "introduction"})

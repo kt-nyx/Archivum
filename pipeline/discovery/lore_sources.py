@@ -15,6 +15,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from pipeline.common.discovery_vocab import (
+    lore_character_role_hints,
+    lore_faction_tokens,
+)
 from pipeline.discovery.world_registry import _CLASSIC_SUFFIX_RE
 
 # Raw ingest section roles (not the discovery canonical buckets) that signal narrative
@@ -36,28 +40,11 @@ _NOISE_PREFIXES = (
 )
 
 # Conservative character/faction markers: these belong to the I3 key_characters path
-# or the faction profile path, not the cross-page lore set.
-_CHARACTER_ROLE_HINTS = (
-    "king",
-    "queen",
-    "lord",
-    "lady",
-    "highlord",
-    "commander",
-    "inquisitor",
-    "prince",
-    "princess",
-    "baron",
-    "baroness",
-)
-_FACTION_KEYWORDS = (
-    "crusade",
-    "horde",
-    "alliance",
-    "covenant",
-    "the burning legion",
-    "scourge",
-)
+# or the faction profile path, not the cross-page lore set. WS-C: externalized to
+# pipeline/data/discovery_classification_vocab.v1.json (D-6) — judged on the link title
+# pre-fetch, so no category/section signal exists at the decision point.
+_CHARACTER_ROLE_HINTS = lore_character_role_hints()
+_FACTION_KEYWORDS = lore_faction_tokens()
 
 # Body-text markers used to drop Classic-only / non-retail pages after they are fetched.
 # Deliberately narrower than discovery's _classify_retail_eligibility (which treats a bare

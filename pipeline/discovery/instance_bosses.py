@@ -8,6 +8,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from pipeline.common import wiki_html
+from pipeline.common.discovery_vocab import (
+    boss_reject_section_titles,
+    generic_non_person_words,
+    non_character_titles,
+    non_person_narrative_titles,
+)
 from pipeline.common.retail import is_non_retail_title
 from pipeline.common.text_ids import slugify
 from pipeline.common.text_normalize import clean_wiki_snippet
@@ -54,39 +60,10 @@ HIGH_CONFIDENCE_BOSS_SECTION_TOKENS = (
 # (_looks_like_person) so the two filters can never drift. Includes "place" so instance
 # subzones/areas (e.g. Caer Darrow, Chamber of Summoning) are rejected as candidates.
 _NON_CHARACTER_KINDS = frozenset({"place", "zone", "instance", "continent", "capital", "region"})
-_REJECT_TITLES = frozenset(
-    {
-        "adventurers",
-        "encounters",
-        "bosses",
-        "loot",
-        "achievements",
-        "strategy",
-        "tactics",
-        "abilities",
-        "quotes",
-        "gallery",
-        "notes",
-        "trivia",
-    }
-)
-# Non-character titles that the (sparse) world registry does not classify but which leak
-# into the candidate pool from narrative/history link mining: game/meta pages and generic
-# creature-class common nouns. Universal WoW terms only — not zone/instance specific.
-_NON_CHARACTER_TITLES = frozenset(
-    {
-        "world of warcraft",
-        "warcraft",
-        "lich",
-        "necromancer",
-        "abomination",
-        "ghoul",
-        "skeleton",
-        "zombie",
-        "geist",
-        "banshee",
-    }
-)
+# WS-C: title-matched denylists externalized to
+# pipeline/data/discovery_classification_vocab.v1.json (D-6).
+_REJECT_TITLES = boss_reject_section_titles()
+_NON_CHARACTER_TITLES = non_character_titles()
 # War/era event titles ("Second War", "the Third War", "Fourth War", "Great War").
 _EVENT_ERA_RE = re.compile(
     r"^(?:the\s+)?(?:first|second|third|fourth|fifth|great)\s+war$",
@@ -905,93 +882,12 @@ _PERSON_HONORIFICS = frozenset(
 )
 
 # Multi-word capitalized titles that are factions/forces/concepts, not individual characters.
-_NON_PERSON_NARRATIVE_TITLES = frozenset(
-    {
-        "burning legion",
-        "the burning legion",
-        "scourge",
-        "the scourge",
-        "alliance",
-        "the alliance",
-        "horde",
-        "the horde",
-        "old god",
-        "old gods",
-        "scarlet crusade",
-        "argent crusade",
-        "argent dawn",
-        "argent tournament",
-        "sons of hodir",
-        "kirin tor",
-        "ashen verdict",
-        "knights of the ebon blade",
-        "bronze dragonflight",
-        "black dragonflight",
-        "green dragonflight",
-        "red dragonflight",
-        "blue dragonflight",
-        "dragonflight",
-        "twilight's hammer",
-        "cult of the damned",
-        "forsaken",
-        "valarjar",
-        "burning crusade",
-        "boneguard",
-        "warsong offensive",
-        "valiance expedition",
-        "gnomeregan army",
-        "saronite",
-        "adventurer",
-        "event",
-        "faction",
-        "novels",
-        "novellas",
-        "short stories",
-        "technology",
-    }
-)
+# WS-C: externalized to pipeline/data/discovery_classification_vocab.v1.json (D-6).
+_NON_PERSON_NARRATIVE_TITLES = non_person_narrative_titles()
 
 # Generic common-noun / race / creature-type words that are not named characters.
-_GENERIC_NON_PERSON_WORDS = frozenset(
-    {
-        "class",
-        "race",
-        "quest",
-        "item",
-        "mob",
-        "boss",
-        "comic",
-        "comics",
-        "novel",
-        "engineer",
-        "robot",
-        "ram",
-        "rat",
-        "plane",
-        "giant",
-        "demon",
-        "demigod",
-        "undead",
-        "elemental",
-        "human",
-        "orc",
-        "dwarf",
-        "gnome",
-        "troll",
-        "tauren",
-        "goblin",
-        "vrykul",
-        "earthen",
-        "mechagnome",
-        "broken",
-        "aqir",
-        "nathrezim",
-        "golem",
-        "bloodhound",
-        "survivor",
-        "dungeon",
-    }
-)
+# WS-C: title-matched, externalized to discovery_classification_vocab.v1.json (D-6).
+_GENERIC_NON_PERSON_WORDS = generic_non_person_words()
 
 
 def _is_narrative_role(section_role: str) -> bool:

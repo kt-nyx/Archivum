@@ -24,6 +24,10 @@ import re
 import xml.etree.ElementTree as ET
 from typing import Any
 
+from pipeline.common.discovery_vocab import (
+    quest_alliance_binding_tokens,
+    quest_horde_binding_tokens,
+)
 from pipeline.discovery.quest_lore import extract_quest_lore
 
 _QUESTBOX_TITLES = frozenset({"questbox", "quest box"})
@@ -37,17 +41,10 @@ _CO_RE = re.compile(
 )
 _NAMESPACE_LINK_RE = re.compile(r"^[A-Za-z][A-Za-z ]*:")
 
-_ALLIANCE_TOKENS = ("alliance",)
-_HORDE_TOKENS = (
-    "horde",
-    "undercity",
-    "orgrimmar",
-    "silvermoon",
-    "thunder bluff",
-    "darkspear",
-    "bilgewater",
-    "huojin",
-)
+# WS-C: faction-binding tokens (matched against free Questbox wikitext) are
+# externalized to pipeline/data/discovery_classification_vocab.v1.json (D-6).
+_ALLIANCE_TOKENS = quest_alliance_binding_tokens()
+_HORDE_TOKENS = quest_horde_binding_tokens()
 
 
 def _local_text(elem: ET.Element | None) -> str:

@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from pipeline.common.discovery_vocab import non_canon_body_markers
+
 _GENERIC_SECTION_ROLES = frozenset(
     {
         "history",
@@ -43,12 +45,9 @@ _FOOTER_META_SECTION_ROLES = frozenset(
     }
 )
 
-_NON_CANON_MARKERS = (
-    "non-canon",
-    "non canon",
-    "warcraft rpg",
-    "world of warcraft rpg",
-)
+# WS-C: body-text non-canon markers externalized to
+# pipeline/data/discovery_classification_vocab.v1.json (D-6).
+_NON_CANON_MARKERS = non_canon_body_markers()
 
 _RPG_DISCLAIMER_RE = re.compile(
     r"this section contains information from the warcraft rpg",

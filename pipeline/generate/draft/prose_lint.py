@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from pipeline.common.draft_vocab import historical_framing_markers
 from pipeline.common.text_sim import token_jaccard
 from pipeline.discovery.world_registry import entry_kinds
 
@@ -15,19 +16,9 @@ MAX_HISTORY_SECTIONS = 8
 AT_A_GLANCE_CURRENTLY_OVERLAP_THRESHOLD = 0.55
 _SHORT_TEXT_PRESENT_CARVEOUT_WORDS = 8
 
-_HISTORICAL_MARKERS = (
-    "formerly",
-    "once",
-    "during the third war",
-    "in the third war",
-    "years ago",
-    "before the cataclysm",
-    "after the fall",
-    "historically",
-    "was founded",
-    "was established",
-    "invasion of",
-)
+# WS-C: prose-text historical-framing markers externalized to
+# pipeline/data/draft_classification_vocab.v1.json (D-6).
+_HISTORICAL_MARKERS = historical_framing_markers()
 
 _CURRENTLY_META_RE = re.compile(
     r"\breputation with\b|\bachievement\b|\bplayers can\b|\bbreadcrumb\b",

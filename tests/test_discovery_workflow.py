@@ -212,3 +212,104 @@ def test_discovery_workflow_emits_typed_traversal_targets(tmp_path: Path) -> Non
 
     questline_decisions = json.loads(outputs["questline_inclusion_decisions"].read_text(encoding="utf-8"))
     assert questline_decisions == []
+
+
+def test_discovery_workflow_types_links_by_section_role_not_keywords(tmp_path: Path) -> None:
+    # WS-C: with a structural section role available (structured_links), entity typing
+    # must follow the section the link appeared in rather than title keywords. A
+    # single-word NPC name in "Notable characters" is a character (excluded from the
+    # location pool) even though the keyword path would have mistyped it as a location.
+    context = ensure_run_context("run-test-disc-section", artifacts_root=tmp_path / "runs")
+    ingest_dir = context.stage_dir("ingest")
+    snapshots_path = ingest_dir / "source_snapshots.json"
+    manifest_path = ingest_dir / "source_manifest.json"
+    snapshots_path.write_text(
+        json.dumps(
+            [
+                {
+                    "entity_id": ZONE_ID,
+                    "entity_type": "zone",
+                    "name": ZONE_NAME,
+                    "source_id": "src-zone",
+                    "url": f"https://warcraft.wiki.gg/wiki/{ZONE_WIKI}",
+                    "body": "Zone overview.",
+                    "section_blocks": [
+                        {"section_role": "Notable characters", "text": "Notable residents."},
+                        {"section_role": "Geography", "text": "Major locations."},
+                    ],
+                    "wiki_links": ["/wiki/Rattlegore", "/wiki/Brill"],
+                    "structured_links": [
+                        {
+                            "href": "/wiki/Rattlegore",
+                            "section_role": "Notable characters",
+                            "label": "Rattlegore",
+                        },
+                        {"href": "/wiki/Brill", "section_role": "Geography", "label": "Brill"},
+                    ],
+                }
+            ],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    manifest_path.write_text(
+        json.dumps(
+            [{"source_id": "src-zone", "source_class": "warcraft_wiki", "entity_type": "zone"}],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    outputs = run_discovery_workflow(context, manifest_path)
+
+    location_targets = json.loads(outputs["location_profile_targets"].read_text(encoding="utf-8"))
+    names = {row["name"] for row in location_targets}
+    assert "Brill" in names
+    # Single-word NPC routed by section role, not mistyped as a location.
+    assert "Rattlegore" not in names
+
+
+def test_discovery_workflow_hard_rejects_meta_pages_from_maps_section(tmp_path: Path) -> None:
+    # WS-C: section-role-first typing admits whole maps/subregions sections, which can include
+    # meta-placeholder pages ("Lore location", "Undisplayed location"). These must be hard-rejected
+    # by name so they never become location targets/candidates (matches downstream classification).
+    context = ensure_run_context("run-test-disc-meta-reject", artifacts_root=tmp_path / "runs")
+    ingest_dir = context.stage_dir("ingest")
+    snapshots_path = ingest_dir / "source_snapshots.json"
+    manifest_path = ingest_dir / "source_manifest.json"
+    snapshots_path.write_text(
+        json.dumps(
+            [
+                {
+                    "entity_id": ZONE_ID,
+                    "entity_type": "zone",
+                    "name": ZONE_NAME,
+                    "source_id": "src-zone",
+                    "url": f"https://warcraft.wiki.gg/wiki/{ZONE_WIKI}",
+                    "body": "Zone overview.",
+                    "section_blocks": [{"section_role": "Maps and subregions", "text": "Subregions."}],
+                    "wiki_links": ["/wiki/Felstone_Field", "/wiki/Lore_location", "/wiki/Undisplayed_location"],
+                    "structured_links": [
+                        {"href": "/wiki/Felstone_Field", "section_role": "Maps and subregions", "label": "Felstone Field"},
+                        {"href": "/wiki/Lore_location", "section_role": "Maps and subregions", "label": "Lore location"},
+                        {"href": "/wiki/Undisplayed_location", "section_role": "Maps and subregions", "label": "Undisplayed location"},
+                    ],
+                }
+            ],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    manifest_path.write_text(
+        json.dumps(
+            [{"source_id": "src-zone", "source_class": "warcraft_wiki", "entity_type": "zone"}],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    outputs = run_discovery_workflow(context, manifest_path)
+    names = {row["name"] for row in json.loads(outputs["location_profile_targets"].read_text(encoding="utf-8"))}
+    assert "Felstone Field" in names
+    assert "Lore location" not in names
+    assert "Undisplayed location" not in names

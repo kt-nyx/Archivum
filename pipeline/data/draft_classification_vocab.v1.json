@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "_doc": "WS-C (D-6) externalized classification vocabulary for the draft (prose election / scoring / lint) path. era_section_role_tokens is WoW expansion-name vocabulary matched against history section-role identifiers (e.g. 'cataclysm_edit'); it is externalized both to de-duplicate it across prose_election + faction_scoring (principle 5) and so a new expansion is a data update, not a code change. historical_framing_markers is matched against generated/source PROSE text (no section role available at that point), so no structural signal exists. Each entry carries a pilot-bias note (D-6 clause 4).",
+  "era_section_role_tokens": {
+    "_why_no_structural_signal": "Identifies expansion-named history sections; the expansion name itself is open vocabulary (grows each expansion) with no finer structural signal than the section-role string it appears in.",
+    "_pilot_bias_note": "All current WoW expansion shorthands; cross-zone (not WPL-specific). Add the next expansion's token here on release.",
+    "tokens": [
+      "cataclysm",
+      "battle_for",
+      "dragonflight",
+      "war_within",
+      "legion",
+      "mists",
+      "wrath",
+      "burning_crusade",
+      "classic",
+      "shadowlands"
+    ]
+  },
+  "historical_framing_markers": {
+    "_why_no_structural_signal": "has_historical_framing scans free prose text for past-framing phrases; there is no section role or category attached to the text at that decision point.",
+    "_pilot_bias_note": "Generic historical-framing phrases plus two WoW-era references ('third war'); broadly cross-zone. Statistical detection (tense) is handled separately by _PAST_TENSE_RE; this list catches explicit period phrasing.",
+    "tokens": [
+      "formerly",
+      "once",
+      "during the third war",
+      "in the third war",
+      "years ago",
+      "before the cataclysm",
+      "after the fall",
+      "historically",
+      "was founded",
+      "was established",
+      "invasion of"
+    ]
+  }
+}

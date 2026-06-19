@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from pipeline.common.draft_vocab import era_section_role_tokens
 from pipeline.common.wiki_evidence_filters import should_exclude_from_history
 from pipeline.generate.draft.prose_lint import (
     MAX_AT_A_GLANCE_WORDS,
@@ -17,18 +18,9 @@ from pipeline.generate.draft.prose_lint import (
     word_count,
 )
 
-_ERA_TOKENS = (
-    "cataclysm",
-    "battle_for",
-    "dragonflight",
-    "war_within",
-    "legion",
-    "mists",
-    "wrath",
-    "burning_crusade",
-    "classic",
-    "shadowlands",
-)
+# WS-C: expansion-name era tokens externalized + de-duplicated (also used by
+# faction_scoring) in pipeline/data/draft_classification_vocab.v1.json (D-6).
+_ERA_TOKENS = era_section_role_tokens()
 
 _CURRENTLY_QUEST_ROLES = frozenset({"quests_edit", "quests", "quests_or_storyline"})
 
