@@ -1,8 +1,23 @@
-"""Build run-scoped glossary terms from wiki-first drafts and discovery artifacts."""
+"""Build run-scoped glossary terms from wiki-first drafts and discovery artifacts.
+
+Terms and aliases are derived from run signals so a per-zone glossary is
+comprehensive without leaning on the static ``dictionary/glossary_aliases.v1.json``
+fallback. Three run-derived sources feed the accumulator:
+
+* **Drafts** — the selected zone/instance cards (factions, locations, key
+  characters, instance links).
+* **Discovered canonical entities** — ``discovery/canonical_entity_map.jsonl``,
+  which is itself built from the captured wiki links, so the "captured wiki
+  links" signal reaches the glossary through it.
+* **Ingest snapshots** — every fetched page's ``name``, plus its MediaWiki
+  ``categories`` (to classify a term whose discovered type is unknown) and
+  ``infobox`` alternate-name fields (to harvest aliases).
+"""
 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +38,51 @@ _ENTITY_CATEGORY: dict[str, str] = {
     "artifact": "artifact",
     "concept": "concept",
 }
+
+# Infobox header labels (lower-cased) that carry alternate names for an entity.
+# Values are split on the punctuation below into individual alias candidates.
+_INFOBOX_ALIAS_FIELDS: frozenset[str] = frozenset(
+    {
+        "alias",
+        "aliases",
+        "aka",
+        "also known as",
+        "other name",
+        "other names",
+        "nickname",
+        "nicknames",
+        "full name",
+        "former name",
+        "former names",
+    }
+)
+
+_ALIAS_SPLIT_RE = re.compile(r"[,;/\n]")
+
+# Structural MediaWiki-category -> glossary-category decoder. It matches against
+# the authoritative category names captured at ingest (INGEST-CAT), not free body
+# text, so it is the structural signal WS-C/D-6 sanctions. Used only to refine a
+# term whose discovered entity_type is the generic "concept" (i.e. unknown).
+_CATEGORY_SIGNAL_TOKENS: tuple[tuple[str, str], ...] = (
+    ("npc", "person"),
+    ("character", "person"),
+    ("boss", "person"),
+    ("faction", "faction"),
+    ("organization", "faction"),
+    ("order", "faction"),
+    ("zone", "place"),
+    ("subzone", "place"),
+    ("region", "place"),
+    ("dungeon", "place"),
+    ("raid", "place"),
+    ("instance", "place"),
+    ("city", "place"),
+    ("town", "place"),
+    ("location", "place"),
+    ("battle", "event"),
+    ("war", "event"),
+    ("event", "event"),
+)
 
 
 def _normalize_alias(text: str) -> str:
@@ -45,6 +105,37 @@ def _category_for_entity_type(entity_type: str) -> str:
     return _ENTITY_CATEGORY.get(entity_type.strip().lower(), "concept")
 
 
+def _category_from_categories(categories: list[Any]) -> str:
+    """Map MediaWiki category names to a glossary category, or "" when unclear."""
+    for category in categories:
+        lowered = str(category).lower()
+        for token, glossary_category in _CATEGORY_SIGNAL_TOKENS:
+            if token in lowered:
+                return glossary_category
+    return ""
+
+
+def _glossary_category(entity_type: str, categories: list[Any]) -> str:
+    """Prefer the discovered entity type; fall back to category signal when unknown."""
+    base = _category_for_entity_type(entity_type)
+    if base != "concept":
+        return base
+    return _category_from_categories(categories) or "concept"
+
+
+def _aliases_from_infobox(infobox: dict[str, Any]) -> list[str]:
+    """Harvest alternate-name aliases from alias-bearing infobox fields."""
+    aliases: list[str] = []
+    for key, value in infobox.items():
+        if str(key).strip().lower() not in _INFOBOX_ALIAS_FIELDS:
+            continue
+        for part in _ALIAS_SPLIT_RE.split(str(value)):
+            cleaned = part.strip()
+            if len(cleaned) >= 2:
+                aliases.append(cleaned)
+    return aliases
+
+
 def _load_json(path: Path) -> Any:
     return read_json(path)
 
@@ -62,17 +153,19 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def _ingest_url_by_entity(context: RunContext) -> dict[str, str]:
-    urls: dict[str, str] = {}
+def _load_snapshots(context: RunContext) -> list[dict[str, Any]]:
     snapshots_path = context.data_dir / "ingest" / "source_snapshots.json"
     if not snapshots_path.exists():
-        return urls
+        return []
     blob = _load_json(snapshots_path)
     if not isinstance(blob, list):
-        return urls
-    for snapshot in blob:
-        if not isinstance(snapshot, dict):
-            continue
+        return []
+    return [snapshot for snapshot in blob if isinstance(snapshot, dict)]
+
+
+def _ingest_url_by_entity(snapshots: list[dict[str, Any]]) -> dict[str, str]:
+    urls: dict[str, str] = {}
+    for snapshot in snapshots:
         entity_id = str(snapshot.get("entity_id", "")).strip()
         url = str(snapshot.get("url", "")).strip()
         if entity_id and url.startswith("http"):
@@ -124,6 +217,12 @@ class _TermAccumulator:
                 existing["wiki_url"] = url
             if not existing.get("source_entity_id") and source_entity_id:
                 existing["source_entity_id"] = source_entity_id
+            if not existing.get("source_entity_type") and source_entity_type:
+                existing["source_entity_type"] = source_entity_type
+            # Upgrade a generic classification when a later source supplies a
+            # specific one, so category resolution is order-independent.
+            if existing.get("category", "concept") == "concept" and category != "concept":
+                existing["category"] = category
             return
         base_slug = _term_slug(cleaned)
         term_id = f"term-{base_slug}"
@@ -244,6 +343,30 @@ def _collect_from_draft(
                 )
 
 
+def _collect_from_snapshots(
+    snapshots: list[dict[str, Any]],
+    acc: _TermAccumulator,
+) -> None:
+    """Add a term per fetched page, classified by category and aliased by infobox."""
+    for snapshot in snapshots:
+        name = str(snapshot.get("name", "")).strip()
+        if not name:
+            continue
+        entity_type = str(snapshot.get("entity_type", "")).strip().lower()
+        categories = snapshot.get("categories")
+        category_list = categories if isinstance(categories, list) else []
+        infobox = snapshot.get("infobox")
+        infobox_map = infobox if isinstance(infobox, dict) else {}
+        acc.add(
+            label=name,
+            category=_glossary_category(entity_type, category_list),
+            wiki_url=str(snapshot.get("url", "")).strip(),
+            source_entity_id=str(snapshot.get("entity_id", "")).strip(),
+            source_entity_type=entity_type,
+            extra_aliases=_aliases_from_infobox(infobox_map),
+        )
+
+
 def _collect_from_canonical_map(
     rows: list[dict[str, Any]],
     acc: _TermAccumulator,
@@ -267,7 +390,8 @@ def _collect_from_canonical_map(
 def build_run_terms(context: RunContext) -> Path:
     """Generate data/glossary/run_terms.jsonl from drafts and discovery artifacts."""
     acc = _TermAccumulator()
-    ingest_urls = _ingest_url_by_entity(context)
+    snapshots = _load_snapshots(context)
+    ingest_urls = _ingest_url_by_entity(snapshots)
     draft_root = context.data_dir / "drafts"
 
     for draft_dir_name in ("zone_page", "instance_page"):
@@ -278,6 +402,8 @@ def build_run_terms(context: RunContext) -> Path:
             draft = _load_json(draft_path)
             if isinstance(draft, dict):
                 _collect_from_draft(draft, draft_kind=draft_dir_name, ingest_urls=ingest_urls, acc=acc)
+
+    _collect_from_snapshots(snapshots, acc)
 
     canonical_path = context.data_dir / "discovery" / "canonical_entity_map.jsonl"
     _collect_from_canonical_map(_load_jsonl(canonical_path), acc)

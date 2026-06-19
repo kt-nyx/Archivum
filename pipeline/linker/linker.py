@@ -10,7 +10,7 @@ from typing import Any, TypedDict, cast
 
 from pipeline.common.config_loading import coerce_float, load_yaml_mapping
 from pipeline.common.io import write_json
-from pipeline.common.run_context import RunContext
+from pipeline.common.run_context import RunContext, append_trace_event
 from pipeline.glossary.run_terms import (
     load_run_terms,
     run_terms_metadata_map,
@@ -111,11 +111,29 @@ def _load_static_alias_dictionary() -> list[dict[str, str]]:
     return normalized
 
 
+def _log_static_fallback(context: RunContext | None, surface: str) -> None:
+    """Record that the static glossary dictionary was used as a last resort."""
+    if context is None:
+        return
+    append_trace_event(
+        context,
+        stage_name="linker",
+        attempt=1,
+        status="degraded",
+        details={
+            "glossary": "static_dictionary_fallback",
+            "surface": surface,
+            "reason": "run_terms_empty",
+        },
+    )
+
+
 def _load_alias_dictionary(context: RunContext | None = None) -> list[dict[str, str]]:
     if context is not None:
         run_terms = load_run_terms(context)
         if run_terms:
             return run_terms_to_alias_dictionary(run_terms)
+    _log_static_fallback(context, "alias_dictionary")
     return _load_static_alias_dictionary()
 
 
@@ -123,6 +141,7 @@ def _load_term_metadata(context: RunContext) -> dict[str, dict[str, str]]:
     run_terms = load_run_terms(context)
     if run_terms:
         return run_terms_metadata_map(run_terms)
+    _log_static_fallback(context, "term_metadata")
     static_rows = _load_static_alias_dictionary()
     metadata: dict[str, dict[str, str]] = {}
     for row in static_rows:

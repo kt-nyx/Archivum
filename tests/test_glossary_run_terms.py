@@ -114,6 +114,100 @@ def test_build_run_terms_uses_faction_card_wiki_url(tmp_path: Path) -> None:
     assert scourge["wiki_url"] == "https://warcraft.wiki.gg/wiki/Scourge"
 
 
+def _write_snapshots(context, snapshots: list[dict]) -> None:
+    ingest_dir = context.data_dir / "ingest"
+    ingest_dir.mkdir(parents=True, exist_ok=True)
+    (ingest_dir / "source_snapshots.json").write_text(json.dumps(snapshots, indent=2), encoding="utf-8")
+
+
+def test_build_run_terms_derives_terms_from_ingest_snapshots(tmp_path: Path) -> None:
+    context = ensure_run_context("run-test-glossary-snapshots", artifacts_root=tmp_path / "runs")
+    _write_snapshots(
+        context,
+        [
+            {
+                "entity_id": "character-thel",
+                "entity_type": "character",
+                "name": "Thelara Dawnsong",
+                "url": "https://warcraft.wiki.gg/wiki/Thelara_Dawnsong",
+                "categories": ["Western Plaguelands NPCs", "Humans"],
+                "infobox": {"Aliases": "The Dawnsinger; Lady Thelara", "Status": "Alive"},
+            }
+        ],
+    )
+    output_path = build_run_terms(context)
+    rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    thel = next(row for row in rows if row["term_id"] == "term-thelara-dawnsong")
+    assert thel["category"] == "person"
+    assert thel["wiki_url"] == "https://warcraft.wiki.gg/wiki/Thelara_Dawnsong"
+    # Infobox alternate-name fields are harvested as aliases (split on ; , / and newlines).
+    assert "the dawnsinger" in thel["aliases"]
+    assert "lady thelara" in thel["aliases"]
+    # Non-alias infobox fields (e.g. Status) are ignored.
+    assert "alive" not in thel["aliases"]
+
+
+def test_build_run_terms_classifies_unknown_type_from_categories(tmp_path: Path) -> None:
+    context = ensure_run_context("run-test-glossary-category-signal", artifacts_root=tmp_path / "runs")
+    _write_snapshots(
+        context,
+        [
+            {
+                "entity_id": "thing-mystery",
+                "entity_type": "",
+                "name": "Order of Embers",
+                "url": "https://warcraft.wiki.gg/wiki/Order_of_Embers",
+                "categories": ["Organizations", "Drustvar"],
+                "infobox": {},
+            }
+        ],
+    )
+    output_path = build_run_terms(context)
+    rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    order = next(row for row in rows if row["term_id"] == "term-order-of-embers")
+    # No discovered entity_type -> the structural MediaWiki category refines it.
+    assert order["category"] == "faction"
+
+
+def test_build_run_terms_upgrades_generic_category_from_snapshot(tmp_path: Path) -> None:
+    context = ensure_run_context("run-test-glossary-upgrade", artifacts_root=tmp_path / "runs")
+    drafts_dir = context.data_dir / "drafts" / "zone_page"
+    drafts_dir.mkdir(parents=True)
+    # The canonical map types this entity as the generic "concept"...
+    canonical_dir = context.data_dir / "discovery"
+    canonical_dir.mkdir(parents=True)
+    (canonical_dir / "canonical_entity_map.jsonl").write_text(
+        json.dumps(
+            {
+                "entity_id": "x-blightcaller",
+                "entity_type": "concept",
+                "wiki_title": "Nathanos Blightcaller",
+                "wiki_url": "https://warcraft.wiki.gg/wiki/Nathanos_Blightcaller",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    # ...while the ingest snapshot carries the specific category signal.
+    _write_snapshots(
+        context,
+        [
+            {
+                "entity_id": "x-blightcaller",
+                "entity_type": "",
+                "name": "Nathanos Blightcaller",
+                "url": "https://warcraft.wiki.gg/wiki/Nathanos_Blightcaller",
+                "categories": ["Forsaken NPCs"],
+                "infobox": {},
+            }
+        ],
+    )
+    output_path = build_run_terms(context)
+    rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    nathanos = next(row for row in rows if row["term_id"] == "term-nathanos-blightcaller")
+    assert nathanos["category"] == "person"
+
+
 def test_glossary_pipeline_terms_link_validate_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from pipeline.addon.build_bundle import build_addon_bundle
     from pipeline.linker.linker import run_glossary_linker
@@ -243,3 +337,37 @@ def test_glossary_pipeline_terms_link_validate_bundle(tmp_path: Path, monkeypatc
         term_id = ref["term_id"]
         assert term_id in glossary_lookup
         assert str(glossary_lookup[term_id].get("wiki_url", "")).startswith("http")
+
+
+def test_build_bundle_logs_static_dictionary_fallback_when_no_run_terms(tmp_path: Path) -> None:
+    from pipeline.addon.build_bundle import build_addon_bundle
+
+    context = ensure_run_context("run-test-glossary-static-log", artifacts_root=tmp_path / "runs")
+    drafts_dir = context.data_dir / "drafts" / "zone_page"
+    drafts_dir.mkdir(parents=True)
+    (drafts_dir / "zone-example.json").write_text(
+        json.dumps(
+            {
+                "zone_id": "zone-example",
+                "name": "Example Zone",
+                "location_cards": [],
+                "instance_links": [],
+                "glossary_refs": [{"term_id": "term-scourge"}],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    # No run_terms.jsonl is written, so metadata must fall back to the static dict.
+    build_addon_bundle(context)
+    trace_path = context.trace_log_path()
+    assert trace_path.exists()
+    trace_lines = trace_path.read_text(encoding="utf-8").splitlines()
+    events = [json.loads(line) for line in trace_lines if line.strip()]
+    fallback_events = [
+        event
+        for event in events
+        if event.get("details", {}).get("glossary") == "static_dictionary_fallback"
+    ]
+    assert fallback_events, "expected a degraded trace event for the static-dictionary fallback"
+    assert fallback_events[0]["status"] == "degraded"

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from pipeline.common.io import read_json, write_json
-from pipeline.common.run_context import RunContext
+from pipeline.common.run_context import RunContext, append_trace_event
 from pipeline.glossary.run_terms import load_run_terms, run_terms_metadata_map
 
 
@@ -47,9 +47,24 @@ def _load_static_glossary_term_metadata() -> dict[str, dict[str, str]]:
 
 def _load_glossary_term_metadata(context: RunContext) -> dict[str, dict[str, Any]]:
     metadata = run_terms_metadata_map(load_run_terms(context))
-    if not metadata:
-        metadata = _load_static_glossary_term_metadata()
-    return metadata
+    if metadata:
+        return metadata
+    # Last resort: no run-derived terms exist for this run. Fall back to the
+    # static dictionary and record the degraded path on the run trace.
+    static = _load_static_glossary_term_metadata()
+    if static:
+        append_trace_event(
+            context,
+            stage_name="addon_bundle",
+            attempt=1,
+            status="degraded",
+            details={
+                "glossary": "static_dictionary_fallback",
+                "reason": "run_terms_empty",
+                "term_count": len(static),
+            },
+        )
+    return static
 
 
 def _metadata_for_ref(
@@ -132,12 +147,25 @@ def build_addon_bundle(context: RunContext) -> Path:
                     metadata=glossary_term_metadata,
                 )
 
+    static_filled: list[str] = []
     for term_id, row in glossary_refs.items():
         if "wiki_url" not in row and term_id in static_metadata:
             fallback = static_metadata[term_id]
             row.setdefault("label", fallback.get("label", term_id))
             row.setdefault("wiki_url", fallback.get("wiki_url", ""))
             row.setdefault("category", fallback.get("category", ""))
+            static_filled.append(term_id)
+    if static_filled:
+        append_trace_event(
+            context,
+            stage_name="addon_bundle",
+            attempt=1,
+            status="degraded",
+            details={
+                "glossary": "static_dictionary_fill",
+                "term_ids": sorted(static_filled),
+            },
+        )
 
     write_json((lookup_dir / "location_cards.json"), location_cards)
     write_json((lookup_dir / "glossary_refs.json"), glossary_refs)
