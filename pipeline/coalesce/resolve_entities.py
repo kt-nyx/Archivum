@@ -10,6 +10,7 @@ from typing import Any
 
 from pipeline.ai.config import load_ai_settings
 from pipeline.ai.openai_client import chat_json_completion
+from pipeline.coalesce.claim_scoring import select_source_for_claim
 from pipeline.coalesce.confidence_model import compute_confidence
 from pipeline.common.config_loading import coerce_float, load_yaml_mapping
 from pipeline.common.io import write_json
@@ -58,77 +59,6 @@ def _excerpt_for_claim(source_row: dict[str, Any], claim: str) -> str:
             return body[idx : idx + len(normalized_claim)]
     first_sentence = body.split(".")[0].strip()
     return first_sentence or body[:220].strip() or normalized_claim
-
-
-def _tokenize(value: str) -> set[str]:
-    return {token for token in value.lower().split() if token}
-
-
-def _source_selection_for_claim(
-    claim: str,
-    source_rows: list[dict[str, Any]],
-    *,
-    contradiction_bias: str,
-) -> tuple[dict[str, Any], str]:
-    claim_tokens = _tokenize(claim)
-    scored: list[tuple[float, dict[str, Any]]] = []
-    for row in source_rows:
-        body_tokens = _tokenize(str(row.get("body", "")))
-        if not claim_tokens:
-            overlap_score = 0.0
-        else:
-            overlap_score = len(claim_tokens.intersection(body_tokens)) / float(len(claim_tokens))
-        scored.append((overlap_score, row))
-    scored.sort(key=lambda item: item[0], reverse=True)
-    best_score = scored[0][0]
-    tied_rows = [row for score, row in scored if score == best_score]
-    if len(tied_rows) == 1:
-        return tied_rows[0], "highest_claim_overlap"
-
-    def _priority_rank(row: dict[str, Any]) -> int:
-        raw_priority = row.get("priority")
-        if isinstance(raw_priority, int):
-            return raw_priority
-        if isinstance(raw_priority, str):
-            return int(raw_priority) if raw_priority.isdigit() else 999
-        return 999
-
-    def _source_class_rank(row: dict[str, Any]) -> int:
-        source_class = str(row.get("source_class", "")).strip().lower()
-        if source_class == "warcraft_wiki":
-            return 0
-        return 1
-
-    tied_rows = sorted(
-        tied_rows,
-        key=lambda row: (
-            _priority_rank(row),
-            _source_class_rank(row),
-            str(row.get("source_id", "")),
-        ),
-    )
-    best_priority = _priority_rank(tied_rows[0])
-    best_class_rank = _source_class_rank(tied_rows[0])
-    same_priority_rows = [
-        row
-        for row in tied_rows
-        if _priority_rank(row) == best_priority and _source_class_rank(row) == best_class_rank
-    ]
-    if len(same_priority_rows) == 1:
-        return same_priority_rows[0], "tie_break_priority_source_class"
-
-    if contradiction_bias == "prefer_higher_revision_id":
-
-        def _revision_rank(row: dict[str, Any]) -> int:
-            revision_id = str(row.get("revision_id", "0"))
-            if revision_id.startswith("mw:"):
-                revision_id = revision_id.split(":", 1)[1]
-            return int("".join(ch for ch in revision_id if ch.isdigit()) or "0")
-
-        selected = max(same_priority_rows, key=_revision_rank)
-        return selected, "tie_break_priority_then_revision_id"
-    selected = same_priority_rows[0]
-    return selected, "tie_break_first_source"
 
 
 def _ai_coalesce_claims(
@@ -229,7 +159,7 @@ def _build_entity_row(
     contradiction_bias = str(merge_rules.get("contradiction_bias", "prefer_higher_revision_id"))
     fact_items = []
     for index, claim in enumerate(claims):
-        source_row, source_selection_reason = _source_selection_for_claim(
+        source_row, source_selection_reason = select_source_for_claim(
             claim,
             source_rows,
             contradiction_bias=contradiction_bias,
@@ -348,7 +278,7 @@ def run_resolve_entities(
                         row["merge_policy"].get("contradiction_bias", "unknown")
                     ),
                     "tie_break_reason": (
-                        "tie-break order: claim overlap -> priority -> source_class -> "
+                        "tie-break order: claim score -> priority -> source_class -> "
                         "merge policy contradiction bias "
                         f"'{row['merge_policy'].get('contradiction_bias', 'unknown')}'"
                     ),
