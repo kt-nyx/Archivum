@@ -46,6 +46,7 @@ from pipeline.generate.draft.prose_election import (
     select_currently_pool,
     select_history_pool,
 )
+from pipeline.generate.draft.prose_gate import prose_gate_rejects
 from pipeline.generate.draft.prose_lint import (
     MAX_AT_A_GLANCE_WORDS,
     lint_at_a_glance,
@@ -81,8 +82,10 @@ def _finalize_at_a_glance(
     evidence_rows: list[dict[str, Any]],
 ) -> tuple[str, list[str]]:
     def _rejected(candidate: str) -> bool:
-        return bool(lint_at_a_glance(candidate, zone_name=zone_name)) or bool(
-            lint_passthrough_fragment(candidate)
+        return (
+            bool(lint_at_a_glance(candidate, zone_name=zone_name))
+            or bool(lint_passthrough_fragment(candidate))
+            or prose_gate_rejects(candidate)
         )
 
     text, used = synthesize_at_a_glance(at_pool, max_words=MAX_AT_A_GLANCE_WORDS)
@@ -112,14 +115,14 @@ def _finalize_currently(
     pools: dict[str, list[dict[str, Any]]],
 ) -> tuple[str, list[str]]:
     text, used = synthesize_currently(currently_pool, max_words=120)
-    if lint_currently(text, zone_name=zone_name, at_a_glance=at_a_glance):
+    if lint_currently(text, zone_name=zone_name, at_a_glance=at_a_glance) or prose_gate_rejects(text):
         text, used = fallback_currently(currently_pool)
-        if lint_currently(text, zone_name=zone_name, at_a_glance=at_a_glance):
+        if lint_currently(text, zone_name=zone_name, at_a_glance=at_a_glance) or prose_gate_rejects(text):
             text, used = "", []
     if not text:
         rescue_pool = currently_pool or select_currently_pool(pools, zone_name=zone_name)
         text, used = fallback_currently(rescue_pool)
-        if lint_currently(text, zone_name=zone_name, at_a_glance=at_a_glance):
+        if lint_currently(text, zone_name=zone_name, at_a_glance=at_a_glance) or prose_gate_rejects(text):
             text, used = "", []
     if not text:
         text = (
@@ -353,7 +356,7 @@ def build_zone_page(
             chain_refs=chain_refs,
             max_words=35,
         )
-        if not cta:
+        if not cta or prose_gate_rejects(cta):
             cta = _best_snippet_for_term(scoped_pool, cluster_title, min_words=8) or (
                 f"Follow the {cluster_title} arc through its linked quests."
             )

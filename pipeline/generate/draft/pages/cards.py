@@ -45,6 +45,7 @@ from pipeline.generate.draft.prose_election import (
     history_section_cap,
     select_history_pool,
 )
+from pipeline.generate.draft.prose_gate import prose_gate_rejects
 from pipeline.generate.draft.prose_lint import (
     MAX_HISTORY_SECTIONS,
     MIN_HISTORY_SECTIONS,
@@ -55,6 +56,14 @@ from pipeline.generate.draft.prose_synthesis import (
     synthesize_history_sections,
     synthesize_location_summary,
 )
+
+
+def _sections_trip_gate(sections: list[dict[str, Any]]) -> bool:
+    """True when any history section body fails the deterministic prose gate."""
+    return any(
+        isinstance(section, dict) and prose_gate_rejects(str(section.get("body", "")))
+        for section in sections
+    )
 
 
 def _history_sections_from_pool(
@@ -87,9 +96,9 @@ def _finalize_history_sections(
     section_cap = max_history or MIN_HISTORY_SECTIONS
     lint_cap = max_history or MAX_HISTORY_SECTIONS
     sections, used = synthesize_history_sections(history_pool, max_sections=section_cap)
-    if lint_history_sections(sections, max_sections=lint_cap):
+    if lint_history_sections(sections, max_sections=lint_cap) or _sections_trip_gate(sections):
         sections, used = fallback_history_sections(history_pool, max_sections=section_cap)
-        if lint_history_sections(sections, max_sections=lint_cap):
+        if lint_history_sections(sections, max_sections=lint_cap) or _sections_trip_gate(sections):
             sections, used = [], []
     if not sections:
         pool_sections, pool_used = _history_sections_from_pool(history_pool, evidence_rows=evidence_rows)
@@ -156,7 +165,9 @@ def _finalize_faction_card(
             instance_name=instance_name,
         )
         summary = ensure_sentence_terminator(summary)
-        if not lint_faction_summary(summary, zone_name=zone_name, subregion_tokens=subregion_tokens):
+        if not lint_faction_summary(
+            summary, zone_name=zone_name, subregion_tokens=subregion_tokens
+        ) and not prose_gate_rejects(summary):
             return (
                 {
                     "id": candidate.faction_id,
@@ -173,7 +184,9 @@ def _finalize_faction_card(
             subregion_tokens=subregion_tokens,
         )
         summary = ensure_sentence_terminator(summary)
-        if not lint_faction_summary(summary, zone_name=zone_name, subregion_tokens=subregion_tokens):
+        if not lint_faction_summary(
+            summary, zone_name=zone_name, subregion_tokens=subregion_tokens
+        ) and not prose_gate_rejects(summary):
             return (
                 {
                     "id": candidate.faction_id,
@@ -252,7 +265,9 @@ def _finalize_location_card(
             max_words=50,
         )
         summary = ensure_location_sentence_terminator(summary)
-        if not lint_location_summary(summary, zone_name=zone_name, location_name=candidate.name):
+        if not lint_location_summary(
+            summary, zone_name=zone_name, location_name=candidate.name
+        ) and not prose_gate_rejects(summary):
             return (
                 {
                     "id": candidate.location_id,
@@ -276,7 +291,11 @@ def _finalize_location_card(
             location_name=candidate.name,
         )
         summary = ensure_location_sentence_terminator(summary)
-        if summary and not lint_location_summary(summary, zone_name=zone_name, location_name=candidate.name):
+        if (
+            summary
+            and not lint_location_summary(summary, zone_name=zone_name, location_name=candidate.name)
+            and not prose_gate_rejects(summary)
+        ):
             return (
                 {
                     "id": candidate.location_id,

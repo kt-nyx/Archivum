@@ -42,6 +42,7 @@ from pipeline.generate.draft.prose_election import (
     select_at_a_glance_pool,
     select_history_pool,
 )
+from pipeline.generate.draft.prose_gate import prose_gate_rejects
 from pipeline.generate.draft.prose_lint import (
     MAX_AT_A_GLANCE_WORDS,
     MAX_HISTORY_SECTIONS,
@@ -63,9 +64,11 @@ def _finalize_instance_at_a_glance(
         # Reject lint failures AND copied/truncated source fragments (mid-sentence start,
         # missing terminal punctuation) — the at_a_glance path previously skipped the
         # passthrough check the overview path applies.
-        return bool(
-            lint_instance_at_a_glance(candidate, instance_name=instance_name)
-        ) or bool(lint_passthrough_fragment(candidate))
+        return (
+            bool(lint_instance_at_a_glance(candidate, instance_name=instance_name))
+            or bool(lint_passthrough_fragment(candidate))
+            or prose_gate_rejects(candidate)
+        )
 
     text, used = synthesize_at_a_glance(
         at_pool, max_words=MAX_AT_A_GLANCE_WORDS, subject=instance_name
@@ -111,10 +114,18 @@ def _finalize_instance_overview(
 
     for pool in pools_to_try:
         text, used = synthesize_instance_overview(pool, instance_name=instance_name)
-        if not lint_overview(text, instance_name=instance_name) and not lint_passthrough_fragment(text):
+        if (
+            not lint_overview(text, instance_name=instance_name)
+            and not lint_passthrough_fragment(text)
+            and not prose_gate_rejects(text)
+        ):
             return text, used, pool
         text, used = fallback_instance_overview(pool, instance_name=instance_name)
-        if not lint_overview(text, instance_name=instance_name) and not lint_passthrough_fragment(text):
+        if (
+            not lint_overview(text, instance_name=instance_name)
+            and not lint_passthrough_fragment(text)
+            and not prose_gate_rejects(text)
+        ):
             return text, used, pool
     return "", [], []
 

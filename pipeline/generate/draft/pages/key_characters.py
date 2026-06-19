@@ -31,6 +31,7 @@ from pipeline.generate.draft.pages.assembly import (
     _extract_instance_structured_links,
     _pointers_for_source_ids,
 )
+from pipeline.generate.draft.prose_gate import prose_gate_rejects
 from pipeline.generate.draft.prose_selection import (
     classify_key_character_role_llm,
     select_key_characters_from_pool,
@@ -232,17 +233,25 @@ def _finalize_key_characters(
                 boss_name=candidate.name,
                 instance_name=instance_name,
             )
-            if lint_key_character_summary(
-                summary, boss_name=candidate.name, instance_name=instance_name
-            ) or lint_passthrough_fragment(summary):
+            if (
+                lint_key_character_summary(
+                    summary, boss_name=candidate.name, instance_name=instance_name
+                )
+                or lint_passthrough_fragment(summary)
+                or prose_gate_rejects(summary)
+            ):
                 summary, used = fallback_key_character_summary(
                     pool,
                     boss_name=candidate.name,
                     instance_name=instance_name,
                 )
-            if lint_key_character_summary(
-                summary, boss_name=candidate.name, instance_name=instance_name
-            ) or lint_passthrough_fragment(summary):
+            if (
+                lint_key_character_summary(
+                    summary, boss_name=candidate.name, instance_name=instance_name
+                )
+                or lint_passthrough_fragment(summary)
+                or prose_gate_rejects(summary)
+            ):
                 continue
             pointers = _cap_card_pointers(
                 _pointers_for_source_ids(pool, used, revision_map),
