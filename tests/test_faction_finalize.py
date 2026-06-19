@@ -9,7 +9,7 @@ from pipeline.generate.draft.faction_scoring import (
     finalize_evidence_pools,
     score_faction_candidate,
 )
-from pipeline.generate.draft.wiki_first import _finalize_faction_card
+from pipeline.generate.draft.pages.cards import _finalize_faction_card
 
 
 def test_finalize_evidence_pools_tries_seed_after_profile() -> None:

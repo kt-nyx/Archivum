@@ -4,10 +4,12 @@ import os
 
 from pipeline.generate.draft.compendium_voice import COMPENDIUM_VOICE_CORE, zone_system_prompt
 from pipeline.generate.draft.prose_lint import MAX_AT_A_GLANCE_WORDS, word_count
-from pipeline.generate.draft.wiki_first_workers import (
+from pipeline.generate.draft.prose_selection import (
     classify_key_character_role_llm,
     classify_lore_relevance_llm,
     select_key_characters_from_narrative,
+)
+from pipeline.generate.draft.prose_synthesis import (
     synthesize_at_a_glance,
     synthesize_currently,
     synthesize_faction_summary,
@@ -174,7 +176,7 @@ def test_select_narrative_characters_no_llm_returns_ranking(monkeypatch) -> None
 
 def test_select_narrative_characters_llm_is_constrained_to_inputs(monkeypatch) -> None:
     monkeypatch.delenv("WOW_LORE_WIKI_FIRST_NO_LLM", raising=False)
-    import pipeline.generate.draft.wiki_first_workers as workers
+    import pipeline.generate.draft.prose_selection as workers
 
     monkeypatch.setattr(workers, "load_ai_settings", lambda: type("S", (), {"openai_ready": True})())
     monkeypatch.setattr(
@@ -203,7 +205,7 @@ def test_classify_role_llm_returns_fallback_when_offline(monkeypatch) -> None:
 
 def test_classify_role_llm_uses_constrained_enum(monkeypatch) -> None:
     monkeypatch.delenv("WOW_LORE_WIKI_FIRST_NO_LLM", raising=False)
-    import pipeline.generate.draft.wiki_first_workers as workers
+    import pipeline.generate.draft.prose_selection as workers
 
     ready = type("S", (), {"openai_ready": True})()
     monkeypatch.setattr(workers, "load_ai_settings", lambda: ready)
@@ -219,7 +221,7 @@ def test_classify_role_llm_uses_constrained_enum(monkeypatch) -> None:
 
 def test_classify_role_llm_rejects_out_of_enum_value(monkeypatch) -> None:
     monkeypatch.delenv("WOW_LORE_WIKI_FIRST_NO_LLM", raising=False)
-    import pipeline.generate.draft.wiki_first_workers as workers
+    import pipeline.generate.draft.prose_selection as workers
 
     ready = type("S", (), {"openai_ready": True})()
     monkeypatch.setattr(workers, "load_ai_settings", lambda: ready)
@@ -245,7 +247,7 @@ def test_classify_lore_relevance_llm_offline_returns_unrelated(monkeypatch) -> N
 
 def test_classify_lore_relevance_llm_uses_constrained_enum(monkeypatch) -> None:
     monkeypatch.delenv("WOW_LORE_WIKI_FIRST_NO_LLM", raising=False)
-    import pipeline.generate.draft.wiki_first_workers as workers
+    import pipeline.generate.draft.prose_selection as workers
 
     ready = type("S", (), {"openai_ready": True})()
     monkeypatch.setattr(workers, "load_ai_settings", lambda: ready)
@@ -260,7 +262,7 @@ def test_classify_lore_relevance_llm_uses_constrained_enum(monkeypatch) -> None:
 
 def test_classify_lore_relevance_llm_rejects_out_of_enum(monkeypatch) -> None:
     monkeypatch.delenv("WOW_LORE_WIKI_FIRST_NO_LLM", raising=False)
-    import pipeline.generate.draft.wiki_first_workers as workers
+    import pipeline.generate.draft.prose_selection as workers
 
     ready = type("S", (), {"openai_ready": True})()
     monkeypatch.setattr(workers, "load_ai_settings", lambda: ready)
@@ -275,7 +277,7 @@ def test_classify_lore_relevance_llm_rejects_out_of_enum(monkeypatch) -> None:
 
 def _capture_system_prompt(monkeypatch):
     monkeypatch.delenv("WOW_LORE_WIKI_FIRST_NO_LLM", raising=False)
-    import pipeline.generate.draft.wiki_first_workers as workers
+    import pipeline.generate.draft.prose_synthesis as workers
 
     captured: dict[str, str] = {}
     ready = type("S", (), {"openai_ready": True})()

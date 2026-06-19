@@ -5,7 +5,7 @@ import os
 import pytest
 
 from pipeline.generate.draft.card_lint import finalize_cta_hook, lint_cta_hook
-from pipeline.generate.draft.wiki_first_workers import (
+from pipeline.generate.draft.prose_synthesis import (
     filter_early_chain_evidence_pool,
     synthesize_questline_cta_hook,
 )

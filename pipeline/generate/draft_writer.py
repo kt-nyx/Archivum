@@ -17,12 +17,12 @@ from pipeline.discovery.questline_significance import load_included_cluster_ids_
 from pipeline.generate.draft import generate_entity_draft, is_valid_draft
 from pipeline.generate.draft.llm import draft_chat_json_completion, set_draft_verbose
 from pipeline.generate.draft.mode import draft_pipeline_mode
-from pipeline.generate.draft.trace import DraftTraceContext
-from pipeline.generate.draft.wiki_first import (
+from pipeline.generate.draft.pages import (
     InstanceKeyCharacterSelection,
     build_instance_page,
     build_zone_page,
 )
+from pipeline.generate.draft.trace import DraftTraceContext
 
 # Re-export for tests that patch chat_json_completion on this module.
 __all__ = [

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pipeline.discovery.entity_typing import should_reject_location_title
 from pipeline.generate.draft.location_lint import lint_location_summary
-from pipeline.generate.draft.wiki_first import build_zone_page
+from pipeline.generate.draft.pages import build_zone_page
 
 
 def _fact_pack(zone_id: str) -> dict[str, object]:

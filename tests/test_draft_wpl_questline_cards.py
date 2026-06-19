@@ -10,7 +10,7 @@ from pipeline.discovery.questline_card_polish import build_zone_questline_card_m
 from pipeline.discovery.questline_cluster import cluster_zone_questlines
 from pipeline.discovery.questline_significance import score_zone_questline_clusters
 from pipeline.generate.draft.card_lint import lint_cta_hook
-from pipeline.generate.draft.wiki_first import build_zone_page
+from pipeline.generate.draft.pages import build_zone_page
 
 FIXTURE_DIR = Path("tests/fixtures/clustering")
 from pipeline.discovery.pilot_questline_registry import load_registry

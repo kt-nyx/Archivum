@@ -9,7 +9,7 @@ from pipeline.generate.draft.prose_lint import (
     lint_history_sections,
     word_count,
 )
-from pipeline.generate.draft.wiki_first import build_zone_page
+from pipeline.generate.draft.pages import build_zone_page
 
 
 def _fact_pack(zone_id: str) -> dict[str, object]:

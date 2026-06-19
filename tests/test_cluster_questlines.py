@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from pipeline.generate.draft.wiki_first import _group_v3_clusters, _majority_faction, build_zone_page
+from pipeline.generate.draft.pages import build_zone_page
+from pipeline.generate.draft.pages.questlines import _group_v3_clusters, _majority_faction
 
 
 def test_group_v3_clusters_aggregates_quest_nodes() -> None:

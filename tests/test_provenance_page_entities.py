@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pipeline.generate.draft.provenance import build_revision_index, collect_sources_manifest
-from pipeline.generate.draft.wiki_first import build_zone_page
+from pipeline.generate.draft.pages import build_zone_page
 from tests.factories.wiki_first_pages import minimal_instance_page_payload, minimal_zone_page_payload
 from tests.test_validation_engine import validate_payload
 

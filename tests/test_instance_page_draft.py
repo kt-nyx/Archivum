@@ -5,7 +5,8 @@ from pathlib import Path
 
 from pipeline.generate.draft.instance_lint import lint_overview
 from pipeline.generate.draft.prose_lint import word_count
-from pipeline.generate.draft.wiki_first import _finalize_key_characters, build_instance_page
+from pipeline.generate.draft.pages import build_instance_page
+from pipeline.generate.draft.pages.key_characters import _finalize_key_characters
 from pipeline.discovery.instance_bosses import BossCandidate
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "instance"
@@ -476,7 +477,7 @@ def test_finalize_key_characters_pointer_fallback_when_used_empty(monkeypatch) -
         )
 
     monkeypatch.setattr(
-        "pipeline.generate.draft.wiki_first.synthesize_key_character_summary",
+        "pipeline.generate.draft.pages.key_characters.synthesize_key_character_summary",
         _summary_without_used,
     )
     candidate = BossCandidate(

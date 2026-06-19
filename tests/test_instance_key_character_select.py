@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pipeline.discovery.instance_bosses import BossCandidate
-from pipeline.generate.draft import wiki_first_workers as workers
+from pipeline.generate.draft import prose_selection as workers
 
 
 def _candidate(

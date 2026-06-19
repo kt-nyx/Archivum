@@ -8,7 +8,7 @@ from pipeline.generate.draft.location_scoring import (
     score_location_candidate,
     select_location_cards,
 )
-from pipeline.generate.draft.wiki_first import _build_evidence_pools
+from pipeline.generate.draft.pages.assembly import _build_evidence_pools
 
 
 def _profile_item(

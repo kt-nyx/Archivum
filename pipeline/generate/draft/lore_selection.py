@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from pipeline.generate.draft.wiki_first_workers import classify_lore_relevance_llm
+from pipeline.generate.draft.prose_selection import classify_lore_relevance_llm
 
 # Below this many instance-owned narrative words, treat the instance page as sparse
 # and allow cross-page lore to augment the overview.

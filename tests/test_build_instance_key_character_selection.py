@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from pipeline.discovery.instance_bosses import BossCandidate
-from pipeline.generate.draft import wiki_first_workers as workers
-from pipeline.generate.draft.wiki_first import (
+from pipeline.generate.draft import prose_selection as workers
+from pipeline.generate.draft.pages import (
     build_instance_key_character_selection,
     build_instance_page,
 )

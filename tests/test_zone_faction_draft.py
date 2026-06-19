@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pipeline.generate.draft.faction_lint import lint_faction_summary
-from pipeline.generate.draft.wiki_first import build_zone_page
+from pipeline.generate.draft.pages import build_zone_page
 
 
 def _fact_pack(zone_id: str) -> dict[str, object]:
