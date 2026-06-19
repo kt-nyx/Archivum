@@ -1,4 +1,7 @@
+import json
 from pathlib import Path
+
+import pytest
 
 from pipeline.common.run_context import ensure_run_context
 from pipeline.orchestrator.flow import run_pipeline_flow
@@ -170,6 +173,50 @@ def test_run_pipeline_flow_retries_failed_stage_once(tmp_path: Path, monkeypatch
     assert attempts["ingest"] == 2
 
 
+def test_run_pipeline_flow_escalates_after_retries_exhausted(tmp_path: Path, monkeypatch) -> None:
+    context = ensure_run_context("run-test-flow-escalate", artifacts_root=tmp_path / "runs")
+    monkeypatch.setattr(
+        "pipeline.orchestrator.flow.ensure_run_context",
+        lambda _run_id=None: context,
+    )
+
+    attempts = {"ingest": 0}
+
+    def always_failing_ingest(_context):
+        attempts["ingest"] += 1
+        raise RuntimeError("persistent ingest error")
+
+    monkeypatch.setattr("pipeline.orchestrator.flow.run_ingest_stage", always_failing_ingest)
+
+    with pytest.raises(RuntimeError, match="persistent ingest error"):
+        run_pipeline_flow(run_id=context.run_id, retries_per_stage=1)
+
+    # retries=1 → 1 initial + 1 retry, matching the legacy hand-rolled loop.
+    assert attempts["ingest"] == 2
+
+    # The escalation manifest is emitted once, from the Prefect on_failure hook.
+    manifest = json.loads(context.stage_manifest_path("ingest").read_text(encoding="utf-8"))
+    assert manifest["stage"] == "ingest"
+    assert manifest["status"] == "failed"
+    assert manifest["escalated"] is True
+    assert manifest["retries"] == 1
+    assert "persistent ingest error" in manifest["metadata"]["error"]
+
+    # Per-attempt trace events survive the conversion: a start + error for each attempt.
+    events = [
+        json.loads(line)
+        for line in context.trace_log_path().read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    ingest_events = [e for e in events if e["stage"] == "ingest"]
+    assert [(e["attempt"], e["status"]) for e in ingest_events] == [
+        (1, "start"),
+        (1, "error"),
+        (2, "start"),
+        (2, "error"),
+    ]
+
+
 def test_run_pipeline_flow_orders_enrich_phases_around_quest_traverse(
     tmp_path: Path,
     monkeypatch,
@@ -216,8 +263,12 @@ def test_run_pipeline_flow_orders_enrich_phases_around_quest_traverse(
         },
     )
     monkeypatch.setattr("pipeline.orchestrator.flow.run_discovery_stage", record("discovery"))
-    monkeypatch.setattr("pipeline.orchestrator.flow.run_traverse_seed_stage", record("traverse_seed"))
-    monkeypatch.setattr("pipeline.orchestrator.flow.run_traverse_quests_stage", record("traverse_quests"))
+    monkeypatch.setattr(
+        "pipeline.orchestrator.flow.run_traverse_seed_stage", record("traverse_seed")
+    )
+    monkeypatch.setattr(
+        "pipeline.orchestrator.flow.run_traverse_quests_stage", record("traverse_quests")
+    )
     monkeypatch.setattr("pipeline.orchestrator.flow.run_discovery_enrich_stage", record_enrich)
     monkeypatch.setattr(
         "pipeline.orchestrator.flow.run_coalesce_stage",

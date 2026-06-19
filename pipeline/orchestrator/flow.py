@@ -7,7 +7,8 @@ from collections.abc import Callable
 from time import perf_counter
 from typing import Any
 
-from prefect import flow
+from prefect import flow, task
+from prefect.runtime import task_run
 
 from pipeline.common.run_context import (
     append_trace_event,
@@ -39,41 +40,55 @@ def _run_stage_with_retry[T](
     run_id: str,
     verbose: bool = False,
 ) -> T:
+    """Run a stage as a Prefect task with native ``retries=``.
+
+    Retry orchestration is delegated to Prefect (``retries`` + zero delay). The custom
+    per-attempt trace events (``start`` / ``success`` / ``error``) and the escalation manifest
+    written when all attempts are exhausted are preserved as before — attempts are read from the
+    Prefect runtime (``task_run.run_count``, 1-based and incremented per attempt) and the
+    final-failure manifest is emitted from the task's ``on_failure`` hook.
+    """
     context = ensure_run_context(run_id)
-    for attempt in range(1, retries + 2):
+    last_error: dict[str, BaseException | None] = {"exc": None}
+
+    def _escalate_on_failure(_task: Any, _task_run: Any, _state: Any) -> None:
+        write_stage_manifest(
+            context,
+            stage_name,
+            status="failed",
+            inputs=on_fail_manifest_inputs,
+            outputs=on_fail_manifest_outputs,
+            retries=retries,
+            escalated=True,
+            metadata={"error": repr(last_error["exc"])},
+        )
+
+    @task(
+        name=stage_name,
+        retries=retries,
+        retry_delay_seconds=0,
+        on_failure=[_escalate_on_failure],
+    )
+    def _stage_task() -> T:
+        attempt = task_run.run_count
+        started_at = perf_counter()
+        append_trace_event(
+            context,
+            stage_name=stage_name,
+            attempt=attempt,
+            status="start",
+        )
+        if verbose:
+            print(
+                f"[lore-pipeline] run_id={run_id} stage={stage_name} attempt={attempt} "
+                "starting...",
+                file=sys.stderr,
+                flush=True,
+            )
         try:
-            started_at = perf_counter()
-            append_trace_event(
-                context,
-                stage_name=stage_name,
-                attempt=attempt,
-                status="start",
-            )
-            if verbose:
-                print(
-                    f"[lore-pipeline] run_id={run_id} stage={stage_name} attempt={attempt} "
-                    "starting...",
-                    file=sys.stderr,
-                    flush=True,
-                )
             result = stage_fn()
-            duration_ms = int((perf_counter() - started_at) * 1000)
-            append_trace_event(
-                context,
-                stage_name=stage_name,
-                attempt=attempt,
-                status="success",
-                details={"duration_ms": duration_ms},
-            )
-            if verbose:
-                print(
-                    f"[lore-pipeline] run_id={run_id} stage={stage_name} attempt={attempt} "
-                    f"done duration_ms={duration_ms}",
-                    file=sys.stderr,
-                    flush=True,
-                )
-            return result
-        except Exception as exc:  # pragma: no cover - exercised by manual failures
+        except Exception as exc:
+            last_error["exc"] = exc
             append_trace_event(
                 context,
                 stage_name=stage_name,
@@ -81,19 +96,25 @@ def _run_stage_with_retry[T](
                 status="error",
                 details={"error": repr(exc)},
             )
-            if attempt > retries:
-                write_stage_manifest(
-                    context,
-                    stage_name,
-                    status="failed",
-                    inputs=on_fail_manifest_inputs,
-                    outputs=on_fail_manifest_outputs,
-                    retries=retries,
-                    escalated=True,
-                    metadata={"error": repr(exc)},
-                )
-                raise
-    raise RuntimeError(f"stage {stage_name} did not run")
+            raise
+        duration_ms = int((perf_counter() - started_at) * 1000)
+        append_trace_event(
+            context,
+            stage_name=stage_name,
+            attempt=attempt,
+            status="success",
+            details={"duration_ms": duration_ms},
+        )
+        if verbose:
+            print(
+                f"[lore-pipeline] run_id={run_id} stage={stage_name} attempt={attempt} "
+                f"done duration_ms={duration_ms}",
+                file=sys.stderr,
+                flush=True,
+            )
+        return result
+
+    return _stage_task()
 
 
 @flow(name="lore-pipeline-ingest-to-validate", log_prints=True)
