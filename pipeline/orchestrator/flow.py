@@ -20,7 +20,6 @@ from pipeline.orchestrator.stages import (
     run_discovery_enrich_stage,
     run_discovery_stage,
     run_draft_stage,
-    run_extract_stage,
     run_glossary_terms_stage,
     run_ingest_stage,
     run_linker_stage,
@@ -142,7 +141,11 @@ def run_pipeline_flow(
         run_id=context.run_id,
         verbose=verbose,
     )
-    coalesced_path = _run_stage_with_retry(
+    # Coalesce now writes fact packs directly (Extract folded in, S6); it returns
+    # the fact-pack paths. The coalesced entity graph stays at this known path,
+    # referenced by the downstream enrich failure manifests.
+    coalesce_entities_path = context.data_dir / "coalesced" / "entities.jsonl"
+    fact_pack_paths = _run_stage_with_retry(
         "coalesce",
         lambda: run_coalesce_stage(
             context,
@@ -163,7 +166,7 @@ def run_pipeline_flow(
             phase="roster",
         ),
         retries=retries_per_stage,
-        on_fail_manifest_inputs=[str(coalesced_path)],
+        on_fail_manifest_inputs=[str(coalesce_entities_path)],
         on_fail_manifest_outputs=[],
         run_id=context.run_id,
         verbose=verbose,
@@ -185,7 +188,7 @@ def run_pipeline_flow(
             phase="cluster",
         ),
         retries=retries_per_stage,
-        on_fail_manifest_inputs=[str(coalesced_path)],
+        on_fail_manifest_inputs=[str(coalesce_entities_path)],
         on_fail_manifest_outputs=[],
         run_id=context.run_id,
         verbose=verbose,
@@ -198,7 +201,7 @@ def run_pipeline_flow(
             phase="significance",
         ),
         retries=retries_per_stage,
-        on_fail_manifest_inputs=[str(coalesced_path)],
+        on_fail_manifest_inputs=[str(coalesce_entities_path)],
         on_fail_manifest_outputs=[],
         run_id=context.run_id,
         verbose=verbose,
@@ -211,7 +214,7 @@ def run_pipeline_flow(
             phase="card_polish",
         ),
         retries=retries_per_stage,
-        on_fail_manifest_inputs=[str(coalesced_path)],
+        on_fail_manifest_inputs=[str(coalesce_entities_path)],
         on_fail_manifest_outputs=[],
         run_id=context.run_id,
         verbose=verbose,
@@ -224,20 +227,7 @@ def run_pipeline_flow(
             phase="evidence_merge",
         ),
         retries=retries_per_stage,
-        on_fail_manifest_inputs=[str(coalesced_path)],
-        on_fail_manifest_outputs=[],
-        run_id=context.run_id,
-        verbose=verbose,
-    )
-    extracted_paths = _run_stage_with_retry(
-        "extract",
-        lambda: run_extract_stage(
-            context,
-            coalesced_path,
-            max_entity_concurrency=max_entity_concurrency,
-        ),
-        retries=retries_per_stage,
-        on_fail_manifest_inputs=[str(coalesced_path)],
+        on_fail_manifest_inputs=[str(coalesce_entities_path)],
         on_fail_manifest_outputs=[],
         run_id=context.run_id,
         verbose=verbose,
@@ -246,12 +236,12 @@ def run_pipeline_flow(
         "draft",
         lambda: run_draft_stage(
             context,
-            extracted_paths,
+            fact_pack_paths,
             max_entity_concurrency=max_entity_concurrency,
             verbose=verbose,
         ),
         retries=retries_per_stage,
-        on_fail_manifest_inputs=[str(path) for path in extracted_paths],
+        on_fail_manifest_inputs=[str(path) for path in fact_pack_paths],
         on_fail_manifest_outputs=[],
         run_id=context.run_id,
         verbose=verbose,

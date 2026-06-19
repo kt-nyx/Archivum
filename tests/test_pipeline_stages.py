@@ -13,7 +13,6 @@ from pipeline.orchestrator.stages import (
     run_discovery_enrich_stage,
     run_discovery_stage,
     run_draft_stage,
-    run_extract_stage,
     run_ingest_stage,
     run_linker_stage,
     run_traverse_quests_stage,
@@ -130,13 +129,12 @@ def test_ingest_to_validate_stage_chain_emits_artifacts(
     context = ensure_run_context("run-test-stage-chain", artifacts_root=tmp_path / "runs")
     _seed_manifest(context.root_dir)
     ingest_output = run_ingest_stage(context)
-    coalesced_path = run_coalesce_stage(
+    fact_pack_paths = run_coalesce_stage(
         context,
         ingest_output["source_manifest_path"],
         max_entity_concurrency=4,
     )
-    extracted_paths = run_extract_stage(context, coalesced_path, max_entity_concurrency=4)
-    draft_paths = run_draft_stage(context, extracted_paths, max_entity_concurrency=4)
+    draft_paths = run_draft_stage(context, fact_pack_paths, max_entity_concurrency=4)
     linker_report = run_linker_stage(context, draft_paths, max_entity_concurrency=4)
     validate_output = run_validate_stage(
         context,
@@ -180,12 +178,13 @@ def test_wiki_first_stage_chain_includes_discovery_and_enrich(
     assert questline_seed == []
 
     run_traverse_seed_stage(context)
-    coalesced_path = run_coalesce_stage(
+    fact_pack_paths = run_coalesce_stage(
         context,
         ingest_output["source_manifest_path"],
         max_entity_concurrency=4,
     )
-    assert coalesced_path.exists()
+    assert fact_pack_paths
+    assert all(path.exists() for path in fact_pack_paths)
 
     enrich_graph = run_discovery_enrich_stage(
         context,
@@ -278,13 +277,12 @@ def test_validate_stage_strict_fails_with_contradiction_marker(
     context = ensure_run_context("run-test-strict-fail", artifacts_root=tmp_path / "runs")
     _seed_manifest(context.root_dir)
     ingest_output = run_ingest_stage(context)
-    coalesced_path = run_coalesce_stage(
+    fact_pack_paths = run_coalesce_stage(
         context,
         ingest_output["source_manifest_path"],
         max_entity_concurrency=4,
     )
-    extracted_paths = run_extract_stage(context, coalesced_path, max_entity_concurrency=4)
-    draft_paths = run_draft_stage(context, extracted_paths, max_entity_concurrency=4)
+    draft_paths = run_draft_stage(context, fact_pack_paths, max_entity_concurrency=4)
     zone_path = next(path for path in draft_paths if path.parent.name == "zone")
     draft_payload = json.loads(zone_path.read_text(encoding="utf-8"))
     draft_payload["history"] = f"{draft_payload['history']} [CONTRADICTED]"
@@ -330,13 +328,12 @@ def test_validate_stage_requires_explicit_no_llm_override_for_warn_profile(
     context = ensure_run_context("run-test-validate-no-llm-guard", artifacts_root=tmp_path / "runs")
     _seed_manifest(context.root_dir)
     ingest_output = run_ingest_stage(context)
-    coalesced_path = run_coalesce_stage(
+    fact_pack_paths = run_coalesce_stage(
         context,
         ingest_output["source_manifest_path"],
         max_entity_concurrency=4,
     )
-    extracted_paths = run_extract_stage(context, coalesced_path, max_entity_concurrency=4)
-    draft_paths = run_draft_stage(context, extracted_paths, max_entity_concurrency=4)
+    draft_paths = run_draft_stage(context, fact_pack_paths, max_entity_concurrency=4)
     with pytest.raises(RuntimeError, match="--no-llm-fact-check"):
         run_validate_stage(
             context,
@@ -357,13 +354,12 @@ def test_validate_stage_uppercase_warn_requires_explicit_no_llm_override(
     )
     _seed_manifest(context.root_dir)
     ingest_output = run_ingest_stage(context)
-    coalesced_path = run_coalesce_stage(
+    fact_pack_paths = run_coalesce_stage(
         context,
         ingest_output["source_manifest_path"],
         max_entity_concurrency=4,
     )
-    extracted_paths = run_extract_stage(context, coalesced_path, max_entity_concurrency=4)
-    draft_paths = run_draft_stage(context, extracted_paths, max_entity_concurrency=4)
+    draft_paths = run_draft_stage(context, fact_pack_paths, max_entity_concurrency=4)
     with pytest.raises(RuntimeError, match="--no-llm-fact-check"):
         run_validate_stage(
             context,
@@ -483,7 +479,7 @@ def test_coalesce_prefers_manifest_priority_for_tie_break(
     manifest_path = run_normalize_source(context, snapshots_path)
     normalized_rows = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert [row["priority"] for row in normalized_rows] == [1, 5]
-    entities_path = run_resolve_entities(context, manifest_path, max_entity_concurrency=2)
+    entities_path, _ = run_resolve_entities(context, manifest_path, max_entity_concurrency=2)
     rows = [
         json.loads(line)
         for line in entities_path.read_text(encoding="utf-8").splitlines()
@@ -582,13 +578,12 @@ def test_stage_traces_include_entity_start_and_success_events(
     context = ensure_run_context("run-test-stage-entity-traces", artifacts_root=tmp_path / "runs")
     _seed_manifest(context.root_dir)
     ingest_output = run_ingest_stage(context)
-    coalesced_path = run_coalesce_stage(
+    fact_pack_paths = run_coalesce_stage(
         context,
         ingest_output["source_manifest_path"],
         max_entity_concurrency=4,
     )
-    extracted_paths = run_extract_stage(context, coalesced_path, max_entity_concurrency=4)
-    draft_paths = run_draft_stage(context, extracted_paths, max_entity_concurrency=4)
+    draft_paths = run_draft_stage(context, fact_pack_paths, max_entity_concurrency=4)
     run_validate_stage(
         context,
         draft_paths,
@@ -606,13 +601,6 @@ def test_stage_traces_include_entity_start_and_success_events(
     )
     assert any(
         str(row["stage"]).startswith("coalesce:") and row["status"] == "success"
-        for row in trace_lines
-    )
-    assert any(
-        str(row["stage"]).startswith("extract:") and row["status"] == "start" for row in trace_lines
-    )
-    assert any(
-        str(row["stage"]).startswith("extract:") and row["status"] == "success"
         for row in trace_lines
     )
     assert any(

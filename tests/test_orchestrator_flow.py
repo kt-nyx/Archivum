@@ -61,15 +61,11 @@ def test_run_pipeline_flow_passes_linker_report_to_validate(
     )
     monkeypatch.setattr(
         "pipeline.orchestrator.flow.run_coalesce_stage",
-        lambda _context, _manifest_path, max_entity_concurrency=4, **_kw: coalesced_path,
-    )
-    monkeypatch.setattr(
-        "pipeline.orchestrator.flow.run_extract_stage",
-        lambda _context, _coalesced_path, max_entity_concurrency=4, **_kw: [extracted_path],
+        lambda _context, _manifest_path, max_entity_concurrency=4, **_kw: [extracted_path],
     )
     monkeypatch.setattr(
         "pipeline.orchestrator.flow.run_draft_stage",
-        lambda _context, _extracted_paths, max_entity_concurrency=4, **_kw: [draft_path],
+        lambda _context, _fact_pack_paths, max_entity_concurrency=4, **_kw: [draft_path],
     )
     monkeypatch.setattr(
         "pipeline.orchestrator.flow.run_linker_stage",
@@ -143,17 +139,11 @@ def test_run_pipeline_flow_retries_failed_stage_once(tmp_path: Path, monkeypatch
     )
     monkeypatch.setattr(
         "pipeline.orchestrator.flow.run_coalesce_stage",
-        lambda _context, _manifest_path, max_entity_concurrency=4, **_kw: (
-            context.data_dir / "coalesced" / "entities.jsonl"
-        ),
-    )
-    monkeypatch.setattr(
-        "pipeline.orchestrator.flow.run_extract_stage",
-        lambda _context, _coalesced_path, max_entity_concurrency=4, **_kw: [],
+        lambda _context, _manifest_path, max_entity_concurrency=4, **_kw: [],
     )
     monkeypatch.setattr(
         "pipeline.orchestrator.flow.run_draft_stage",
-        lambda _context, _extracted_paths, max_entity_concurrency=4, **_kw: [],
+        lambda _context, _fact_pack_paths, max_entity_concurrency=4, **_kw: [],
     )
     monkeypatch.setattr(
         "pipeline.orchestrator.flow.run_linker_stage",
@@ -231,15 +221,11 @@ def test_run_pipeline_flow_orders_enrich_phases_around_quest_traverse(
     monkeypatch.setattr("pipeline.orchestrator.flow.run_discovery_enrich_stage", record_enrich)
     monkeypatch.setattr(
         "pipeline.orchestrator.flow.run_coalesce_stage",
-        lambda _context, _manifest_path, max_entity_concurrency=4, **_kw: coalesced_path,
-    )
-    monkeypatch.setattr(
-        "pipeline.orchestrator.flow.run_extract_stage",
-        lambda _context, _coalesced_path, max_entity_concurrency=4, **_kw: [],
+        lambda _context, _manifest_path, max_entity_concurrency=4, **_kw: [],
     )
     monkeypatch.setattr(
         "pipeline.orchestrator.flow.run_draft_stage",
-        lambda _context, _extracted_paths, max_entity_concurrency=4, **_kw: [],
+        lambda _context, _fact_pack_paths, max_entity_concurrency=4, **_kw: [],
     )
     monkeypatch.setattr(
         "pipeline.orchestrator.flow.run_linker_stage",

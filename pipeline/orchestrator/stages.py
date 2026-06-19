@@ -16,7 +16,6 @@ from pipeline.discovery import run_discovery_workflow
 from pipeline.discovery.enrich import EnrichPhase, run_discovery_enrich
 from pipeline.discovery.instance_bosses import row_has_roster_role
 from pipeline.generate.draft_writer import run_draft_writer
-from pipeline.generate.extract_facts import run_extract_facts
 from pipeline.glossary.run_terms import build_run_terms
 from pipeline.ingest.fetch_wiki import run_fetch_wiki
 from pipeline.ingest.normalize_source import run_normalize_source
@@ -181,7 +180,8 @@ def run_coalesce_stage(
     source_manifest_path: Path,
     *,
     max_entity_concurrency: int = 4,
-) -> Path:
+) -> list[Path]:
+    """Run coalesce and return the fact-pack paths it writes (Extract folded in, S6)."""
     manifest_blob = json.loads(source_manifest_path.read_text(encoding="utf-8"))
     coalesce_entity_ids: list[str] = []
     if isinstance(manifest_blob, list):
@@ -202,7 +202,7 @@ def run_coalesce_stage(
             status="start",
         )
     try:
-        output_path = run_resolve_entities(
+        output_path, fact_pack_paths = run_resolve_entities(
             context,
             source_manifest_path,
             max_entity_concurrency=max_entity_concurrency,
@@ -234,67 +234,10 @@ def run_coalesce_stage(
         "coalesce",
         status="ok",
         inputs=[str(source_manifest_path)],
-        outputs=[str(output_path)],
+        outputs=[str(output_path), *(str(path) for path in fact_pack_paths)],
         metadata={"max_entity_concurrency": max_entity_concurrency},
     )
-    return output_path
-
-
-def run_extract_stage(
-    context: RunContext,
-    entities_path: Path,
-    *,
-    max_entity_concurrency: int = 4,
-) -> list[Path]:
-    rows = [
-        json.loads(line)
-        for line in entities_path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
-    extract_entity_ids = [
-        str(row.get("entity_id", f"unknown-row-{index}"))
-        for index, row in enumerate(rows, start=1)
-        if isinstance(row, dict)
-    ]
-    for entity_id in extract_entity_ids:
-        append_trace_event(
-            context,
-            stage_name=f"extract:{entity_id}",
-            attempt=1,
-            status="start",
-        )
-    try:
-        outputs = run_extract_facts(
-            context,
-            entities_path,
-            max_entity_concurrency=max_entity_concurrency,
-        )
-    except Exception as exc:
-        for entity_id in extract_entity_ids:
-            append_trace_event(
-                context,
-                stage_name=f"extract:{entity_id}",
-                attempt=1,
-                status="error",
-                details={"error": repr(exc)},
-            )
-        raise
-    for path in outputs:
-        append_trace_event(
-            context,
-            stage_name=f"extract:{path.stem}",
-            attempt=1,
-            status="success",
-        )
-    write_stage_manifest(
-        context,
-        "extract",
-        status="ok",
-        inputs=[str(entities_path)],
-        outputs=[str(path) for path in outputs],
-        metadata={"max_entity_concurrency": max_entity_concurrency},
-    )
-    return outputs
+    return fact_pack_paths
 
 
 def run_draft_stage(

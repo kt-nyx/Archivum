@@ -12,6 +12,7 @@ from pipeline.ai.config import load_ai_settings
 from pipeline.ai.openai_client import chat_json_completion
 from pipeline.coalesce.claim_scoring import select_source_for_claim
 from pipeline.coalesce.confidence_model import compute_confidence
+from pipeline.coalesce.fact_packs import write_fact_packs
 from pipeline.common.config_loading import coerce_float, load_yaml_mapping
 from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext
@@ -217,8 +218,13 @@ def run_resolve_entities(
     source_manifest_path: Path,
     *,
     max_entity_concurrency: int = 4,
-) -> Path:
-    """Merge normalized sources into coalesced entity graph (AI-assisted by default)."""
+) -> tuple[Path, list[Path]]:
+    """Merge normalized sources into a coalesced entity graph and fact packs.
+
+    Returns ``(entities_path, fact_pack_paths)``. The fact-pack reshape and the
+    missing-source-URL hard-fail (formerly the standalone Extract stage, S6) run
+    here at the end of coalesce so fact packs are written directly.
+    """
     source_manifest = json.loads(source_manifest_path.read_text(encoding="utf-8"))
     snapshots_path = context.stage_dir("ingest") / "source_snapshots.json"
     snapshots = json.loads(snapshots_path.read_text(encoding="utf-8"))
@@ -307,4 +313,5 @@ def run_resolve_entities(
         encoding="utf-8",
     )
     write_json((stage_dir / "coalesce_decisions.json"), decisions)
-    return output_path
+    fact_pack_paths = write_fact_packs(context, coalesced_rows)
+    return output_path, fact_pack_paths

@@ -12,7 +12,6 @@ from pipeline.orchestrator.stages import (
     run_discovery_enrich_stage,
     run_discovery_stage,
     run_draft_stage,
-    run_extract_stage,
     run_glossary_terms_stage,
     run_ingest_stage,
     run_linker_stage,
@@ -119,36 +118,15 @@ def coalesce(
         help="Per-stage entity concurrency (default 4, tunable 2-6).",
     ),
 ) -> None:
-    """Run coalesce stage using ingest output."""
+    """Run coalesce stage using ingest output (writes fact packs directly, S6)."""
     context = ensure_run_context(run_id)
     source_manifest_path = context.stage_dir("ingest") / "source_manifest.json"
-    output_path = run_coalesce_stage(
+    fact_pack_paths = run_coalesce_stage(
         context,
         source_manifest_path,
         max_entity_concurrency=max_entity_concurrency,
     )
-    typer.echo(f"run_id={context.run_id} stage=coalesce output={output_path}")
-
-
-@app.command()
-def extract(
-    run_id: str = typer.Option(..., help="Existing run id."),
-    max_entity_concurrency: int = typer.Option(
-        default=4,
-        min=2,
-        max=6,
-        help="Per-stage entity concurrency (default 4, tunable 2-6).",
-    ),
-) -> None:
-    """Run extract stage from coalesced entity graph."""
-    context = ensure_run_context(run_id)
-    entities_path = context.data_dir / "coalesced" / "entities.jsonl"
-    outputs = run_extract_stage(
-        context,
-        entities_path,
-        max_entity_concurrency=max_entity_concurrency,
-    )
-    typer.echo(f"run_id={context.run_id} stage=extract outputs={len(outputs)}")
+    typer.echo(f"run_id={context.run_id} stage=coalesce outputs={len(fact_pack_paths)}")
 
 
 @app.command()

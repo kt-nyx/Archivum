@@ -10,7 +10,6 @@ from pipeline.ingest.fetch_wiki import FetchedSource
 from pipeline.orchestrator.stages import (
     run_coalesce_stage,
     run_draft_stage,
-    run_extract_stage,
     run_ingest_stage,
 )
 from tests.draft_llm_mocks import fake_draft_chat_by_schema
@@ -123,13 +122,12 @@ def test_mp3_generation_succeeds_when_llm_available(
     )
 
     ingest_output = run_ingest_stage(context)
-    coalesced_path = run_coalesce_stage(
+    fact_pack_paths = run_coalesce_stage(
         context,
         ingest_output["source_manifest_path"],
         max_entity_concurrency=4,
     )
-    extracted_paths = run_extract_stage(context, coalesced_path, max_entity_concurrency=4)
-    outputs = run_draft_stage(context, extracted_paths, max_entity_concurrency=4)
+    outputs = run_draft_stage(context, fact_pack_paths, max_entity_concurrency=4)
 
     assert outputs
     decisions = json.loads((context.data_dir / "drafts" / "draft_decisions.json").read_text())
@@ -171,15 +169,14 @@ def test_mp3_draft_fails_when_llm_output_stays_invalid(
     _mock_draft_llm(monkeypatch, openai_ready=True, chat_result={})
 
     ingest_output = run_ingest_stage(context)
-    coalesced_path = run_coalesce_stage(
+    fact_pack_paths = run_coalesce_stage(
         context,
         ingest_output["source_manifest_path"],
         max_entity_concurrency=4,
     )
-    extracted_paths = run_extract_stage(context, coalesced_path, max_entity_concurrency=4)
 
     with pytest.raises(RuntimeError, match="draft LLM generation failed"):
-        run_draft_stage(context, extracted_paths, max_entity_concurrency=4)
+        run_draft_stage(context, fact_pack_paths, max_entity_concurrency=4)
 
 
 def test_ingest_fails_when_manifest_is_missing(tmp_path: Path) -> None:
@@ -391,13 +388,12 @@ def test_mp3_draft_retries_until_schema_valid(
         monkeypatch.setattr(target, flaky_draft_chat)
 
     ingest_output = run_ingest_stage(context)
-    coalesced_path = run_coalesce_stage(
+    fact_pack_paths = run_coalesce_stage(
         context,
         ingest_output["source_manifest_path"],
         max_entity_concurrency=4,
     )
-    extracted_paths = run_extract_stage(context, coalesced_path, max_entity_concurrency=4)
-    outputs = run_draft_stage(context, extracted_paths, max_entity_concurrency=4)
+    outputs = run_draft_stage(context, fact_pack_paths, max_entity_concurrency=4)
 
     assert outputs
     assert zone_attempts["count"] >= 2
