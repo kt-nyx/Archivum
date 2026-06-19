@@ -206,7 +206,8 @@ def _sidecar_coherence_findings(
 
     Catches the class of bug where the page and sidecar were derived from two divergent
     selections: an emitted row without a ``merge_rank``, a ranked row not marked emitted,
-    or the page ``key_characters`` set differing from the sidecar's emitted set.
+    the page ``key_characters`` set differing from the sidecar's emitted set, or the page
+    cast emit-order disagreeing with the sidecar ``merge_rank`` order.
     """
     findings: list[Finding] = []
 
@@ -234,11 +235,12 @@ def _sidecar_coherence_findings(
                 )
             )
 
-    page_names = {
+    page_order = [
         _key(c.get("name", ""))
         for c in payload.get("key_characters") or []
         if isinstance(c, dict)
-    }
+    ]
+    page_names = set(page_order)
     sidecar_emitted = {_key(c.get("name", "")) for c in roster if c.get("emitted")}
     if page_names != sidecar_emitted:
         only_page = sorted(page_names - sidecar_emitted)
@@ -251,6 +253,32 @@ def _sidecar_coherence_findings(
                 f"(page-only: {only_page}; sidecar-only: {only_sidecar})",
             )
         )
+        return findings
+
+    # Sets agree: the page cast order must follow the sidecar merge_rank order, so the
+    # emit ordering is reproducible from the recorded ranks (catches a page rendered from a
+    # different selection ordering than the sidecar it shipped with).
+    def _rank(candidate: dict[str, Any]) -> int:
+        return int(candidate["merge_rank"])
+
+    ranked_emitted = [
+        c
+        for c in roster
+        if c.get("emitted") and c.get("merge_rank") is not None
+    ]
+    if len(ranked_emitted) == len(page_order):
+        expected_order = [
+            _key(c.get("name", "")) for c in sorted(ranked_emitted, key=_rank)
+        ]
+        if page_order != expected_order:
+            findings.append(
+                Finding(
+                    "fail",
+                    "semantics.page_sidecar_order_mismatch",
+                    "page key_characters order disagrees with sidecar merge_rank order "
+                    f"(page: {page_order}; by merge_rank: {expected_order})",
+                )
+            )
     return findings
 
 

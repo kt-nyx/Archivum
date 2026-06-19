@@ -178,6 +178,53 @@ def test_rubric_gate_flag_escalates_warn(tmp_path: Path) -> None:
     assert rubric_main([str(root), "--gate"]) == 1
 
 
+def test_rubric_catches_page_sidecar_cast_mismatch(tmp_path: Path) -> None:
+    """The gold cast PASSes, but dropping a card from the page (without un-emitting it in
+    the sidecar) must hard-fail — the page/sidecar single-source invariant. Guards the
+    false-PASS risk where page and sidecar are derived from divergent selections."""
+    root = tmp_path / "run-mismatch"
+    page = _gold_page()
+    page["key_characters"] = page["key_characters"][1:]  # drop the top emitted card
+    _write_run(root, page, _gold_sidecar())
+
+    score = evaluate_run(root)[0]
+    codes = {f.code for f in score.findings}
+    assert "semantics.page_sidecar_cast_mismatch" in codes
+    assert score.status == STATUS_FAIL
+
+
+def test_rubric_catches_emitted_without_merge_rank(tmp_path: Path) -> None:
+    """An emitted sidecar row missing a merge_rank is a recorded-selection defect."""
+    root = tmp_path / "run-no-rank"
+    sidecar = _gold_sidecar()
+    for candidate in sidecar[0]["candidates"]:
+        if candidate.get("emitted"):
+            candidate["merge_rank"] = None
+            break
+    _write_run(root, _gold_page(), sidecar)
+
+    score = evaluate_run(root)[0]
+    codes = {f.code for f in score.findings}
+    assert "semantics.sidecar_emitted_without_rank" in codes
+    assert score.status == STATUS_FAIL
+
+
+def test_rubric_catches_emit_order_vs_merge_rank_mismatch(tmp_path: Path) -> None:
+    """Same cast set, but the page emit-order disagrees with the sidecar merge_rank order:
+    a reproducibility defect the set-only check used to false-PASS."""
+    root = tmp_path / "run-order"
+    page = _gold_page()
+    cast = page["key_characters"]
+    page["key_characters"] = [cast[1], cast[0], *cast[2:]]  # swap the top two emitted cards
+    _write_run(root, page, _gold_sidecar())
+
+    score = evaluate_run(root)[0]
+    codes = {f.code for f in score.findings}
+    assert "semantics.page_sidecar_order_mismatch" in codes
+    assert "semantics.page_sidecar_cast_mismatch" not in codes  # set still agrees
+    assert score.status == STATUS_FAIL
+
+
 def test_diff_reports_overview_and_cast_deltas(tmp_path: Path) -> None:
     candidate_root = tmp_path / "run-candidate"
     baseline_root = tmp_path / "run-baseline"
