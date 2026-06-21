@@ -1,5 +1,14 @@
 target-version = "py312"
 line-length = 100
 
+# The formatter owns code layout and line length (it keeps code within `line-length`
+# but, like Black, intentionally never splits long string literals/URLs/comments).
+[format]
+quote-style = "double"
+
 [lint]
-select = ["E", "F", "I", "UP"]
+# Formatter-compatible lint set (per Ruff's "using the formatter" guidance): keep the
+# import (E4), statement (E7) and syntax (E9) error checks, pyflakes (F), import
+# sorting (I) and pyupgrade (UP). The whitespace/blank-line (E1/E2/E3) and line-length
+# (E501) rules are delegated to the formatter to avoid linter/formatter conflicts.
+select = ["E4", "E7", "E9", "F", "I", "UP"]
