@@ -30,11 +30,11 @@ def _req() -> httpx.Request:
 
 def test_chat_completion_success(monkeypatch: pytest.MonkeyPatch) -> None:
     content = json.dumps({"result": "ok"})
-    resp = httpx.Response(200, json={"choices": [{"message": {"content": content}}]}, request=_req())
-    monkeypatch.setattr("pipeline.common.http.send", lambda *a, **k: resp)
-    out = openai_client.chat_json_completion(
-        _settings(), system_prompt="s", user_prompt="u"
+    resp = httpx.Response(
+        200, json={"choices": [{"message": {"content": content}}]}, request=_req()
     )
+    monkeypatch.setattr("pipeline.common.http.send", lambda *a, **k: resp)
+    out = openai_client.chat_json_completion(_settings(), system_prompt="s", user_prompt="u")
     assert out == {"result": "ok"}
 
 

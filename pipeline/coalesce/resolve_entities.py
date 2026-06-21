@@ -30,9 +30,7 @@ def _load_merge_rules() -> dict[str, object]:
     claim_merge = data.get("claim_merge")
     rules = dict(defaults)
     if isinstance(entity_resolution, dict) and "confidence_threshold" in entity_resolution:
-        rules["confidence_threshold"] = coerce_float(
-            entity_resolution["confidence_threshold"], 0.8
-        )
+        rules["confidence_threshold"] = coerce_float(entity_resolution["confidence_threshold"], 0.8)
     if isinstance(claim_merge, dict):
         if claim_merge.get("dedupe_strategy"):
             rules["dedupe_strategy"] = str(claim_merge["dedupe_strategy"])

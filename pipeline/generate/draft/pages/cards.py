@@ -71,7 +71,9 @@ def _history_sections_from_pool(
     *,
     evidence_rows: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    pool = history_pool or select_history_pool(_iter_evidence_items(evidence_rows, {"history_digest"}))
+    pool = history_pool or select_history_pool(
+        _iter_evidence_items(evidence_rows, {"history_digest"})
+    )
     cap = history_section_cap(pool) or MIN_HISTORY_SECTIONS
     draft_pool = cap_history_pool(pool, cap)
     sections, used = fallback_history_sections(draft_pool, max_sections=cap)
@@ -101,7 +103,9 @@ def _finalize_history_sections(
         if lint_history_sections(sections, max_sections=lint_cap) or _sections_trip_gate(sections):
             sections, used = [], []
     if not sections:
-        pool_sections, pool_used = _history_sections_from_pool(history_pool, evidence_rows=evidence_rows)
+        pool_sections, pool_used = _history_sections_from_pool(
+            history_pool, evidence_rows=evidence_rows
+        )
         if pool_sections:
             kept_sections = [
                 section
@@ -211,7 +215,9 @@ def build_major_factions(
     faction_profile_targets: list[dict[str, Any]] | None = None,
     instance_name: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, str]]]]:
-    subregion_tokens = extract_subregion_tokens(pools.get("location_seed_pool", []), zone_name=zone_name)
+    subregion_tokens = extract_subregion_tokens(
+        pools.get("location_seed_pool", []), zone_name=zone_name
+    )
     candidates = collect_faction_candidates(
         zone_id=zone_id,
         evidence_rows=evidence_rows,
@@ -293,7 +299,9 @@ def _finalize_location_card(
         summary = ensure_location_sentence_terminator(summary)
         if (
             summary
-            and not lint_location_summary(summary, zone_name=zone_name, location_name=candidate.name)
+            and not lint_location_summary(
+                summary, zone_name=zone_name, location_name=candidate.name
+            )
             and not prose_gate_rejects(summary)
         ):
             return (

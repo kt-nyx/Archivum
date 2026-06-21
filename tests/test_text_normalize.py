@@ -27,7 +27,10 @@ def test_clean_wiki_snippet_fixes_link_artifacts(raw: str, expected: str) -> Non
 
 
 def test_clean_wiki_snippet_strips_citations_and_entities() -> None:
-    assert clean_wiki_snippet("Andorhal[1] &amp; the plague , spread.") == "Andorhal & the plague, spread."
+    assert (
+        clean_wiki_snippet("Andorhal[1] &amp; the plague , spread.")
+        == "Andorhal & the plague, spread."
+    )
 
 
 def test_clean_wiki_snippet_handles_empty() -> None:

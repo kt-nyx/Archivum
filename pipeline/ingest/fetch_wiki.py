@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlunparse
 
 import httpx
@@ -190,6 +190,11 @@ class SourceSnapshot(TypedDict):
     parent_zone_id: str
     requested_revision_id: str
     priority: int
+    # Set only for storyline pages (see the auxiliary-role snapshot enrichment below).
+    auxiliary_role: NotRequired[str]
+    auxiliary_target_id: NotRequired[str]
+    parse_html: NotRequired[str]
+    parse_html_truncated: NotRequired[bool]
 
 
 class ValidatedManifestRow(TypedDict):
@@ -308,9 +313,7 @@ def _validate_manifest_row(row: dict[str, Any], index: int) -> ValidatedManifest
             row.get("revision_id", row.get("requested_revision_id", ""))
         ).strip(),
         "priority": (
-            normalized_priority
-            if normalized_priority is not None
-            else _fallback_priority(index)
+            normalized_priority if normalized_priority is not None else _fallback_priority(index)
         ),
     }
 
@@ -486,8 +489,7 @@ def _fetch_mediawiki_via_parse_api(
     wiki_prefix = "/wiki/"
     if not parsed.path.startswith(wiki_prefix):
         raise RuntimeError(
-            "mediawiki ingest expected article path starting with "
-            f"{wiki_prefix!r}, got {url!r}"
+            f"mediawiki ingest expected article path starting with {wiki_prefix!r}, got {url!r}"
         )
     title = unquote(parsed.path[len(wiki_prefix) :])
     if not title.strip():
@@ -568,9 +570,7 @@ def _fetch_url_text(
     # retried and propagate unchanged.
     try:
         if use_parse_api:
-            return _fetch_mediawiki_via_parse_api(
-                url, profile, include_parsetree=include_parsetree
-            )
+            return _fetch_mediawiki_via_parse_api(url, profile, include_parsetree=include_parsetree)
         html = http.get_text(
             url,
             headers={"User-Agent": _INGEST_USER_AGENT},

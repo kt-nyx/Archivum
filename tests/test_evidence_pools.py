@@ -1,17 +1,10 @@
 from __future__ import annotations
 
-
-
 from pipeline.discovery.enrich import _build_evidence_packs
-
-
 
 ZONE_ID = "zone-example"
 
 ZONE_NAME = "Example Zone"
-
-
-
 
 
 def _example_zone_snapshots() -> list[dict]:
@@ -19,109 +12,75 @@ def _example_zone_snapshots() -> list[dict]:
     seed_blocks = []
 
     for index in range(40):
-
         seed_blocks.append(
-
             {
-
                 "section_role": "history",
-
                 "text": f"Historical arc detail paragraph {index} about reclamation and crusader campaigns.",
-
             }
-
         )
 
     seed_blocks.append({"section_role": "lead", "text": "Example Zone overview lead paragraph."})
 
-    seed_blocks.append({"section_role": "lead", "text": "Second lead paragraph for at-a-glance context."})
-
-    seed_blocks.append({"section_role": "quests_edit", "text": "Current quest activity around the capital district."})
-
     seed_blocks.append(
-
-        {"section_role": "cataclysm_edit", "text": "Cataclysm recovery efforts continue across the zone."}
-
+        {"section_role": "lead", "text": "Second lead paragraph for at-a-glance context."}
     )
 
-    seed_blocks.append({"section_role": "geography_edit", "text": "Geography should not appear in history digest."})
+    seed_blocks.append(
+        {
+            "section_role": "quests_edit",
+            "text": "Current quest activity around the capital district.",
+        }
+    )
 
+    seed_blocks.append(
+        {
+            "section_role": "cataclysm_edit",
+            "text": "Cataclysm recovery efforts continue across the zone.",
+        }
+    )
 
+    seed_blocks.append(
+        {"section_role": "geography_edit", "text": "Geography should not appear in history digest."}
+    )
 
     auxiliary_other_blocks = [
-
         {"section_role": "other", "text": f"Auxiliary noise snippet {index} from quest page fetch."}
-
         for index in range(60)
-
     ]
-
-
 
     return [
-
         {
-
             "entity_id": ZONE_ID,
-
             "entity_type": "zone",
-
             "name": ZONE_NAME,
-
             "source_id": "src-zone",
-
             "url": "https://warcraft.wiki.gg/wiki/Example_Zone",
-
             "section_blocks": seed_blocks,
-
             "auxiliary_role": "",
-
         },
-
         {
-
             "entity_id": ZONE_ID,
-
             "entity_type": "zone",
-
             "name": ZONE_NAME,
-
             "source_id": "src-storyline",
-
             "url": "https://warcraft.wiki.gg/wiki/Example_Zone_storyline",
-
-            "section_blocks": [{"section_role": "part_1", "text": "Storyline overview for the zone arc."}],
-
+            "section_blocks": [
+                {"section_role": "part_1", "text": "Storyline overview for the zone arc."}
+            ],
             "auxiliary_role": "storyline",
-
             "page_title": "Example Zone storyline",
-
         },
-
         {
-
             "entity_id": ZONE_ID,
-
             "entity_type": "zone",
-
             "name": ZONE_NAME,
-
             "source_id": "src-quest-1",
-
             "url": "https://warcraft.wiki.gg/wiki/Quest_Alpha",
-
             "section_blocks": auxiliary_other_blocks,
-
             "auxiliary_role": "quest",
-
             "page_title": "Quest Alpha",
-
         },
-
     ]
-
-
-
 
 
 def test_scoped_evidence_pools_exclude_auxiliary_other_from_prose_fields() -> None:
@@ -138,36 +97,18 @@ def test_scoped_evidence_pools_exclude_auxiliary_other_from_prose_fields() -> No
 
     assert "questline_pool" in field_names
 
-
-
     history_packs = [row for row in packs if row.get("field_name") == "history_digest"]
 
     assert history_packs
 
-    assert all(
-
-        (row.get("build_meta") or {}).get("source_kind") == "seed"
-
-        for row in history_packs
-
-    )
+    assert all((row.get("build_meta") or {}).get("source_kind") == "seed" for row in history_packs)
 
     assert all(
-
-        (row.get("build_meta") or {}).get("subject_zone_id") == ZONE_ID
-
-        for row in history_packs
-
+        (row.get("build_meta") or {}).get("subject_zone_id") == ZONE_ID for row in history_packs
     )
 
     history_snippets = [
-
-        item["snippet"]
-
-        for row in history_packs
-
-        for item in row.get("evidence_items", [])
-
+        item["snippet"] for row in history_packs for item in row.get("evidence_items", [])
     ]
 
     assert not any("Geography should not appear" in snippet for snippet in history_snippets)
@@ -177,18 +118,10 @@ def test_scoped_evidence_pools_exclude_auxiliary_other_from_prose_fields() -> No
     questline_packs = [row for row in packs if row.get("field_name") == "questline_pool"]
 
     questline_snippets = [
-
-        item["snippet"]
-
-        for row in questline_packs
-
-        for item in row.get("evidence_items", [])
-
+        item["snippet"] for row in questline_packs for item in row.get("evidence_items", [])
     ]
 
     assert not any("Auxiliary noise snippet" in snippet for snippet in questline_snippets)
-
-
 
     glance_packs = [row for row in packs if row.get("field_name") == "at_a_glance_input"]
 
@@ -198,26 +131,12 @@ def test_scoped_evidence_pools_exclude_auxiliary_other_from_prose_fields() -> No
 
     assert glance_items >= 42
 
-    assert all(
-
-        (row.get("build_meta") or {}).get("source_kind") == "seed"
-
-        for row in glance_packs
-
-    )
-
-
+    assert all((row.get("build_meta") or {}).get("source_kind") == "seed" for row in glance_packs)
 
     currently_packs = [row for row in packs if row.get("field_name") == "currently_input"]
 
     currently_snippets = [
-
-        item["snippet"]
-
-        for row in currently_packs
-
-        for item in row.get("evidence_items", [])
-
+        item["snippet"] for row in currently_packs for item in row.get("evidence_items", [])
     ]
 
     assert any("capital district" in snippet for snippet in currently_snippets)
@@ -234,7 +153,10 @@ def test_geography_input_and_rpg_exclusion() -> None:
             "source_id": "src-zone",
             "url": "https://warcraft.wiki.gg/wiki/Example_Zone",
             "section_blocks": [
-                {"section_role": "geography_edit", "text": "Example Zone sits on the Eastern Kingdoms continent."},
+                {
+                    "section_role": "geography_edit",
+                    "text": "Example Zone sits on the Eastern Kingdoms continent.",
+                },
                 {
                     "section_role": "in_the_rpg_geography_edit",
                     "text": "The Western Plaguelands is a flat country dotted with abandoned farms in Lordaeron.",
@@ -276,7 +198,6 @@ def test_geography_input_and_rpg_exclusion() -> None:
 
 
 def test_at_a_glance_pool_scoped() -> None:
-
     """Canvas Slice 1 alias: at_a_glance_input stays seed-scoped and capped."""
 
     test_scoped_evidence_pools_exclude_auxiliary_other_from_prose_fields()
@@ -295,7 +216,10 @@ def test_quest_lore_evidence_fields() -> None:
             "cluster_id": "cluster-alpha",
             "quest_node_id": "quest-alpha",
             "quest_lore_blocks": [
-                {"section_role": "description", "text": "Alpha quest narrative about reclaiming the district."}
+                {
+                    "section_role": "description",
+                    "text": "Alpha quest narrative about reclaiming the district.",
+                }
             ],
             "section_blocks": [],
         }
@@ -390,8 +314,14 @@ def test_instance_seed_evidence_fields() -> None:
             "source_id": "src-instance",
             "url": "https://warcraft.wiki.gg/wiki/Example_Instance",
             "section_blocks": [
-                {"section_role": "lead", "text": "Example Instance lead paragraph for at-a-glance."},
-                {"section_role": "history", "text": "Historical arc about the academy beneath the blighted hills."},
+                {
+                    "section_role": "lead",
+                    "text": "Example Instance lead paragraph for at-a-glance.",
+                },
+                {
+                    "section_role": "history",
+                    "text": "Historical arc about the academy beneath the blighted hills.",
+                },
                 {
                     "section_role": "adventurers",
                     "text": "Bosses include /wiki/Archivist_Maelor and /wiki/Warden_Voss.",
@@ -419,7 +349,10 @@ def test_instance_lore_routes_to_instance_lore_pool() -> None:
             "source_id": "src-instance-lore",
             "url": "https://warcraft.wiki.gg/wiki/Example_Instance_(lore)",
             "section_blocks": [
-                {"section_role": "history", "text": "Lore page history about the academy's founding era."}
+                {
+                    "section_role": "history",
+                    "text": "Lore page history about the academy's founding era.",
+                }
             ],
             "auxiliary_role": "instance_lore",
             "auxiliary_target_id": INSTANCE_ID,
@@ -431,4 +364,3 @@ def test_instance_lore_routes_to_instance_lore_pool() -> None:
     assert lore_packs
     build_meta = lore_packs[0].get("build_meta") or {}
     assert build_meta.get("instance_id") == INSTANCE_ID
-

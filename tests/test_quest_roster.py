@@ -4,7 +4,9 @@ from pathlib import Path
 
 from pipeline.discovery.quest_roster import build_quest_roster, category_quest_links
 
-STORYLINE_HTML = Path("tests/fixtures/storyline/western_plaguelands_storyline.html").read_text(encoding="utf-8")
+STORYLINE_HTML = Path("tests/fixtures/storyline/western_plaguelands_storyline.html").read_text(
+    encoding="utf-8"
+)
 ZONE_ID = "zone-western-plaguelands"
 ZONE_NAME = "Western Plaguelands"
 

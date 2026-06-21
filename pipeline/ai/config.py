@@ -146,9 +146,7 @@ def load_ai_settings() -> AISettings:
         openai_verbosity=_optional_env_strip("OPENAI_VERBOSITY"),
         openai_draft_reasoning_effort=_optional_env_strip("OPENAI_DRAFT_REASONING_EFFORT"),
         openai_draft_verbosity=_optional_env_strip("OPENAI_DRAFT_VERBOSITY"),
-        openai_use_responses_api=os.getenv("OPENAI_USE_RESPONSES_API", "")
-        .strip()
-        .lower()
+        openai_use_responses_api=os.getenv("OPENAI_USE_RESPONSES_API", "").strip().lower()
         in {"1", "true", "yes", "on"},
         openai_request_timeout_seconds=_openai_timeout_seconds_from_env(),
         google_api_key=os.getenv("GOOGLE_API_KEY", ""),

@@ -53,15 +53,34 @@ def test_is_named_history_section() -> None:
 
 
 def test_is_simile_continent_mention() -> None:
-    assert is_simile_continent_mention("Just as in Northrend, the cold preserved the dead.", "Northrend")
-    assert not is_simile_continent_mention("Western Plaguelands lies in northern Lordaeron.", "Northrend")
+    assert is_simile_continent_mention(
+        "Just as in Northrend, the cold preserved the dead.", "Northrend"
+    )
+    assert not is_simile_continent_mention(
+        "Western Plaguelands lies in northern Lordaeron.", "Northrend"
+    )
 
 
 def test_trailing_named_section_items() -> None:
     items = [
-        {"raw_section_role": "history_edit", "block_index": 1, "source_id": "src", "snippet": "early"},
-        {"raw_section_role": "cataclysm_edit", "block_index": 2, "source_id": "src", "snippet": "cata"},
-        {"raw_section_role": "battle_for_azeroth", "block_index": 3, "source_id": "src", "snippet": "bfa"},
+        {
+            "raw_section_role": "history_edit",
+            "block_index": 1,
+            "source_id": "src",
+            "snippet": "early",
+        },
+        {
+            "raw_section_role": "cataclysm_edit",
+            "block_index": 2,
+            "source_id": "src",
+            "snippet": "cata",
+        },
+        {
+            "raw_section_role": "battle_for_azeroth",
+            "block_index": 3,
+            "source_id": "src",
+            "snippet": "bfa",
+        },
     ]
     trailing = trailing_named_section_items(items, max_groups=2)
     assert len(trailing) == 2

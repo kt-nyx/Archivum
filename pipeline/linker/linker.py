@@ -376,7 +376,9 @@ def _pointer_for_section(draft: dict[str, Any], section_name: str) -> dict[str, 
                     return pointer
         return None
 
-    card_match = re.match(r"(major_factions|location_cards|instance_links|key_characters)\[(\d+)\]", section_name)
+    card_match = re.match(
+        r"(major_factions|location_cards|instance_links|key_characters)\[(\d+)\]", section_name
+    )
     if card_match:
         field_name = card_match.group(1)
         index = int(card_match.group(2)) - 1
@@ -401,7 +403,11 @@ def _pointer_for_section(draft: dict[str, Any], section_name: str) -> dict[str, 
         section_name = "story_context"
     elif section_name == "at_a_glance":
         provenance = draft.get("provenance")
-        if isinstance(provenance, dict) and not provenance.get("at_a_glance") and provenance.get("identity_header"):
+        if (
+            isinstance(provenance, dict)
+            and not provenance.get("at_a_glance")
+            and provenance.get("identity_header")
+        ):
             section_name = "identity_header"
 
     provenance = draft.get("provenance")
@@ -669,7 +675,11 @@ def run_glossary_linker(
                         glossary_map[term_id] = [pointer]
                 provenance["glossary"] = glossary_map
                 draft["provenance"] = provenance
-                output = [term_id for term_id in output if term_id in glossary_map and glossary_map[term_id]]
+                output = [
+                    term_id
+                    for term_id in output
+                    if term_id in glossary_map and glossary_map[term_id]
+                ]
                 density = (len(output) * 100.0 / words) if words else 0.0
         glossary_payload = [_glossary_ref_payload(term_id, term_metadata) for term_id in output]
         if entity_type in {"zone_page", "instance_page"}:

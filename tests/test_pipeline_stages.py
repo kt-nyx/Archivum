@@ -21,7 +21,9 @@ from pipeline.orchestrator.stages import (
 )
 from tests.draft_llm_mocks import fake_draft_chat_by_schema
 
-STORYLINE_HTML = Path("tests/fixtures/storyline/western_plaguelands_storyline.html").read_text(encoding="utf-8")
+STORYLINE_HTML = Path("tests/fixtures/storyline/western_plaguelands_storyline.html").read_text(
+    encoding="utf-8"
+)
 
 # Minimal Questbox parse tree so quest fetches yield a structured QuestRecord.
 QUEST_PARSETREE = (
@@ -77,9 +79,18 @@ def _mock_generation_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
             )
         section_blocks = [
             {"section_role": "lead", "text": "Lead evidence."},
-            {"section_role": "history", "text": "Historical arc about the capital district and undead forces."},
-            {"section_role": "quests_edit", "text": "Current quest activity around the capital district."},
-            {"section_role": "cataclysm_edit", "text": "Cataclysm recovery efforts continue across the zone."},
+            {
+                "section_role": "history",
+                "text": "Historical arc about the capital district and undead forces.",
+            },
+            {
+                "section_role": "quests_edit",
+                "text": "Current quest activity around the capital district.",
+            },
+            {
+                "section_role": "cataclysm_edit",
+                "text": "Cataclysm recovery efforts continue across the zone.",
+            },
         ]
         base = (
             f"{source_class} source evidence for {url} with campaign chronology and factions.",
@@ -87,7 +98,13 @@ def _mock_generation_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
             "section:lead paragraph:1",
             section_blocks,
             ["/wiki/Example_Zone_storyline"],
-            [{"href": "/wiki/Example_Zone_storyline", "section_role": "quests", "label": "storyline"}],
+            [
+                {
+                    "href": "/wiki/Example_Zone_storyline",
+                    "section_role": "quests",
+                    "label": "storyline",
+                }
+            ],
             "",
         )
         if include_parsetree:
@@ -173,7 +190,9 @@ def test_wiki_first_stage_chain_includes_discovery_and_enrich(
     discovery_outputs = run_discovery_stage(context, ingest_output["source_manifest_path"])
     assert discovery_outputs
     questline_seed = json.loads(
-        (context.data_dir / "decisions" / "questline_inclusion_decisions.json").read_text(encoding="utf-8")
+        (context.data_dir / "decisions" / "questline_inclusion_decisions.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert questline_seed == []
 
@@ -194,9 +213,7 @@ def test_wiki_first_stage_chain_includes_discovery_and_enrich(
     assert enrich_graph["zone_quest_graph_v3"].exists()
     v3_rows = json.loads(enrich_graph["zone_quest_graph_v3"].read_text(encoding="utf-8"))
     quest_titles = {
-        str(row.get("title", "")).lower()
-        for row in v3_rows
-        if row.get("node_type") == "quest"
+        str(row.get("title", "")).lower() for row in v3_rows if row.get("node_type") == "quest"
     }
     assert "the endless flow" in quest_titles
     assert "into the woods" not in quest_titles
@@ -237,17 +254,13 @@ def test_wiki_first_stage_chain_includes_discovery_and_enrich(
     decisions = json.loads(
         significance_outputs["questline_inclusion_decisions"].read_text(encoding="utf-8")
     )
-    cluster_decisions = [
-        row for row in decisions if row.get("subject_type") == "questline_cluster"
-    ]
+    cluster_decisions = [row for row in decisions if row.get("subject_type") == "questline_cluster"]
     assert cluster_decisions
     assert any(row.get("final_decision") == "include" for row in cluster_decisions)
 
     clustered_v3 = json.loads(cluster_outputs["zone_quest_graph_v3"].read_text(encoding="utf-8"))
     quest_cluster_ids = {
-        str(row.get("cluster_id", ""))
-        for row in clustered_v3
-        if row.get("node_type") == "quest"
+        str(row.get("cluster_id", "")) for row in clustered_v3 if row.get("node_type") == "quest"
     }
     assert "unclustered" not in quest_cluster_ids
     assert len(quest_cluster_ids) >= 2

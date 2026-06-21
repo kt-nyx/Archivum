@@ -229,7 +229,11 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(
                 }
             ],
             "constraints": {"max_tokens": 1200, "forbidden_extrapolation": True},
-            "build_meta": {"run_id": context.run_id, "source_id": "src-instance", "source_kind": "seed"},
+            "build_meta": {
+                "run_id": context.run_id,
+                "source_id": "src-instance",
+                "source_kind": "seed",
+            },
         },
         {
             "subject_id": "instance-scholomance",
@@ -256,7 +260,11 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(
                 }
             ],
             "constraints": {"max_tokens": 1200, "forbidden_extrapolation": True},
-            "build_meta": {"run_id": context.run_id, "source_id": "src-instance", "source_kind": "seed"},
+            "build_meta": {
+                "run_id": context.run_id,
+                "source_id": "src-instance",
+                "source_kind": "seed",
+            },
         },
         {
             "subject_id": "instance-scholomance",
@@ -274,7 +282,11 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(
                 }
             ],
             "constraints": {"max_tokens": 1200, "forbidden_extrapolation": True},
-            "build_meta": {"run_id": context.run_id, "source_id": "src-instance", "source_kind": "seed"},
+            "build_meta": {
+                "run_id": context.run_id,
+                "source_id": "src-instance",
+                "source_kind": "seed",
+            },
         },
     ]
     (evidence_dir / "evidence_packs.jsonl").write_text(
@@ -412,7 +424,9 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(
         encoding="utf-8",
     )
 
-    outputs = run_draft_writer(context, [zone_fact_path, instance_fact_path], max_entity_concurrency=1)
+    outputs = run_draft_writer(
+        context, [zone_fact_path, instance_fact_path], max_entity_concurrency=1
+    )
     assert len(outputs) == 2
     zone_output = next(path for path in outputs if path.parent.name == "zone_page")
     instance_output = next(path for path in outputs if path.parent.name == "instance_page")

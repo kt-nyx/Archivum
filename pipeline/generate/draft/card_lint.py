@@ -7,7 +7,9 @@ import re
 from pipeline.generate.draft.prose_lint import word_count
 
 MAX_CTA_HOOK_WORDS = 35
-_TRAILING_FRAGMENT_RE = re.compile(r"\b(and|or|but|with|for|to|the|a|an|in|on|at|of)\.?$", re.IGNORECASE)
+_TRAILING_FRAGMENT_RE = re.compile(
+    r"\b(and|or|but|with|for|to|the|a|an|in|on|at|of)\.?$", re.IGNORECASE
+)
 # A token-chop can land on a possessive/content word ("the Warchief's") that the stop-word
 # list above misses; flag a trailing possessive with no following noun as truncated too.
 _TRAILING_POSSESSIVE_RE = re.compile(r"\b[\w]+'s\.?$", re.IGNORECASE)
@@ -76,6 +78,8 @@ def strip_zone_name_from_cta(text: str, *, zone_name: str) -> str:
     stripped = re.sub(r"\s{2,}", " ", stripped)
     stripped = re.sub(r"\s+,", ",", stripped)
     stripped = re.sub(r"\(\s*\)", "", stripped)
-    stripped = re.sub(r"\bin the\s+(?=and\b|where\b|to\b|help\b)", " ", stripped, flags=re.IGNORECASE)
+    stripped = re.sub(
+        r"\bin the\s+(?=and\b|where\b|to\b|help\b)", " ", stripped, flags=re.IGNORECASE
+    )
     stripped = re.sub(r"\s+\.", ".", stripped)
     return stripped.strip(" ,;")

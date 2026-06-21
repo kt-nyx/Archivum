@@ -401,7 +401,9 @@ def build_run_terms(context: RunContext) -> Path:
         for draft_path in sorted(draft_dir.glob("*.json")):
             draft = _load_json(draft_path)
             if isinstance(draft, dict):
-                _collect_from_draft(draft, draft_kind=draft_dir_name, ingest_urls=ingest_urls, acc=acc)
+                _collect_from_draft(
+                    draft, draft_kind=draft_dir_name, ingest_urls=ingest_urls, acc=acc
+                )
 
     _collect_from_snapshots(snapshots, acc)
 

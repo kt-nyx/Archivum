@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import os
-
+from pipeline.generate.draft.pages import build_zone_page
 from pipeline.generate.draft.prose_lint import (
     MAX_AT_A_GLANCE_WORDS,
     lint_at_a_glance,
@@ -9,7 +8,6 @@ from pipeline.generate.draft.prose_lint import (
     lint_history_sections,
     word_count,
 )
-from pipeline.generate.draft.pages import build_zone_page
 
 
 def _fact_pack(zone_id: str) -> dict[str, object]:
@@ -44,7 +42,11 @@ def _prose_evidence(zone_id: str) -> list[dict[str, object]]:
                     "section_role": "history",
                 },
             ],
-            "build_meta": {"source_id": "src-zone", "subject_zone_id": zone_id, "section_role": "lead"},
+            "build_meta": {
+                "source_id": "src-zone",
+                "subject_zone_id": zone_id,
+                "section_role": "lead",
+            },
         },
         {
             "subject_id": zone_id,
@@ -59,7 +61,11 @@ def _prose_evidence(zone_id: str) -> list[dict[str, object]]:
                     "section_role": "cataclysm_edit",
                 }
             ],
-            "build_meta": {"source_id": "src-zone", "subject_zone_id": zone_id, "section_role": "cataclysm_edit"},
+            "build_meta": {
+                "source_id": "src-zone",
+                "subject_zone_id": zone_id,
+                "section_role": "cataclysm_edit",
+            },
         },
         {
             "subject_id": zone_id,
@@ -91,7 +97,11 @@ def _prose_evidence(zone_id: str) -> list[dict[str, object]]:
                     "section_role": "cataclysm_edit",
                 },
             ],
-            "build_meta": {"source_id": "src-zone", "subject_zone_id": zone_id, "section_role": "history"},
+            "build_meta": {
+                "source_id": "src-zone",
+                "subject_zone_id": zone_id,
+                "section_role": "history",
+            },
         },
     ]
 

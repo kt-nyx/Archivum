@@ -91,7 +91,10 @@ def build_zone_questline_card_metadata(
                     break
         if registry_arc_id:
             mapped_registry_count += 1
-        if any(keyword in start_anchor.lower() for keyword in ("hero's call", "warchief", "new era", "audience")):
+        if any(
+            keyword in start_anchor.lower()
+            for keyword in ("hero's call", "warchief", "new era", "audience")
+        ):
             entry_anchor_count += 1
         metadata_rows.append(
             {

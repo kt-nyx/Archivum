@@ -1,13 +1,26 @@
 from __future__ import annotations
 
-from pipeline.discovery.quest_lore import build_quest_lore_record, extract_quest_lore, lore_word_count
+from pipeline.discovery.quest_lore import (
+    build_quest_lore_record,
+    extract_quest_lore,
+    lore_word_count,
+)
 
 
 def test_extract_quest_lore_includes_description_and_objectives() -> None:
     blocks = [
-        {"section_role": "description", "text": "The crusaders need help reclaiming the ruined district from undead forces."},
-        {"section_role": "objectives", "text": "Speak with the quartermaster and recover the sealed orders from the crypt."},
-        {"section_role": "rewards", "text": "You will receive: 15 silver, 250 reputation, Item Link x1."},
+        {
+            "section_role": "description",
+            "text": "The crusaders need help reclaiming the ruined district from undead forces.",
+        },
+        {
+            "section_role": "objectives",
+            "text": "Speak with the quartermaster and recover the sealed orders from the crypt.",
+        },
+        {
+            "section_role": "rewards",
+            "text": "You will receive: 15 silver, 250 reputation, Item Link x1.",
+        },
     ]
     snippets = extract_quest_lore(blocks)
     roles = {row["section_role"] for row in snippets}
@@ -39,7 +52,10 @@ def test_extract_quest_lore_does_not_fallback_to_non_narrative_sections() -> Non
 
 def test_build_quest_lore_record_shape() -> None:
     blocks = [
-        {"section_role": "lead", "text": "A messenger arrives with urgent news about the front lines."},
+        {
+            "section_role": "lead",
+            "text": "A messenger arrives with urgent news about the front lines.",
+        },
     ]
     record = build_quest_lore_record(
         zone_id="zone-example",

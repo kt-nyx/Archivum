@@ -10,7 +10,6 @@ from pipeline.generate.draft.prose_lint import (
     trim_words,
     word_count,
 )
-from pipeline.generate.draft.location_scoring import extract_subregion_tokens
 
 MIN_FACTION_SUMMARY_WORDS = 12
 MAX_FACTION_SUMMARY_WORDS = 40
@@ -95,10 +94,14 @@ def lint_faction_summary(
     if words >= MIN_FACTION_SUMMARY_WORDS and not has_zone_role_framing(cleaned):
         issues.append("faction summary lacks zone role framing")
     tokens = subregion_tokens or []
-    if zone_name and words >= MIN_FACTION_SUMMARY_WORDS and not summary_has_zone_anchor(
-        cleaned,
-        zone_name=zone_name,
-        subregion_tokens=tokens,
+    if (
+        zone_name
+        and words >= MIN_FACTION_SUMMARY_WORDS
+        and not summary_has_zone_anchor(
+            cleaned,
+            zone_name=zone_name,
+            subregion_tokens=tokens,
+        )
     ):
         issues.append("faction summary lacks zone or subregion anchor")
     return issues

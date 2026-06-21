@@ -59,9 +59,7 @@ _EXPANSION_BOILERPLATE_RE = re.compile(
     re.IGNORECASE,
 )
 
-_SIMILE_CONTINENT_RE_TEMPLATE = (
-    r"\b(?:as|like|just as|similar to)\s+(?:in|to)\s+{continent}\b"
-)
+_SIMILE_CONTINENT_RE_TEMPLATE = r"\b(?:as|like|just as|similar to)\s+(?:in|to)\s+{continent}\b"
 
 
 def is_rpg_section(raw_section_role: str) -> bool:
@@ -116,6 +114,8 @@ def _item_block_index(item: dict[str, Any]) -> int:
     value = item.get("block_index")
     if isinstance(value, int):
         return value
+    if value is None:
+        return 0
     try:
         return int(value)
     except (TypeError, ValueError):

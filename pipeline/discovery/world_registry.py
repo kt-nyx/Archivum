@@ -25,7 +25,10 @@ _META_TITLE_RE = re.compile(
     re.IGNORECASE,
 )
 _JUNK_HEX_TITLE_RE = re.compile(r"^\(0x[0-9a-f]+\)$", re.IGNORECASE)
-_CLASSIC_SUFFIX_RE = re.compile(r"\s+\((Classic|Burning Crusade|Wrath of the Lich King|Mists of Pandaria|Warlords of Draenor|Legion|Battle for Azeroth|Shadowlands|Dragonflight|The War Within)\)$", re.I)
+_CLASSIC_SUFFIX_RE = re.compile(
+    r"\s+\((Classic|Burning Crusade|Wrath of the Lich King|Mists of Pandaria|Warlords of Draenor|Legion|Battle for Azeroth|Shadowlands|Dragonflight|The War Within)\)$",
+    re.I,
+)
 
 EntryKind = Literal[
     "zone",

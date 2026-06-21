@@ -99,13 +99,17 @@ def load_validation_run_resources(run_root: Path) -> ValidationRunResources:
         entity_id: sorted(reasons) for entity_id, reasons in fact_check_target_reasons.items()
     }
 
-    questline_decisions_path = run_root / "data" / "decisions" / "questline_inclusion_decisions.json"
+    questline_decisions_path = (
+        run_root / "data" / "decisions" / "questline_inclusion_decisions.json"
+    )
     if questline_decisions_path.exists():
         blob = json.loads(questline_decisions_path.read_text(encoding="utf-8"))
         if isinstance(blob, list):
             resources.questline_decisions = [row for row in blob if isinstance(row, dict)]
 
-    location_decisions_path = run_root / "data" / "decisions" / "location_significance_decisions.json"
+    location_decisions_path = (
+        run_root / "data" / "decisions" / "location_significance_decisions.json"
+    )
     if location_decisions_path.exists():
         blob = json.loads(location_decisions_path.read_text(encoding="utf-8"))
         if isinstance(blob, list):
@@ -153,7 +157,8 @@ def wiki_first_entity_flags(
     questline_card_metadata_by_cluster = {
         str(row.get("cluster_id", "")).strip(): row
         for row in questline_card_metadata
-        if str(row.get("zone_id", "")).strip() == entity_id and str(row.get("cluster_id", "")).strip()
+        if str(row.get("zone_id", "")).strip() == entity_id
+        and str(row.get("cluster_id", "")).strip()
     }
     questline_excluded_cluster_ids = [
         str(row.get("subject_id", "")).strip()
@@ -164,7 +169,8 @@ def wiki_first_entity_flags(
         in {"", entity_id}
     ]
     return {
-        "questline_expect_include": str((questline_row or {}).get("final_decision", "")) == "include",
+        "questline_expect_include": str((questline_row or {}).get("final_decision", ""))
+        == "include",
         "location_expect_card_count": location_include_count,
         "questline_included_cluster_ids": questline_included_cluster_ids,
         "questline_card_metadata_by_cluster": questline_card_metadata_by_cluster,

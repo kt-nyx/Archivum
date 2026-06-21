@@ -195,10 +195,7 @@ def collect_faction_candidates(
         target = target_map.get(faction_id, {})
         meta = discovered.get(faction_id, {})
         name = str(
-            target.get("name")
-            or meta.get("name")
-            or v3_discovered.get(faction_id)
-            or ""
+            target.get("name") or meta.get("name") or v3_discovered.get(faction_id) or ""
         ).strip()
         if not name:
             name = faction_id.removeprefix("faction-").replace("-", " ").title()
@@ -215,9 +212,7 @@ def collect_faction_candidates(
             )
         ]
         seed_mentions = [
-            item
-            for item in faction_role_pool
-            if _name_in_text(name, str(item.get("snippet", "")))
+            item for item in faction_role_pool if _name_in_text(name, str(item.get("snippet", "")))
         ]
 
         candidates.append(
@@ -286,7 +281,9 @@ def score_faction_candidate(
             continue
         role = _normalize_role(str(item.get("section_role", "")))
         field_name = str(item.get("field_name", ""))
-        zone_hit = _name_in_text(zone_name, snippet) or any(_name_in_text(token, snippet) for token in tokens)
+        zone_hit = _name_in_text(zone_name, snippet) or any(
+            _name_in_text(token, snippet) for token in tokens
+        )
         if _is_high_weight_seed_item(item):
             score += 3.0 + (1.5 if zone_hit else 0.0)
             has_high = True
@@ -353,8 +350,14 @@ def select_major_factions(
     zone_name: str = "",
     subregion_tokens: list[str] | None = None,
 ) -> list[FactionCandidate]:
-    ranked = rank_faction_candidates(candidates, zone_name=zone_name, subregion_tokens=subregion_tokens)
-    eligible = [candidate for candidate in ranked if candidate.score >= MIN_SCORE and not candidate.lede_only]
+    ranked = rank_faction_candidates(
+        candidates, zone_name=zone_name, subregion_tokens=subregion_tokens
+    )
+    eligible = [
+        candidate
+        for candidate in ranked
+        if candidate.score >= MIN_SCORE and not candidate.lede_only
+    ]
     if not eligible:
         thin = [candidate for candidate in ranked if _candidate_is_finalize_eligible(candidate)]
         return thin[:MAX_FACTION_CARDS]
@@ -369,8 +372,12 @@ def candidates_for_finalize(
     zone_name: str = "",
     subregion_tokens: list[str] | None = None,
 ) -> tuple[int, list[FactionCandidate]]:
-    ranked = rank_faction_candidates(candidates, zone_name=zone_name, subregion_tokens=subregion_tokens)
-    target_count = len(select_major_factions(candidates, zone_name=zone_name, subregion_tokens=subregion_tokens))
+    ranked = rank_faction_candidates(
+        candidates, zone_name=zone_name, subregion_tokens=subregion_tokens
+    )
+    target_count = len(
+        select_major_factions(candidates, zone_name=zone_name, subregion_tokens=subregion_tokens)
+    )
     has_eligible = any(
         candidate.score >= MIN_SCORE and not candidate.lede_only for candidate in ranked
     )
@@ -411,7 +418,9 @@ def fallback_faction_summary(
 
     def _zone_rank(item: dict[str, Any]) -> tuple[int, int]:
         snippet = str(item.get("snippet", ""))
-        zone_hit = _name_in_text(zone_name, snippet) or any(_name_in_text(token, snippet) for token in tokens)
+        zone_hit = _name_in_text(zone_name, snippet) or any(
+            _name_in_text(token, snippet) for token in tokens
+        )
         return (1 if zone_hit else 0, word_count(snippet))
 
     ranked = sorted(items, key=_zone_rank, reverse=True)

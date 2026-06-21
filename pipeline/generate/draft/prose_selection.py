@@ -91,9 +91,7 @@ def classify_lore_relevance_llm(
             "type": "object",
             "additionalProperties": False,
             "required": ["relevance"],
-            "properties": {
-                "relevance": {"type": "string", "enum": list(_LORE_RELEVANCE_VALUES)}
-            },
+            "properties": {"relevance": {"type": "string", "enum": list(_LORE_RELEVANCE_VALUES)}},
         },
         system_prompt=(
             f"You are deciding whether the wiki page '{page_title}' provides lore that is "
@@ -221,9 +219,7 @@ def select_key_characters_from_pool(
 
     exclude_keys = {normalize_title(name) for name in (exclude_names or [])}
     prompt_pool = [
-        candidate
-        for candidate in pool
-        if normalize_title(candidate.name) not in exclude_keys
+        candidate for candidate in pool if normalize_title(candidate.name) not in exclude_keys
     ]
     if not prompt_pool:
         return []
@@ -271,7 +267,9 @@ def select_key_characters_from_narrative(
     so it can never invent a character without a backing wiki link. Offline / no
     LLM falls back to the deterministic ranking already applied by the miner.
     """
-    names = [str(row.get("name", "")).strip() for row in candidates if str(row.get("name", "")).strip()]
+    names = [
+        str(row.get("name", "")).strip() for row in candidates if str(row.get("name", "")).strip()
+    ]
     if not names:
         return []
 
@@ -288,7 +286,8 @@ def select_key_characters_from_narrative(
             "provided names; never invent names. Order by narrative importance. Exclude factions, "
             f"organizations, locations, and items. Return at most {max_count} names."
         ),
-        user_prompt="Candidate names:\n" + "\n".join(f"- {name}" for name in names)
+        user_prompt="Candidate names:\n"
+        + "\n".join(f"- {name}" for name in names)
         + (f"\n\nContext:\n{clean_wiki_snippet(narrative_text)}" if narrative_text.strip() else ""),
         response_schema_name="wiki_first_narrative_character_selection",
         substep="wiki_first_narrative_character_selection",

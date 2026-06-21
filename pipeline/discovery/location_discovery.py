@@ -134,7 +134,11 @@ def build_zone_seed_text(snapshots: list[dict[str, Any]], zone_id: str) -> str:
         for block in section_blocks:
             if not isinstance(block, dict):
                 continue
-            raw_role = re.sub(r"\s+", " ", str(block.get("section_role", "")).strip()).lower().replace(" ", "_")
+            raw_role = (
+                re.sub(r"\s+", " ", str(block.get("section_role", "")).strip())
+                .lower()
+                .replace(" ", "_")
+            )
             if raw_role not in seed_roles and "history" not in raw_role:
                 continue
             snippet = clean_wiki_snippet(str(block.get("text", "")))
@@ -171,7 +175,11 @@ def build_location_decision_row(
         "hard_reject": bool(hard_reject_reasons),
         "hard_reject_reasons": hard_reject_reasons,
         "score": score,
-        "thresholds": {"include_min": LOCATION_INCLUDE_MIN, "borderline_min": 0.45, "borderline_max": 0.65},
+        "thresholds": {
+            "include_min": LOCATION_INCLUDE_MIN,
+            "borderline_min": 0.45,
+            "borderline_max": 0.65,
+        },
         "borderline_adjudication": (
             {
                 "prompt_class": "location_significance_borderline",

@@ -14,10 +14,14 @@ ZONE_ID = "zone-western-plaguelands"
 
 
 def _load_wpl() -> tuple[list[dict], list[dict]]:
-    roster = json.loads((FIXTURE_DIR / "western_plaguelands_roster_v3.json").read_text(encoding="utf-8"))
+    roster = json.loads(
+        (FIXTURE_DIR / "western_plaguelands_roster_v3.json").read_text(encoding="utf-8")
+    )
     records = [
         json.loads(line)
-        for line in (FIXTURE_DIR / "western_plaguelands_quest_records.jsonl").read_text(encoding="utf-8").splitlines()
+        for line in (FIXTURE_DIR / "western_plaguelands_quest_records.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
         if line.strip()
     ]
     return roster, records
@@ -49,9 +53,7 @@ def test_criteria_breakdown_sums_to_inclusion_score() -> None:
             continue
         features = row.get("features") or {}
         criteria_sum = sum(
-            int(value)
-            for key, value in features.items()
-            if str(key).startswith("criterion_")
+            int(value) for key, value in features.items() if str(key).startswith("criterion_")
         )
         assert criteria_sum == int(features.get("inclusion_score", -1))
 

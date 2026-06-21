@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
+from pipeline.discovery.instance_bosses import BossCandidate
 from pipeline.generate.draft.instance_lint import lint_overview
-from pipeline.generate.draft.prose_lint import word_count
 from pipeline.generate.draft.pages import build_instance_page
 from pipeline.generate.draft.pages.key_characters import _finalize_key_characters
-from pipeline.discovery.instance_bosses import BossCandidate
+from pipeline.generate.draft.prose_lint import word_count
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "instance"
 
@@ -123,7 +122,9 @@ def test_instance_pools_do_not_use_zone_history(monkeypatch) -> None:
         {
             "subject_id": zone_id,
             "field_name": "history_digest",
-            "evidence_items": [{"snippet": "Zone-only history that must not appear in instance overview."}],
+            "evidence_items": [
+                {"snippet": "Zone-only history that must not appear in instance overview."}
+            ],
             "build_meta": {"source_id": "src-zone"},
         }
     ]
@@ -256,7 +257,11 @@ def test_build_instance_page_wires_scoped_links_and_parent_roles(monkeypatch) ->
             "entity_id": instance_id,
             "entity_type": "instance",
             "structured_links": [
-                {"href": "/wiki/Archivist_Maelor", "label": "Archivist Maelor", "section_role": "denizens"},
+                {
+                    "href": "/wiki/Archivist_Maelor",
+                    "label": "Archivist Maelor",
+                    "section_role": "denizens",
+                },
                 {"href": "/wiki/Patch_3.0.2", "label": "Patch 3.0.2", "section_role": "lead"},
             ],
         }

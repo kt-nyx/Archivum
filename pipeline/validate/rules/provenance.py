@@ -15,12 +15,12 @@ from pipeline.contracts.models import (
     Faction,
     GlossaryTerm,
     Instance,
+    InstancePage,
     SourceManifestEntry,
     SourcePointer,
     SubZone,
     Zone,
     ZonePage,
-    InstancePage,
 )
 from pipeline.validate.types import ValidationIssue, ValidationSeverity
 

@@ -32,9 +32,9 @@ def build_revision_index(
         sid = str(snapshot.get("source_id", "")).strip()
         if not sid:
             continue
-        revision_id = snapshot.get("revision_id")
-        if revision_id:
-            revision_map[sid] = str(revision_id)
+        snapshot_revision = snapshot.get("revision_id")
+        if snapshot_revision:
+            revision_map[sid] = str(snapshot_revision)
         url = snapshot.get("url")
         if url:
             source_urls[sid] = str(url)

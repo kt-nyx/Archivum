@@ -16,15 +16,15 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from pipeline.discovery.entity_typing import is_valid_quest_graph_link, normalize_title
+from pipeline.discovery.storyline_html import parse_storyline_html
+from pipeline.discovery.world_registry import entry_kinds
 from pipeline.validate.context import (
     build_entity_validation_context,
     load_validation_run_resources,
     resolve_draft_entity_id,
 )
 from pipeline.validate.engine import validate_payload
-from pipeline.discovery.entity_typing import is_valid_quest_graph_link, normalize_title
-from pipeline.discovery.storyline_html import parse_storyline_html
-from pipeline.discovery.world_registry import entry_kinds
 
 _GEOGRAPHY_KINDS = frozenset({"zone", "continent", "capital", "region", "instance"})
 _FILLER_RE = re.compile(r"\blocated in\b|\bis a zone\b|\bis located\b", re.IGNORECASE)
@@ -95,7 +95,8 @@ def _resolve_zone_target(run_root: Path, zone_id: str | None) -> tuple[Path, str
         return draft_path, resolved_id, zone_name
 
     _fail(
-        "could not resolve zone target: pass --zone-id or ensure the run has exactly one zone draft "
+        "could not resolve zone target: pass --zone-id or ensure the run has "
+        "exactly one zone draft "
         f"(found {len(draft_paths)} drafts, {len(zone_ids)} zone manifest rows)"
     )
 
@@ -199,12 +200,16 @@ def check_run(
                 link = f"/wiki/{link.replace(' ', '_')}"
             valid, reasons = is_valid_quest_graph_link(link, zone_name=zone_name)
             if not valid:
-                _fail(f"major_questlines wiki_ref denied by quest graph classifier: {link!r} ({reasons})")
+                _fail(
+                    f"major_questlines wiki_ref denied by quest graph classifier: {link!r} ({reasons})"
+                )
     cards = [row for row in draft.get("major_questlines", []) if isinstance(row, dict)]
     if len(cards) > _MAX_CLUSTER_CARDS:
         _fail(f"major_questlines exceeds cluster card cap ({len(cards)} > {_MAX_CLUSTER_CARDS})")
     card_titles = [str(row.get("title", "")).strip() for row in cards]
-    if len(cards) >= 2 and all(title.lower() == "main storylines" for title in card_titles if title):
+    if len(cards) >= 2 and all(
+        title.lower() == "main storylines" for title in card_titles if title
+    ):
         _fail("major_questlines cards all use generic Main storylines title")
 
     from pipeline.generate.draft.prose_lint import (
@@ -258,7 +263,11 @@ def check_run(
             row = json.loads(line)
             if not isinstance(row, dict):
                 continue
-            if str(row.get("field_name", "")) not in {"geography_input", "history_digest", "currently_input"}:
+            if str(row.get("field_name", "")) not in {
+                "geography_input",
+                "history_digest",
+                "currently_input",
+            }:
                 continue
             build_meta = row.get("build_meta") or {}
             if str(build_meta.get("subject_zone_id", row.get("subject_id", ""))).strip() not in {
@@ -311,6 +320,7 @@ def check_run(
 
     from pipeline.discovery.entity_typing import should_reject_location_title
     from pipeline.generate.draft.location_lint import lint_location_summary
+
     for card in location_cards:
         card_id = str(card.get("id", "")).strip()
         if not (card_id.startswith("location-") or card_id.startswith("loc-")):
@@ -326,13 +336,19 @@ def check_run(
             _fail(f"location_cards quality check failed for {card_id!r}: {issue}")
         reason_codes = [str(code) for code in (card.get("decision_reason_codes") or [])]
         if reason_codes == ["defer"] or (
-            "defer" in reason_codes and "include" not in reason_codes and "score_based" not in reason_codes
+            "defer" in reason_codes
+            and "include" not in reason_codes
+            and "score_based" not in reason_codes
         ):
             _fail(f"location_cards card appears defer-only selected: {card_id!r}")
-        reject, reject_reasons = should_reject_location_title(str(card.get("name", "")).strip(), zone_name=zone_name)
+        reject, reject_reasons = should_reject_location_title(
+            str(card.get("name", "")).strip(), zone_name=zone_name
+        )
         hard_reasons = [reason for reason in reject_reasons if reason != "likely_npc"]
         if hard_reasons:
-            _fail(f"location_cards card name denied by location guards: {card_id!r} ({hard_reasons})")
+            _fail(
+                f"location_cards card name denied by location guards: {card_id!r} ({hard_reasons})"
+            )
     if len(location_cards) > MAX_LOCATION_CARDS:
         _fail(f"location_cards exceeds cap ({len(location_cards)} > {MAX_LOCATION_CARDS})")
 
@@ -357,9 +373,12 @@ def check_run(
             expected_instance_ids = {
                 str(row.get("instance_id", "")).strip()
                 for row in registry_blob
-                if isinstance(row, dict) and str(row.get("source_zone_id", "")).strip() == resolved_zone_id
+                if isinstance(row, dict)
+                and str(row.get("source_zone_id", "")).strip() == resolved_zone_id
             }
-            expected_instance_ids = {instance_id for instance_id in expected_instance_ids if instance_id}
+            expected_instance_ids = {
+                instance_id for instance_id in expected_instance_ids if instance_id
+            }
     instance_provenance = (draft.get("provenance") or {}).get("instances") or {}
     for card in instance_links:
         card_id = str(card.get("id", "")).strip()
@@ -391,12 +410,7 @@ def check_run(
         if isinstance(blob, list):
             v3_rows = [row for row in blob if isinstance(row, dict)]
 
-    if (
-        len(cards) == 1
-        and card_titles
-        and card_titles[0].lower() == "main storylines"
-        and v3_rows
-    ):
+    if len(cards) == 1 and card_titles and card_titles[0].lower() == "main storylines" and v3_rows:
         distinct_titles = {
             str(row.get("cluster_title", "")).strip()
             for row in v3_rows
@@ -406,7 +420,9 @@ def check_run(
             and str(row.get("cluster_title", "")).strip().lower() != "main storylines"
         }
         if len(distinct_titles) >= 2:
-            _fail("major_questlines single card uses Main storylines despite distinct v3 cluster titles")
+            _fail(
+                "major_questlines single card uses Main storylines despite distinct v3 cluster titles"
+            )
 
     if v3_rows and snapshots_path.exists():
         v3_titles = {
@@ -485,7 +501,9 @@ def check_run(
                 continue
             zone_evidence_rows.append(row)
 
-        location_decisions_path = run_root / "data" / "decisions" / "location_significance_decisions.json"
+        location_decisions_path = (
+            run_root / "data" / "decisions" / "location_significance_decisions.json"
+        )
         include_location_ids: set[str] | None = None
         if location_decisions_path.exists():
             decisions_blob = _load_json(location_decisions_path)
@@ -496,7 +514,9 @@ def check_run(
                     if isinstance(row, dict)
                     and str(row.get("final_decision", "")).strip() == "include"
                 }
-                include_location_ids = {location_id for location_id in include_location_ids if location_id}
+                include_location_ids = {
+                    location_id for location_id in include_location_ids if location_id
+                }
 
         def _location_is_include(location_id: str) -> bool:
             if include_location_ids is None:
@@ -586,7 +606,10 @@ def check_run(
             card_name = str(card.get("name", "")).strip()
             if card_id and card_name:
                 location_names_by_id.setdefault(card_id, card_name)
-        if len(eligible_location_candidates) >= MIN_LOCATION_CARDS and len(location_cards) < MIN_LOCATION_CARDS:
+        if (
+            len(eligible_location_candidates) >= MIN_LOCATION_CARDS
+            and len(location_cards) < MIN_LOCATION_CARDS
+        ):
             _fail(
                 f"location_cards count {len(location_cards)} below minimum {MIN_LOCATION_CARDS} "
                 f"for {len(eligible_location_candidates)} location candidates"
@@ -602,7 +625,9 @@ def check_run(
         for card in location_cards:
             card_id = str(card.get("id", "")).strip()
             if card_id in location_ids_with_profile and card_id not in location_provenance:
-                _fail(f"location_cards card missing provenance despite profile evidence: {card_id!r}")
+                _fail(
+                    f"location_cards card missing provenance despite profile evidence: {card_id!r}"
+                )
         subregion_tokens = extract_subregion_tokens(location_seed_pool_items, zone_name=zone_name)
         for card in location_cards:
             card_id = str(card.get("id", "")).strip()
@@ -632,7 +657,12 @@ def check_run(
             mentions: list[dict[str, Any]] = []
             for row in zone_evidence_rows:
                 field_name = str(row.get("field_name", ""))
-                if field_name not in {"history_digest", "currently_input", "questline_pool", "at_a_glance_input"}:
+                if field_name not in {
+                    "history_digest",
+                    "currently_input",
+                    "questline_pool",
+                    "at_a_glance_input",
+                }:
                     continue
                 build_meta = row.get("build_meta") or {}
                 for item in row.get("evidence_items", []):
@@ -645,12 +675,18 @@ def check_run(
                         mentions.append(
                             {
                                 "snippet": snippet,
-                                "section_role": str(item.get("section_role", build_meta.get("section_role", ""))),
+                                "section_role": str(
+                                    item.get("section_role", build_meta.get("section_role", ""))
+                                ),
                                 "field_name": field_name,
                             }
                         )
             return mentions
-        if len(eligible_faction_candidates) >= MIN_FACTION_CARDS and len(faction_cards) < MIN_FACTION_CARDS:
+
+        if (
+            len(eligible_faction_candidates) >= MIN_FACTION_CARDS
+            and len(faction_cards) < MIN_FACTION_CARDS
+        ):
             _fail(
                 f"major_factions count {len(faction_cards)} below minimum {MIN_FACTION_CARDS} "
                 f"for {len(eligible_faction_candidates)} faction candidates"
@@ -667,7 +703,9 @@ def check_run(
         for card in faction_cards:
             card_id = str(card.get("id", "")).strip()
             if card_id in faction_ids_with_profile and card_id not in faction_provenance:
-                _fail(f"major_factions card missing provenance despite profile evidence: {card_id!r}")
+                _fail(
+                    f"major_factions card missing provenance despite profile evidence: {card_id!r}"
+                )
         for card in faction_cards:
             card_id = str(card.get("id", "")).strip()
             if card_id not in {"faction-alliance", "faction-horde"}:
@@ -763,7 +801,8 @@ def check_run(
         artifacts,
         pilot_strict=pilot_strict,
         require_rankings=bool(pilot_strict and artifacts.included_cluster_ids),
-        require_evidence_coverage=require_questline_evidence and bool(artifacts.included_cluster_ids),
+        require_evidence_coverage=require_questline_evidence
+        and bool(artifacts.included_cluster_ids),
         covered_cluster_ids=covered_clusters,
     ):
         _fail(error)
@@ -804,16 +843,11 @@ def check_strict_validation(run_root: Path) -> None:
         for issue in report.issues:
             if issue.severity.value != "hard-fail":
                 continue
-            failures.append(
-                f"{issue.code} path={issue.path} draft={rel_path}: {issue.message}"
-            )
+            failures.append(f"{issue.code} path={issue.path} draft={rel_path}: {issue.message}")
 
     if failures:
         _fail("strict validation hard-fails:\n" + "\n".join(failures))
-    print(
-        f"PASS: strict validation ok for {run_root.name} "
-        f"({len(draft_paths)} draft(s))"
-    )
+    print(f"PASS: strict validation ok for {run_root.name} ({len(draft_paths)} draft(s))")
 
 
 def _glossary_min_terms() -> int:
@@ -875,7 +909,9 @@ def _check_glossary(run_root: Path) -> None:
 
     zone_dir = run_root / "data" / "drafts" / "zone_page"
     refs, run_terms_by_id = _linked_glossary_refs(run_root)
-    unique_term_ids = {str(ref.get("term_id", "")).strip() for ref in refs if str(ref.get("term_id", "")).strip()}
+    unique_term_ids = {
+        str(ref.get("term_id", "")).strip() for ref in refs if str(ref.get("term_id", "")).strip()
+    }
     if not unique_term_ids:
         print(f"PASS: glossary semantic checks ok for {run_root.name} (no linked refs yet)")
         return
@@ -981,7 +1017,10 @@ def _check_instance_drafts(run_root: Path) -> None:
         INSTANCE_MIN_KEY_CHARACTERS,
         INSTANCE_PROVENANCE_POINTER_CAP,
     )
-    from pipeline.discovery.instance_bosses import collect_boss_candidates, valid_boss_names_from_pool_items
+    from pipeline.discovery.instance_bosses import (
+        collect_boss_candidates,
+        valid_boss_names_from_pool_items,
+    )
     from pipeline.generate.draft.faction_lint import lint_faction_summary
     from pipeline.generate.draft.instance_lint import (
         assess_role_diversity,
@@ -989,15 +1028,17 @@ def _check_instance_drafts(run_root: Path) -> None:
         is_generic_at_a_glance,
         is_generic_key_character_summary,
         is_generic_overview,
-        lint_at_a_glance as lint_instance_at_a_glance,
         lint_key_character_summary,
         lint_overview,
         lint_passthrough_fragment,
     )
+    from pipeline.generate.draft.instance_lint import (
+        lint_at_a_glance as lint_instance_at_a_glance,
+    )
     from pipeline.generate.draft.prose_lint import (
-        lint_history_sections,
         MAX_HISTORY_SECTIONS,
         MIN_HISTORY_SECTIONS,
+        lint_history_sections,
     )
 
     evidence_rows: list[dict[str, Any]] = []
@@ -1034,11 +1075,15 @@ def _check_instance_drafts(run_root: Path) -> None:
         parent_zone_id = str(draft.get("parent_zone_id", "")).strip()
         parent_zone_name = instance_name
         if parent_zone_id:
-            parent_draft_path = run_root / "data" / "drafts" / "zone_page" / f"{parent_zone_id}.json"
+            parent_draft_path = (
+                run_root / "data" / "drafts" / "zone_page" / f"{parent_zone_id}.json"
+            )
             if parent_draft_path.exists():
                 parent_draft = _load_json(parent_draft_path)
                 if isinstance(parent_draft, dict):
-                    parent_zone_name = str(parent_draft.get("name", parent_zone_id)).strip() or parent_zone_id
+                    parent_zone_name = (
+                        str(parent_draft.get("name", parent_zone_id)).strip() or parent_zone_id
+                    )
         instance_evidence = [
             row for row in evidence_rows if str(row.get("subject_id", "")).strip() == instance_id
         ]
@@ -1155,7 +1200,10 @@ def _check_instance_drafts(run_root: Path) -> None:
         else:
             pool_size = len(boss_candidates)
             pool_label = "boss candidates"
-        if pool_size >= INSTANCE_MIN_KEY_CHARACTERS and len(key_characters) < INSTANCE_MIN_KEY_CHARACTERS:
+        if (
+            pool_size >= INSTANCE_MIN_KEY_CHARACTERS
+            and len(key_characters) < INSTANCE_MIN_KEY_CHARACTERS
+        ):
             _fail(
                 f"instance key_characters count {len(key_characters)} below minimum {INSTANCE_MIN_KEY_CHARACTERS} "
                 f"despite {pool_size} {pool_label} for {instance_id!r}"

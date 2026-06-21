@@ -175,7 +175,9 @@ def test_location_pool_does_not_fall_back_to_history_digest() -> None:
             "subject_id": "zone-example",
             "field_name": "location_pool",
             "build_meta": {"source_id": "src-profile", "location_id": "location-a"},
-            "evidence_items": [{"snippet": "Profile-only location evidence.", "section_role": "lead"}],
+            "evidence_items": [
+                {"snippet": "Profile-only location evidence.", "section_role": "lead"}
+            ],
         },
         {
             "subject_id": "zone-example",

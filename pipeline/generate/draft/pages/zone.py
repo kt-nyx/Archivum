@@ -115,14 +115,20 @@ def _finalize_currently(
     pools: dict[str, list[dict[str, Any]]],
 ) -> tuple[str, list[str]]:
     text, used = synthesize_currently(currently_pool, max_words=120)
-    if lint_currently(text, zone_name=zone_name, at_a_glance=at_a_glance) or prose_gate_rejects(text):
+    if lint_currently(text, zone_name=zone_name, at_a_glance=at_a_glance) or prose_gate_rejects(
+        text
+    ):
         text, used = fallback_currently(currently_pool)
-        if lint_currently(text, zone_name=zone_name, at_a_glance=at_a_glance) or prose_gate_rejects(text):
+        if lint_currently(text, zone_name=zone_name, at_a_glance=at_a_glance) or prose_gate_rejects(
+            text
+        ):
             text, used = "", []
     if not text:
         rescue_pool = currently_pool or select_currently_pool(pools, zone_name=zone_name)
         text, used = fallback_currently(rescue_pool)
-        if lint_currently(text, zone_name=zone_name, at_a_glance=at_a_glance) or prose_gate_rejects(text):
+        if lint_currently(text, zone_name=zone_name, at_a_glance=at_a_glance) or prose_gate_rejects(
+            text
+        ):
             text, used = "", []
     if not text:
         text = (
@@ -214,7 +220,9 @@ def build_zone_page(
         max_count=3,
     )
     currently_pointer_pool = currently_pool or pools["currently_pool"]
-    currently_pointers = _pointers_for_source_ids(currently_pointer_pool, currently_used, revision_map)
+    currently_pointers = _pointers_for_source_ids(
+        currently_pointer_pool, currently_used, revision_map
+    )
     currently_pointers = _cap_card_pointers(
         _ensure_pointer_count(
             currently_pointers,
@@ -330,7 +338,9 @@ def build_zone_page(
         card_meta = (questline_card_metadata or {}).get(cluster_id, {})
         if str(card_meta.get("display_title", "")).strip():
             cluster_title = str(card_meta.get("display_title", "")).strip()
-        faction = _majority_faction([str(row.get("faction_binding", "shared")) for row in quests if isinstance(row, dict)])
+        faction = _majority_faction(
+            [str(row.get("faction_binding", "shared")) for row in quests if isinstance(row, dict)]
+        )
         first_quest = quests[0] if isinstance(quests[0], dict) else {}
         start_anchor = str(card_meta.get("start_anchor", "")).strip() or str(
             first_quest.get("title", cluster_title)
@@ -338,7 +348,11 @@ def build_zone_page(
         card_id_override = str(card_meta.get("card_id", "")).strip()
         suppress_continued_card = bool(card_meta.get("suppress_continued_card"))
         quests = _lead_chain_with_anchor(quests, start_anchor)
-        chain_refs = [str(row.get("node_id", "")) for row in quests if isinstance(row, dict) and row.get("node_id")]
+        chain_refs = [
+            str(row.get("node_id", ""))
+            for row in quests
+            if isinstance(row, dict) and row.get("node_id")
+        ]
         wiki_refs = [
             str(row.get("source_link", ""))
             for row in quests
@@ -404,7 +418,9 @@ def build_zone_page(
                 faction=faction,
             )
             if not overflow_cta:
-                overflow_cta = f"Continue the {cluster_title} arc through its remaining linked quests."
+                overflow_cta = (
+                    f"Continue the {cluster_title} arc through its remaining linked quests."
+                )
             if emitted_cards < _MAX_CLUSTER_CARDS and overflow_pool:
                 overflow_wiki = wiki_refs[len(primary_refs) :] if wiki_refs else []
                 _append_questline_card(
@@ -522,7 +538,9 @@ def build_zone_page(
             "at_a_glance": at_a_glance_pointers,
             "currently": currently_pointers,
             "history": history_pointers,
-            "major_questlines_alliance": questline_provenance_by_bucket["major_questlines_alliance"],
+            "major_questlines_alliance": questline_provenance_by_bucket[
+                "major_questlines_alliance"
+            ],
             "major_questlines_horde": questline_provenance_by_bucket["major_questlines_horde"],
             "major_questlines_shared": questline_provenance_by_bucket["major_questlines_shared"],
             "major_characters": {},

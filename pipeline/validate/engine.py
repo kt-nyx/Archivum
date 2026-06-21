@@ -11,8 +11,8 @@ from pipeline.contracts.models import ENTITY_MODEL_MAP, WIKI_FIRST_ENTITY_MODEL_
 from pipeline.validate.rules.budget import validate_budget_rules
 from pipeline.validate.rules.fact_check import validate_fact_check_rules
 from pipeline.validate.rules.provenance import validate_provenance_rules
-from pipeline.validate.rules.similarity import validate_similarity_rules
 from pipeline.validate.rules.questline_promotion import validate_questline_promotion_rules
+from pipeline.validate.rules.similarity import validate_similarity_rules
 from pipeline.validate.rules.structure import validate_structural_rules
 from pipeline.validate.types import ValidationIssue, ValidationReport, ValidationSeverity
 
@@ -90,16 +90,16 @@ def validate_payload(
             entity_type, parsed_entity, validation_context=dict(validation_context or {})
         )
     )
-    issues.extend(validate_budget_rules(entity_type, parsed_entity, validation_context=validation_context))
+    issues.extend(
+        validate_budget_rules(entity_type, parsed_entity, validation_context=validation_context)
+    )
     issues.extend(
         validate_provenance_rules(entity_type, parsed_entity, validation_context=validation_context)
     )
     # Anti-verbatim: narrative sections vs ingest snapshot bodies (after provenance, before
     # fact-check so downstream checks see the same payload).
     issues.extend(
-        validate_similarity_rules(
-            entity_type, parsed_entity, validation_context=validation_context
-        )
+        validate_similarity_rules(entity_type, parsed_entity, validation_context=validation_context)
     )
     fact_check_issues, fact_check_report = validate_fact_check_rules(
         entity_type,

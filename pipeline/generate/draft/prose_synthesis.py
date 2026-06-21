@@ -58,7 +58,11 @@ def synthesize_at_a_glance(
         return "", []
     prepared = precompress_at_a_glance_evidence(items)
     settings = load_ai_settings()
-    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
+    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
         best = max(prepared, key=_snippet_rank_key)
         return trim_words(clean_wiki_snippet(str(best.get("snippet", ""))), max_words), [
             str(best.get("source_id", ""))
@@ -106,11 +110,17 @@ def synthesize_at_a_glance(
     return summary, used
 
 
-def synthesize_currently(items: list[dict[str, Any]], *, max_words: int = 120) -> tuple[str, list[str]]:
+def synthesize_currently(
+    items: list[dict[str, Any]], *, max_words: int = 120
+) -> tuple[str, list[str]]:
     if not items:
         return "", []
     settings = load_ai_settings()
-    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
+    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
         best = max(items, key=lambda row: word_count(str(row.get("snippet", ""))))
         return trim_words(clean_wiki_snippet(str(best.get("snippet", ""))), max_words), [
             str(best.get("source_id", ""))
@@ -154,7 +164,11 @@ def synthesize_history_sections(
     if not items:
         return [], []
     settings = load_ai_settings()
-    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
+    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
         sections: list[dict[str, Any]] = []
         used: list[str] = []
         for item in items[:max_sections]:
@@ -236,7 +250,11 @@ def synthesize_faction_summary(
     if not items:
         return "", []
     settings = load_ai_settings()
-    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
+    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
         from pipeline.generate.draft.faction_scoring import fallback_faction_summary
 
         return fallback_faction_summary(
@@ -302,10 +320,16 @@ def synthesize_location_summary(
     if not items:
         return "", []
     settings = load_ai_settings()
-    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
+    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
         from pipeline.generate.draft.location_lint import trim_location_summary
 
-        ranked = sorted(items, key=lambda row: word_count(str(row.get("snippet", ""))), reverse=True)
+        ranked = sorted(
+            items, key=lambda row: word_count(str(row.get("snippet", ""))), reverse=True
+        )
         for item in ranked:
             snippet = clean_wiki_snippet(str(item.get("snippet", "")))
             if not snippet:
@@ -340,9 +364,13 @@ def synthesize_location_summary(
     summary = trim_location_summary(clean_wiki_snippet(str(result.get("summary", ""))), max_words)
     used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
     if not summary:
-        ranked = sorted(items, key=lambda row: word_count(str(row.get("snippet", ""))), reverse=True)
+        ranked = sorted(
+            items, key=lambda row: word_count(str(row.get("snippet", ""))), reverse=True
+        )
         for item in ranked:
-            snippet = trim_location_summary(clean_wiki_snippet(str(item.get("snippet", ""))), max_words)
+            snippet = trim_location_summary(
+                clean_wiki_snippet(str(item.get("snippet", ""))), max_words
+            )
             if snippet:
                 return snippet, [str(item.get("source_id", ""))]
     return summary, used
@@ -364,11 +392,7 @@ def filter_early_chain_evidence_pool(
         return []
     limit = _early_chain_ref_limit(chain_refs, arc_title=arc_title)
     early_ids = set(chain_refs[:limit])
-    scoped = [
-        item
-        for item in items
-        if str(item.get("quest_node_id", "")).strip() in early_ids
-    ]
+    scoped = [item for item in items if str(item.get("quest_node_id", "")).strip() in early_ids]
     if scoped:
         return scoped[:limit]
     return items[:limit]
@@ -402,12 +426,20 @@ def synthesize_questline_cta_hook(
     elif faction == "horde":
         faction_addendum = " Name the Alliance as the opposing faction when evidence supports it."
     settings = load_ai_settings()
-    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
-        ranked = sorted(early_pool, key=lambda row: word_count(str(row.get("snippet", ""))), reverse=True)
+    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
+        ranked = sorted(
+            early_pool, key=lambda row: word_count(str(row.get("snippet", ""))), reverse=True
+        )
         for item in ranked:
             snippet = trim_words(clean_wiki_snippet(str(item.get("snippet", ""))), max_words)
             if snippet and snippet.lower() != arc_title.strip().lower():
-                return finalize_cta_hook(snippet, max_words=max_words), [str(item.get("source_id", ""))]
+                return finalize_cta_hook(snippet, max_words=max_words), [
+                    str(item.get("source_id", ""))
+                ]
         return "", []
     result = llm_json_with_retry(
         required_keys=("summary", "used_evidence_ids"),
@@ -436,7 +468,9 @@ def synthesize_questline_cta_hook(
     used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
     if summary and summary.lower() != arc_title.strip().lower():
         return summary, used
-    ranked = sorted(early_pool, key=lambda row: word_count(str(row.get("snippet", ""))), reverse=True)
+    ranked = sorted(
+        early_pool, key=lambda row: word_count(str(row.get("snippet", ""))), reverse=True
+    )
     for item in ranked:
         snippet = finalize_cta_hook(
             trim_words(clean_wiki_snippet(str(item.get("snippet", ""))), max_words),
@@ -462,9 +496,15 @@ def synthesize_card_summary(
     elif faction == "horde":
         faction_addendum = " Use an imperative verb and name the Alliance as the opposing faction when evidence supports it."
     settings = load_ai_settings()
-    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
+    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
         best = trim_words(
-            clean_wiki_snippet(_format_evidence_block(items, max_items=1).split("]", 1)[-1].strip()),
+            clean_wiki_snippet(
+                _format_evidence_block(items, max_items=1).split("]", 1)[-1].strip()
+            ),
             max_words,
         )
         return best, [str(items[0].get("source_id", ""))]
@@ -506,7 +546,11 @@ def synthesize_instance_overview(
     )
 
     settings = load_ai_settings()
-    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
+    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
         return fallback_instance_overview(items, instance_name=instance_name, max_words=max_words)
     result = llm_json_with_retry(
         required_keys=("summary", "used_evidence_ids"),
@@ -530,7 +574,9 @@ def synthesize_instance_overview(
         response_schema_name="wiki_first_instance_overview",
         substep="wiki_first_instance_overview",
     )
-    summary = trim_instance_overview(clean_wiki_snippet(str(result.get("summary", ""))), max_words=max_words)
+    summary = trim_instance_overview(
+        clean_wiki_snippet(str(result.get("summary", ""))), max_words=max_words
+    )
     used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
     if not summary:
         return fallback_instance_overview(items, instance_name=instance_name, max_words=max_words)
@@ -552,7 +598,11 @@ def synthesize_key_character_summary(
     )
 
     settings = load_ai_settings()
-    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
+    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
         return fallback_key_character_summary(
             items,
             boss_name=boss_name,
@@ -582,7 +632,9 @@ def synthesize_key_character_summary(
         response_schema_name="wiki_first_key_character_summary",
         substep="wiki_first_key_character_summary",
     )
-    summary = trim_key_character_summary(clean_wiki_snippet(str(result.get("summary", ""))), max_words=max_words)
+    summary = trim_key_character_summary(
+        clean_wiki_snippet(str(result.get("summary", ""))), max_words=max_words
+    )
     used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
     if not summary:
         return fallback_key_character_summary(

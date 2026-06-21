@@ -47,12 +47,15 @@ def test_narrative_fallback_matrix(monkeypatch, fixture: str, marquee: str) -> N
     names = _run()
     assert names, f"{fixture}: narrative fallback found no candidates"
     assert marquee in names, f"{fixture}: expected marquee {marquee!r} in {names}"
-    assert all(candidate.wiki_url for candidate in mine_narrative_character_candidates(
-        data["section_blocks"],
-        instance_name=data["instance_name"],
-        structured_links=data.get("structured_links", []),
-        max_count=10,
-    )), f"{fixture}: every narrative candidate must carry a wiki link"
+    assert all(
+        candidate.wiki_url
+        for candidate in mine_narrative_character_candidates(
+            data["section_blocks"],
+            instance_name=data["instance_name"],
+            structured_links=data.get("structured_links", []),
+            max_count=10,
+        )
+    ), f"{fixture}: every narrative candidate must carry a wiki link"
     assert _run() == names, f"{fixture}: narrative fallback is not deterministic"
 
 

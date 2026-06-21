@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from scripts.check_run_semantics import SemanticCheckError, _cluster_ids_from_v3, check_run, check_strict_validation
+from scripts.check_run_semantics import (
+    SemanticCheckError,
+    _cluster_ids_from_v3,
+    check_run,
+    check_strict_validation,
+)
 
 
 def test_cluster_ids_from_v3_filters_quest_nodes_only() -> None:
@@ -436,8 +441,16 @@ def test_check_run_fails_when_major_factions_below_minimum_with_candidates(tmp_p
     (run_root / "data" / "discovery" / "faction_profile_targets.json").write_text(
         json.dumps(
             [
-                {"zone_id": "zone-example", "faction_id": "faction-argent-crusade", "name": "Argent Crusade"},
-                {"zone_id": "zone-example", "faction_id": "faction-cenarion-circle", "name": "Cenarion Circle"},
+                {
+                    "zone_id": "zone-example",
+                    "faction_id": "faction-argent-crusade",
+                    "name": "Argent Crusade",
+                },
+                {
+                    "zone_id": "zone-example",
+                    "faction_id": "faction-cenarion-circle",
+                    "name": "Cenarion Circle",
+                },
             ],
             indent=2,
         ),
@@ -465,7 +478,10 @@ def test_check_run_warns_alliance_without_quest_bindings(tmp_path: Path, capsys)
     _write_minimal_run(run_root, draft=draft)
     check_run(run_root, zone_id="zone-example")
     captured = capsys.readouterr()
-    assert "WARN: 'faction-alliance' present in major_factions without strong conflict signal" in captured.out
+    assert (
+        "WARN: 'faction-alliance' present in major_factions without strong conflict signal"
+        in captured.out
+    )
 
 
 def test_check_run_validates_instance_draft(tmp_path: Path, capsys) -> None:
@@ -511,7 +527,10 @@ def test_check_run_validates_instance_draft(tmp_path: Path, capsys) -> None:
         ),
         "overview": overview,
         "history_sections": [
-            {"heading": "Founding", "body": "The vault was built to safeguard forbidden relics after the great war."}
+            {
+                "heading": "Founding",
+                "body": "The vault was built to safeguard forbidden relics after the great war.",
+            }
         ],
         "key_characters": [
             {
@@ -533,8 +552,12 @@ def test_check_run_validates_instance_draft(tmp_path: Path, capsys) -> None:
         ],
         "sources": [{"source_id": "src-instance", "url": "https://example.test/instance"}],
         "provenance": {
-            "identity_header": [{"source_id": "src-instance", "locator": "section:lead paragraph:1"}],
-            "story_context": [{"source_id": "src-instance", "locator": "section:history paragraph:1"}],
+            "identity_header": [
+                {"source_id": "src-instance", "locator": "section:lead paragraph:1"}
+            ],
+            "story_context": [
+                {"source_id": "src-instance", "locator": "section:history paragraph:1"}
+            ],
             "key_characters": {
                 "character-archivist-maelor": [
                     {"source_id": "src-instance", "locator": "section:adventurers paragraph:1"}
@@ -620,7 +643,9 @@ def _write_instance_semantics_run(
         json.dumps(instance_draft, indent=2),
         encoding="utf-8",
     )
-    (run_root / "data" / "discovery" / "zone_quest_graph_v3.json").write_text("[]", encoding="utf-8")
+    (run_root / "data" / "discovery" / "zone_quest_graph_v3.json").write_text(
+        "[]", encoding="utf-8"
+    )
     (run_root / "data" / "glossary" / "run_terms.jsonl").write_text(
         json.dumps(
             {
@@ -640,7 +665,9 @@ def _write_instance_semantics_run(
                 "subject_id": instance_id,
                 "field_name": "boss_pool",
                 "build_meta": {"source_id": "src-instance"},
-                "evidence_items": [{"snippet": boss_pool_snippet, "section_role": "scholomance_faculty"}],
+                "evidence_items": [
+                    {"snippet": boss_pool_snippet, "section_role": "scholomance_faculty"}
+                ],
             }
         )
         + "\n",
@@ -683,13 +710,20 @@ def _minimal_instance_draft(**overrides: object) -> dict[str, object]:
         "at_a_glance": "Scholomance is a necromantic academy where hostile faculty still train recruits.",
         "overview": overview,
         "history_sections": [
-            {"heading": "Founding", "body": "The academy was built to safeguard forbidden rituals after the great war."}
+            {
+                "heading": "Founding",
+                "body": "The academy was built to safeguard forbidden rituals after the great war.",
+            }
         ],
         "key_characters": [],
         "sources": [{"source_id": "src-instance", "url": "https://example.test/scholomance"}],
         "provenance": {
-            "identity_header": [{"source_id": "src-instance", "locator": "section:lead paragraph:1"}],
-            "story_context": [{"source_id": "src-instance", "locator": "section:history paragraph:1"}],
+            "identity_header": [
+                {"source_id": "src-instance", "locator": "section:lead paragraph:1"}
+            ],
+            "story_context": [
+                {"source_id": "src-instance", "locator": "section:history paragraph:1"}
+            ],
             "key_characters": {},
         },
     }
@@ -703,7 +737,9 @@ def test_check_run_fails_when_boss_pool_present_but_key_characters_empty(tmp_pat
         check_run(run_root, zone_id="zone-western-plaguelands")
 
 
-def test_check_run_passes_with_single_key_character_when_only_one_boss_name(tmp_path: Path, capsys) -> None:
+def test_check_run_passes_with_single_key_character_when_only_one_boss_name(
+    tmp_path: Path, capsys
+) -> None:
     draft = _minimal_instance_draft(
         key_characters=[
             {
@@ -717,11 +753,18 @@ def test_check_run_passes_with_single_key_character_when_only_one_boss_name(tmp_
             }
         ],
         provenance={
-            "identity_header": [{"source_id": "src-instance", "locator": "section:lead paragraph:1"}],
-            "story_context": [{"source_id": "src-instance", "locator": "section:history paragraph:1"}],
+            "identity_header": [
+                {"source_id": "src-instance", "locator": "section:lead paragraph:1"}
+            ],
+            "story_context": [
+                {"source_id": "src-instance", "locator": "section:history paragraph:1"}
+            ],
             "key_characters": {
                 "character-darkmaster-gandling": [
-                    {"source_id": "src-instance", "locator": "section:scholomance_faculty paragraph:1"}
+                    {
+                        "source_id": "src-instance",
+                        "locator": "section:scholomance_faculty paragraph:1",
+                    }
                 ]
             },
         },
@@ -746,14 +789,19 @@ def test_check_run_fails_when_instance_story_context_pointer_cap_exceeded(tmp_pa
             }
         ],
         provenance={
-            "identity_header": [{"source_id": "src-instance", "locator": "section:lead paragraph:1"}],
+            "identity_header": [
+                {"source_id": "src-instance", "locator": "section:lead paragraph:1"}
+            ],
             "story_context": [
                 {"source_id": "src-instance", "locator": f"section:history paragraph:{index}"}
                 for index in range(1, 5)
             ],
             "key_characters": {
                 "character-darkmaster-gandling": [
-                    {"source_id": "src-instance", "locator": "section:scholomance_faculty paragraph:1"}
+                    {
+                        "source_id": "src-instance",
+                        "locator": "section:scholomance_faculty paragraph:1",
+                    }
                 ]
             },
         },
@@ -781,10 +829,15 @@ def test_check_run_fails_when_instance_identity_header_pointer_cap_exceeded(tmp_
                 {"source_id": "src-instance", "locator": f"section:lead paragraph:{index}"}
                 for index in range(1, 5)
             ],
-            "story_context": [{"source_id": "src-instance", "locator": "section:history paragraph:1"}],
+            "story_context": [
+                {"source_id": "src-instance", "locator": "section:history paragraph:1"}
+            ],
             "key_characters": {
                 "character-darkmaster-gandling": [
-                    {"source_id": "src-instance", "locator": "section:scholomance_faculty paragraph:1"}
+                    {
+                        "source_id": "src-instance",
+                        "locator": "section:scholomance_faculty paragraph:1",
+                    }
                 ]
             },
         },
@@ -808,11 +861,18 @@ def test_check_run_fails_when_two_boss_candidates_but_one_key_character(tmp_path
             }
         ],
         provenance={
-            "identity_header": [{"source_id": "src-instance", "locator": "section:lead paragraph:1"}],
-            "story_context": [{"source_id": "src-instance", "locator": "section:history paragraph:1"}],
+            "identity_header": [
+                {"source_id": "src-instance", "locator": "section:lead paragraph:1"}
+            ],
+            "story_context": [
+                {"source_id": "src-instance", "locator": "section:history paragraph:1"}
+            ],
             "key_characters": {
                 "character-darkmaster-gandling": [
-                    {"source_id": "src-instance", "locator": "section:scholomance_faculty paragraph:1"}
+                    {
+                        "source_id": "src-instance",
+                        "locator": "section:scholomance_faculty paragraph:1",
+                    }
                 ]
             },
         },
@@ -853,14 +913,24 @@ def test_check_run_fails_when_ally_dropped_from_all_enemy_cast(tmp_path: Path) -
             _enemy_card("character-warden-voss", "Warden Voss"),
         ],
         provenance={
-            "identity_header": [{"source_id": "src-instance", "locator": "section:lead paragraph:1"}],
-            "story_context": [{"source_id": "src-instance", "locator": "section:history paragraph:1"}],
+            "identity_header": [
+                {"source_id": "src-instance", "locator": "section:lead paragraph:1"}
+            ],
+            "story_context": [
+                {"source_id": "src-instance", "locator": "section:history paragraph:1"}
+            ],
             "key_characters": {
                 "character-darkmaster-gandling": [
-                    {"source_id": "src-instance", "locator": "section:scholomance_faculty paragraph:1"}
+                    {
+                        "source_id": "src-instance",
+                        "locator": "section:scholomance_faculty paragraph:1",
+                    }
                 ],
                 "character-warden-voss": [
-                    {"source_id": "src-instance", "locator": "section:scholomance_faculty paragraph:2"}
+                    {
+                        "source_id": "src-instance",
+                        "locator": "section:scholomance_faculty paragraph:2",
+                    }
                 ],
             },
         },
@@ -890,21 +960,30 @@ def test_check_run_warns_when_ally_only_outside_window(tmp_path: Path, capsys) -
             _enemy_card("character-warden-voss", "Warden Voss"),
         ],
         provenance={
-            "identity_header": [{"source_id": "src-instance", "locator": "section:lead paragraph:1"}],
-            "story_context": [{"source_id": "src-instance", "locator": "section:history paragraph:1"}],
+            "identity_header": [
+                {"source_id": "src-instance", "locator": "section:lead paragraph:1"}
+            ],
+            "story_context": [
+                {"source_id": "src-instance", "locator": "section:history paragraph:1"}
+            ],
             "key_characters": {
                 "character-darkmaster-gandling": [
-                    {"source_id": "src-instance", "locator": "section:scholomance_faculty paragraph:1"}
+                    {
+                        "source_id": "src-instance",
+                        "locator": "section:scholomance_faculty paragraph:1",
+                    }
                 ],
                 "character-warden-voss": [
-                    {"source_id": "src-instance", "locator": "section:scholomance_faculty paragraph:2"}
+                    {
+                        "source_id": "src-instance",
+                        "locator": "section:scholomance_faculty paragraph:2",
+                    }
                 ],
             },
         },
     )
     candidates = [
-        {"name": f"Enemy {index}", "role": "enemy", "emitted": index < 2}
-        for index in range(10)
+        {"name": f"Enemy {index}", "role": "enemy", "emitted": index < 2} for index in range(10)
     ]
     candidates[0]["name"] = "Darkmaster Gandling"
     candidates[1]["name"] = "Warden Voss"
@@ -912,9 +991,7 @@ def test_check_run_warns_when_ally_only_outside_window(tmp_path: Path, capsys) -
     run_root = _write_instance_semantics_run(
         tmp_path,
         instance_draft=draft,
-        key_character_decisions=[
-            {"instance_id": "instance-scholomance", "candidates": candidates}
-        ],
+        key_character_decisions=[{"instance_id": "instance-scholomance", "candidates": candidates}],
     )
     check_run(run_root, zone_id="zone-western-plaguelands")
     captured = capsys.readouterr()
@@ -927,11 +1004,18 @@ def test_check_run_fails_pool_aware_minimum_from_sidecar(tmp_path: Path) -> None
             _enemy_card("character-darkmaster-gandling", "Darkmaster Gandling"),
         ],
         provenance={
-            "identity_header": [{"source_id": "src-instance", "locator": "section:lead paragraph:1"}],
-            "story_context": [{"source_id": "src-instance", "locator": "section:history paragraph:1"}],
+            "identity_header": [
+                {"source_id": "src-instance", "locator": "section:lead paragraph:1"}
+            ],
+            "story_context": [
+                {"source_id": "src-instance", "locator": "section:history paragraph:1"}
+            ],
             "key_characters": {
                 "character-darkmaster-gandling": [
-                    {"source_id": "src-instance", "locator": "section:scholomance_faculty paragraph:1"}
+                    {
+                        "source_id": "src-instance",
+                        "locator": "section:scholomance_faculty paragraph:1",
+                    }
                 ]
             },
         },
@@ -1030,5 +1114,3 @@ def test_check_run_fails_when_run_terms_missing(tmp_path: Path) -> None:
     (run_root / "data" / "glossary" / "run_terms.jsonl").unlink()
     with pytest.raises(SemanticCheckError, match="missing run-scoped glossary terms file"):
         check_run(run_root, zone_id="zone-example")
-
-

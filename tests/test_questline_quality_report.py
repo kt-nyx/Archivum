@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 from scripts.questline_quality_report import STATUS_FAIL, evaluate_run
-
 from tests.test_pilot_questline_gold_standard import _validation_ready_payload_with_gold_questlines
 from tests.test_questline_promotion_gate import _gold_questlines, _write_wpl_run
 
@@ -37,7 +36,9 @@ def test_questline_quality_report_passes_gold_run(tmp_path) -> None:
 
 def test_questline_quality_report_fails_bad_anchor(tmp_path) -> None:
     questlines = json.loads(
-        Path("tests/fixtures/pilot/zone_page_western_plaguelands_gold.json").read_text(encoding="utf-8")
+        Path("tests/fixtures/pilot/zone_page_western_plaguelands_gold.json").read_text(
+            encoding="utf-8"
+        )
     )["major_questlines"]
     questlines[0] = {**questlines[0], "start_anchor": "Wrong"}
     run_root = _write_wpl_run(tmp_path, questlines=questlines)

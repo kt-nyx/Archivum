@@ -122,11 +122,16 @@ def _zone_seed_snapshot(snapshots: list[dict[str, Any]], zone_id: str) -> dict[s
     return None
 
 
-def _instance_seed_snapshot(snapshots: list[dict[str, Any]], instance_id: str) -> dict[str, Any] | None:
+def _instance_seed_snapshot(
+    snapshots: list[dict[str, Any]], instance_id: str
+) -> dict[str, Any] | None:
     for row in snapshots:
         if not isinstance(row, dict):
             continue
-        if str(row.get("entity_id", "")) == instance_id and str(row.get("entity_type", "")) == "instance":
+        if (
+            str(row.get("entity_id", "")) == instance_id
+            and str(row.get("entity_type", "")) == "instance"
+        ):
             if not str(row.get("auxiliary_role", "")).strip():
                 return row
     return None
@@ -259,9 +264,10 @@ def _upgrade_storyline_snapshot(
     report_rows: list[dict[str, Any]],
     link: str,
 ) -> dict[str, Any] | None:
-    if str(existing.get("auxiliary_role", "")).strip() == "storyline" and str(
-        existing.get("parse_html", "")
-    ).strip():
+    if (
+        str(existing.get("auxiliary_role", "")).strip() == "storyline"
+        and str(existing.get("parse_html", "")).strip()
+    ):
         report_rows.append(
             {"status": "skipped", "link": link, "reason": "duplicate_url", "role": "storyline"}
         )
@@ -269,7 +275,9 @@ def _upgrade_storyline_snapshot(
     try:
         fetched = _fetch_url_text(url, "warcraft_wiki")
     except RuntimeError as exc:
-        report_rows.append({"status": "error", "link": link, "reason": repr(exc), "role": "storyline"})
+        report_rows.append(
+            {"status": "error", "link": link, "reason": repr(exc), "role": "storyline"}
+        )
         return None
     section_blocks = fetched.section_blocks
     raw_html = fetched.html
@@ -356,7 +364,9 @@ def _fetch_and_append(
     faction_binding: str = "shared",
 ) -> dict[str, Any] | None:
     if is_bogus_traversal_link(link):
-        report_rows.append({"status": "skipped", "link": link, "reason": "bogus_link", "role": auxiliary_role})
+        report_rows.append(
+            {"status": "skipped", "link": link, "reason": "bogus_link", "role": auxiliary_role}
+        )
         return None
     zone_name = str(zone_snapshot.get("name", ""))
     skip, skip_reasons = should_skip_registry_traversal(
@@ -415,9 +425,13 @@ def _fetch_and_append(
                     report_rows=report_rows,
                     link=link,
                 )
-        report_rows.append({"status": "skipped", "link": link, "reason": "duplicate_url", "role": auxiliary_role})
+        report_rows.append(
+            {"status": "skipped", "link": link, "reason": "duplicate_url", "role": auxiliary_role}
+        )
         return None
-    source_id = _source_id_for(auxiliary_role, str(zone_snapshot.get("entity_id", "")), auxiliary_target_id)
+    source_id = _source_id_for(
+        auxiliary_role, str(zone_snapshot.get("entity_id", "")), auxiliary_target_id
+    )
     if source_id in existing_source_ids:
         suffix = 2
         while f"{source_id}-{suffix}" in existing_source_ids:
@@ -438,7 +452,9 @@ def _fetch_and_append(
     try:
         fetched = _fetch_url_text(url, "warcraft_wiki", include_parsetree=include_parsetree)
     except RuntimeError as exc:
-        report_rows.append({"status": "error", "link": link, "reason": repr(exc), "role": auxiliary_role})
+        report_rows.append(
+            {"status": "error", "link": link, "reason": repr(exc), "role": auxiliary_role}
+        )
         return None
     body = fetched.body
     revision_id = fetched.revision_id
@@ -453,7 +469,9 @@ def _fetch_and_append(
     if auxiliary_role == "storyline" and raw_html:
         parse_html_truncated = len(raw_html) > 524288
         parse_html = raw_html[:524288]
-    structured_links = structured_from_fetch or build_structured_links_from_sections(section_blocks, wiki_links)
+    structured_links = structured_from_fetch or build_structured_links_from_sections(
+        section_blocks, wiki_links
+    )
     quest_lore_blocks: list[dict[str, str]] | None = None
     quest_record: dict[str, Any] | None = None
     if auxiliary_role == "quest":
@@ -508,7 +526,9 @@ def _fetch_and_append(
     return snapshot
 
 
-def _load_traverse_state(context: RunContext) -> tuple[
+def _load_traverse_state(
+    context: RunContext,
+) -> tuple[
     list[dict[str, Any]],
     list[dict[str, Any]],
     set[str],
@@ -703,21 +723,30 @@ def _ordered_v3_quest_nodes(v3_rows: list[dict[str, Any]]) -> list[dict[str, Any
 
 def run_traverse_seed(context: RunContext) -> dict[str, Path]:
     """Fetch storyline, faction, and location auxiliary pages (no quest pages)."""
-    snapshots, manifest_rows, existing_source_ids, existing_urls, report_rows, allowed_instance_titles = (
-        _load_traverse_state(context)
-    )
+    (
+        snapshots,
+        manifest_rows,
+        existing_source_ids,
+        existing_urls,
+        report_rows,
+        allowed_instance_titles,
+    ) = _load_traverse_state(context)
     captured_at = datetime.now(UTC).isoformat()
     discovery_dir = context.data_dir / "discovery"
     faction_targets = _load_json(discovery_dir / "faction_profile_targets.json")
     location_targets = _load_json(discovery_dir / "location_profile_targets.json")
     storyline_targets = _load_json(discovery_dir / "storyline_traversal_targets.json")
-    location_decisions = _load_json(context.data_dir / "decisions" / "location_significance_decisions.json")
+    location_decisions = _load_json(
+        context.data_dir / "decisions" / "location_significance_decisions.json"
+    )
 
     decision_by_location: dict[str, str] = {}
     if isinstance(location_decisions, list):
         for row in location_decisions:
             if isinstance(row, dict):
-                decision_by_location[str(row.get("subject_id", ""))] = str(row.get("final_decision", ""))
+                decision_by_location[str(row.get("subject_id", ""))] = str(
+                    row.get("final_decision", "")
+                )
 
     counts_by_zone_role: dict[tuple[str, str], int] = {}
 
@@ -751,7 +780,9 @@ def run_traverse_seed(context: RunContext) -> dict[str, Path]:
                 zone_snapshot=zone_snap,
                 link=preferred,
                 auxiliary_role="storyline",
-                auxiliary_target_id=str(target.get("storyline_id", _to_entity_id("storyline", title))),
+                auxiliary_target_id=str(
+                    target.get("storyline_id", _to_entity_id("storyline", title))
+                ),
                 traversal_origin="storyline_traversal_targets",
                 page_title=title or _wiki_title(preferred),
                 snapshots=snapshots,
@@ -946,14 +977,21 @@ def run_traverse_seed(context: RunContext) -> dict[str, Path]:
 
 def run_traverse_quests(context: RunContext) -> dict[str, Path]:
     """Fetch quest pages listed in zone_quest_graph_v3.json, with optional hub resolution."""
-    snapshots, manifest_rows, existing_source_ids, existing_urls, report_rows, allowed_instance_titles = (
-        _load_traverse_state(context)
-    )
+    (
+        snapshots,
+        manifest_rows,
+        existing_source_ids,
+        existing_urls,
+        report_rows,
+        allowed_instance_titles,
+    ) = _load_traverse_state(context)
     captured_at = datetime.now(UTC).isoformat()
     v3_path = context.data_dir / "discovery" / "zone_quest_graph_v3.json"
     v3_blob = _load_json(v3_path)
     if not isinstance(v3_blob, list):
-        raise RuntimeError("zone_quest_graph_v3.json must exist and be a JSON array before quest traverse")
+        raise RuntimeError(
+            "zone_quest_graph_v3.json must exist and be a JSON array before quest traverse"
+        )
 
     counts_by_zone_role: dict[tuple[str, str], int] = {}
     quest_records: list[dict[str, Any]] = []
@@ -979,7 +1017,9 @@ def run_traverse_quests(context: RunContext) -> dict[str, Path]:
         if not isinstance(record, dict):
             return []
         if not record.get("has_questbox", True):
-            return [str(link).strip() for link in record.get("faction_mirror", []) if str(link).strip()]
+            return [
+                str(link).strip() for link in record.get("faction_mirror", []) if str(link).strip()
+            ]
         link_key = str(record.get("source_link", "")).strip().lower().split("#", 1)[0]
         if link_key and link_key not in seen_record_links:
             seen_record_links.add(link_key)

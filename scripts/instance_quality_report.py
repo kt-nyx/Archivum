@@ -236,9 +236,7 @@ def _sidecar_coherence_findings(
             )
 
     page_order = [
-        _key(c.get("name", ""))
-        for c in payload.get("key_characters") or []
-        if isinstance(c, dict)
+        _key(c.get("name", "")) for c in payload.get("key_characters") or [] if isinstance(c, dict)
     ]
     page_names = set(page_order)
     sidecar_emitted = {_key(c.get("name", "")) for c in roster if c.get("emitted")}
@@ -261,15 +259,9 @@ def _sidecar_coherence_findings(
     def _rank(candidate: dict[str, Any]) -> int:
         return int(candidate["merge_rank"])
 
-    ranked_emitted = [
-        c
-        for c in roster
-        if c.get("emitted") and c.get("merge_rank") is not None
-    ]
+    ranked_emitted = [c for c in roster if c.get("emitted") and c.get("merge_rank") is not None]
     if len(ranked_emitted) == len(page_order):
-        expected_order = [
-            _key(c.get("name", "")) for c in sorted(ranked_emitted, key=_rank)
-        ]
+        expected_order = [_key(c.get("name", "")) for c in sorted(ranked_emitted, key=_rank)]
         if page_order != expected_order:
             findings.append(
                 Finding(
@@ -282,9 +274,7 @@ def _sidecar_coherence_findings(
     return findings
 
 
-def _roster_findings(
-    payload: dict[str, Any], roster: list[dict[str, Any]] | None
-) -> list[Finding]:
+def _roster_findings(payload: dict[str, Any], roster: list[dict[str, Any]] | None) -> list[Finding]:
     findings: list[Finding] = []
     if roster is None:
         return findings

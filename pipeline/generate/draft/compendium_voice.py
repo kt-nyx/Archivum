@@ -77,6 +77,7 @@ QUESTLINE_CTA_VOICE = (
     "Do not repeat the arc title verbatim; do not copy evidence phrasing."
 )
 
+
 def instance_system_prompt(*, field_voice: str, task_lines: str) -> str:
     """Compose an instance synthesis system prompt.
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from pipeline.discovery.pilot_questline_registry import load_registry
 from pipeline.discovery.questline_anchor import resolve_cluster_start_anchor
 from pipeline.discovery.questline_card_polish import build_zone_questline_card_metadata
 from pipeline.discovery.questline_cluster import cluster_zone_questlines
@@ -11,16 +12,18 @@ from pipeline.discovery.questline_significance import score_zone_questline_clust
 FIXTURE_DIR = Path("tests/fixtures/clustering")
 ZONE_ID = "zone-western-plaguelands"
 
-from pipeline.discovery.pilot_questline_registry import load_registry
-
 REGISTRY = load_registry(ZONE_ID) or {}
 
 
 def _load_wpl() -> tuple[list[dict], list[dict]]:
-    roster = json.loads((FIXTURE_DIR / "western_plaguelands_roster_v3.json").read_text(encoding="utf-8"))
+    roster = json.loads(
+        (FIXTURE_DIR / "western_plaguelands_roster_v3.json").read_text(encoding="utf-8")
+    )
     records = [
         json.loads(line)
-        for line in (FIXTURE_DIR / "western_plaguelands_quest_records.jsonl").read_text(encoding="utf-8").splitlines()
+        for line in (FIXTURE_DIR / "western_plaguelands_quest_records.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
         if line.strip()
     ]
     return roster, records
@@ -32,7 +35,9 @@ def _registry_anchors_by_faction() -> dict[tuple[str, str], str]:
     for arc in registry.get("included_arcs", []):
         faction = str(arc.get("faction", "shared")).strip().lower()
         title_blob = str(arc.get("title", "")).lower()
-        anchors[(faction, "andorhal" if "andorhal" in title_blob else "other")] = str(arc.get("start_anchor", ""))
+        anchors[(faction, "andorhal" if "andorhal" in title_blob else "other")] = str(
+            arc.get("start_anchor", "")
+        )
         if "mender" in title_blob or "healing" in title_blob:
             anchors[("shared", "mender")] = str(arc.get("start_anchor", ""))
         if "hearthglen" in title_blob or "tirion" in title_blob:
@@ -81,5 +86,8 @@ def test_resolve_cluster_start_anchor_prefers_entry_quest_head() -> None:
     )
     metadata_by_card = {row["card_id"]: row for row in metadata_rows}
     # The Andorhal arcs bind in this fixture; their card anchors come from the registry arc.
-    assert metadata_by_card["ql-andorhal-alliance"]["start_anchor"] == anchors[("alliance", "andorhal")]
+    assert (
+        metadata_by_card["ql-andorhal-alliance"]["start_anchor"]
+        == anchors[("alliance", "andorhal")]
+    )
     assert metadata_by_card["ql-andorhal-horde"]["start_anchor"] == anchors[("horde", "andorhal")]

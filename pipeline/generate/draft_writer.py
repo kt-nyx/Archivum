@@ -52,13 +52,10 @@ def _build_key_character_decision_row(
     INSTANCE_MAX_KEY_CHARACTERS entries are the role-diversity window for assess_role_diversity.
     """
     emitted_keys = {
-        _decision_name_key(card.get("name", ""))
-        for card in emitted_cards
-        if isinstance(card, dict)
+        _decision_name_key(card.get("name", "")) for card in emitted_cards if isinstance(card, dict)
     }
     merge_rank_by_name = {
-        candidate.name: index
-        for index, candidate in enumerate(selection.cast, start=1)
+        candidate.name: index for index, candidate in enumerate(selection.cast, start=1)
     }
     candidates = []
     for candidate in selection.pool:
@@ -71,7 +68,9 @@ def _build_key_character_decision_row(
             "role": role,
             "emitted": emitted,
             "merge_rank": merge_rank_by_name.get(candidate.name) if emitted else None,
-            "selection_reason": selection.selection_reasons.get(candidate.name) if emitted else None,
+            "selection_reason": selection.selection_reasons.get(candidate.name)
+            if emitted
+            else None,
         }
         candidates.append(row)
     return {"instance_id": instance_id, "candidates": candidates}
@@ -105,7 +104,9 @@ def run_draft_writer(
     evidence_path = context.data_dir / "evidence" / "evidence_packs.jsonl"
     if evidence_path.exists():
         evidence_rows = [
-            json.loads(line) for line in evidence_path.read_text(encoding="utf-8").splitlines() if line.strip()
+            json.loads(line)
+            for line in evidence_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
         ]
     quest_graph_v3_rows: list[dict[str, Any]] = []
     quest_graph_v3_path = context.data_dir / "discovery" / "zone_quest_graph_v3.json"
@@ -144,7 +145,9 @@ def run_draft_writer(
                     continue
                 location_candidate_map[location_id] = row
     location_decision_map: dict[str, dict[str, Any]] = {}
-    location_decisions_path = context.data_dir / "decisions" / "location_significance_decisions.json"
+    location_decisions_path = (
+        context.data_dir / "decisions" / "location_significance_decisions.json"
+    )
     if location_decisions_path.exists():
         blob = json.loads(location_decisions_path.read_text(encoding="utf-8"))
         if isinstance(blob, list):
@@ -245,15 +248,23 @@ def run_draft_writer(
                 )
             else:
                 lore_source = next(
-                    (row for row in instance_lore_rows if str(row.get("instance_id", "")).strip() == entity_id),
+                    (
+                        row
+                        for row in instance_lore_rows
+                        if str(row.get("instance_id", "")).strip() == entity_id
+                    ),
                     None,
                 )
                 parent_zone_id = str(fact_pack.get("parent_zone_id", "")).strip()
-                parent_zone_evidence = [
-                    row
-                    for row in evidence_rows
-                    if str(row.get("subject_id", "")).strip() == parent_zone_id
-                ] if parent_zone_id else []
+                parent_zone_evidence = (
+                    [
+                        row
+                        for row in evidence_rows
+                        if str(row.get("subject_id", "")).strip() == parent_zone_id
+                    ]
+                    if parent_zone_id
+                    else []
+                )
                 parent_zone_name = ""
                 if parent_zone_id:
                     parent_fact_path = path.parent / f"{parent_zone_id}.json"
@@ -274,7 +285,9 @@ def run_draft_writer(
                         ):
                             blocks = snapshot.get("section_blocks", [])
                             if isinstance(blocks, list):
-                                instance_section_blocks = [row for row in blocks if isinstance(row, dict)]
+                                instance_section_blocks = [
+                                    row for row in blocks if isinstance(row, dict)
+                                ]
                             break
                 selection_sink: list[InstanceKeyCharacterSelection] = []
                 draft = build_instance_page(
@@ -301,7 +314,7 @@ def run_draft_writer(
             out_path = entity_dir / f"{entity_id}.json"
             overflow = draft.pop("draft_overflow_decisions", None)
             write_json(out_path, draft)
-            decision = {
+            decision: dict[str, object] = {
                 "entity_id": entity_id,
                 "entity_type": f"{entity_type}_page",
                 "generation_mode": "deterministic_evidence_pack",
@@ -321,16 +334,16 @@ def run_draft_writer(
         )
         attempts = 3
         mode = "openai"
-        draft: dict[str, Any] | None = None
+        llm_draft: dict[str, Any] | None = None
         used_schema_retry = False
         for attempt in range(1, attempts + 1):
-            draft, mode = generate_entity_draft(
+            llm_draft, mode = generate_entity_draft(
                 fact_pack,
                 entity_type,
                 context=context,
                 trace=trace,
             )
-            if is_valid_draft(entity_type, draft):
+            if is_valid_draft(entity_type, llm_draft):
                 break
             used_schema_retry = True
             if attempt == attempts:
@@ -338,14 +351,14 @@ def run_draft_writer(
                     f"draft for entity '{entity_id}' is invalid after "
                     f"{attempts} schema-guarded attempts"
                 )
-        if draft is None:  # pragma: no cover
+        if llm_draft is None:  # pragma: no cover
             raise RuntimeError(f"draft generation returned no payload for '{entity_id}'")
         entity_dir = stage_dir / entity_type
         entity_dir.mkdir(parents=True, exist_ok=True)
-        out_path = entity_dir / f"{draft['id']}.json"
-        write_json(out_path, draft)
-        decision: dict[str, object] = {
-            "entity_id": str(draft["id"]),
+        out_path = entity_dir / f"{llm_draft['id']}.json"
+        write_json(out_path, llm_draft)
+        decision = {
+            "entity_id": str(llm_draft["id"]),
             "entity_type": entity_type,
             "generation_mode": mode,
             "coalesce_mode": str(fact_pack.get("coalesce_mode", "unknown")),
@@ -377,7 +390,9 @@ def run_draft_writer(
                         if isinstance(row, dict):
                             decisions.append(
                                 {
-                                    "entity_id": str(row.get("entity_id", decision.get("entity_id", ""))),
+                                    "entity_id": str(
+                                        row.get("entity_id", decision.get("entity_id", ""))
+                                    ),
                                     "entity_type": str(row.get("entity_type", "questline_cluster")),
                                     "generation_mode": "deterministic_evidence_pack",
                                     "reason": str(row.get("reason", "questline_overflow")),
@@ -387,5 +402,7 @@ def run_draft_writer(
     write_json((stage_dir / "draft_decisions.json"), decisions)
     decisions_dir = context.data_dir / "decisions"
     decisions_dir.mkdir(parents=True, exist_ok=True)
-    write_json((decisions_dir / "instance_key_character_decisions.json"), instance_key_character_decisions)
+    write_json(
+        (decisions_dir / "instance_key_character_decisions.json"), instance_key_character_decisions
+    )
     return outputs

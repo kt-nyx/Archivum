@@ -30,6 +30,7 @@ WARCRAFT_WIKI_PROFILE = RetrievalProfile(
     retry_backoff_seconds=0.5,
 )
 
+
 def profile_for_source_class(source_class: str) -> RetrievalProfile:
     normalized = source_class.strip().lower()
     if normalized == "warcraft_wiki":

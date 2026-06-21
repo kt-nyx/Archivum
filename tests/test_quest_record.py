@@ -24,7 +24,10 @@ def test_parses_questbox_fields_with_coords_and_chain() -> None:
         source_link="/wiki/A_Head_Full_of_Ivory",
         parse_tree=_load("a_head_full_of_ivory.parsetree.xml"),
         section_blocks=[
-            {"section_role": "description", "text": "Gather the kurenai relics scattered across Nagrand."}
+            {
+                "section_role": "description",
+                "text": "Gather the kurenai relics scattered across Nagrand.",
+            }
         ],
     )
     assert record is not None

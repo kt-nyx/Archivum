@@ -19,4 +19,6 @@ def test_valid_instance_link_summary_passes_lint() -> None:
         "plague operations across the blighted countryside."
     )
     assert not is_generic_instance_link_summary(summary)
-    assert not lint_instance_link_summary(summary, instance_name="Scholomance", zone_name="Test Zone")
+    assert not lint_instance_link_summary(
+        summary, instance_name="Scholomance", zone_name="Test Zone"
+    )

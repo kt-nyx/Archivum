@@ -103,9 +103,7 @@ def validate_similarity_rules(
 
     body_by_source = _snapshot_bodies_by_source_id(validation_context)
     raw_snapshots = (
-        validation_context.get("fact_check_source_snapshots")
-        if validation_context
-        else None
+        validation_context.get("fact_check_source_snapshots") if validation_context else None
     )
     snapshots_unusable = (
         not validation_context
@@ -160,7 +158,9 @@ def validate_similarity_rules(
                 body = history_row.get("body")
                 if not isinstance(body, str) or not body.strip():
                     continue
-                section_entries.append((f"history_sections[{index}].body", body, history_source_ids))
+                section_entries.append(
+                    (f"history_sections[{index}].body", body, history_source_ids)
+                )
 
     for section_name, text_value, source_ids in section_entries:
         snippets = [body_by_source[sid] for sid in source_ids if sid in body_by_source]

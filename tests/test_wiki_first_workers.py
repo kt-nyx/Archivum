@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 from pipeline.generate.draft.compendium_voice import COMPENDIUM_VOICE_CORE, zone_system_prompt
 from pipeline.generate.draft.prose_lint import MAX_AT_A_GLANCE_WORDS, word_count
 from pipeline.generate.draft.prose_selection import (
@@ -46,7 +44,9 @@ def test_at_a_glance_no_llm_prefers_past_heavy_snippet(monkeypatch) -> None:
 
 
 def test_at_a_glance_system_prompt_uses_compendium_voice() -> None:
-    prompt = zone_system_prompt(field_voice="Past tense zone caption.", task_lines="Maximum 45 words.")
+    prompt = zone_system_prompt(
+        field_voice="Past tense zone caption.", task_lines="Maximum 45 words."
+    )
     assert "Compendium Voice" in prompt
     assert "Use present tense" not in prompt
 
@@ -101,8 +101,12 @@ def test_workers_return_empty_for_empty_pools(monkeypatch) -> None:
     assert synthesize_at_a_glance([]) == ("", [])
     assert synthesize_currently([]) == ("", [])
     assert synthesize_history_sections([]) == ([], [])
-    assert synthesize_faction_summary([], faction_name="Argent Crusade", zone_name="Example Zone") == ("", [])
-    assert synthesize_location_summary([], location_name="Northwatch Hold", zone_name="Example Zone") == ("", [])
+    assert synthesize_faction_summary(
+        [], faction_name="Argent Crusade", zone_name="Example Zone"
+    ) == ("", [])
+    assert synthesize_location_summary(
+        [], location_name="Northwatch Hold", zone_name="Example Zone"
+    ) == ("", [])
 
 
 def test_location_summary_deterministic_respects_max_words(monkeypatch) -> None:
@@ -178,7 +182,9 @@ def test_select_narrative_characters_llm_is_constrained_to_inputs(monkeypatch) -
     monkeypatch.delenv("WOW_LORE_WIKI_FIRST_NO_LLM", raising=False)
     import pipeline.generate.draft.prose_selection as workers
 
-    monkeypatch.setattr(workers, "load_ai_settings", lambda: type("S", (), {"openai_ready": True})())
+    monkeypatch.setattr(
+        workers, "load_ai_settings", lambda: type("S", (), {"openai_ready": True})()
+    )
     monkeypatch.setattr(
         workers,
         "llm_json_with_retry",
@@ -341,4 +347,3 @@ def test_faction_summary_instance_subject_uses_instance_voice(monkeypatch) -> No
     )
     assert "Compendium Voice" in captured["system_prompt"]
     assert NO_META_NO_PASSTHROUGH in captured["system_prompt"]
-

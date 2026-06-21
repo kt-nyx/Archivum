@@ -418,9 +418,9 @@ def _infer_cluster_title(
         if location:
             location_counts[location] += 1
     if location_counts:
-        dominant_location = sorted(
-            location_counts.items(), key=lambda item: (-item[1], item[0])
-        )[0][0]
+        dominant_location = sorted(location_counts.items(), key=lambda item: (-item[1], item[0]))[
+            0
+        ][0]
         return _faction_tag(dominant_location)
 
     if len(members) > 1:
@@ -487,9 +487,7 @@ def cluster_zone_questlines(
     """Cluster flat roster rows using QuestRecord chains + storyline-section structure."""
     _ = storyline_html, zone_name
     quest_rows = [dict(row) for row in roster_rows if str(row.get("node_type", "")) == "quest"]
-    non_quest_rows = [
-        dict(row) for row in roster_rows if str(row.get("node_type", "")) != "quest"
-    ]
+    non_quest_rows = [dict(row) for row in roster_rows if str(row.get("node_type", "")) != "quest"]
     if not quest_rows:
         return roster_rows, [], 0
 
@@ -503,9 +501,7 @@ def cluster_zone_questlines(
         if node_id:
             records_by_node[node_id] = record
 
-    roster_by_node = {
-        str(row.get("node_id", "")): row for row in quest_rows if row.get("node_id")
-    }
+    roster_by_node = {str(row.get("node_id", "")): row for row in quest_rows if row.get("node_id")}
     node_ids = sorted(
         roster_by_node,
         key=lambda node_id: int(roster_by_node[node_id].get("order_in_cluster", 0) or 0),
@@ -563,8 +559,7 @@ def cluster_zone_questlines(
     cluster_assignments.sort(
         key=lambda item: (
             min(
-                int(roster_by_node[node_id].get("order_in_cluster", 0) or 0)
-                for node_id in item[3]
+                int(roster_by_node[node_id].get("order_in_cluster", 0) or 0) for node_id in item[3]
             ),
             item[0],
         )
@@ -615,9 +610,7 @@ def _summaries_from_rows(
         reputation_orgs = sorted(
             {
                 str(
-                    records_by_node.get(str(row.get("node_id", "")), {}).get(
-                        "reputation_org", ""
-                    )
+                    records_by_node.get(str(row.get("node_id", "")), {}).get("reputation_org", "")
                 ).strip()
                 for row in quests
             }

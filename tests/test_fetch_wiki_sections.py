@@ -25,6 +25,7 @@ def test_categories_from_parse_blob_normalizes_and_dedupes() -> None:
     assert _categories_from_parse_blob(blob) == ["Dungeons", "Western Plaguelands", "Legacy"]
     assert _categories_from_parse_blob({}) == []
 
+
 INSTANCE_HTML = """
 <table class="infobox darktable"><tbody>
 <tr><th>End boss</th><td><a href="/wiki/Loken" title="Loken">Loken</a></td></tr>
@@ -89,11 +90,7 @@ def test_chrome_tables_are_excluded() -> None:
 
 def test_structured_link_keeps_roster_role_despite_earlier_narrative_mention() -> None:
     _sections, _links, structured = _extract_sections_and_links(INSTANCE_HTML)
-    loken_roles = {
-        row["section_role"]
-        for row in structured
-        if row.get("href") == "/wiki/Loken"
-    }
+    loken_roles = {row["section_role"] for row in structured if row.get("href") == "/wiki/Loken"}
     # Loken is named in the lead prose and the collapsible, but must also carry a
     # roster role from the Bosses list / Encounters table.
     assert {"bosses", "encounters"} & loken_roles, loken_roles

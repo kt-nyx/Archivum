@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from pipeline.discovery.storyline_parser import parse_storyline_snapshot
@@ -34,7 +33,9 @@ def test_storyline_parser_legacy_link_dump_not_used_when_parse_html_present() ->
     """When parse_html is available, v3 HTML parser is authoritative (see traverse/enrich)."""
     from pipeline.discovery.storyline_html import parse_storyline_html
 
-    html = Path("tests/fixtures/storyline/western_plaguelands_storyline.html").read_text(encoding="utf-8")
+    html = Path("tests/fixtures/storyline/western_plaguelands_storyline.html").read_text(
+        encoding="utf-8"
+    )
     v3_rows = parse_storyline_html(
         html,
         zone_id="zone-western-plaguelands",
@@ -56,9 +57,7 @@ def test_storyline_parser_legacy_link_dump_not_used_when_parse_html_present() ->
         cluster_key="questline-western-plaguelands",
         zone_name="Western Plaguelands",
     )
-    v2_titles = {row["title"].lower() for row in v2_rows if row.get("node_type") == "quest"}
     v3_titles = {row["title"].lower() for row in v3_rows if row.get("node_type") == "quest"}
     assert v3_titles.isdisjoint({"lordaeron", "eastern kingdoms", "hinterlands"})
     assert len(v3_rows) >= 5
     assert "horde" in {row.get("faction_binding") for row in v3_rows}
-

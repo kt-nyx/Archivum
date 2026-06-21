@@ -137,7 +137,9 @@ def check_questline_promotion(
     """Return hard-fail error messages."""
     errors: list[str] = []
     cards = artifacts.cards
-    card_ids = [str(card.get("id", "")).strip() for card in cards if str(card.get("id", "")).strip()]
+    card_ids = [
+        str(card.get("id", "")).strip() for card in cards if str(card.get("id", "")).strip()
+    ]
 
     for index, card in enumerate(cards):
         title = str(card.get("title", "")).strip() or f"card[{index}]"
@@ -160,7 +162,8 @@ def check_questline_promotion(
                 f"({len(cards)}) does not match included_cluster_ids ({len(artifacts.included_cluster_ids)})"
             )
         mapped_clusters = {
-            cluster_id_from_card_id(card_id, artifacts.card_id_to_cluster_id) for card_id in card_ids
+            cluster_id_from_card_id(card_id, artifacts.card_id_to_cluster_id)
+            for card_id in card_ids
         }
         expected = set(artifacts.included_cluster_ids)
         if mapped_clusters != expected and artifacts.card_id_to_cluster_id:
@@ -181,16 +184,22 @@ def check_questline_promotion(
         expected_card_id = str(meta.get("card_id", "")).strip()
         if not expected_card_id:
             continue
-        matching = [card for card in cards if cluster_id_from_card_id(str(card.get("id", "")), artifacts.card_id_to_cluster_id) == cluster_id]
+        matching = [
+            card
+            for card in cards
+            if cluster_id_from_card_id(str(card.get("id", "")), artifacts.card_id_to_cluster_id)
+            == cluster_id
+        ]
         for card in matching:
             if str(card.get("id", "")).strip() != expected_card_id:
                 errors.append(
                     f"questline card id {card.get('id')!r} does not match metadata card_id {expected_card_id!r} "
                     f"for cluster {cluster_id!r}"
                 )
-        if str(meta.get("suppress_continued_card", "")).lower() in {"true", "1"} or meta.get(
-            "suppress_continued_card"
-        ) is True:
+        if (
+            str(meta.get("suppress_continued_card", "")).lower() in {"true", "1"}
+            or meta.get("suppress_continued_card") is True
+        ):
             for card_id in card_ids:
                 if cluster_id_from_card_id(card_id, artifacts.card_id_to_cluster_id) == cluster_id:
                     if card_id.endswith("-continued"):
@@ -200,10 +209,13 @@ def check_questline_promotion(
 
     if require_evidence_coverage and artifacts.included_cluster_ids:
         covered = covered_cluster_ids or set()
-        missing = [cluster_id for cluster_id in artifacts.included_cluster_ids if cluster_id not in covered]
+        missing = [
+            cluster_id for cluster_id in artifacts.included_cluster_ids if cluster_id not in covered
+        ]
         if missing:
             errors.append(
-                "included clusters missing quest_cluster_lore evidence: " + ", ".join(sorted(missing))
+                "included clusters missing quest_cluster_lore evidence: "
+                + ", ".join(sorted(missing))
             )
 
     expectations = artifacts.pilot_expectations
@@ -254,10 +266,14 @@ def check_questline_promotion(
             for node_id in chain_refs:
                 node_id = str(node_id).strip()
                 if node_id and node_id not in v3_node_ids:
-                    errors.append(f"pilot chain_ref {node_id!r} missing from v3 graph for card {card_id!r}")
+                    errors.append(
+                        f"pilot chain_ref {node_id!r} missing from v3 graph for card {card_id!r}"
+                    )
                 order = order_by_node.get(node_id, last_order)
                 if order < last_order:
-                    errors.append(f"pilot chain_refs order regresses for card {card_id!r} at {node_id!r}")
+                    errors.append(
+                        f"pilot chain_refs order regresses for card {card_id!r} at {node_id!r}"
+                    )
                 last_order = order
 
     return errors

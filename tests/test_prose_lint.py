@@ -72,9 +72,7 @@ def test_history_accepts_clean_past_body() -> None:
 
 
 def test_currently_requires_present_markers() -> None:
-    text = (
-        "Formerly the grain heartland of the kingdom before the plague arrived years ago during the Third War."
-    )
+    text = "Formerly the grain heartland of the kingdom before the plague arrived years ago during the Third War."
     assert any("present-tense" in issue for issue in lint_currently(text))
 
 
@@ -109,4 +107,7 @@ def test_currently_rejects_at_a_glance_overlap() -> None:
     )
     overlap = token_jaccard(at_a_glance, currently)
     assert overlap >= AT_A_GLANCE_CURRENTLY_OVERLAP_THRESHOLD
-    assert any("overlaps at_a_glance" in issue for issue in lint_currently(currently, at_a_glance=at_a_glance))
+    assert any(
+        "overlaps at_a_glance" in issue
+        for issue in lint_currently(currently, at_a_glance=at_a_glance)
+    )

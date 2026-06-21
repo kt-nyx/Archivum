@@ -83,7 +83,9 @@ def _order_sidecar_pool_candidates(
             continue
         ordered.append(candidate)
         seen.add(key)
-    remaining = [candidate for candidate in pool if normalize_title(candidate.name) not in cast_keys]
+    remaining = [
+        candidate for candidate in pool if normalize_title(candidate.name) not in cast_keys
+    ]
     for name in deterministic_pool_order(remaining, narrative_text=context_text):
         candidate = pool_by_name.get(name)
         if candidate is None:
@@ -199,7 +201,6 @@ def build_instance_key_character_roster(
         pools=pools,
         parent_zone_evidence_rows=parent_zone_evidence_rows,
     ).cast
-
 
 
 def _finalize_key_characters(

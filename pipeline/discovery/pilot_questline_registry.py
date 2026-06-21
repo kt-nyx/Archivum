@@ -17,7 +17,9 @@ _REGISTRY_PATHS: dict[str, Path] = {
 }
 
 # Back-compat for tests that referenced fixtures path.
-LEGACY_FIXTURE_REGISTRY_PATH = Path("tests/fixtures/pilot/western_plaguelands_questline_registry.json")
+LEGACY_FIXTURE_REGISTRY_PATH = Path(
+    "tests/fixtures/pilot/western_plaguelands_questline_registry.json"
+)
 
 
 def registry_path_for_zone(zone_id: str) -> Path | None:
@@ -84,7 +86,9 @@ def primary_chain_refs_by_card_id(registry: dict[str, Any]) -> dict[str, list[st
             continue
         arc_id = str(arc.get("id", "")).strip()
         if arc_id:
-            refs[arc_id] = [str(value) for value in arc.get("chain_refs") or [] if str(value).strip()]
+            refs[arc_id] = [
+                str(value) for value in arc.get("chain_refs") or [] if str(value).strip()
+            ]
     return refs
 
 

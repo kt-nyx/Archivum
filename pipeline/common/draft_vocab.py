@@ -12,9 +12,7 @@ from pathlib import Path
 
 from pipeline.common.io import read_json
 
-_VOCAB_PATH = (
-    Path(__file__).resolve().parents[1] / "data" / "draft_classification_vocab.v1.json"
-)
+_VOCAB_PATH = Path(__file__).resolve().parents[1] / "data" / "draft_classification_vocab.v1.json"
 
 
 @lru_cache(maxsize=1)

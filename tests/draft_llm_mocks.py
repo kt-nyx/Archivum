@@ -43,9 +43,7 @@ def zone_draft_body() -> dict[str, Any]:
     return {
         "expansion": "retail",
         "at_a_glance": "An actively contested lore region under sustained pressure.",
-        "currently": (
-            "Current campaigns prioritize route security and settlement stabilization."
-        ),
+        "currently": ("Current campaigns prioritize route security and settlement stabilization."),
         "history": (
             "Historical conflict cycles and command shifts define present strategic stakes."
         ),

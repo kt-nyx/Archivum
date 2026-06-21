@@ -30,7 +30,10 @@ def test_discovery_workflow_emits_required_artifacts(tmp_path: Path) -> None:
                     "body": "History and geography of the zone.",
                     "section_blocks": [
                         {"section_role": "History", "text": "The zone fell and was reclaimed."},
-                        {"section_role": "Instances", "text": f"{INSTANCE_NAME} appears in this zone."},
+                        {
+                            "section_role": "Instances",
+                            "text": f"{INSTANCE_NAME} appears in this zone.",
+                        },
                     ],
                     "wiki_links": [
                         f"/wiki/{INSTANCE_NAME.replace(' ', '_')}_(instance)",
@@ -81,7 +84,10 @@ def test_discovery_workflow_detects_instances_and_storylines_without_noisy_links
                     "body": "Zone overview with quests and geography.",
                     "section_blocks": [
                         {"section_role": "Quests", "text": f"See {ZONE_NAME} storyline"},
-                        {"section_role": "Geography", "text": f"Contains the dungeon {INSTANCE_NAME}."},
+                        {
+                            "section_role": "Geography",
+                            "text": f"Contains the dungeon {INSTANCE_NAME}.",
+                        },
                     ],
                     "wiki_links": [
                         f"/wiki/{INSTANCE_NAME.replace(' ', '_')}",
@@ -127,7 +133,9 @@ def test_discovery_workflow_detects_instances_and_storylines_without_noisy_links
     quest_graph = json.loads(outputs["zone_quest_graph"].read_text(encoding="utf-8"))
     assert isinstance(quest_graph, list)
 
-    storyline_targets = json.loads(outputs["storyline_traversal_targets"].read_text(encoding="utf-8"))
+    storyline_targets = json.loads(
+        outputs["storyline_traversal_targets"].read_text(encoding="utf-8")
+    )
     assert any("storyline" in row.get("source_link", "").lower() for row in storyline_targets)
 
     candidates = json.loads(outputs["zone_location_candidates"].read_text(encoding="utf-8"))
@@ -137,7 +145,9 @@ def test_discovery_workflow_detects_instances_and_storylines_without_noisy_links
 
 
 def test_discovery_workflow_emits_typed_traversal_targets(tmp_path: Path) -> None:
-    context = ensure_run_context("run-test-discovery-typed-targets", artifacts_root=tmp_path / "runs")
+    context = ensure_run_context(
+        "run-test-discovery-typed-targets", artifacts_root=tmp_path / "runs"
+    )
     ingest_dir = context.stage_dir("ingest")
     snapshots_path = ingest_dir / "source_snapshots.json"
     manifest_path = ingest_dir / "source_manifest.json"
@@ -154,7 +164,10 @@ def test_discovery_workflow_emits_typed_traversal_targets(tmp_path: Path) -> Non
                     "section_blocks": [
                         {"section_role": "Quests", "text": f"See {ZONE_NAME} storyline"},
                         {"section_role": "History", "text": "Crusader and undead conflict"},
-                        {"section_role": "Geography", "text": "Brill and Fort City are major locations"},
+                        {
+                            "section_role": "Geography",
+                            "text": "Brill and Fort City are major locations",
+                        },
                     ],
                     "wiki_links": [
                         f"/wiki/{ZONE_WIKI}_storyline",
@@ -183,7 +196,11 @@ def test_discovery_workflow_emits_typed_traversal_targets(tmp_path: Path) -> Non
         json.dumps(
             [
                 {"source_id": "src-zone", "source_class": "warcraft_wiki", "entity_type": "zone"},
-                {"source_id": "src-instance", "source_class": "warcraft_wiki", "entity_type": "instance"},
+                {
+                    "source_id": "src-instance",
+                    "source_class": "warcraft_wiki",
+                    "entity_type": "instance",
+                },
             ],
             indent=2,
         ),
@@ -199,7 +216,9 @@ def test_discovery_workflow_emits_typed_traversal_targets(tmp_path: Path) -> Non
     assert any(row["name"] == "Brill" for row in location_targets)
     assert not any(row["name"] == "Example Faction" for row in location_targets)
 
-    storyline_targets = json.loads(outputs["storyline_traversal_targets"].read_text(encoding="utf-8"))
+    storyline_targets = json.loads(
+        outputs["storyline_traversal_targets"].read_text(encoding="utf-8")
+    )
     assert any("storyline" in row["title"].lower() for row in storyline_targets)
     assert not any("/wiki/Faction" in row.get("source_link", "") for row in storyline_targets)
     assert all("_storyline" in row.get("source_link", "").lower() for row in storyline_targets)
@@ -210,7 +229,9 @@ def test_discovery_workflow_emits_typed_traversal_targets(tmp_path: Path) -> Non
     quest_graph_v3 = json.loads(outputs["zone_quest_graph_v3"].read_text(encoding="utf-8"))
     assert isinstance(quest_graph_v3, list)
 
-    questline_decisions = json.loads(outputs["questline_inclusion_decisions"].read_text(encoding="utf-8"))
+    questline_decisions = json.loads(
+        outputs["questline_inclusion_decisions"].read_text(encoding="utf-8")
+    )
     assert questline_decisions == []
 
 
@@ -287,12 +308,30 @@ def test_discovery_workflow_hard_rejects_meta_pages_from_maps_section(tmp_path: 
                     "source_id": "src-zone",
                     "url": f"https://warcraft.wiki.gg/wiki/{ZONE_WIKI}",
                     "body": "Zone overview.",
-                    "section_blocks": [{"section_role": "Maps and subregions", "text": "Subregions."}],
-                    "wiki_links": ["/wiki/Felstone_Field", "/wiki/Lore_location", "/wiki/Undisplayed_location"],
+                    "section_blocks": [
+                        {"section_role": "Maps and subregions", "text": "Subregions."}
+                    ],
+                    "wiki_links": [
+                        "/wiki/Felstone_Field",
+                        "/wiki/Lore_location",
+                        "/wiki/Undisplayed_location",
+                    ],
                     "structured_links": [
-                        {"href": "/wiki/Felstone_Field", "section_role": "Maps and subregions", "label": "Felstone Field"},
-                        {"href": "/wiki/Lore_location", "section_role": "Maps and subregions", "label": "Lore location"},
-                        {"href": "/wiki/Undisplayed_location", "section_role": "Maps and subregions", "label": "Undisplayed location"},
+                        {
+                            "href": "/wiki/Felstone_Field",
+                            "section_role": "Maps and subregions",
+                            "label": "Felstone Field",
+                        },
+                        {
+                            "href": "/wiki/Lore_location",
+                            "section_role": "Maps and subregions",
+                            "label": "Lore location",
+                        },
+                        {
+                            "href": "/wiki/Undisplayed_location",
+                            "section_role": "Maps and subregions",
+                            "label": "Undisplayed location",
+                        },
                     ],
                 }
             ],
@@ -309,7 +348,10 @@ def test_discovery_workflow_hard_rejects_meta_pages_from_maps_section(tmp_path: 
     )
 
     outputs = run_discovery_workflow(context, manifest_path)
-    names = {row["name"] for row in json.loads(outputs["location_profile_targets"].read_text(encoding="utf-8"))}
+    names = {
+        row["name"]
+        for row in json.loads(outputs["location_profile_targets"].read_text(encoding="utf-8"))
+    }
     assert "Felstone Field" in names
     assert "Lore location" not in names
     assert "Undisplayed location" not in names

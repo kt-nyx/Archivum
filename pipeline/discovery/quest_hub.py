@@ -129,11 +129,7 @@ def is_quest_hub_page(
         wiki_links=wiki_links,
         structured_links=structured_links,
     )
-    valid = [
-        link
-        for link in candidates
-        if is_valid_quest_graph_link(link, zone_name=zone_name)[0]
-    ]
+    valid = [link for link in candidates if is_valid_quest_graph_link(link, zone_name=zone_name)[0]]
     if len(valid) < 2:
         return False
     lore_words = lore_word_count(extract_quest_lore(section_blocks))

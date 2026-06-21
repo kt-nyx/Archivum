@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from pipeline.generate.draft.provenance import build_revision_index, collect_sources_manifest
 from pipeline.generate.draft.pages import build_zone_page
-from tests.factories.wiki_first_pages import minimal_instance_page_payload, minimal_zone_page_payload
+from pipeline.generate.draft.provenance import build_revision_index, collect_sources_manifest
+from tests.factories.wiki_first_pages import (
+    minimal_instance_page_payload,
+    minimal_zone_page_payload,
+)
 from tests.test_validation_engine import validate_payload
 
 
@@ -184,7 +187,9 @@ def test_build_zone_page_uses_snapshot_revision_for_quest_provenance(monkeypatch
     assert draft["history_sections"][0]["source_refs"]
     card_id = draft["major_questlines"][0]["id"]
     assert draft["provenance"]["major_questlines_alliance"][card_id]
-    assert draft["provenance"]["major_questlines_alliance"][card_id][0]["source_id"] == "src-quest-a"
+    assert (
+        draft["provenance"]["major_questlines_alliance"][card_id][0]["source_id"] == "src-quest-a"
+    )
     source_ids = {row["source_id"] for row in draft["sources"]}
     assert "src-quest-a" in source_ids
 
@@ -270,8 +275,7 @@ def test_zone_page_major_factions_provenance_required() -> None:
     report = validate_payload("zone_page", payload)
     assert report.passed is False
     assert any(
-        issue.code == "provenance.missing_card_pointers"
-        and "major_factions" in issue.path
+        issue.code == "provenance.missing_card_pointers" and "major_factions" in issue.path
         for issue in report.issues
     )
 
@@ -309,8 +313,7 @@ def test_instance_page_major_factions_provenance_required() -> None:
     report = validate_payload("instance_page", payload)
     assert report.passed is False
     assert any(
-        issue.code == "provenance.missing_card_pointers"
-        and "major_factions" in issue.path
+        issue.code == "provenance.missing_card_pointers" and "major_factions" in issue.path
         for issue in report.issues
     )
 

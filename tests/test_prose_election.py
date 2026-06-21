@@ -97,10 +97,7 @@ def test_select_history_pool_excludes_geography_roles() -> None:
 
 
 def test_history_section_cap_bumps_to_eight_for_large_pools() -> None:
-    items = [
-        _item("history", " ".join(["Event"] * 110))
-        for _ in range(8)
-    ]
+    items = [_item("history", " ".join(["Event"] * 110)) for _ in range(8)]
     assert history_section_cap(items) == 8
 
 
@@ -147,7 +144,12 @@ def test_select_currently_pool_tier4_uses_history_when_expansion_signal_present(
 
 def test_select_history_pool_orders_by_block_index() -> None:
     items = [
-        _item("cataclysm_edit", " ".join(["Cataclysm"] * 30), block_index=3, raw_section_role="cataclysm_edit"),
+        _item(
+            "cataclysm_edit",
+            " ".join(["Cataclysm"] * 30),
+            block_index=3,
+            raw_section_role="cataclysm_edit",
+        ),
         _item("history", " ".join(["Early"] * 30), block_index=1, raw_section_role="history_edit"),
         _item("history", " ".join(["Middle"] * 30), block_index=2, raw_section_role="history_edit"),
     ]
@@ -157,7 +159,9 @@ def test_select_history_pool_orders_by_block_index() -> None:
 
 def test_cap_history_pool_keeps_trailing_named_sections() -> None:
     items = [
-        _item("history", " ".join(["Early"] * 30), block_index=index, raw_section_role="history_edit")
+        _item(
+            "history", " ".join(["Early"] * 30), block_index=index, raw_section_role="history_edit"
+        )
         for index in range(1, 6)
     ]
     items.extend(

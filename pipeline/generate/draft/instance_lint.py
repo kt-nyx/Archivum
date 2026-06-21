@@ -22,9 +22,7 @@ MAX_OVERVIEW_WORDS = 320
 MIN_KEY_CHARACTER_WORDS = 18
 MAX_KEY_CHARACTER_WORDS = 50
 
-_GENERIC_AT_A_GLANCE = re.compile(
-    r"\bis a lore-significant retail instance\b", re.IGNORECASE
-)
+_GENERIC_AT_A_GLANCE = re.compile(r"\bis a lore-significant retail instance\b", re.IGNORECASE)
 _GENERIC_OVERVIEW = re.compile(
     r"\bcontains key enemies and encounter stakes captured from Warcraft Wiki\b",
     re.IGNORECASE,
@@ -123,7 +121,9 @@ def lint_overview(text: str, *, instance_name: str = "") -> list[str]:
     return issues
 
 
-def lint_key_character_summary(text: str, *, boss_name: str = "", instance_name: str = "") -> list[str]:
+def lint_key_character_summary(
+    text: str, *, boss_name: str = "", instance_name: str = ""
+) -> list[str]:
     issues: list[str] = []
     cleaned = text.strip()
     if not cleaned:
@@ -140,7 +140,11 @@ def lint_key_character_summary(text: str, *, boss_name: str = "", instance_name:
         issues.append("key enemy summary reads as hollow/non-notable characterization")
     if boss_name and boss_name.lower() not in cleaned.lower():
         issues.append("key enemy summary lacks boss name anchor")
-    if instance_name and instance_name.lower() not in cleaned.lower() and words < MIN_KEY_CHARACTER_WORDS:
+    if (
+        instance_name
+        and instance_name.lower() not in cleaned.lower()
+        and words < MIN_KEY_CHARACTER_WORDS
+    ):
         issues.append("key enemy summary lacks instance context")
     return issues
 
@@ -261,7 +265,11 @@ def fallback_instance_overview(
 ) -> tuple[str, list[str]]:
     if not items:
         return "", []
-    snippets = [str(item.get("snippet", "")).strip() for item in items if str(item.get("snippet", "")).strip()]
+    snippets = [
+        str(item.get("snippet", "")).strip()
+        for item in items
+        if str(item.get("snippet", "")).strip()
+    ]
     if not snippets:
         return "", []
     used: list[str] = []

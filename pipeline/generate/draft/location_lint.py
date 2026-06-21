@@ -98,8 +98,10 @@ def lint_location_summary(
         issues.append("location summary contains dating-convention framing")
     if reads_like_faction_or_npc_lede(cleaned):
         issues.append("location summary reads like faction or NPC lede")
-    if zone_name and words >= MIN_LOCATION_SUMMARY_WORDS and not has_zone_anchor(
-        cleaned, zone_name=zone_name, location_name=location_name
+    if (
+        zone_name
+        and words >= MIN_LOCATION_SUMMARY_WORDS
+        and not has_zone_anchor(cleaned, zone_name=zone_name, location_name=location_name)
     ):
         issues.append("location summary lacks zone or landmark anchor")
     return issues

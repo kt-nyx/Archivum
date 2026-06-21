@@ -7,7 +7,6 @@ from typing import Any
 from pipeline.contracts.models import IncludeDecision, ZonePage
 from pipeline.discovery.questline_promotion_gate import (
     QuestlineRunArtifacts,
-    check_questline_promotion,
     cluster_id_from_card_id,
     warn_questline_promotion,
 )
@@ -157,7 +156,7 @@ def validate_questline_promotion_rules(
                                 f"(expected {expected_anchor!r})"
                             ),
                             severity=ValidationSeverity.HARD_FAIL,
-                            path=f"$.major_questlines",
+                            path="$.major_questlines",
                         )
                     )
 

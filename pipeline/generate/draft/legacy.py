@@ -244,9 +244,7 @@ def character_draft(
                 },
             },
         },
-        system_prompt=(
-            "Produce a WoW character draft as JSON only. Use original prose."
-        ),
+        system_prompt=("Produce a WoW character draft as JSON only. Use original prose."),
         user_prompt=f"{entity_header(fact_pack)}Claims:\n{claims_text(fact_pack)}",
         response_schema_name="character_draft_body",
         trace=trace,
@@ -367,9 +365,7 @@ def asset_draft(
                 "caption": {"type": "string"},
             },
         },
-        system_prompt=(
-            "Produce WoW asset metadata as JSON only. Keep licensing wording factual."
-        ),
+        system_prompt=("Produce WoW asset metadata as JSON only. Keep licensing wording factual."),
         user_prompt=f"{entity_header(fact_pack)}Claims:\n{claims_text(fact_pack)}",
         response_schema_name="asset_draft_body",
         trace=trace,

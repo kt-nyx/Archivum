@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from pipeline.discovery.instance_bosses import (
-    BossCandidate,
     _BOSS_SECTION_EXACT,
+    BossCandidate,
     cap_pool_for_llm_prompt,
     classify_character_role,
     collect_boss_candidates,
@@ -25,7 +25,11 @@ def test_collect_boss_candidates_from_structured_links() -> None:
         instance_name="Scholomance",
         boss_pool_items=[],
         structured_links=[
-            {"href": "/wiki/Darkmaster_Gandling", "label": "Darkmaster Gandling", "section_role": "denizens"},
+            {
+                "href": "/wiki/Darkmaster_Gandling",
+                "label": "Darkmaster Gandling",
+                "section_role": "denizens",
+            },
             {"href": "/wiki/Jandice_Barov", "label": "Jandice Barov", "section_role": "bosses"},
         ],
     )
@@ -228,7 +232,7 @@ def test_rejects_section_header_link_titles() -> None:
     section_blocks = [
         {
             "section_role": "adventurers",
-            "text": 'See [[/wiki/Bosses|Bosses]] and [[/wiki/Adventurers|Adventurers]] for details.',
+            "text": "See [[/wiki/Bosses|Bosses]] and [[/wiki/Adventurers|Adventurers]] for details.",
         }
     ]
     candidates = collect_boss_candidates(

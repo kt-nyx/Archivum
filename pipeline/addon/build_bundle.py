@@ -15,7 +15,9 @@ def _load_json(path: Path) -> Any:
 
 
 def _load_static_glossary_term_metadata() -> dict[str, dict[str, str]]:
-    dictionary_path = Path(__file__).resolve().parents[2] / "dictionary" / "glossary_aliases.v1.json"
+    dictionary_path = (
+        Path(__file__).resolve().parents[2] / "dictionary" / "glossary_aliases.v1.json"
+    )
     if not dictionary_path.exists():
         return {}
     payload = _load_json(dictionary_path)

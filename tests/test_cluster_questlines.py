@@ -223,7 +223,11 @@ def test_build_zone_page_filters_excluded_clusters_by_ranking() -> None:
                     "confidence": 1.0,
                 }
             ],
-            "build_meta": {"source_id": "src-a", "cluster_id": "included-arc", "subject_zone_id": zone_id},
+            "build_meta": {
+                "source_id": "src-a",
+                "cluster_id": "included-arc",
+                "subject_zone_id": zone_id,
+            },
         },
         {
             "subject_id": zone_id,
@@ -238,7 +242,11 @@ def test_build_zone_page_filters_excluded_clusters_by_ranking() -> None:
                     "confidence": 1.0,
                 }
             ],
-            "build_meta": {"source_id": "src-b", "cluster_id": "excluded-arc", "subject_zone_id": zone_id},
+            "build_meta": {
+                "source_id": "src-b",
+                "cluster_id": "excluded-arc",
+                "subject_zone_id": zone_id,
+            },
         },
     ]
     draft = build_zone_page(

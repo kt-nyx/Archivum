@@ -13,9 +13,7 @@ def _candidate(name: str, *, role: str = "maps_subregions") -> dict:
 
 
 def test_wpl_landmarks_reach_include_threshold_with_seed_text() -> None:
-    seed_text = (
-        "Western Plaguelands contains Andorhal, Hearthglen, and Caer Darrow among its ruined settlements."
-    )
+    seed_text = "Western Plaguelands contains Andorhal, Hearthglen, and Caer Darrow among its ruined settlements."
     for name in ("Andorhal", "Hearthglen", "Caer Darrow"):
         score, decision, _reasons = score_location_candidate(_candidate(name), seed_text=seed_text)
         assert score >= 0.7, f"{name} scored {score}"

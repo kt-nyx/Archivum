@@ -65,7 +65,9 @@ def tense_marker_counts(text: str) -> tuple[int, int]:
     return past, present
 
 
-def has_dominant_present_tense(text: str, *, short_text_word_limit: int = _SHORT_TEXT_PRESENT_CARVEOUT_WORDS) -> bool:
+def has_dominant_present_tense(
+    text: str, *, short_text_word_limit: int = _SHORT_TEXT_PRESENT_CARVEOUT_WORDS
+) -> bool:
     past, present = tense_marker_counts(text)
     if present == 0:
         return False
@@ -98,7 +100,9 @@ def has_geography_hub_in_text(text: str) -> bool:
 def has_location_list_dump(text: str) -> bool:
     if _LOCATION_LIST_RE.search(text):
         return True
-    geography_hits = sum(1 for token in re.findall(r"\b[A-Z][a-z]+\b", text) if entry_kinds(token) & _GEOGRAPHY_KINDS)
+    geography_hits = sum(
+        1 for token in re.findall(r"\b[A-Z][a-z]+\b", text) if entry_kinds(token) & _GEOGRAPHY_KINDS
+    )
     return geography_hits >= 4
 
 

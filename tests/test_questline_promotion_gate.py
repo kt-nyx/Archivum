@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from pipeline.discovery.pilot_questline_registry import WPL_ZONE_ID
 from pipeline.discovery.questline_promotion_gate import (
     QuestlineRunArtifacts,
@@ -42,7 +40,9 @@ def _write_wpl_run(
     )
     if included_cluster_ids is not None:
         (run_root / "data" / "discovery" / "zone_quest_cluster_rankings.json").write_text(
-            json.dumps([{"zone_id": zone_id, "included_cluster_ids": included_cluster_ids}], indent=2),
+            json.dumps(
+                [{"zone_id": zone_id, "included_cluster_ids": included_cluster_ids}], indent=2
+            ),
             encoding="utf-8",
         )
     if metadata_rows is not None:

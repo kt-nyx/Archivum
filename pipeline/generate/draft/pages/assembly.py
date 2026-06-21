@@ -78,7 +78,10 @@ def _iter_evidence_items(
                     "source_title": str(item.get("source_title", "")),
                     "section_role": str(item.get("section_role", "")),
                     "raw_section_role": str(
-                        item.get("raw_section_role", build_meta.get("raw_section_role", item.get("section_role", "")))
+                        item.get(
+                            "raw_section_role",
+                            build_meta.get("raw_section_role", item.get("section_role", "")),
+                        )
                     ),
                     "block_index": block_index_value,
                     "source_id": str(build_meta.get("source_id", "")),
@@ -317,7 +320,7 @@ def _build_instance_evidence_pools(
     *,
     instance_name: str = "",
     parent_zone_evidence_rows: list[dict[str, Any]] | None = None,
-) -> dict[str, list[dict[str, Any]]]:
+) -> dict[str, Any]:
     history_pool = _iter_evidence_items(evidence_rows, {"history_digest"})
     at_a_glance_pool = _iter_evidence_items(evidence_rows, {"at_a_glance_input"})
     boss_pool = _iter_evidence_items(evidence_rows, {"boss_pool"})
@@ -376,9 +379,7 @@ def _extract_instance_structured_links(
     return []
 
 
-def _classic_excluded_names(
-    snapshots: list[dict[str, Any]] | None, instance_id: str
-) -> set[str]:
+def _classic_excluded_names(snapshots: list[dict[str, Any]] | None, instance_id: str) -> set[str]:
     """S3 retail/Classic cast exclusion set (normalized names).
 
     Union of the known-Classic backstop denylist and the instance snapshot's

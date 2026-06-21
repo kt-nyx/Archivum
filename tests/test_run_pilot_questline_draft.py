@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 
 from pipeline.discovery.questline_promotion_gate import (
+    QuestlineRunArtifacts,
     check_questline_promotion,
     load_questline_run_artifacts,
 )
-from pipeline.discovery.questline_promotion_gate import QuestlineRunArtifacts
 
 DEFAULT_RUN_ROOT = Path(
     os.environ.get("LORE_PILOT_RUN_ROOT", "artifacts/runs/run-western-plaguelands")
@@ -18,7 +18,9 @@ DEFAULT_RUN_ROOT = Path(
 
 
 def test_promoted_run_draft_passes_pilot_strict_when_present() -> None:
-    draft_path = DEFAULT_RUN_ROOT / "data" / "drafts" / "zone_page" / "zone-western-plaguelands.json"
+    draft_path = (
+        DEFAULT_RUN_ROOT / "data" / "drafts" / "zone_page" / "zone-western-plaguelands.json"
+    )
     if not draft_path.exists():
         pytest.skip("pilot run draft not present (set LORE_PILOT_RUN_ROOT to override)")
     zone_id = "zone-western-plaguelands"

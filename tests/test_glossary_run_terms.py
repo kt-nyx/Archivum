@@ -24,9 +24,15 @@ def test_build_run_terms_from_zone_and_instance_drafts(tmp_path: Path) -> None:
                 "zone_id": "zone-example",
                 "name": "Example Zone",
                 "wiki_url": "https://warcraft.wiki.gg/wiki/Example_Zone",
-                "major_factions": [{"id": "faction-scourge", "name": "Scourge", "summary": "Undead host."}],
-                "location_cards": [{"id": "location-outpost", "name": "Frontier Outpost", "summary": "A base."}],
-                "instance_links": [{"id": "instance-vault", "name": "Archive Vault", "summary": "A dungeon."}],
+                "major_factions": [
+                    {"id": "faction-scourge", "name": "Scourge", "summary": "Undead host."}
+                ],
+                "location_cards": [
+                    {"id": "location-outpost", "name": "Frontier Outpost", "summary": "A base."}
+                ],
+                "instance_links": [
+                    {"id": "instance-vault", "name": "Archive Vault", "summary": "A dungeon."}
+                ],
             },
             indent=2,
         ),
@@ -38,7 +44,9 @@ def test_build_run_terms_from_zone_and_instance_drafts(tmp_path: Path) -> None:
                 "instance_id": "instance-vault",
                 "name": "Archive Vault",
                 "wiki_url": "https://warcraft.wiki.gg/wiki/Archive_Vault",
-                "key_characters": [{"id": "character-boss", "name": "Archivist Maelor", "summary": "A boss."}],
+                "key_characters": [
+                    {"id": "character-boss", "name": "Archivist Maelor", "summary": "A boss."}
+                ],
             },
             indent=2,
         ),
@@ -47,7 +55,11 @@ def test_build_run_terms_from_zone_and_instance_drafts(tmp_path: Path) -> None:
 
     output_path = build_run_terms(context)
     assert output_path.exists()
-    rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows = [
+        json.loads(line)
+        for line in output_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
     term_ids = {row["term_id"] for row in rows}
     assert "term-example-zone" in term_ids
     assert "term-scourge" in term_ids
@@ -74,14 +86,20 @@ def test_build_run_terms_deduplicates_shared_labels(tmp_path: Path) -> None:
             {
                 "zone_id": "zone-example",
                 "name": "Example Zone",
-                "instance_links": [{"id": "instance-vault", "name": "Example Zone", "summary": "Same label."}],
+                "instance_links": [
+                    {"id": "instance-vault", "name": "Example Zone", "summary": "Same label."}
+                ],
             },
             indent=2,
         ),
         encoding="utf-8",
     )
     output_path = build_run_terms(context)
-    rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows = [
+        json.loads(line)
+        for line in output_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
     example_rows = [row for row in rows if row["label"] == "Example Zone"]
     assert len(example_rows) == 1
 
@@ -109,7 +127,11 @@ def test_build_run_terms_uses_faction_card_wiki_url(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     output_path = build_run_terms(context)
-    rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows = [
+        json.loads(line)
+        for line in output_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
     scourge = next(row for row in rows if row["term_id"] == "term-scourge")
     assert scourge["wiki_url"] == "https://warcraft.wiki.gg/wiki/Scourge"
 
@@ -117,7 +139,9 @@ def test_build_run_terms_uses_faction_card_wiki_url(tmp_path: Path) -> None:
 def _write_snapshots(context, snapshots: list[dict]) -> None:
     ingest_dir = context.data_dir / "ingest"
     ingest_dir.mkdir(parents=True, exist_ok=True)
-    (ingest_dir / "source_snapshots.json").write_text(json.dumps(snapshots, indent=2), encoding="utf-8")
+    (ingest_dir / "source_snapshots.json").write_text(
+        json.dumps(snapshots, indent=2), encoding="utf-8"
+    )
 
 
 def test_build_run_terms_derives_terms_from_ingest_snapshots(tmp_path: Path) -> None:
@@ -136,7 +160,11 @@ def test_build_run_terms_derives_terms_from_ingest_snapshots(tmp_path: Path) -> 
         ],
     )
     output_path = build_run_terms(context)
-    rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows = [
+        json.loads(line)
+        for line in output_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
     thel = next(row for row in rows if row["term_id"] == "term-thelara-dawnsong")
     assert thel["category"] == "person"
     assert thel["wiki_url"] == "https://warcraft.wiki.gg/wiki/Thelara_Dawnsong"
@@ -148,7 +176,9 @@ def test_build_run_terms_derives_terms_from_ingest_snapshots(tmp_path: Path) -> 
 
 
 def test_build_run_terms_classifies_unknown_type_from_categories(tmp_path: Path) -> None:
-    context = ensure_run_context("run-test-glossary-category-signal", artifacts_root=tmp_path / "runs")
+    context = ensure_run_context(
+        "run-test-glossary-category-signal", artifacts_root=tmp_path / "runs"
+    )
     _write_snapshots(
         context,
         [
@@ -163,7 +193,11 @@ def test_build_run_terms_classifies_unknown_type_from_categories(tmp_path: Path)
         ],
     )
     output_path = build_run_terms(context)
-    rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows = [
+        json.loads(line)
+        for line in output_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
     order = next(row for row in rows if row["term_id"] == "term-order-of-embers")
     # No discovered entity_type -> the structural MediaWiki category refines it.
     assert order["category"] == "faction"
@@ -203,12 +237,18 @@ def test_build_run_terms_upgrades_generic_category_from_snapshot(tmp_path: Path)
         ],
     )
     output_path = build_run_terms(context)
-    rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows = [
+        json.loads(line)
+        for line in output_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
     nathanos = next(row for row in rows if row["term_id"] == "term-nathanos-blightcaller")
     assert nathanos["category"] == "person"
 
 
-def test_glossary_pipeline_terms_link_validate_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_glossary_pipeline_terms_link_validate_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from pipeline.addon.build_bundle import build_addon_bundle
     from pipeline.linker.linker import run_glossary_linker
     from pipeline.validate.engine import validate_payload
@@ -325,14 +365,17 @@ def test_glossary_pipeline_terms_link_validate_bundle(tmp_path: Path, monkeypatc
     glossary_issues = [
         issue
         for issue in report.issues
-        if issue.path.startswith("$.glossary_refs") or issue.code.startswith("structure.glossary_ref")
+        if issue.path.startswith("$.glossary_refs")
+        or issue.code.startswith("structure.glossary_ref")
     ]
     assert not glossary_issues
     for ref in updated["glossary_refs"]:
         assert ref.get("label")
         assert str(ref.get("wiki_url", "")).startswith("http")
     bundle_root = build_addon_bundle(context)
-    glossary_lookup = json.loads((bundle_root / "lookup" / "glossary_refs.json").read_text(encoding="utf-8"))
+    glossary_lookup = json.loads(
+        (bundle_root / "lookup" / "glossary_refs.json").read_text(encoding="utf-8")
+    )
     for ref in updated["glossary_refs"]:
         term_id = ref["term_id"]
         assert term_id in glossary_lookup

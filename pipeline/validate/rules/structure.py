@@ -405,7 +405,13 @@ def _validate_zone_page(
     currently_lower = zone_page.currently.lower()
     if any(
         marker in currently_lower
-        for marker in ("years ago", "formerly", "during the third war", "was founded", "was established")
+        for marker in (
+            "years ago",
+            "formerly",
+            "during the third war",
+            "was founded",
+            "was established",
+        )
     ):
         issues.append(
             ValidationIssue(
@@ -426,7 +432,9 @@ def _validate_zone_page(
                 path="$.currently",
             )
         )
-    history_blob_full = history_blob + " " + " ".join(section.heading for section in zone_page.history_sections)
+    history_blob_full = (
+        history_blob + " " + " ".join(section.heading for section in zone_page.history_sections)
+    )
     if "&#91;" in history_blob_full or "History 1" in history_blob_full:
         issues.append(
             ValidationIssue(
@@ -457,7 +465,9 @@ def _validate_zone_page(
                 path="$.location_cards",
             )
         )
-    faction_summaries = [card.summary.strip().lower() for card in zone_page.major_factions if card.summary.strip()]
+    faction_summaries = [
+        card.summary.strip().lower() for card in zone_page.major_factions if card.summary.strip()
+    ]
     if len(faction_summaries) != len(set(faction_summaries)) and len(faction_summaries) > 1:
         issues.append(
             ValidationIssue(
@@ -482,8 +492,8 @@ def _validate_zone_page(
                 path="$.parent_continent",
             )
         )
-    for index, card in enumerate(zone_page.instance_links):
-        summary = card.summary.strip()
+    for index, instance_card in enumerate(zone_page.instance_links):
+        summary = instance_card.summary.strip()
         if summary and is_generic_instance_link_summary(summary):
             issues.append(
                 ValidationIssue(

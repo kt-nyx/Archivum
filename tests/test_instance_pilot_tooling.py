@@ -75,9 +75,7 @@ def _degraded_sidecar() -> list[dict]:
             "selection_reason": None,
         },
     )
-    for rank, candidate in enumerate(
-        (c for c in candidates if c.get("emitted")), start=1
-    ):
+    for rank, candidate in enumerate((c for c in candidates if c.get("emitted")), start=1):
         candidate["merge_rank"] = rank
         candidate.setdefault("selection_reason", "must_include_floor")
     return sidecar
@@ -169,9 +167,7 @@ def test_rubric_gate_flag_escalates_warn(tmp_path: Path) -> None:
     _write_run(root, page, sidecar)
 
     scores = evaluate_run(root)
-    role_finding = next(
-        f for f in scores[0].findings if f.code == "semantics.role_diversity"
-    )
+    role_finding = next(f for f in scores[0].findings if f.code == "semantics.role_diversity")
     assert role_finding.severity == "warn"
     assert scores[0].status == STATUS_WARN
     assert rubric_main([str(root)]) == 0

@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import os
-
 from pipeline.generate.draft.faction_scoring import (
-    FactionCandidate,
     MIN_SCORE,
+    FactionCandidate,
     candidates_for_finalize,
     finalize_evidence_pools,
     score_faction_candidate,
@@ -13,7 +11,13 @@ from pipeline.generate.draft.pages.cards import _finalize_faction_card
 
 
 def test_finalize_evidence_pools_tries_seed_after_profile() -> None:
-    profile = [{"source_id": "src-profile", "snippet": "The Argent Crusade is a faction in Azeroth.", "section_role": "lead"}]
+    profile = [
+        {
+            "source_id": "src-profile",
+            "snippet": "The Argent Crusade is a faction in Azeroth.",
+            "section_role": "lead",
+        }
+    ]
     seed = [
         {
             "source_id": "src-zone",

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pipeline.discovery.instance_bosses import BossCandidate
 from pipeline.generate.draft import prose_selection as workers
 from pipeline.generate.draft.pages import (
     build_instance_key_character_selection,
@@ -10,7 +9,9 @@ from pipeline.generate.draft.pages import (
 
 def test_must_include_appears_when_llm_returns_empty(monkeypatch) -> None:
     monkeypatch.delenv("WOW_LORE_WIKI_FIRST_NO_LLM", raising=False)
-    monkeypatch.setattr(workers, "load_ai_settings", lambda: type("S", (), {"openai_ready": True})())
+    monkeypatch.setattr(
+        workers, "load_ai_settings", lambda: type("S", (), {"openai_ready": True})()
+    )
     monkeypatch.setattr(workers, "llm_json_with_retry", lambda **kwargs: {"selected": []})
 
     selection = build_instance_key_character_selection(
@@ -37,7 +38,9 @@ def test_must_include_appears_when_llm_returns_empty(monkeypatch) -> None:
 
 def test_cast_order_follows_merge_not_significance(monkeypatch) -> None:
     monkeypatch.delenv("WOW_LORE_WIKI_FIRST_NO_LLM", raising=False)
-    monkeypatch.setattr(workers, "load_ai_settings", lambda: type("S", (), {"openai_ready": True})())
+    monkeypatch.setattr(
+        workers, "load_ai_settings", lambda: type("S", (), {"openai_ready": True})()
+    )
     monkeypatch.setattr(
         workers,
         "llm_json_with_retry",
@@ -129,7 +132,9 @@ def test_finalize_emits_selection_reason_codes(monkeypatch) -> None:
         ],
     )
     assert draft["key_characters"]
-    codes = {code for card in draft["key_characters"] for code in card.get("decision_reason_codes", [])}
+    codes = {
+        code for card in draft["key_characters"] for code in card.get("decision_reason_codes", [])
+    }
     assert "must_include_floor" in codes
 
 

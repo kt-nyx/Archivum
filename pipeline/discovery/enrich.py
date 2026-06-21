@@ -226,7 +226,9 @@ def _build_evidence_packs(
             lore_blocks = snapshot.get("quest_lore_blocks", [])
             if not isinstance(lore_blocks, list) or not lore_blocks:
                 lore_blocks = extract_quest_lore(section_blocks)
-            quest_node_id = str(snapshot.get("quest_node_id", snapshot.get("auxiliary_target_id", ""))).strip()
+            quest_node_id = str(
+                snapshot.get("quest_node_id", snapshot.get("auxiliary_target_id", ""))
+            ).strip()
             link_key = f"{subject_id}|{_normalize_wiki_link_key(wiki_url)}"
             index_meta = cluster_index.get(link_key) or cluster_index.get(
                 f"{subject_id}|node|{quest_node_id}", {}
@@ -250,7 +252,9 @@ def _build_evidence_packs(
                             "source_url": wiki_url,
                             "source_title": page_title or entity_name,
                             "snippet": snippet,
-                            "section_role": _section_role(str(snippet_row.get("section_role", "other"))),
+                            "section_role": _section_role(
+                                str(snippet_row.get("section_role", "other"))
+                            ),
                             "confidence": 1.0,
                         }
                     ],
@@ -372,7 +376,9 @@ def _build_evidence_packs(
                     build_meta["location_id"] = str(snapshot.get("auxiliary_target_id", "")).strip()
                     build_meta["location_name"] = page_title or entity_name
                 if aux_role == "instance_lore":
-                    build_meta["instance_id"] = str(snapshot.get("auxiliary_target_id", subject_id)).strip()
+                    build_meta["instance_id"] = str(
+                        snapshot.get("auxiliary_target_id", subject_id)
+                    ).strip()
                 if is_instance_seed or aux_role == "instance_lore":
                     build_meta["lore_scope"] = "instance"
                 elif aux_role == "parent_lore":
@@ -412,6 +418,7 @@ def _build_evidence_packs(
             if key in seen_cluster_keys:
                 continue
             seen_cluster_keys.add(key)
+            existing_build_meta = pack.get("build_meta")
             cluster_pack = {
                 "subject_id": subject_id,
                 "subject_type": "zone",
@@ -419,7 +426,7 @@ def _build_evidence_packs(
                 "evidence_items": list(pack.get("evidence_items", [])),
                 "constraints": pack.get("constraints", {}),
                 "build_meta": {
-                    **(pack.get("build_meta") or {}),
+                    **(existing_build_meta if isinstance(existing_build_meta, dict) else {}),
                     "cluster_id": cluster_id,
                 },
             }
@@ -496,7 +503,11 @@ def _cluster_evidence_metrics(
         cluster_id = str(meta.get("cluster_id", "")).strip()
         if zone_id and cluster_id:
             covered.add((zone_id, cluster_id))
-    missing = [cluster_id for zone_id, cluster_id in sorted(clusters) if (zone_id, cluster_id) not in covered]
+    missing = [
+        cluster_id
+        for zone_id, cluster_id in sorted(clusters)
+        if (zone_id, cluster_id) not in covered
+    ]
     return len(covered), missing
 
 
@@ -535,7 +546,9 @@ def run_discovery_enrich(
     if phase == "cluster":
         v3_blob = _load_json(outputs["zone_quest_graph_v3"])
         questline_graph_v3 = v3_blob if isinstance(v3_blob, list) else []
-        quest_records_path, quest_records = _load_or_aggregate_quest_records(discovery_dir, snapshots)
+        quest_records_path, quest_records = _load_or_aggregate_quest_records(
+            discovery_dir, snapshots
+        )
         storyline_by_zone = _storyline_snapshots_by_zone(snapshots)
         zone_names: dict[str, str] = {}
         for snapshot in snapshots:
@@ -590,7 +603,9 @@ def run_discovery_enrich(
                 "enrich_phase": phase,
                 "snapshot_count": len(snapshots),
                 "quest_record_count": len(quest_records),
-                "v3_quest_count": sum(1 for row in clustered_rows if row.get("node_type") == "quest"),
+                "v3_quest_count": sum(
+                    1 for row in clustered_rows if row.get("node_type") == "quest"
+                ),
                 "v3_cluster_count": len(cluster_ids),
                 "max_cluster_quest_count": max_cluster_size,
                 "unresolved_edge_count": unresolved_edge_count,
@@ -608,7 +623,9 @@ def run_discovery_enrich(
         questline_graph_v3 = v3_blob if isinstance(v3_blob, list) else []
         clusters_blob = _load_json(outputs["zone_quest_clusters"])
         cluster_summaries = clusters_blob if isinstance(clusters_blob, list) else []
-        quest_records_path, quest_records = _load_or_aggregate_quest_records(discovery_dir, snapshots)
+        quest_records_path, quest_records = _load_or_aggregate_quest_records(
+            discovery_dir, snapshots
+        )
         storyline_by_zone = _storyline_snapshots_by_zone(snapshots)
 
         all_decisions: list[dict[str, Any]] = []
@@ -625,7 +642,9 @@ def run_discovery_enrich(
                     summaries_by_zone[zone_id].append(summary)
 
         for zone_id in sorted(summaries_by_zone):
-            zone_rows = [row for row in questline_graph_v3 if str(row.get("zone_id", "")) == zone_id]
+            zone_rows = [
+                row for row in questline_graph_v3 if str(row.get("zone_id", "")) == zone_id
+            ]
             decisions, ranking = score_zone_questline_clusters(
                 zone_id=zone_id,
                 cluster_summaries=summaries_by_zone[zone_id],
@@ -681,11 +700,13 @@ def run_discovery_enrich(
         rankings_blob = _load_json(outputs["zone_quest_cluster_rankings"])
         rankings_list = rankings_blob if isinstance(rankings_blob, list) else []
         included_by_zone = load_included_cluster_ids_by_zone(rankings_list)
-        quest_records_path, quest_records = _load_or_aggregate_quest_records(discovery_dir, snapshots)
+        quest_records_path, quest_records = _load_or_aggregate_quest_records(
+            discovery_dir, snapshots
+        )
 
         metadata_rows: list[dict[str, Any]] = []
         aggregate_metrics: dict[str, int] = defaultdict(int)
-        summaries_by_zone: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        summaries_by_zone = defaultdict(list)
         for summary in cluster_summaries:
             if isinstance(summary, dict):
                 zone_id = str(summary.get("zone_id", "")).strip()
@@ -693,7 +714,9 @@ def run_discovery_enrich(
                     summaries_by_zone[zone_id].append(summary)
 
         for zone_id in sorted(included_by_zone):
-            zone_rows = [row for row in questline_graph_v3 if str(row.get("zone_id", "")) == zone_id]
+            zone_rows = [
+                row for row in questline_graph_v3 if str(row.get("zone_id", "")) == zone_id
+            ]
             rows, metrics = build_zone_questline_card_metadata(
                 zone_id=zone_id,
                 cluster_summaries=summaries_by_zone.get(zone_id, []),
@@ -717,8 +740,12 @@ def run_discovery_enrich(
                 "card_polish_registry_mapped_count": aggregate_metrics.get(
                     "card_polish_registry_mapped_count", 0
                 ),
-                "card_polish_entry_anchor_count": aggregate_metrics.get("card_polish_entry_anchor_count", 0),
-                "card_polish_unmapped_count": aggregate_metrics.get("card_polish_unmapped_count", 0),
+                "card_polish_entry_anchor_count": aggregate_metrics.get(
+                    "card_polish_entry_anchor_count", 0
+                ),
+                "card_polish_unmapped_count": aggregate_metrics.get(
+                    "card_polish_unmapped_count", 0
+                ),
                 "quest_records_path": str(quest_records_path),
             }
         )
@@ -741,8 +768,12 @@ def run_discovery_enrich(
             v3_rows=questline_graph_v3,
             included_clusters_by_zone=included_sets or None,
         )
-        clusters_with_evidence, clusters_missing = _cluster_evidence_metrics(questline_graph_v3, evidence_packs)
-        quest_records_path, quest_records = _load_or_aggregate_quest_records(discovery_dir, snapshots)
+        clusters_with_evidence, clusters_missing = _cluster_evidence_metrics(
+            questline_graph_v3, evidence_packs
+        )
+        quest_records_path, quest_records = _load_or_aggregate_quest_records(
+            discovery_dir, snapshots
+        )
         all_cluster_ids = {
             (str(row.get("zone_id", "")), str(row.get("cluster_id", "")))
             for row in questline_graph_v3
@@ -781,13 +812,13 @@ def run_discovery_enrich(
     if not isinstance(location_candidates, list):
         location_candidates = []
 
-    questline_graph_v3: list[dict[str, Any]] = []
+    questline_graph_v3 = []
     location_decisions: list[dict[str, Any]] = []
     questline_decisions: list[dict[str, Any]] = []
     storyline_by_zone = _storyline_snapshots_by_zone(snapshots)
     storyline_parse_status: dict[str, str] = {}
 
-    zone_names: dict[str, str] = {}
+    zone_names = {}
     for snapshot in snapshots:
         if not isinstance(snapshot, dict):
             continue
@@ -821,8 +852,7 @@ def run_discovery_enrich(
     quest_graph = v3_to_legacy_v1(questline_graph_v3)
 
     zone_seed_text_by_id = {
-        zone_id: build_zone_seed_text(snapshots, zone_id)
-        for zone_id in sorted(zone_names)
+        zone_id: build_zone_seed_text(snapshots, zone_id) for zone_id in sorted(zone_names)
     }
     for candidate in location_candidates:
         if not isinstance(candidate, dict):
@@ -840,8 +870,10 @@ def run_discovery_enrich(
     for zone_id in sorted(set(zone_names) | set(storyline_by_zone)):
         zone_v3 = [row for row in questline_graph_v3 if str(row.get("zone_id", "")) == zone_id]
         quest_count = sum(1 for row in zone_v3 if row.get("node_type") == "quest")
-        cluster_ids = {str(row.get("cluster_id", "")) for row in zone_v3 if row.get("cluster_id")}
-        part_count = len(cluster_ids)
+        zone_cluster_ids = {
+            str(row.get("cluster_id", "")) for row in zone_v3 if row.get("cluster_id")
+        }
+        part_count = len(zone_cluster_ids)
         depth = len(zone_v3)
         score = min(1.0, (part_count * 0.15) + (quest_count * 0.05) + (0.3 if depth >= 3 else 0.0))
         borderline = 0.45 <= score <= 0.65
@@ -871,7 +903,9 @@ def run_discovery_enrich(
                     else None
                 ),
                 "final_decision": (
-                    "include" if score >= 0.7 or quest_count >= 3 else ("defer" if borderline else "exclude")
+                    "include"
+                    if score >= 0.7 or quest_count >= 3
+                    else ("defer" if borderline else "exclude")
                 ),
                 "reason_codes": ["storyline_page", "graph_depth"],
             }
@@ -884,10 +918,14 @@ def run_discovery_enrich(
             if isinstance(row, dict) and str(row.get("subject_id", "")) not in enriched_zone_ids:
                 questline_decisions.append(row)
 
-    evidence_packs: list[dict[str, Any]] = []
+    evidence_packs = []
     if phase in {"full", "roster"}:
-        evidence_packs = _build_evidence_packs(snapshots, context.run_id, v3_rows=questline_graph_v3)
-    history_digest_count = sum(1 for row in evidence_packs if row.get("field_name") == "history_digest")
+        evidence_packs = _build_evidence_packs(
+            snapshots, context.run_id, v3_rows=questline_graph_v3
+        )
+    history_digest_count = sum(
+        1 for row in evidence_packs if row.get("field_name") == "history_digest"
+    )
     v3_quest_count = sum(1 for row in questline_graph_v3 if row.get("node_type") == "quest")
     v3_cluster_count = len(
         {
@@ -896,7 +934,9 @@ def run_discovery_enrich(
             if row.get("cluster_id")
         }
     )
-    clusters_with_evidence, clusters_missing = _cluster_evidence_metrics(questline_graph_v3, evidence_packs)
+    clusters_with_evidence, clusters_missing = _cluster_evidence_metrics(
+        questline_graph_v3, evidence_packs
+    )
 
     write_json(outputs["zone_quest_graph"], quest_graph)
     write_json(outputs["zone_quest_graph_v3"], questline_graph_v3)
@@ -906,20 +946,23 @@ def run_discovery_enrich(
         outputs["evidence_packs"].write_text(
             "\n".join(json.dumps(row) for row in evidence_packs) + "\n", encoding="utf-8"
         )
-    write_json(outputs["enrich_report"], {
-                "run_id": context.run_id,
-                "enrich_phase": phase,
-                "snapshot_count": len(snapshots),
-                "evidence_pack_count": len(evidence_packs),
-                "quest_graph_nodes": len(questline_graph_v3),
-                "v3_quest_count": v3_quest_count,
-                "v3_cluster_count": v3_cluster_count,
-                "history_digest_block_count": history_digest_count,
-                "storyline_parse_status": storyline_parse_status,
-                "storyline_zones": sorted(storyline_by_zone.keys()),
-                "clusters_with_quest_evidence": clusters_with_evidence,
-                "clusters_missing_evidence": clusters_missing,
-            })
+    write_json(
+        outputs["enrich_report"],
+        {
+            "run_id": context.run_id,
+            "enrich_phase": phase,
+            "snapshot_count": len(snapshots),
+            "evidence_pack_count": len(evidence_packs),
+            "quest_graph_nodes": len(questline_graph_v3),
+            "v3_quest_count": v3_quest_count,
+            "v3_cluster_count": v3_cluster_count,
+            "history_digest_block_count": history_digest_count,
+            "storyline_parse_status": storyline_parse_status,
+            "storyline_zones": sorted(storyline_by_zone.keys()),
+            "clusters_with_quest_evidence": clusters_with_evidence,
+            "clusters_missing_evidence": clusters_missing,
+        },
+    )
 
     for row in location_decisions + questline_decisions:
         DecisionArtifact.model_validate(row)

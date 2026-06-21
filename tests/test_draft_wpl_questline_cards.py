@@ -6,22 +6,30 @@ from pathlib import Path
 
 import pytest
 
-from pipeline.discovery.questline_card_polish import build_zone_questline_card_metadata, index_card_metadata_by_cluster
+from pipeline.discovery.pilot_questline_registry import load_registry
+from pipeline.discovery.questline_card_polish import (
+    build_zone_questline_card_metadata,
+    index_card_metadata_by_cluster,
+)
 from pipeline.discovery.questline_cluster import cluster_zone_questlines
 from pipeline.discovery.questline_significance import score_zone_questline_clusters
 from pipeline.generate.draft.card_lint import lint_cta_hook
 from pipeline.generate.draft.pages import build_zone_page
 
 FIXTURE_DIR = Path("tests/fixtures/clustering")
-from pipeline.discovery.pilot_questline_registry import load_registry
+
 ZONE_ID = "zone-western-plaguelands"
 
 
 def _load_wpl() -> tuple[list[dict], list[dict]]:
-    roster = json.loads((FIXTURE_DIR / "western_plaguelands_roster_v3.json").read_text(encoding="utf-8"))
+    roster = json.loads(
+        (FIXTURE_DIR / "western_plaguelands_roster_v3.json").read_text(encoding="utf-8")
+    )
     records = [
         json.loads(line)
-        for line in (FIXTURE_DIR / "western_plaguelands_quest_records.jsonl").read_text(encoding="utf-8").splitlines()
+        for line in (FIXTURE_DIR / "western_plaguelands_quest_records.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
         if line.strip()
     ]
     return roster, records
@@ -38,7 +46,9 @@ def _no_llm(monkeypatch: pytest.MonkeyPatch) -> None:
     os.environ["WOW_LORE_WIKI_FIRST_NO_LLM"] = "1"
 
 
-def test_build_zone_page_wpl_emits_four_ql_cards_without_continued(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_build_zone_page_wpl_emits_four_ql_cards_without_continued(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     roster, records = _load_wpl()
     rows, summaries, _ = cluster_zone_questlines(
         zone_id=ZONE_ID,

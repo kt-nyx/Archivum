@@ -29,9 +29,7 @@ def _seed_pilot_manifest(context_root: Path) -> None:
 
 
 def _mock_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_fetch(
-        url: str, source_class: str
-    ) -> FetchedSource:
+    def fake_fetch(url: str, source_class: str) -> FetchedSource:
         return FetchedSource(
             f"{source_class} source evidence for {url} with zone chronology and conflict context.",
             "mw:654321",
@@ -259,7 +257,9 @@ def test_ingest_uses_revision_pinned_oldid_url_when_revision_is_supplied(
     def fake_fetch(url: str, source_class: str) -> FetchedSource:
         _ = source_class
         captured_urls.append(url)
-        return FetchedSource("Pinned revision body text.", "mw:123456", "section:lead paragraph:1", [], [], [], "")
+        return FetchedSource(
+            "Pinned revision body text.", "mw:123456", "section:lead paragraph:1", [], [], [], ""
+        )
 
     monkeypatch.setattr("pipeline.ingest.fetch_wiki._fetch_url_text", fake_fetch)
     run_ingest_stage(context)

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-
 from collections.abc import Mapping
 
 from pydantic import BaseModel
@@ -28,10 +27,10 @@ from pipeline.contracts.models import (
     Character,
     GlossaryTerm,
     Instance,
+    InstancePage,
     SubZone,
     Zone,
     ZonePage,
-    InstancePage,
 )
 from pipeline.validate.types import ValidationIssue, ValidationSeverity
 
@@ -326,8 +325,8 @@ def _validate_zone_page(zone_page: ZonePage) -> list[ValidationIssue]:
                     path=f"$.major_factions[{index}].summary",
                 )
             )
-    for index, card in enumerate(zone_page.instance_links):
-        words = _word_count(card.summary)
+    for index, instance_card in enumerate(zone_page.instance_links):
+        words = _word_count(instance_card.summary)
         if words and not (10 <= words <= 35):
             issues.append(
                 ValidationIssue(

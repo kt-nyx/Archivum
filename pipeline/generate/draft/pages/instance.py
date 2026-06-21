@@ -174,7 +174,6 @@ def build_instance_major_factions(
     )
 
 
-
 def build_instance_page(
     fact_pack: dict[str, Any],
     evidence_rows: list[dict[str, Any]],

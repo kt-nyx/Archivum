@@ -8,6 +8,7 @@ from pipeline.ai.config import load_ai_settings
 from pipeline.common.run_context import ensure_run_context
 from pipeline.orchestrator.flow import run_pipeline_flow
 from pipeline.orchestrator.stages import (
+    run_addon_bundle_stage,
     run_coalesce_stage,
     run_discovery_enrich_stage,
     run_discovery_stage,
@@ -15,7 +16,6 @@ from pipeline.orchestrator.stages import (
     run_glossary_terms_stage,
     run_ingest_stage,
     run_linker_stage,
-    run_addon_bundle_stage,
     run_traverse_stage,
     run_validate_stage,
 )
@@ -60,8 +60,7 @@ def _parse_fact_check_profile(value: str) -> str:
     normalized = _normalized_fact_check_profile(value)
     if normalized not in {"off", "warn", "strict"}:
         raise typer.BadParameter(
-            "fact-check profile must be one of: off, warn, strict "
-            "(case-insensitive)."
+            "fact-check profile must be one of: off, warn, strict (case-insensitive)."
         )
     return normalized
 

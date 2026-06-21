@@ -57,7 +57,9 @@ def test_resolve_parent_continent_ignores_simile_northrend_in_history() -> None:
             "field_name": "history_digest",
             "build_meta": {"source_kind": "seed"},
             "evidence_items": [
-                {"snippet": "Just as in Northrend, the cold preserved the dead across the frontier."}
+                {
+                    "snippet": "Just as in Northrend, the cold preserved the dead across the frontier."
+                }
             ],
         },
     ]
@@ -86,7 +88,9 @@ def test_resolve_parent_continent_maps_lordaeron_only_to_eastern_kingdoms() -> N
         {
             "field_name": "at_a_glance_input",
             "build_meta": {"source_kind": "seed"},
-            "evidence_items": [{"snippet": "The zone spans northern Lordaeron between key crusader holdings."}],
+            "evidence_items": [
+                {"snippet": "The zone spans northern Lordaeron between key crusader holdings."}
+            ],
         }
     ]
     assert resolve_parent_continent(evidence_rows) == "eastern-kingdoms"

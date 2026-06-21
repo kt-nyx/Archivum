@@ -240,23 +240,25 @@ def _profile_pool_for_boss(
         rf"/wiki/{re.escape(boss_name.replace(' ', '_'))}\b",
         re.IGNORECASE,
     )
-    default_source_id = str(boss_pool_items[0].get("source_id", "")).strip() if boss_pool_items else ""
+    default_source_id = (
+        str(boss_pool_items[0].get("source_id", "")).strip() if boss_pool_items else ""
+    )
     pool: list[dict[str, Any]] = []
     for item in boss_pool_items:
         raw_snippet = str(item.get("snippet", ""))
         snippet = _plain_snippet(raw_snippet)
-        if pattern.search(snippet) or slug_pattern.search(snippet) or slug_pattern.search(raw_snippet):
+        if (
+            pattern.search(snippet)
+            or slug_pattern.search(snippet)
+            or slug_pattern.search(raw_snippet)
+        ):
             pool.append({**item, "snippet": snippet})
     for block in section_blocks:
         if not isinstance(block, dict):
             continue
         raw_text = str(block.get("text", ""))
         text = _plain_snippet(raw_text)
-        if not (
-            pattern.search(text)
-            or slug_pattern.search(text)
-            or slug_pattern.search(raw_text)
-        ):
+        if not (pattern.search(text) or slug_pattern.search(text) or slug_pattern.search(raw_text)):
             continue
         role = str(block.get("section_role", "other"))
         pool.append(
@@ -395,9 +397,7 @@ def classify_character_role(
     return best_role, f"{best_role}_descriptor"
 
 
-def _rank_candidates(
-    candidates: list[BossCandidate], *, instance_name: str
-) -> list[BossCandidate]:
+def _rank_candidates(candidates: list[BossCandidate], *, instance_name: str) -> list[BossCandidate]:
     """Assign significance + deterministic role, then order by significance desc."""
     for candidate in candidates:
         candidate.significance = _significance_score(candidate)
@@ -508,7 +508,11 @@ def _collect_roster_candidates(
         if not row_has_roster_role(block):
             continue
         leaf_role = str(block.get("section_role", "other"))
-        role = leaf_role if is_boss_section_role(leaf_role) else str(block.get("parent_section_role", leaf_role))
+        role = (
+            leaf_role
+            if is_boss_section_role(leaf_role)
+            else str(block.get("parent_section_role", leaf_role))
+        )
         text = str(block.get("text", ""))
         for title, url in _extract_wiki_links(text):
             _register(title, url, role)
@@ -637,9 +641,7 @@ def collect_character_pool(
     merged: dict[str, BossCandidate] = {}
     order: list[str] = []
     for candidate in roster + narrative + history_candidates:
-        _merge_candidate_into(
-            merged, candidate, canonical_index=canonical_index, order=order
-        )
+        _merge_candidate_into(merged, candidate, canonical_index=canonical_index, order=order)
 
     combined_pool_items = boss_pool_items + list(narrative_pool or []) + list(history_pool or [])
     result = [merged[key] for key in order]
@@ -747,11 +749,7 @@ def deterministic_pool_order(
 ) -> list[str]:
     """Offline cast ordering: mention frequency, then section weight, then name."""
     exclude = exclude_normalized_names or set()
-    eligible = [
-        candidate
-        for candidate in pool
-        if normalize_title(candidate.name) not in exclude
-    ]
+    eligible = [candidate for candidate in pool if normalize_title(candidate.name) not in exclude]
 
     def _sort_key(candidate: BossCandidate) -> tuple[int, int, str]:
         return (

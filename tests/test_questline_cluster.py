@@ -20,10 +20,14 @@ ZONE_ID = "zone-western-plaguelands"
 
 
 def _load_wpl_fixture() -> tuple[list[dict], list[dict]]:
-    roster = json.loads((FIXTURE_DIR / "western_plaguelands_roster_v3.json").read_text(encoding="utf-8"))
+    roster = json.loads(
+        (FIXTURE_DIR / "western_plaguelands_roster_v3.json").read_text(encoding="utf-8")
+    )
     records = [
         json.loads(line)
-        for line in (FIXTURE_DIR / "western_plaguelands_quest_records.jsonl").read_text(encoding="utf-8").splitlines()
+        for line in (FIXTURE_DIR / "western_plaguelands_quest_records.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
         if line.strip()
     ]
     return roster, records
@@ -258,7 +262,9 @@ def test_cluster_size_cap_splits_long_chain() -> None:
     for index in range(1, count + 1):
         previous = [f"Quest {index - 1}"] if index > 1 else []
         next_quests = [f"Quest {index + 1}"] if index < count else []
-        records.append(_record(f"q{index}", f"Quest {index}", previous=previous, next_quests=next_quests))
+        records.append(
+            _record(f"q{index}", f"Quest {index}", previous=previous, next_quests=next_quests)
+        )
     rows, summaries, _unresolved = cluster_zone_questlines(
         zone_id="zone-example",
         roster_rows=roster,

@@ -25,11 +25,7 @@ def build_fact_pack(row: dict[str, Any]) -> dict[str, Any]:
     row_source_urls = row.get("source_urls")
     if isinstance(row_source_urls, dict):
         for source_id, source_url in row_source_urls.items():
-            if (
-                isinstance(source_id, str)
-                and isinstance(source_url, str)
-                and source_url.strip()
-            ):
+            if isinstance(source_id, str) and isinstance(source_url, str) and source_url.strip():
                 source_urls[source_id] = source_url
     for item in row.get("fact_items", []):
         if not isinstance(item, dict):

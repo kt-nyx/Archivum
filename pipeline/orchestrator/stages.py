@@ -107,7 +107,10 @@ def run_discovery_stage(context: RunContext, source_manifest_path: Path) -> dict
         context,
         "discovery",
         status="ok",
-        inputs=[str(source_manifest_path), str(context.stage_dir("ingest") / "source_snapshots.json")],
+        inputs=[
+            str(source_manifest_path),
+            str(context.stage_dir("ingest") / "source_snapshots.json"),
+        ],
         outputs=[str(path) for path in outputs.values()],
         metadata={"artifact_count": len(outputs), "phase": "seed"},
     )
@@ -125,7 +128,9 @@ def run_traverse_seed_stage(context: RunContext) -> dict[str, Path]:
         metadata={
             "fetched_count": sum(
                 1
-                for row in json.loads(outputs["traversal_report"].read_text(encoding="utf-8")).get("entries", [])
+                for row in json.loads(outputs["traversal_report"].read_text(encoding="utf-8")).get(
+                    "entries", []
+                )
                 if row.get("status") == "fetched"
             )
         },
@@ -144,7 +149,9 @@ def run_traverse_quests_stage(context: RunContext) -> dict[str, Path]:
         metadata={
             "fetched_count": sum(
                 1
-                for row in json.loads(outputs["traversal_report"].read_text(encoding="utf-8")).get("entries", [])
+                for row in json.loads(outputs["traversal_report"].read_text(encoding="utf-8")).get(
+                    "entries", []
+                )
                 if row.get("status") == "fetched" and row.get("role") == "quest"
             )
         },
@@ -168,7 +175,10 @@ def run_discovery_enrich_stage(
         context,
         "discovery_enrich",
         status="ok",
-        inputs=[str(source_manifest_path), str(context.stage_dir("ingest") / "source_snapshots.json")],
+        inputs=[
+            str(source_manifest_path),
+            str(context.stage_dir("ingest") / "source_snapshots.json"),
+        ],
         outputs=[str(path) for path in outputs.values()],
         metadata={"artifact_count": len(outputs), "phase": phase},
     )
@@ -355,7 +365,6 @@ def run_validate_stage(
     resources = load_validation_run_resources_from_context(context)
     linker_manual_review_by_entity = resources.linker_manual_review_by_entity
     fact_check_target_entity_ids = resources.fact_check_target_entity_ids
-    fact_check_target_reason_map = resources.fact_check_target_reasons
 
     resolved_enable_llm = fact_check_enable_llm
     if resolved_enable_llm is None:
@@ -445,9 +454,7 @@ def run_validate_stage(
         linker_review_count = linker_manual_review_by_entity.get(entity_id, 0)
         if linker_review_count > 0:
             glossary_path = (
-                "$.glossary_refs"
-                if entity_type in {"zone_page", "instance_page"}
-                else "$.glossary"
+                "$.glossary_refs" if entity_type in {"zone_page", "instance_page"} else "$.glossary"
             )
             issues = cast(list[dict[str, Any]], row["issues"])
             issues.append(
@@ -479,31 +486,37 @@ def run_validate_stage(
     report_dir.mkdir(parents=True, exist_ok=True)
 
     validation_report_path = report_dir / "validation_report.json"
-    write_json(validation_report_path, {
-                "run_id": context.run_id,
-                "fact_check_profile": normalized_fact_check_profile,
-                "release_gate": release_gate,
-                "no_llm_fact_check": no_llm_fact_check,
-                "llm_model": fact_check_llm_model,
-                "fact_check_target_entity_count": len(fact_check_target_entity_ids),
-                "fact_check_target_entity_ids": fact_check_target_entity_ids,
-                "max_entity_concurrency": max_entity_concurrency,
-                "entity_reports": report_rows,
-                "passed": all_passed,
-            })
+    write_json(
+        validation_report_path,
+        {
+            "run_id": context.run_id,
+            "fact_check_profile": normalized_fact_check_profile,
+            "release_gate": release_gate,
+            "no_llm_fact_check": no_llm_fact_check,
+            "llm_model": fact_check_llm_model,
+            "fact_check_target_entity_count": len(fact_check_target_entity_ids),
+            "fact_check_target_entity_ids": fact_check_target_entity_ids,
+            "max_entity_concurrency": max_entity_concurrency,
+            "entity_reports": report_rows,
+            "passed": all_passed,
+        },
+    )
 
     fact_check_report_path = report_dir / "fact_check_report.json"
-    write_json(fact_check_report_path, {
-                "run_id": context.run_id,
-                "profile": normalized_fact_check_profile,
-                "web_search_enabled": fact_check_web_search,
-                "llm_enabled": resolved_enable_llm,
-                "no_llm_fact_check": no_llm_fact_check,
-                "llm_model": fact_check_llm_model,
-                "target_entity_count": len(fact_check_target_entity_ids),
-                "target_entity_ids": fact_check_target_entity_ids,
-                "entities": fact_check_rows,
-            })
+    write_json(
+        fact_check_report_path,
+        {
+            "run_id": context.run_id,
+            "profile": normalized_fact_check_profile,
+            "web_search_enabled": fact_check_web_search,
+            "llm_enabled": resolved_enable_llm,
+            "no_llm_fact_check": no_llm_fact_check,
+            "llm_model": fact_check_llm_model,
+            "target_entity_count": len(fact_check_target_entity_ids),
+            "target_entity_ids": fact_check_target_entity_ids,
+            "entities": fact_check_rows,
+        },
+    )
 
     summary_lines = [
         f"# Fact-check summary ({normalized_fact_check_profile})",

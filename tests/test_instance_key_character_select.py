@@ -41,7 +41,9 @@ def test_select_pool_no_llm_uses_deterministic_order(monkeypatch) -> None:
 
 def test_select_pool_llm_allowlist(monkeypatch) -> None:
     monkeypatch.delenv("WOW_LORE_WIKI_FIRST_NO_LLM", raising=False)
-    monkeypatch.setattr(workers, "load_ai_settings", lambda: type("S", (), {"openai_ready": True})())
+    monkeypatch.setattr(
+        workers, "load_ai_settings", lambda: type("S", (), {"openai_ready": True})()
+    )
     monkeypatch.setattr(
         workers,
         "llm_json_with_retry",
@@ -76,7 +78,9 @@ def test_select_pool_max_count_zero(monkeypatch) -> None:
 
 def test_select_pool_empty_response_fallback(monkeypatch) -> None:
     monkeypatch.delenv("WOW_LORE_WIKI_FIRST_NO_LLM", raising=False)
-    monkeypatch.setattr(workers, "load_ai_settings", lambda: type("S", (), {"openai_ready": True})())
+    monkeypatch.setattr(
+        workers, "load_ai_settings", lambda: type("S", (), {"openai_ready": True})()
+    )
     monkeypatch.setattr(workers, "llm_json_with_retry", lambda **kwargs: {"selected": []})
     pool = [
         _candidate("Marquee Boss", role="bosses"),
@@ -131,7 +135,9 @@ def test_prompt_has_no_pilot_zone_strings() -> None:
 
 def test_llm_path_uses_pool_selection_substep(monkeypatch) -> None:
     monkeypatch.delenv("WOW_LORE_WIKI_FIRST_NO_LLM", raising=False)
-    monkeypatch.setattr(workers, "load_ai_settings", lambda: type("S", (), {"openai_ready": True})())
+    monkeypatch.setattr(
+        workers, "load_ai_settings", lambda: type("S", (), {"openai_ready": True})()
+    )
     captured: dict[str, str] = {}
 
     def _capture(**kwargs):

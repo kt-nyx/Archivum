@@ -25,7 +25,9 @@ def test_build_evidence_packs_prefers_post_layer_cluster_id() -> None:
             "page_title": "Quest A",
             "cluster_id": "cluster-main",
             "quest_node_id": "quest-a",
-            "quest_lore_blocks": [{"text": "Alliance scouts push back undead patrols.", "section_role": "description"}],
+            "quest_lore_blocks": [
+                {"text": "Alliance scouts push back undead patrols.", "section_role": "description"}
+            ],
             "section_blocks": [],
         }
     ]

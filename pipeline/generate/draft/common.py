@@ -128,8 +128,7 @@ def claims_text(fact_pack: dict[str, Any], *, limit: int = 12) -> str:
 
 def entity_header(fact_pack: dict[str, Any]) -> str:
     return (
-        f"Entity: {fact_pack['name']} ({fact_pack['slug']})\n"
-        f"Entity id: {fact_pack['entity_id']}\n"
+        f"Entity: {fact_pack['name']} ({fact_pack['slug']})\nEntity id: {fact_pack['entity_id']}\n"
     )
 
 

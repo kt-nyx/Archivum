@@ -151,7 +151,9 @@ def _group_v3_clusters(questline_rows: list[dict[str, Any]]) -> list[dict[str, A
             clusters[cluster_id] = bucket
         bucket["quests"].append(row)
     grouped = list(clusters.values())
-    grouped.sort(key=lambda item: (int(item.get("cluster_order", 0)), str(item.get("cluster_id", ""))))
+    grouped.sort(
+        key=lambda item: (int(item.get("cluster_order", 0)), str(item.get("cluster_id", "")))
+    )
     for bucket in grouped:
         bucket["quests"].sort(key=lambda row: int(row.get("order_in_cluster", 0) or 0))
     return grouped
@@ -180,7 +182,9 @@ def _cluster_lore_pool(
     cluster_id: str,
 ) -> list[dict[str, Any]]:
     cluster_items = [
-        item for item in pools.get("quest_cluster_lore_pool", []) if str(item.get("cluster_id", "")) == cluster_id
+        item
+        for item in pools.get("quest_cluster_lore_pool", [])
+        if str(item.get("cluster_id", "")) == cluster_id
     ]
     if cluster_items:
         return cluster_items

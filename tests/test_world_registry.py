@@ -31,7 +31,9 @@ def test_world_registry_contains_pilot_places(registry_loaded: None) -> None:
 
 
 def test_quest_graph_rejects_registry_zone_titles(registry_loaded: None) -> None:
-    valid, reasons = is_valid_quest_graph_link("/wiki/Eastern_Plaguelands", zone_name="Example Zone")
+    valid, reasons = is_valid_quest_graph_link(
+        "/wiki/Eastern_Plaguelands", zone_name="Example Zone"
+    )
     assert not valid
     assert any("registry" in reason or "denylist" in reason for reason in reasons)
 
@@ -46,7 +48,9 @@ def test_traversal_blocks_zone_pages_for_quest_role(registry_loaded: None) -> No
     assert reasons
 
 
-def test_traversal_allows_location_profile_for_subzone_not_in_registry(registry_loaded: None) -> None:
+def test_traversal_allows_location_profile_for_subzone_not_in_registry(
+    registry_loaded: None,
+) -> None:
     skip, _ = should_skip_registry_traversal(
         "/wiki/Brill",
         auxiliary_role="location_profile",
@@ -118,4 +122,3 @@ def test_location_title_rejects_dating_convention_pages() -> None:
     reject, reasons = should_reject_location_title("Third War (28 ADP)")
     assert reject
     assert "dating_convention" in reasons
-

@@ -75,9 +75,7 @@ def run_questlines_worker(
     stubs = plan.get(bucket, [])
     if not isinstance(stubs, list) or not stubs:
         return []
-    included = [
-        s for s in stubs if isinstance(s, dict) and s.get("include_decision") != "exclude"
-    ]
+    included = [s for s in stubs if isinstance(s, dict) and s.get("include_decision") != "exclude"]
     if not included:
         return []
     titles = [str(s.get("title", "")) for s in included]

@@ -296,7 +296,9 @@ def score_zone_questline_clusters(
     for summary in zone_summaries:
         cluster_id = str(summary.get("cluster_id", "")).strip()
         node_ids = list(summary.get("quest_node_ids") or [])
-        member_records = [records_by_node[node_id] for node_id in node_ids if node_id in records_by_node]
+        member_records = [
+            records_by_node[node_id] for node_id in node_ids if node_id in records_by_node
+        ]
         member_rows = sorted(
             rows_by_cluster.get(cluster_id, []),
             key=lambda row: int(row.get("order_in_cluster", 0) or 0),
@@ -330,7 +332,10 @@ def score_zone_questline_clusters(
             arc_id = str(features.get("registry_arc_id", "")).strip()
             if not arc_id or str(row.get("final_decision", "")) != "include":
                 continue
-            rank_key = (int(features.get("quest_count", 0)), int(features.get("inclusion_score", 0)))
+            rank_key = (
+                int(features.get("quest_count", 0)),
+                int(features.get("inclusion_score", 0)),
+            )
             current = best_by_arc.get(arc_id)
             if current is None or rank_key > current[0]:
                 best_by_arc[arc_id] = (rank_key, str(row.get("subject_id", "")))
@@ -338,9 +343,11 @@ def score_zone_questline_clusters(
         for row in scored:
             features = row.get("features") or {}
             arc_id = str(features.get("registry_arc_id", "")).strip()
-            if arc_id and str(row.get("final_decision", "")) == "include" and str(
-                row.get("subject_id", "")
-            ) not in keep_ids:
+            if (
+                arc_id
+                and str(row.get("final_decision", "")) == "include"
+                and str(row.get("subject_id", "")) not in keep_ids
+            ):
                 row["final_decision"] = "exclude"
                 row["reason_codes"] = ["superseded_by_richer_arc_cluster", f"arc:{arc_id}"]
 

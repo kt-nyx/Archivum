@@ -80,8 +80,7 @@ def _run_stage_with_retry[T](
         )
         if verbose:
             print(
-                f"[lore-pipeline] run_id={run_id} stage={stage_name} attempt={attempt} "
-                "starting...",
+                f"[lore-pipeline] run_id={run_id} stage={stage_name} attempt={attempt} starting...",
                 file=sys.stderr,
                 flush=True,
             )
@@ -284,9 +283,8 @@ def run_pipeline_flow(
             max_entity_concurrency=max_entity_concurrency,
         ),
         retries=retries_per_stage,
-        on_fail_manifest_inputs=[
-            str(path) for path in draft_paths
-        ] + [str(context.data_dir / "glossary" / "run_terms.jsonl")],
+        on_fail_manifest_inputs=[str(path) for path in draft_paths]
+        + [str(context.data_dir / "glossary" / "run_terms.jsonl")],
         on_fail_manifest_outputs=[],
         run_id=context.run_id,
         verbose=verbose,

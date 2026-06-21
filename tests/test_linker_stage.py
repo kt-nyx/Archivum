@@ -17,18 +17,18 @@ def test_linker_adds_glossary_links_and_zone_provenance(tmp_path: Path) -> None:
         json.dumps(
             {
                 "id": "zone-western-plaguelands",
-                    "at_a_glance": (
-                        "The Scourge continues to pressure regional defenses across contested "
-                        "farmland routes and fortified recovery lines."
-                    ),
-                    "currently": (
-                        "Commanders coordinate prolonged anti-Scourge operations while escort "
-                        "teams secure supply roads and evacuation corridors."
-                    ),
-                    "history": (
-                        "The Western Plaguelands endured repeated plague campaigns, military "
-                        "counteroffensives, and post-war stabilization cycles."
-                    ),
+                "at_a_glance": (
+                    "The Scourge continues to pressure regional defenses across contested "
+                    "farmland routes and fortified recovery lines."
+                ),
+                "currently": (
+                    "Commanders coordinate prolonged anti-Scourge operations while escort "
+                    "teams secure supply roads and evacuation corridors."
+                ),
+                "history": (
+                    "The Western Plaguelands endured repeated plague campaigns, military "
+                    "counteroffensives, and post-war stabilization cycles."
+                ),
                 "glossary": [],
                 "sources": [
                     {
@@ -679,8 +679,12 @@ def test_linker_keeps_instance_page_schema_valid_with_glossary_refs(
     assert str(first_ref.get("wiki_url", "")).startswith("http")
 
 
-def test_linker_scans_wiki_first_history_sections(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    context = ensure_run_context("run-test-linker-history-sections", artifacts_root=tmp_path / "runs")
+def test_linker_scans_wiki_first_history_sections(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context = ensure_run_context(
+        "run-test-linker-history-sections", artifacts_root=tmp_path / "runs"
+    )
     draft_dir = context.data_dir / "drafts" / "zone_page"
     draft_dir.mkdir(parents=True, exist_ok=True)
     draft_path = draft_dir / "zone-western-plaguelands.json"
@@ -770,7 +774,9 @@ def test_linker_scans_wiki_first_history_sections(tmp_path: Path, monkeypatch: p
     run_glossary_linker(context, [draft_path], max_entity_concurrency=1)
     updated_draft = json.loads(draft_path.read_text(encoding="utf-8"))
     assert any(row["term_id"] == "term-scourge" for row in updated_draft["glossary_refs"])
-    scourge_ref = next(row for row in updated_draft["glossary_refs"] if row["term_id"] == "term-scourge")
+    scourge_ref = next(
+        row for row in updated_draft["glossary_refs"] if row["term_id"] == "term-scourge"
+    )
     assert scourge_ref.get("label") == "Scourge"
     assert str(scourge_ref.get("wiki_url", "")).startswith("http")
 
@@ -832,7 +838,13 @@ def test_linker_enriches_refs_from_run_terms(tmp_path: Path) -> None:
                 "location_cards": [],
                 "instance_links": [],
                 "glossary_refs": [],
-                "sources": [{"source_id": "src-zone", "url": "https://example.test/zone", "revision_id": "mw:1"}],
+                "sources": [
+                    {
+                        "source_id": "src-zone",
+                        "url": "https://example.test/zone",
+                        "revision_id": "mw:1",
+                    }
+                ],
                 "provenance": {
                     "at_a_glance": [
                         {
@@ -993,9 +1005,7 @@ def test_linker_uses_distinct_section_pointers_without_global_fallback(
     if len(glossary_map) < 2:
         pytest.skip("not enough glossary terms linked for distinct-pointer check")
     locators = {
-        rows[0]["locator"]
-        for rows in glossary_map.values()
-        if isinstance(rows, list) and rows
+        rows[0]["locator"] for rows in glossary_map.values() if isinstance(rows, list) and rows
     }
     assert len(locators) == len(glossary_map)
 
@@ -1130,7 +1140,13 @@ def test_linker_scans_major_faction_card_text(tmp_path: Path) -> None:
                 "location_cards": [],
                 "instance_links": [],
                 "glossary_refs": [],
-                "sources": [{"source_id": "src-zone", "url": "https://example.test/zone", "revision_id": "mw:1"}],
+                "sources": [
+                    {
+                        "source_id": "src-zone",
+                        "url": "https://example.test/zone",
+                        "revision_id": "mw:1",
+                    }
+                ],
                 "provenance": {
                     "at_a_glance": [
                         {

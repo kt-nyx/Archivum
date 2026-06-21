@@ -115,7 +115,9 @@ def test_split_by_faction_splits_mixed_heading_cluster_below_cap() -> None:
             "level_range": "[15-30]",
             "source_link": f"/wiki/Quest_{index}",
         }
-        for index, binding in enumerate(["alliance", "alliance", "horde", "horde", "shared"], start=1)
+        for index, binding in enumerate(
+            ["alliance", "alliance", "horde", "horde", "shared"], start=1
+        )
     ]
     split = split_by_faction(rows)
     cluster_ids = {row["cluster_id"] for row in split}
@@ -135,7 +137,9 @@ def test_prereq_graph_clustering_beats_heading_collapse_on_wpl_fixture() -> None
     from pipeline.discovery.questline_cluster import cluster_zone_questlines
 
     roster = json.loads(
-        Path("tests/fixtures/clustering/western_plaguelands_roster_v3.json").read_text(encoding="utf-8")
+        Path("tests/fixtures/clustering/western_plaguelands_roster_v3.json").read_text(
+            encoding="utf-8"
+        )
     )
     records = [
         json.loads(line)
@@ -153,7 +157,9 @@ def test_prereq_graph_clustering_beats_heading_collapse_on_wpl_fixture() -> None
         storyline_html=html,
         zone_name="Western Plaguelands",
     )
-    heading_clusters = {row["cluster_id"] for row in heading_rows if row.get("node_type") == "quest"}
+    heading_clusters = {
+        row["cluster_id"] for row in heading_rows if row.get("node_type") == "quest"
+    }
     graph_clusters = {row["cluster_id"] for row in graph_rows if row.get("node_type") == "quest"}
     assert len(graph_clusters) >= len(heading_clusters)
     assert len(graph_clusters) >= 5

@@ -18,10 +18,14 @@ def test_inclusion_is_driven_by_registry_arc_membership() -> None:
     assert registry is not None
     assert int(registry["pipeline_gap_analysis"]["expected_included_card_count"]) == 3
 
-    roster = json.loads((FIXTURE_DIR / "western_plaguelands_roster_v3.json").read_text(encoding="utf-8"))
+    roster = json.loads(
+        (FIXTURE_DIR / "western_plaguelands_roster_v3.json").read_text(encoding="utf-8")
+    )
     records = [
         json.loads(line)
-        for line in (FIXTURE_DIR / "western_plaguelands_quest_records.jsonl").read_text(encoding="utf-8").splitlines()
+        for line in (FIXTURE_DIR / "western_plaguelands_quest_records.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
         if line.strip()
     ]
     rows, summaries, _ = cluster_zone_questlines(
@@ -53,9 +57,9 @@ def test_inclusion_is_driven_by_registry_arc_membership() -> None:
 
     included_arcs = {
         str(
-            (next(r for r in cluster_rows if str(r["subject_id"]) == cid).get("features") or {}).get(
-                "registry_arc_id", ""
-            )
+            (
+                next(r for r in cluster_rows if str(r["subject_id"]) == cid).get("features") or {}
+            ).get("registry_arc_id", "")
         )
         for cid in included_ids
     }

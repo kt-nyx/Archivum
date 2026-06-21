@@ -8,11 +8,11 @@ ZONE_NAME = "Example Zone"
 
 
 @pytest.mark.parametrize(
-        ("link", "reason_prefix"),
-        [
-            ("/wiki/Lordaeron", "registry"),
-            ("/wiki/Eastern_Kingdoms", "registry"),
-            ("/wiki/Hinterlands", "registry"),
+    ("link", "reason_prefix"),
+    [
+        ("/wiki/Lordaeron", "registry"),
+        ("/wiki/Eastern_Kingdoms", "registry"),
+        ("/wiki/Hinterlands", "registry"),
         ("/wiki/Example_Zone_Quests", "achievement_hub"),
         ("/wiki/Example_Zone", "self_zone"),
         ("/wiki/Faction", "meta_page"),

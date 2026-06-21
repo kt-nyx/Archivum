@@ -104,9 +104,14 @@ def select_at_a_glance_pool(items: list[dict[str, Any]]) -> list[dict[str, Any]]
     return _dedupe_items(ranked, max_items=_AT_A_GLANCE_MAX_ITEMS)
 
 
-def precompress_at_a_glance_evidence(items: list[dict[str, Any]], *, max_items: int = 12) -> list[dict[str, Any]]:
+def precompress_at_a_glance_evidence(
+    items: list[dict[str, Any]], *, max_items: int = 12
+) -> list[dict[str, Any]]:
     """Deterministically trim a large at-a-glance pool before LLM synthesis."""
-    if len(items) <= max_items and sum(word_count(str(row.get("snippet", ""))) for row in items) <= 600:
+    if (
+        len(items) <= max_items
+        and sum(word_count(str(row.get("snippet", ""))) for row in items) <= 600
+    ):
         return items
     compressed: list[dict[str, Any]] = []
     for index, item in enumerate(items[:max_items], start=1):
@@ -150,7 +155,9 @@ def _tier_quests_edit(items: list[dict[str, Any]], *, zone_name: str) -> list[di
     return selected
 
 
-def _tier_cluster_lore(pools: dict[str, list[dict[str, Any]]], *, zone_name: str) -> list[dict[str, Any]]:
+def _tier_cluster_lore(
+    pools: dict[str, list[dict[str, Any]]], *, zone_name: str
+) -> list[dict[str, Any]]:
     selected: list[dict[str, Any]] = []
     seen_clusters: set[str] = set()
     for item in pools.get("quest_cluster_lore_pool", []):
@@ -271,13 +278,21 @@ def history_heading_from_role(section_role: str) -> str:
 def fallback_at_a_glance(items: list[dict[str, Any]]) -> tuple[str, list[str]]:
     if not items:
         return "", []
-    best = max(items, key=lambda row: (past_marker_score(str(row.get("snippet", ""))), word_count(str(row.get("snippet", "")))))
+    best = max(
+        items,
+        key=lambda row: (
+            past_marker_score(str(row.get("snippet", ""))),
+            word_count(str(row.get("snippet", ""))),
+        ),
+    )
     summary = trim_words(str(best.get("snippet", "")), MAX_AT_A_GLANCE_WORDS)
     source_id = str(best.get("source_id", "")).strip()
     return summary, [source_id] if source_id else []
 
 
-def fallback_currently(items: list[dict[str, Any]], *, max_words: int = 120) -> tuple[str, list[str]]:
+def fallback_currently(
+    items: list[dict[str, Any]], *, max_words: int = 120
+) -> tuple[str, list[str]]:
     if not items:
         return "", []
     best = max(items, key=lambda row: word_count(str(row.get("snippet", ""))))

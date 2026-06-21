@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from pipeline.discovery.entity_typing import normalize_title, should_reject_location_title
-from pipeline.generate.draft.location_lint import fallback_location_summary
 
 MIN_LOCATION_CARDS = 3
 MAX_LOCATION_CARDS = 8
@@ -64,7 +63,9 @@ def _name_in_text(name: str, text: str) -> bool:
     return bool(re.search(pattern, text, re.IGNORECASE))
 
 
-def extract_subregion_tokens(location_seed_pool: list[dict[str, Any]], *, zone_name: str = "") -> list[str]:
+def extract_subregion_tokens(
+    location_seed_pool: list[dict[str, Any]], *, zone_name: str = ""
+) -> list[str]:
     tokens: list[str] = []
     zone_norm = normalize_title(zone_name)
     for item in location_seed_pool:
@@ -241,7 +242,9 @@ def collect_location_candidates(
             candidate.rejected = True
             candidate.reject_reasons = reasons
             continue
-        candidate.profile_items = _profile_items_for_location(location_pool, location_id, candidate.name)
+        candidate.profile_items = _profile_items_for_location(
+            location_pool, location_id, candidate.name
+        )
         candidate.seed_mentions = _seed_mentions_for_location(candidate.name, location_seed_pool)
         evidence_text = " ".join(
             str(item.get("snippet", ""))
@@ -268,7 +271,9 @@ def score_location_candidate(candidate: LocationCandidate) -> LocationCandidate:
 
     for item in candidate.seed_mentions:
         role = _normalize_role(str(item.get("section_role", "")))
-        if role in _HIGH_WEIGHT_ROLES or any(hint in role for hint in ("maps", "subregion", "geography")):
+        if role in _HIGH_WEIGHT_ROLES or any(
+            hint in role for hint in ("maps", "subregion", "geography")
+        ):
             score += 3.0
         elif role in _MEDIUM_WEIGHT_ROLES or role.startswith("history"):
             score += 1.5
@@ -334,7 +339,9 @@ def select_location_cards(candidates: list[LocationCandidate]) -> list[LocationC
     return eligible[:MAX_LOCATION_CARDS]
 
 
-def candidates_for_finalize(candidates: list[LocationCandidate]) -> tuple[int, list[LocationCandidate]]:
+def candidates_for_finalize(
+    candidates: list[LocationCandidate],
+) -> tuple[int, list[LocationCandidate]]:
     ranked = rank_location_candidates(candidates)
     target_count = len(select_location_cards(candidates))
     has_eligible = any(_is_electable(candidate) for candidate in ranked)

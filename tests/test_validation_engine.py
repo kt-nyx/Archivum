@@ -1149,7 +1149,8 @@ def test_instance_page_story_context_pointer_cap_warns_when_exceeded() -> None:
     ]
     report = validate_payload("instance_page", payload)
     assert any(
-        issue.code == "provenance.pointer_cap_exceeded" and issue.path == "$.provenance.story_context"
+        issue.code == "provenance.pointer_cap_exceeded"
+        and issue.path == "$.provenance.story_context"
         for issue in report.issues
     )
 
@@ -1167,7 +1168,8 @@ def test_instance_page_story_context_pointer_cap_passes_at_three() -> None:
     ]
     report = validate_payload("instance_page", payload)
     assert not any(
-        issue.code == "provenance.pointer_cap_exceeded" and issue.path == "$.provenance.story_context"
+        issue.code == "provenance.pointer_cap_exceeded"
+        and issue.path == "$.provenance.story_context"
         for issue in report.issues
     )
 
@@ -1231,9 +1233,7 @@ def test_instance_pointer_cap_uses_centralized_constant() -> None:
         }
         for index in range(1, INSTANCE_PROVENANCE_POINTER_CAP + 2)
     ]
-    report = validate_payload(
-        "instance_page", payload, validation_context={"release_gate": True}
-    )
+    report = validate_payload("instance_page", payload, validation_context={"release_gate": True})
     cap_issues = [
         issue
         for issue in report.issues
@@ -1414,9 +1414,7 @@ def test_instance_page_invalid_character_role_rejected() -> None:
     ]
     report = validate_payload("instance_page", payload)
     assert report.passed is False
-    assert any(
-        issue.code == "schema.invalid" and "role" in issue.path for issue in report.issues
-    )
+    assert any(issue.code == "schema.invalid" and "role" in issue.path for issue in report.issues)
 
 
 def test_zone_page_generic_instance_link_hard_fails() -> None:
@@ -1454,7 +1452,9 @@ def test_zone_page_parent_continent_unknown_hard_fails() -> None:
     payload["parent_continent"] = "unknown"
     report = validate_payload("zone_page", payload)
     assert report.passed is False
-    assert any(issue.code == "structure.zone_page_parent_continent_unresolved" for issue in report.issues)
+    assert any(
+        issue.code == "structure.zone_page_parent_continent_unresolved" for issue in report.issues
+    )
 
 
 def test_zone_page_glossary_ref_missing_wiki_url_hard_fails() -> None:

@@ -88,9 +88,13 @@ def test_build_addon_bundle_writes_manifest_and_indexes(tmp_path: Path) -> None:
     assert (output_root / "lookup" / "glossary_refs.json").exists()
     assert (output_root / "lookup" / "glossary_terms.json").exists()
     assert (output_root / "nav" / "index.json").exists()
-    bundle_validation = json.loads((output_root / "validation_report.json").read_text(encoding="utf-8"))
+    bundle_validation = json.loads(
+        (output_root / "validation_report.json").read_text(encoding="utf-8")
+    )
     assert bundle_validation["passed"] is False
-    glossary_refs = json.loads((output_root / "lookup" / "glossary_refs.json").read_text(encoding="utf-8"))
+    glossary_refs = json.loads(
+        (output_root / "lookup" / "glossary_refs.json").read_text(encoding="utf-8")
+    )
     assert "term-scourge" in glossary_refs
     assert "term-gandling" in glossary_refs
     glossary_terms = json.loads(

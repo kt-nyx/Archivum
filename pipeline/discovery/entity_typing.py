@@ -70,14 +70,10 @@ def load_curated_denylist() -> dict[str, list[str]]:
         return {"location_titles": [], "faction_titles": [], "quest_graph_titles": []}
     return {
         "location_titles": [
-            str(item).lower()
-            for item in blob.get("location_titles", [])
-            if isinstance(item, str)
+            str(item).lower() for item in blob.get("location_titles", []) if isinstance(item, str)
         ],
         "faction_titles": [
-            str(item).lower()
-            for item in blob.get("faction_titles", [])
-            if isinstance(item, str)
+            str(item).lower() for item in blob.get("faction_titles", []) if isinstance(item, str)
         ],
         "quest_graph_titles": [
             str(item).lower()
@@ -218,7 +214,9 @@ def should_skip_registry_traversal(
     zone_lower = normalize_title(zone_name)
     if zone_lower and lowered == zone_lower and role in {"quest", "location_profile"}:
         return True, ["self_zone"]
-    allowed_instances = {normalize_title(value) for value in (allowed_instance_titles or frozenset())}
+    allowed_instances = {
+        normalize_title(value) for value in (allowed_instance_titles or frozenset())
+    }
     if lowered in allowed_instances and role in {"location_profile", "instance_lore"}:
         return False, []
     block_kinds = _TRAVERSE_BLOCK_BY_ROLE.get(role, frozenset({"zone", "continent", "instance"}))

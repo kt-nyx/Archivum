@@ -50,7 +50,8 @@ def _http_get_json(url: str, *, timeout_seconds: int) -> dict[str, Any]:
     request = Request(url, headers={"User-Agent": _REDIRECT_USER_AGENT})
     with urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310
         raw = response.read().decode("utf-8", errors="replace")
-    return json.loads(raw)
+    decoded: dict[str, Any] = json.loads(raw)
+    return decoded
 
 
 def _chunked(values: list[str], size: int) -> list[list[str]]:
@@ -215,12 +216,12 @@ def annotate_snapshots_with_canonical_identity(
             if not isinstance(link, dict) or not roster_predicate(link):
                 continue
             path = normalize_wiki_path(str(link.get("href", "")))
-            identity = identities.get(path)
-            if not identity:
+            resolved_identity = identities.get(path)
+            if not resolved_identity:
                 continue
-            link["canonical_path"] = identity["canonical_path"]
-            if identity.get("page_id") is not None:
-                link["page_id"] = identity["page_id"]
+            link["canonical_path"] = resolved_identity["canonical_path"]
+            if resolved_identity.get("page_id") is not None:
+                link["page_id"] = resolved_identity["page_id"]
     return run_map
 
 

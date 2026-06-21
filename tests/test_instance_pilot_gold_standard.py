@@ -32,7 +32,9 @@ SOURCE_MANIFEST_PATH = PILOT_DIR / "source_manifest.json"
 
 _INSTANCE_NAME = "Scholomance"
 _GATE_CONTEXT = {"release_gate": True, "fact_check_profile": "off"}
-_RUN_DRAFT = Path("artifacts/runs/test-run-wpl-1/data/drafts/instance_page/instance-scholomance.json")
+_RUN_DRAFT = Path(
+    "artifacts/runs/test-run-wpl-1/data/drafts/instance_page/instance-scholomance.json"
+)
 _RUN_SIDECAR = Path(
     "artifacts/runs/test-run-wpl-1/data/decisions/instance_key_character_decisions.json"
 )

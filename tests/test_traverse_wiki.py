@@ -12,7 +12,9 @@ from pipeline.discovery.workflow import run_discovery_workflow
 from pipeline.ingest.fetch_wiki import FetchedSource
 from pipeline.ingest.traverse_wiki import run_traverse_quests, run_traverse_seed
 
-STORYLINE_HTML = Path("tests/fixtures/storyline/western_plaguelands_storyline.html").read_text(encoding="utf-8")
+STORYLINE_HTML = Path("tests/fixtures/storyline/western_plaguelands_storyline.html").read_text(
+    encoding="utf-8"
+)
 ZONE_ID = "zone-example"
 ZONE_NAME = "Example Zone"
 DENYLIST_LINKS = {
@@ -32,12 +34,17 @@ QUEST_PARSETREE = (
 )
 
 
-def _quest_fetch_payload() -> "FetchedSource":
+def _quest_fetch_payload() -> FetchedSource:
     return FetchedSource(
         "Quest page body with narrative description about the front lines.",
         "mw:100",
         "section:lead paragraph:1",
-        [{"section_role": "description", "text": "Quest narrative description about the front lines."}],
+        [
+            {
+                "section_role": "description",
+                "text": "Quest narrative description about the front lines.",
+            }
+        ],
         [],
         [],
         "",
@@ -85,8 +92,12 @@ def _write_ingest_fixtures(context, ingest_dir: Path) -> None:
             "manifest_run_id": "run-v1",
         }
     ]
-    (ingest_dir / "source_snapshots.json").write_text(json.dumps(snapshots, indent=2), encoding="utf-8")
-    (ingest_dir / "source_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    (ingest_dir / "source_snapshots.json").write_text(
+        json.dumps(snapshots, indent=2), encoding="utf-8"
+    )
+    (ingest_dir / "source_manifest.json").write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8"
+    )
 
 
 def test_traverse_fetches_v3_quests_from_graph_not_wiki_link_dump(
@@ -111,7 +122,13 @@ def test_traverse_fetches_v3_quests_from_graph_not_wiki_link_dump(
                 "section:lead paragraph:1",
                 [{"section_role": "part_1", "text": "Part 1"}],
                 list(DENYLIST_LINKS) + ["/wiki/The_Endless_Flow"],
-                [{"href": "/wiki/The_Endless_Flow", "section_role": "part_1", "label": "The Endless Flow"}],
+                [
+                    {
+                        "href": "/wiki/The_Endless_Flow",
+                        "section_role": "part_1",
+                        "label": "The Endless Flow",
+                    }
+                ],
                 STORYLINE_HTML,
             )
         assert include_parsetree, "quest fetches must request the parse tree"
@@ -130,7 +147,9 @@ def test_traverse_fetches_v3_quests_from_graph_not_wiki_link_dump(
 
     quest_records_path = context.data_dir / "discovery" / "quest_records.jsonl"
     assert quest_records_path.exists()
-    record_lines = [line for line in quest_records_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    record_lines = [
+        line for line in quest_records_path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
     assert record_lines
     first_record = json.loads(record_lines[0])
     assert first_record["start_npc"] == "Quest Giver"
@@ -155,7 +174,9 @@ def test_traverse_fetches_v3_quests_from_graph_not_wiki_link_dump(
     assert storyline_snapshots
     assert storyline_snapshots[0].get("parse_html")
 
-    v3_rows = json.loads((context.data_dir / "discovery" / "zone_quest_graph_v3.json").read_text(encoding="utf-8"))
+    v3_rows = json.loads(
+        (context.data_dir / "discovery" / "zone_quest_graph_v3.json").read_text(encoding="utf-8")
+    )
     parsed = parse_storyline_html(STORYLINE_HTML, zone_id=ZONE_ID, zone_name=ZONE_NAME)
     assert {row["source_link"] for row in parsed if row.get("node_type") == "quest"}.issubset(
         {row.get("link") for row in quest_entries}
@@ -181,7 +202,13 @@ def test_traverse_resolves_hub_children_from_wiki_links(
                 "section:lead paragraph:1",
                 [{"section_role": "part_1", "text": "Part 1"}],
                 ["/wiki/The_Endless_Flow"],
-                [{"href": "/wiki/The_Endless_Flow", "section_role": "part_1", "label": "The Endless Flow"}],
+                [
+                    {
+                        "href": "/wiki/The_Endless_Flow",
+                        "section_role": "part_1",
+                        "label": "The Endless Flow",
+                    }
+                ],
                 STORYLINE_HTML,
             )
         if "Quest_Hub" in url:
@@ -191,7 +218,12 @@ def test_traverse_resolves_hub_children_from_wiki_links(
                 "Hub disambiguation page.",
                 "mw:101",
                 "section:lead paragraph:1",
-                [{"section_role": "other", "text": "This quest chain splits into two linked paths."}],
+                [
+                    {
+                        "section_role": "other",
+                        "text": "This quest chain splits into two linked paths.",
+                    }
+                ],
                 ["/wiki/Quest_Alpha", "/wiki/Quest_Beta"],
                 [
                     {"href": "/wiki/Quest_Alpha", "section_role": "other", "label": "Quest Alpha"},
@@ -225,7 +257,9 @@ def test_traverse_resolves_hub_children_from_wiki_links(
 
     run_traverse_quests(context)
 
-    report = json.loads((context.data_dir / "ingest" / "traversal_report.json").read_text(encoding="utf-8"))
+    report = json.loads(
+        (context.data_dir / "ingest" / "traversal_report.json").read_text(encoding="utf-8")
+    )
     hub_children = [
         row
         for row in report.get("entries", [])
@@ -244,7 +278,9 @@ def test_traverse_skips_defer_location_targets(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    context = ensure_run_context("run-test-traverse-location-defer", artifacts_root=tmp_path / "runs")
+    context = ensure_run_context(
+        "run-test-traverse-location-defer", artifacts_root=tmp_path / "runs"
+    )
     ingest_dir = context.stage_dir("ingest")
     _write_ingest_fixtures(context, ingest_dir)
     discovery_dir = context.data_dir / "discovery"
@@ -387,8 +423,12 @@ def test_traverse_fetches_linked_lore_page_not_instance_page_source(
             "parent_zone_id": ZONE_ID,
         },
     ]
-    (ingest_dir / "source_snapshots.json").write_text(json.dumps(snapshots, indent=2), encoding="utf-8")
-    (ingest_dir / "source_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    (ingest_dir / "source_snapshots.json").write_text(
+        json.dumps(snapshots, indent=2), encoding="utf-8"
+    )
+    (ingest_dir / "source_manifest.json").write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8"
+    )
     discovery_dir = context.data_dir / "discovery"
     discovery_dir.mkdir(parents=True, exist_ok=True)
     (discovery_dir / "instance_lore_source_map.json").write_text(
@@ -415,7 +455,9 @@ def test_traverse_fetches_linked_lore_page_not_instance_page_source(
     (context.data_dir / "decisions" / "location_significance_decisions.json").parent.mkdir(
         parents=True, exist_ok=True
     )
-    (context.data_dir / "decisions" / "location_significance_decisions.json").write_text("[]", encoding="utf-8")
+    (context.data_dir / "decisions" / "location_significance_decisions.json").write_text(
+        "[]", encoding="utf-8"
+    )
 
     fetched_urls: list[str] = []
 
@@ -510,7 +552,9 @@ def test_traverse_resolves_faction_disambiguation_variants(
 
     run_traverse_quests(context)
 
-    report = json.loads((context.data_dir / "ingest" / "traversal_report.json").read_text(encoding="utf-8"))
+    report = json.loads(
+        (context.data_dir / "ingest" / "traversal_report.json").read_text(encoding="utf-8")
+    )
     variant_entries = [
         row
         for row in report.get("entries", [])

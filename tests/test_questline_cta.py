@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from pipeline.generate.draft.card_lint import finalize_cta_hook, lint_cta_hook
@@ -43,7 +41,9 @@ def test_filter_early_chain_evidence_pool_limits_to_chain_heads() -> None:
         ["quest-a", "quest-b", "quest-c", "quest-d"],
         arc_title="Andorhal Campaign",
     )
-    assert {row["quest_node_id"] for row in scoped}.issubset({"quest-a", "quest-b", "quest-c", "quest-d"})
+    assert {row["quest_node_id"] for row in scoped}.issubset(
+        {"quest-a", "quest-b", "quest-c", "quest-d"}
+    )
     assert len(scoped) <= 6
 
 

@@ -11,15 +11,14 @@ import pytest
 
 from pipeline.contracts.models import QuestlineCardV2
 from pipeline.discovery.entity_typing import is_valid_quest_graph_link
+from pipeline.discovery.pilot_questline_registry import load_registry, registry_path_for_zone
 from pipeline.discovery.storyline_parser import _to_entity_id, _wiki_title
 from pipeline.generate.draft.card_lint import lint_cta_hook, strip_zone_name_from_cta
 from pipeline.ingest.fetch_wiki import _validate_manifest_schema
 from pipeline.validate.engine import validate_payload
-
 from tests.test_validation_engine import _validation_ready_zone_page_payload
 
 PILOT_DIR = Path("tests/fixtures/pilot")
-from pipeline.discovery.pilot_questline_registry import load_registry, registry_path_for_zone
 
 REGISTRY_PATH = registry_path_for_zone("zone-western-plaguelands") or (
     PILOT_DIR / "western_plaguelands_questline_registry.json"
@@ -121,9 +120,7 @@ def test_source_manifest_storyline_url_matches_registry_authority() -> None:
     authority_url = str(registry["wiki_authority"]["primary_source_url"])
     manifest_urls = {str(row["source_url"]) for row in manifest}
     assert authority_url in manifest_urls
-    scholomance_rows = [
-        row for row in manifest if row["entity_id"] == "instance-scholomance"
-    ]
+    scholomance_rows = [row for row in manifest if row["entity_id"] == "instance-scholomance"]
     assert len(scholomance_rows) == 1
     assert scholomance_rows[0]["parent_zone_id"] == registry["zone_id"]
 
@@ -195,9 +192,7 @@ def test_registry_chain_refs_derive_from_wiki_titles() -> None:
         for arc in registry.get(section, []):
             chain_refs = arc.get(chain_key) or []
             wiki_refs = arc.get(wiki_key) or []
-            assert len(chain_refs) == len(wiki_refs), (
-                f"{arc['id']} {chain_key} length mismatch"
-            )
+            assert len(chain_refs) == len(wiki_refs), f"{arc['id']} {chain_key} length mismatch"
             for chain_ref, wiki_ref in zip(chain_refs, wiki_refs, strict=True):
                 expected = _to_entity_id("quest", _wiki_title(str(wiki_ref)))
                 if chain_ref != expected:
@@ -268,9 +263,7 @@ def test_registry_documents_cross_faction_shared_card_refs() -> None:
     }
     cross_arc = {
         ref
-        for ref, count in Counter(
-            ref for refs in per_arc.values() for ref in refs
-        ).items()
+        for ref, count in Counter(ref for refs in per_arc.values() for ref in refs).items()
         if count > 1
     }
     assert cross_arc == documented

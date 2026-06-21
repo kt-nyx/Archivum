@@ -167,7 +167,9 @@ def _infer_storyline_links(
             if title:
                 inferred.add(f"/wiki/{title.replace(' ', '_')}_storyline")
                 continue
-        for match in re.finditer(r"([A-Za-z0-9'’\-\s]+(?:storyline|questline))", text, re.IGNORECASE):
+        for match in re.finditer(
+            r"([A-Za-z0-9'’\-\s]+(?:storyline|questline))", text, re.IGNORECASE
+        ):
             title = re.sub(r"\s+", " ", match.group(1)).strip()
             if title.lower().startswith("see "):
                 continue
@@ -226,8 +228,7 @@ def _is_likely_character_title(title: str) -> bool:
         return False
     role_hints = character_role_hints()
     return any(
-        part.lower() in role_hints
-        or (part[:1].isupper() and part[1:].islower() and len(part) >= 3)
+        part.lower() in role_hints or (part[:1].isupper() and part[1:].islower() and len(part) >= 3)
         for part in parts
     )
 
@@ -238,7 +239,11 @@ def _infer_entity_type_for_link(title: str, inferred_section_role: str) -> str:
     # is uninformative ("other"/"history") — that is the only point at which no
     # category/section signal exists for the (not-yet-fetched) target page.
     lowered = title.lower()
-    if "storyline" in lowered or "questline" in lowered or inferred_section_role == "quests_or_storyline":
+    if (
+        "storyline" in lowered
+        or "questline" in lowered
+        or inferred_section_role == "quests_or_storyline"
+    ):
         return "quest"
     if inferred_section_role == "instances_or_dungeons":
         return "instance"
@@ -410,10 +415,7 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
                 entity_type=inferred_entity_type,
             )
             known_instance = known_instance_by_title.get(_normalized_wiki_slug(title))
-            if (
-                known_instance is not None
-                or inferred_entity_type == "instance"
-            ):
+            if known_instance is not None or inferred_entity_type == "instance":
                 instance_id = (
                     known_instance["instance_id"]
                     if known_instance is not None
@@ -435,7 +437,9 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
                     {
                         "instance_id": instance_id,
                         "lore_source": "instance_page" if has_history else "linked_lore_page",
-                        "fallback_reason": None if has_history else "history_missing_on_instance_page",
+                        "fallback_reason": None
+                        if has_history
+                        else "history_missing_on_instance_page",
                         "source_link": link,
                     }
                 )
@@ -443,7 +447,9 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
                     {
                         "zone_id": str(snapshot.get("entity_id", "")),
                         "instance_id": instance_id,
-                        "instance_name": known_instance["name"] if known_instance is not None else title,
+                        "instance_name": known_instance["name"]
+                        if known_instance is not None
+                        else title,
                         "source_link": link,
                         "source_section_role": inferred_role,
                     }
@@ -459,7 +465,9 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
                     }
                 )
             else:
-                if reject_location or _should_reject_location_candidate(title, inferred_entity_type):
+                if reject_location or _should_reject_location_candidate(
+                    title, inferred_entity_type
+                ):
                     continue
                 # WS-C: section-role-first typing now admits whole maps/subregions sections,
                 # which can include meta-placeholder pages ("Lore location", "Undisplayed
@@ -501,7 +509,9 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
     location_candidates = deduped_candidates
 
     zone_seed_text_by_id = {
-        str(snapshot.get("entity_id", "")).strip(): build_zone_seed_text(snapshots, str(snapshot.get("entity_id", "")).strip())
+        str(snapshot.get("entity_id", "")).strip(): build_zone_seed_text(
+            snapshots, str(snapshot.get("entity_id", "")).strip()
+        )
         for snapshot in snapshots
         if isinstance(snapshot, dict)
         and str(snapshot.get("entity_type", "")).strip() == "zone"
@@ -511,7 +521,9 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
     for candidate in location_candidates:
         name_lowered = str(candidate.get("name", "")).lower()
         hard_reject_reasons = hard_reject_markers(str(candidate.get("name", "")))
-        location_class = classify_location_candidate(str(candidate.get("name", "")), hard_reject_reasons=hard_reject_reasons)
+        location_class = classify_location_candidate(
+            str(candidate.get("name", "")), hard_reject_reasons=hard_reject_reasons
+        )
         location_classification.append(
             {
                 "zone_id": candidate["zone_id"],
