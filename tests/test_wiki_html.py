@@ -53,6 +53,32 @@ def test_content_blocks_excludes_chrome_and_folds_nested() -> None:
     assert texts == ["Outer Inner"]  # nested <li> folded into the outer block
 
 
+def test_content_blocks_drops_div_navbox_chrome() -> None:
+    # #2: a template-rendered <div class="navbox"> of place-names survives table-only chrome
+    # dropping and leaks into evidence pools. It must be dropped like a <table> navbox.
+    html = (
+        '<div class="navbox"><div class="navbox-list">'
+        "Chillwind Camp Hearthglen Northridge Lumber Camp Plaguewood Tower"
+        "</div></div>"
+        '<nav role="navigation"><p>NAV_CHROME</p></nav>'
+        '<div class="catlinks">Categories: Western Plaguelands</div>'
+        "<p>Real body about the Argent Crusade.</p>"
+    )
+    blocks = wiki_html.content_blocks(html)
+    joined = " ".join(b["text"] for b in blocks)
+    assert "Chillwind Camp" not in joined
+    assert "NAV_CHROME" not in joined
+    assert "Categories" not in joined
+    assert any("Argent Crusade" in b["text"] for b in blocks)
+
+
+def test_content_blocks_keeps_plain_content_divs() -> None:
+    # A non-chrome <div> wrapping prose must be retained.
+    html = '<div class="content"><p>The keep fell to the Scourge.</p></div>'
+    blocks = wiki_html.content_blocks(html)
+    assert any("keep fell to the Scourge" in b["text"] for b in blocks)
+
+
 def test_parse_infobox_extracts_label_value_rows() -> None:
     html = (
         '<table class="infobox darktable">'

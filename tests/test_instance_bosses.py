@@ -138,6 +138,38 @@ def test_rejects_place_kind_instance_subzones() -> None:
     assert not should_reject_boss_title("Darkmaster Gandling")
 
 
+def _named_candidate(name: str) -> BossCandidate:
+    return BossCandidate(
+        boss_id=f"character-{name.lower().replace(' ', '-')}",
+        name=name,
+        wiki_url=f"https://warcraft.wiki.gg/wiki/{name.replace(' ', '_')}",
+        source_section_role="bosses",
+    )
+
+
+def test_prefilter_drops_bare_surname_shared_with_full_name() -> None:
+    # #4: "Barov" is a family/surname, not an individual NPC; it must be dropped because a
+    # full-name character ("Jandice Barov" / "Lord Alexei Barov") carries that surname.
+    pool = [
+        _named_candidate("Jandice Barov"),
+        _named_candidate("Lord Alexei Barov"),
+        _named_candidate("Barov"),
+        _named_candidate("Barov family"),
+        _named_candidate("Rattlegore"),
+    ]
+    kept = {c.name for c in prefilter_character_pool(pool, instance_name="Scholomance")}
+    assert "Barov" not in kept
+    assert "Barov family" not in kept
+    # Full-name family members and mononymous bosses survive.
+    assert {"Jandice Barov", "Lord Alexei Barov", "Rattlegore"} <= kept
+
+
+def test_prefilter_keeps_mononym_without_matching_surname() -> None:
+    pool = [_named_candidate("Rattlegore"), _named_candidate("Lilian Voss")]
+    kept = {c.name for c in prefilter_character_pool(pool, instance_name="Scholomance")}
+    assert kept == {"Rattlegore", "Lilian Voss"}
+
+
 def test_rejects_events_meta_and_generic_class_nouns() -> None:
     # Non-character titles that leak from narrative/history link mining (the registry does
     # not classify them locally): war/era events, game/meta pages, generic creature classes.

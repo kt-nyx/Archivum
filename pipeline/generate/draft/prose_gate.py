@@ -71,6 +71,129 @@ _DANGLING_TERMINAL_WORDS = frozenset(
 
 _WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
 
+# Function words that must never sit immediately before sentence punctuation, nor leave an
+# article stranded directly before a conjunction. A naive zone-name substring strip that
+# deletes the object of a preposition/article leaves exactly these gaps — "...the call to,
+# where" and "contest the and every road" — *mid*-sentence, where ``detect_dangling_terminal``
+# (tail-only) never looks.
+_MIDSENTENCE_GAP_RE = re.compile(
+    r"\b(?:a|an|the|to|into|onto|unto|upon|of|for|with|without|from|at|by|in|on|across|"
+    r"through|throughout|within|toward|towards|against|amid|amidst|between|beneath|beside|"
+    r"besides|despite|during|over|under|near|around)\s*[,;:]"
+    r"|\b(?:a|an|the)\s+(?:and|or|but|nor)\b",
+    re.IGNORECASE,
+)
+
+
+def detect_midsentence_gap(text: str) -> bool:
+    """True when a function word is stranded mid-sentence (dangling preposition/article).
+
+    Catches the breakage a naive zone-name substring strip leaves behind — a preposition or
+    article immediately before punctuation (``"...the call to, where"``), or an article
+    directly followed by a conjunction (``"contest the and every road"``). Complements
+    :func:`detect_dangling_terminal`, which only inspects the final word of the string.
+    """
+    return bool(_MIDSENTENCE_GAP_RE.search(text))
+
+
+# Connective/function words whose presence signals genuine connected prose. A navbox or
+# place-name list ("Chillwind Camp Hearthglen Northridge Lumber Camp ...") carries almost
+# none; ordinary English prose runs ~25-50% function words. A long span with near-zero
+# connective density is therefore a list/navbox dump masquerading as a sentence, not prose.
+_FUNCTION_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "and",
+        "or",
+        "but",
+        "nor",
+        "of",
+        "to",
+        "for",
+        "with",
+        "in",
+        "on",
+        "at",
+        "by",
+        "from",
+        "as",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "that",
+        "this",
+        "these",
+        "those",
+        "it",
+        "its",
+        "he",
+        "she",
+        "they",
+        "them",
+        "his",
+        "her",
+        "their",
+        "who",
+        "which",
+        "when",
+        "where",
+        "while",
+        "after",
+        "before",
+        "during",
+        "into",
+        "over",
+        "under",
+        "against",
+        "between",
+        "through",
+        "has",
+        "have",
+        "had",
+        "not",
+        "no",
+        "than",
+        "then",
+        "there",
+        "here",
+        "out",
+        "upon",
+        "amid",
+        "about",
+        "across",
+        "within",
+        "without",
+        "because",
+        "so",
+    }
+)
+# A list is judged only once it is long enough to be unambiguous; below this token count a
+# terse-but-real summary could trip the ratio test, so we abstain.
+_LIST_SHAPE_MIN_TOKENS = 8
+_LIST_SHAPE_FUNCTION_RATIO = 0.10
+
+
+def detect_list_shape(text: str) -> bool:
+    """True when text reads like a navbox/place-name list rather than connected prose.
+
+    Uses function-word density: a navbox of proper nouns has near-zero connectives, while
+    real English prose runs ~25-50%. Short spans abstain (too little signal to judge).
+    Shared by the deterministic prose gate and the faction/key-character prose fallbacks so
+    the heuristic lives in one place.
+    """
+    words = _WORD_RE.findall(text)
+    n = len(words)
+    if n < _LIST_SHAPE_MIN_TOKENS:
+        return False
+    function_words = sum(1 for word in words if word.lower() in _FUNCTION_WORDS)
+    return function_words / n < _LIST_SHAPE_FUNCTION_RATIO
+
 
 def _letter_script(ch: str) -> str | None:
     """Return the alphabet name (LATIN/CYRILLIC/GREEK/...) for an alphabetic char.

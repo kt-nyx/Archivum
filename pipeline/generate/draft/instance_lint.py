@@ -8,6 +8,7 @@ from pathlib import Path
 
 from pipeline.common import wiki_html
 from pipeline.common.text_normalize import clean_wiki_snippet
+from pipeline.generate.draft.prose_gate import detect_list_shape
 from pipeline.generate.draft.prose_lint import (
     has_currently_meta,
     has_historical_framing,
@@ -48,6 +49,7 @@ _PATCH_NOTES_RE = re.compile(
 # source fragment, an unterminated clause, or list-bullet residue.
 _BULLET_MARKER_RE = re.compile(r"(?:^|\n)[ \t]*(?:[\u2022\u25E6\u25AA\u2023\u2043*]|-|\d+[.)])\s+")
 _FIRST_LETTER_RE = re.compile(r"[^\W\d_]", re.UNICODE)
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.?!])\s+")
 
 
 def ensure_sentence_terminator(text: str) -> str:
@@ -304,6 +306,27 @@ def fallback_instance_overview(
     return text, used
 
 
+def _leading_complete_sentence(text: str, *, max_words: int) -> str:
+    """Return the first *complete* sentence of ``text`` if it reads as prose, else ``""``.
+
+    "Complete" means it ends on terminal punctuation, begins with a capital letter, and is
+    not list/navbox-shaped. Used to lift a clean opening sentence from raw evidence without
+    splicing a truncated mid-phrase fragment (the old colon-splice defect, #4).
+    """
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    first = next(
+        (chunk.strip() for chunk in _SENTENCE_SPLIT_RE.split(cleaned) if chunk.strip()), ""
+    )
+    if not first or first[-1] not in ".?!" or detect_list_shape(first):
+        return ""
+    letter = _FIRST_LETTER_RE.search(first)
+    if not letter or not letter.group(0).isupper():
+        return ""
+    return trim_words(first, max_words, ensure_terminal_punct=True)
+
+
 def fallback_key_character_summary(
     items: list[dict],
     *,
@@ -311,26 +334,38 @@ def fallback_key_character_summary(
     instance_name: str,
     max_words: int = MAX_KEY_CHARACTER_WORDS,
 ) -> tuple[str, list[str]]:
-    if not items:
-        text = (
+    generic = trim_key_character_summary(
+        (
             f"{boss_name} serves as a major encounter within {instance_name}, shaping the "
             f"instance's narrative stakes and the power struggles that unfold inside its halls."
-        )
-        return trim_key_character_summary(text, max_words=max_words), []
+        ),
+        max_words=max_words,
+    )
+    if not items:
+        return generic, []
     best = max(items, key=lambda row: word_count(str(row.get("snippet", ""))))
     snippet = clean_wiki_snippet(wiki_html.strip_tags(str(best.get("snippet", "")))).strip()
-    snippet = trim_words(snippet, 24, ensure_terminal_punct=False)
+    # Only borrow a clean *complete* opening sentence from the evidence; never splice a
+    # verbatim, comma-/word-truncated fragment after a colon. If none qualifies, fall back to
+    # the boss-anchored generic summary rather than emit a truncated copy.
+    sentence = _leading_complete_sentence(snippet, max_words=24)
+    if not sentence:
+        return generic, []
     text = trim_key_character_summary(
-        f"{boss_name} features prominently in {instance_name}: {snippet}",
+        f"{boss_name} features prominently in {instance_name}. {sentence}",
         max_words=max_words,
     )
     if word_count(text) < MIN_KEY_CHARACTER_WORDS:
+        # Short evidence sentence — frame it more fully (as a separate sentence, not a colon
+        # splice) so it clears the word floor while staying grammatical.
         text = trim_key_character_summary(
             (
                 f"{boss_name} stands among the defining threats of {instance_name}, commanding "
-                f"hostile forces and anchoring the instance's narrative conflict. {snippet}"
+                f"hostile forces and anchoring the instance's narrative conflict. {sentence}"
             ),
             max_words=max_words,
         )
+    if word_count(text) < MIN_KEY_CHARACTER_WORDS or lint_passthrough_fragment(text):
+        return generic, []
     used = [str(best.get("source_id", ""))] if best.get("source_id") else []
     return text, used

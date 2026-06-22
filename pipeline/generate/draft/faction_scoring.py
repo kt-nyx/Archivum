@@ -8,6 +8,7 @@ from typing import Any
 
 from pipeline.common.draft_vocab import era_section_role_tokens
 from pipeline.generate.draft.faction_lint import trim_faction_summary
+from pipeline.generate.draft.prose_gate import detect_list_shape
 from pipeline.generate.draft.prose_lint import has_currently_meta, word_count
 
 MIN_FACTION_CARDS = 2
@@ -428,8 +429,13 @@ def fallback_faction_summary(
         snippet = str(item.get("snippet", "")).strip()
         if has_currently_meta(snippet):
             continue
+        # The (zone-hit, word_count) ranking above structurally *prefers* a navbox of zone
+        # place-names (the longest, most zone-dense snippet), so guard against list/navbox
+        # shape both before and after trimming rather than emitting it as prose.
+        if detect_list_shape(snippet):
+            continue
         summary = trim_faction_summary(snippet, max_words)
-        if summary:
+        if summary and not detect_list_shape(summary):
             source_id = str(item.get("source_id", "")).strip()
             return summary, [source_id] if source_id else []
     return "", []

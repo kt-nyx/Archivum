@@ -2,11 +2,84 @@ from __future__ import annotations
 
 import pytest
 
-from pipeline.generate.draft.card_lint import finalize_cta_hook, lint_cta_hook
+from pipeline.generate.draft.card_lint import (
+    finalize_cta_hook,
+    lint_cta_hook,
+    strip_zone_name_from_cta,
+)
+from pipeline.generate.draft.prose_gate import detect_midsentence_gap
 from pipeline.generate.draft.prose_synthesis import (
     filter_early_chain_evidence_pool,
     synthesize_questline_cta_hook,
 )
+
+
+@pytest.mark.parametrize(
+    ("hook", "expected"),
+    [
+        # The two real Andorhal defects (#3): zone name as the object of a preposition /
+        # article. A raw substring strip left "Answer the call to, where" and "contest the
+        # and every road"; the grammar-safe strip drops the governing function word with it.
+        (
+            "Answer the call to Western Plaguelands, where the Scourge still festers.",
+            "Answer the call, where the Scourge still festers.",
+        ),
+        (
+            "Hold the line and contest the Western Plaguelands and every road and farmstead.",
+            "Hold the line and contest every road and farmstead.",
+        ),
+        # Preposition governs the zone but a conjunction joins two verbs -> keep the conj.
+        (
+            "March to Western Plaguelands and reclaim the fallen city.",
+            "March and reclaim the fallen city.",
+        ),
+        # Preposition + article governing the zone are both consumed.
+        (
+            "Fight in the Western Plaguelands to save the living.",
+            "Fight to save the living.",
+        ),
+        # Bare leading mention -> capitalize the new sentence head.
+        (
+            "Western Plaguelands beckons every champion to the front.",
+            "Beckons every champion to the front.",
+        ),
+        # No zone mention -> untouched.
+        (
+            "Push back the Scourge and secure the ruined city.",
+            "Push back the Scourge and secure the ruined city.",
+        ),
+    ],
+)
+def test_strip_zone_name_from_cta_is_grammar_safe(hook: str, expected: str) -> None:
+    out = strip_zone_name_from_cta(hook, zone_name="Western Plaguelands")
+    assert out == expected
+    assert not detect_midsentence_gap(out)
+    assert not lint_cta_hook(finalize_cta_hook(out))
+
+
+def test_strip_zone_name_from_cta_no_op_without_zone() -> None:
+    hook = "Answer the call to, where the Scourge still festers."
+    assert strip_zone_name_from_cta(hook, zone_name="") == hook
+    assert strip_zone_name_from_cta(hook, zone_name="   ") == hook
+
+
+def test_strip_zone_name_keeps_original_when_strip_empties_it() -> None:
+    # Stripping every word (zone == whole clause) must not yield an empty hook.
+    assert (
+        strip_zone_name_from_cta("Western Plaguelands.", zone_name="Western Plaguelands")
+        == "Western Plaguelands."
+    )
+
+
+def test_lint_cta_hook_flags_midsentence_gap() -> None:
+    assert any(
+        "mid-sentence gap" in issue
+        for issue in lint_cta_hook("Answer the call to, where the Scourge festers.")
+    )
+    assert any(
+        "mid-sentence gap" in issue
+        for issue in lint_cta_hook("Hold the line and contest the and every road.")
+    )
 
 
 def test_finalize_cta_hook_trims_to_complete_sentence() -> None:

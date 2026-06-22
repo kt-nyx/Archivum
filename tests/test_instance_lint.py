@@ -3,12 +3,59 @@ from __future__ import annotations
 from pipeline.generate.draft.instance_lint import (
     assess_role_diversity,
     fallback_instance_overview,
+    fallback_key_character_summary,
     is_generic_overview,
     lint_at_a_glance,
     lint_key_character_summary,
     lint_overview,
     lint_passthrough_fragment,
 )
+
+
+def test_fallback_key_character_summary_refuses_colon_spliced_fragment() -> None:
+    # #4: the old fallback spliced a verbatim, word-truncated snippet after a colon
+    # ("Barov features prominently in Scholomance: <fragment>"). It must never emit a
+    # colon-spliced raw fragment; with no clean sentence it returns the generic summary.
+    items = [
+        {
+            "snippet": "the noble house that once ruled Caer Darrow and bequeathed",
+            "source_id": "src-frag",
+        }
+    ]
+    summary, used = fallback_key_character_summary(
+        items, boss_name="Darkmaster Gandling", instance_name="Scholomance"
+    )
+    assert ":" not in summary
+    assert "Darkmaster Gandling" in summary
+    assert lint_passthrough_fragment(summary) == []
+    assert used == []
+
+
+def test_fallback_key_character_summary_borrows_clean_leading_sentence() -> None:
+    items = [
+        {
+            "snippet": (
+                "Darkmaster Gandling rules Scholomance as its dreaded headmaster, presiding "
+                "over the necromancers and dark students who study within its cursed halls. "
+                "He commands the academy."
+            ),
+            "source_id": "src-clean",
+        }
+    ]
+    summary, used = fallback_key_character_summary(
+        items, boss_name="Darkmaster Gandling", instance_name="Scholomance"
+    )
+    assert ":" not in summary
+    assert "headmaster" in summary
+    assert used == ["src-clean"]
+
+
+def test_fallback_key_character_summary_uses_generic_without_items() -> None:
+    summary, used = fallback_key_character_summary(
+        [], boss_name="Darkmaster Gandling", instance_name="Scholomance"
+    )
+    assert "Darkmaster Gandling" in summary
+    assert used == []
 
 
 def test_lint_overview_rejects_generic_stub() -> None:

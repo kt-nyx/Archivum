@@ -8,6 +8,7 @@ from pipeline.contracts.models import ZONE_MAX_TOTAL_QUESTLINE_CARDS
 from pipeline.discovery.entity_typing import normalize_title
 from pipeline.generate.draft.card_lint import (
     finalize_cta_hook,
+    lint_cta_hook,
     strip_zone_name_from_cta,
 )
 from pipeline.generate.draft.pages.assembly import (
@@ -96,6 +97,11 @@ def _append_questline_card(
     if zone_name.strip():
         cta = strip_zone_name_from_cta(cta, zone_name=zone_name)
     cta = finalize_cta_hook(cta)
+    # Re-validate the *finalized* hook: the zone-name strip + tail repair run after the
+    # pre-strip gate in zone.py, so any residual mid-sentence breakage would otherwise ship
+    # unchecked. Fall back to a clean deterministic hook rather than emit broken prose.
+    if lint_cta_hook(cta):
+        cta = finalize_cta_hook(f"Follow the {cluster_title} arc through its linked quests.")
     include_decision = str(
         (cluster_decision or {}).get("final_decision")
         or (questline_decision or {}).get("final_decision")

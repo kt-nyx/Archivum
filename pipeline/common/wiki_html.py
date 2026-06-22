@@ -33,6 +33,22 @@ _EXCLUDED_TABLE_CLASS_TOKENS = (
     "navigation",
 )
 
+# Chrome containers that wiki templates render as <div>/<nav>, not <table> — navboxes,
+# category footers, ToCs, hatnotes. These survive table-only chrome dropping and otherwise
+# leak place-name/link lists into evidence pools (e.g. the Argent Crusade navbox summary, #2).
+_EXCLUDED_DIV_CLASS_TOKENS = (
+    "navbox",
+    "navigation",
+    "noprint",
+    "toc",
+    "catlinks",
+    "footer",
+    "hatnote",
+    "metadata",
+    "mbox",
+)
+_CHROME_CONTAINER_TAGS = ("div", "nav")
+
 
 def soup(html: str) -> BeautifulSoup:
     """Parse an HTML fragment into a BeautifulSoup tree."""
@@ -53,21 +69,38 @@ def _table_is_chrome(table: Tag) -> bool:
     return any(token in classes for token in _EXCLUDED_TABLE_CLASS_TOKENS)
 
 
+def _div_is_chrome(element: Tag) -> bool:
+    classes = " ".join(element.get("class") or []).lower()
+    role = str(element.get("role") or "").lower()
+    if role == "navigation":
+        return True
+    return any(token in classes for token in _EXCLUDED_DIV_CLASS_TOKENS)
+
+
 def _drop_chrome_tables(root: BeautifulSoup) -> None:
-    """Remove top-level chrome tables (and their nested content) in place.
+    """Remove top-level chrome tables/containers (and nested content) in place.
 
     Only top-level tables are evaluated, matching the original ingest behavior where
     a chrome table nested inside a kept content table stays with its parent. The chrome
-    tables are collected before any removal, because decomposing a table detaches any
-    nested tables still pending in the iteration.
+    elements are collected before any removal, because decomposing one detaches any
+    nested chrome still pending in the iteration. Beyond ``<table>`` chrome we also drop
+    template-rendered ``<div>``/``<nav>`` chrome (navboxes, category footers, ToCs) that
+    would otherwise leak place-name/link lists into evidence pools (#2).
     """
     chrome = [
         table
         for table in root.find_all("table")
         if table.find_parent("table") is None and _table_is_chrome(table)
     ]
-    for table in chrome:
-        table.decompose()
+    chrome.extend(
+        element for element in root.find_all(_CHROME_CONTAINER_TAGS) if _div_is_chrome(element)
+    )
+    for element in chrome:
+        # A nested chrome container may already have been destroyed when its chrome
+        # ancestor was decomposed; skip those rather than decompose twice.
+        if getattr(element, "decomposed", False):
+            continue
+        element.decompose()
 
 
 def content_blocks(html: str, *, drop_chrome: bool = True) -> list[dict[str, str]]:

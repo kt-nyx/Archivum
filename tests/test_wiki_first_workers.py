@@ -128,7 +128,13 @@ def test_location_summary_deterministic_respects_max_words(monkeypatch) -> None:
 
 def test_faction_summary_deterministic_respects_max_words(monkeypatch) -> None:
     monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
-    snippet = " ".join(["reclamation"] * 200) + "."
+    # Realistic connected prose (not a degenerate token list, which the navbox guard now
+    # rightly skips) that overruns the word cap so the truncation path is exercised.
+    snippet = (
+        "The Argent Crusade presses its long campaign against the Scourge across the "
+        "blighted region, reclaiming the fallen keeps and holding the line so that the "
+        "living may one day return to the homes that the undead once stole from them all."
+    )
     summary, used = synthesize_faction_summary(
         [{"source_id": "src-faction", "snippet": snippet}],
         faction_name="Argent Crusade",

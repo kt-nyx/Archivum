@@ -4,9 +4,40 @@ from pipeline.generate.draft.faction_scoring import (
     ALLIANCE_HORDE_CONFLICT_THRESHOLD,
     MIN_SCORE,
     collect_faction_candidates,
+    fallback_faction_summary,
     score_faction_candidate,
     select_major_factions,
 )
+
+_NAVBOX_SNIPPET = (
+    "Plaguelands Western Plaguelands The Bulwark Chillwind Camp Hearthglen Menders' Stead "
+    "Northridge Lumber Camp Eastern Plaguelands Light's Hope Chapel Sanctum of Light "
+    "Tyr's Hand Scarlet Bastion Crown Guard Tower Eastwall Tower Northpass Tower"
+)
+_PROSE_SNIPPET = (
+    "The Argent Crusade holds the Bulwark and presses its campaign against the Scourge "
+    "across the Western Plaguelands, reclaiming Hearthglen for the living."
+)
+
+
+def test_fallback_faction_summary_skips_navbox_for_prose() -> None:
+    # #2: the (zone-hit, word_count) ranking prefers the longer navbox; the list guard must
+    # skip it and elect the genuine prose snippet instead.
+    items = [
+        {"snippet": _NAVBOX_SNIPPET, "source_id": "src-navbox"},
+        {"snippet": _PROSE_SNIPPET, "source_id": "src-prose"},
+    ]
+    summary, sources = fallback_faction_summary(items, zone_name="Western Plaguelands")
+    assert "Argent Crusade" in summary
+    assert "Chillwind Camp Hearthglen" not in summary
+    assert sources == ["src-prose"]
+
+
+def test_fallback_faction_summary_returns_empty_when_only_navbox() -> None:
+    items = [{"snippet": _NAVBOX_SNIPPET, "source_id": "src-navbox"}]
+    summary, sources = fallback_faction_summary(items, zone_name="Western Plaguelands")
+    assert summary == ""
+    assert sources == []
 
 
 def _profile_item(

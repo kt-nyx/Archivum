@@ -654,6 +654,35 @@ def collect_character_pool(
     return result
 
 
+def _family_surname_names(candidates: list[BossCandidate]) -> set[str]:
+    """Surname tokens that recur as the last name of a multi-token character in the pool.
+
+    A bare token equal to such a surname (e.g. "Barov" alongside "Jandice Barov" /
+    "Lord Alexei Barov") is a family/house reference, not an individual NPC, and is
+    structurally distinguishable without a denylist (#4).
+    """
+    surnames: set[str] = set()
+    for candidate in candidates:
+        words = normalize_title(candidate.name).split()
+        if len(words) >= 2:
+            surnames.add(words[-1])
+    return surnames
+
+
+def _is_family_or_surname_reference(name: str, surnames: set[str]) -> bool:
+    norm = normalize_title(name)
+    if not norm:
+        return False
+    if norm.endswith(" family"):
+        return True
+    words = norm.split()
+    if len(words) != 1:
+        return False
+    token = words[0]
+    # Bare surname, or its plural/house form ("Barovs"), shared with a full-name character.
+    return token in surnames or (token.endswith("s") and token[:-1] in surnames)
+
+
 def prefilter_character_pool(
     candidates: list[BossCandidate],
     *,
@@ -665,13 +694,18 @@ def prefilter_character_pool(
     ``excluded_normalized_names`` carries the S3 retail/Classic exclusion set: the
     page's Classic-categorized candidates (captured at traverse) unioned with the
     known-Classic backstop denylist. Names are compared via ``normalize_title``.
+
+    A bare surname/family token that duplicates a full-name character already in the pool
+    is also dropped (#4) — a structural check against the pool, not a denylist.
     """
     excluded = excluded_normalized_names or set()
+    surnames = _family_surname_names(candidates)
     return [
         candidate
         for candidate in candidates
         if not should_reject_boss_title(candidate.name, instance_name=instance_name)
         and normalize_title(candidate.name) not in excluded
+        and not _is_family_or_surname_reference(candidate.name, surnames)
     ]
 
 
