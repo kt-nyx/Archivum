@@ -4,13 +4,36 @@ import json
 from pathlib import Path
 
 from pipeline.common.run_context import ensure_run_context
-from pipeline.discovery.workflow import run_discovery_workflow
+from pipeline.discovery.workflow import (
+    _effective_section_slug,
+    _section_role,
+    run_discovery_workflow,
+)
 
 ZONE_ID = "zone-example"
 ZONE_NAME = "Example Zone"
 ZONE_WIKI = "Example_Zone"
 INSTANCE_ID = "instance-example-dungeon"
 INSTANCE_NAME = "Example Dungeon"
+
+
+def test_effective_section_slug_inherits_history_for_unrecognized_subsection() -> None:
+    # "The Scourging[edit]" classifies to "other" on its own; under a "History" parent
+    # it must inherit history so the prose keeps its real narrative role (Fix B).
+    assert _section_role("the_scourging_edit") == "other"
+    assert _section_role("history") == "history"
+    assert _effective_section_slug("the_scourging_edit", "history") == "history"
+    assert _section_role(_effective_section_slug("the_scourging_edit", "history")) == "history"
+
+
+def test_effective_section_slug_keeps_recognized_leaf_and_rpg_parent() -> None:
+    # A leaf that classifies on its own is never overridden by its parent.
+    assert _effective_section_slug("notable_characters", "history") == "notable_characters"
+    # An unrecognized leaf with an unrecognized parent stays as-is.
+    assert _effective_section_slug("external_links", "navbox") == "external_links"
+    # RPG parents stay RPG, so canon history is never polluted with RPG content.
+    assert _section_role("the_grand_tour") == "other"
+    assert _section_role(_effective_section_slug("the_grand_tour", "in_the_rpg")) == "in_the_rpg"
 
 
 def test_discovery_workflow_emits_required_artifacts(tmp_path: Path) -> None:

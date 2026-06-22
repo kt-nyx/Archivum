@@ -31,7 +31,7 @@ from pipeline.discovery.questline_significance import (
     score_zone_questline_clusters,
 )
 from pipeline.discovery.storyline_html import parse_storyline_html, v3_to_legacy_v1
-from pipeline.discovery.workflow import _load_json, _section_role
+from pipeline.discovery.workflow import _effective_section_slug, _load_json, _section_role
 
 # "roster" (pre-traverse): build the flat, UNCLUSTERED quest graph + zone-level
 # questline decision; clustering is deferred until quest pages exist (Slice B).
@@ -284,7 +284,13 @@ def _build_evidence_packs(
             if not isinstance(block, dict):
                 continue
             raw_section = str(block.get("section_role", ""))
-            role = _section_role(raw_section)
+            parent_section = str(block.get("parent_section_role", ""))
+            # Fix B: unrecognized storyline subsections ("The Scourging", "Cataclysm")
+            # inherit the enclosing top-level section role so their prose keeps its real
+            # History/Lore role instead of collapsing to "other". raw_section is retained
+            # verbatim (raw_section_role) so history headings stay distinct (#8).
+            effective_section = _effective_section_slug(raw_section, parent_section)
+            role = _section_role(effective_section)
             block_type = str(block.get("block_type", "paragraph"))
             snippet = clean_wiki_snippet(str(block.get("text", "")))
             if not snippet:
@@ -294,7 +300,7 @@ def _build_evidence_packs(
             if is_zone_seed:
                 lead_emitted = lead_counts.get(subject_id, 0)
                 field_names = _seed_field_names(
-                    raw_section, lead_emitted=lead_emitted, block_type=block_type
+                    effective_section, lead_emitted=lead_emitted, block_type=block_type
                 )
                 if "at_a_glance_input" in field_names and raw_section.lower() in {
                     "lead",
@@ -306,7 +312,7 @@ def _build_evidence_packs(
             elif is_instance_seed:
                 lead_emitted = lead_counts.get(subject_id, 0)
                 field_names = _instance_seed_field_names(
-                    raw_section, lead_emitted=lead_emitted, block_type=block_type
+                    effective_section, lead_emitted=lead_emitted, block_type=block_type
                 )
                 if "at_a_glance_input" in field_names and raw_section.lower() in {
                     "lead",
@@ -327,7 +333,7 @@ def _build_evidence_packs(
                 # Cross-page lore is the highest overreach risk, so use a strict narrative
                 # allowlist (lead/intro + history/lore/background/story) rather than the
                 # broad _is_history_digest_role denylist used for instance-owned prose.
-                lowered_raw = raw_section.lower()
+                lowered_raw = effective_section.lower()
                 is_narrative = lowered_raw in {"lead", "introduction"} or any(
                     token in lowered_raw for token in ("history", "lore", "background", "story")
                 )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pipeline.common.wiki_evidence_filters import cap_history_pool
 from pipeline.generate.draft.prose_election import (
+    history_heading_from_role,
     history_section_cap,
     select_at_a_glance_pool,
     select_currently_pool,
@@ -27,6 +28,27 @@ def _item(
         "source_id": source_id,
         "block_index": block_index,
     }
+
+
+def test_history_heading_prefers_distinct_subsection_text() -> None:
+    """#8: distinct history subsections get distinct headings, not a single constant.
+
+    Both blocks classify to the generic "history"/"other" role, but their raw subsection
+    headings differ, so the heading must be derived from the subsection text.
+    """
+    a = history_heading_from_role("history", "the_scourging_edit")
+    b = history_heading_from_role("history", "cataclysm_edit")
+    assert a == "The Scourging"
+    assert b == "Cataclysm"
+    assert a != b
+
+
+def test_history_heading_falls_back_to_constant_when_no_subsection() -> None:
+    # No raw subsection and a generic/empty role -> the documented constant.
+    assert history_heading_from_role("other", "") == "Historical era"
+    assert history_heading_from_role("other", "history_edit") == "Historical era"
+    # A recognized canonical role with no distinct subsection -> role label.
+    assert history_heading_from_role("wrath_of_the_lich_king_edit", "") == "Wrath Of The Lich King"
 
 
 def test_select_at_a_glance_pool_orders_history_before_geography() -> None:

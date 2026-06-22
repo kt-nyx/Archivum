@@ -265,7 +265,26 @@ def history_section_cap(items: list[dict[str, Any]]) -> int:
     return min(cap, eligible)
 
 
-def history_heading_from_role(section_role: str) -> str:
+# Generic subsection slugs that name the parent section itself, not a distinct era;
+# titling these adds no variety, so fall through to the canonical role / constant.
+_GENERIC_HISTORY_SUBSECTIONS = frozenset(
+    {"history", "lore", "background", "story", "lead", "introduction", "other"}
+)
+
+
+def history_heading_from_role(section_role: str, raw_section_role: str = "") -> str:
+    """Derive a history-section heading.
+
+    Prefer the actual wiki subsection heading (``raw_section_role``, e.g.
+    ``"the_scourging_edit"`` -> ``"The Scourging"``) so distinct history subsections get
+    distinct headings instead of the single ``"Historical era"`` constant (#8). Fall back
+    to the canonical section-role label, then to the constant when nothing usable remains.
+    """
+    raw = _normalize_role(raw_section_role).replace("_edit", "").strip("_")
+    if raw and raw not in _GENERIC_HISTORY_SUBSECTIONS:
+        label = raw.replace("_", " ").strip()
+        if label:
+            return label.title()
     role = _normalize_role(section_role)
     if not role or role == "other":
         return "Historical era"
@@ -312,7 +331,10 @@ def fallback_history_sections(
         snippet = str(item.get("snippet", "")).strip()
         if not snippet:
             continue
-        heading = history_heading_from_role(str(item.get("section_role", "other")))
+        heading = history_heading_from_role(
+            str(item.get("section_role", "other")),
+            str(item.get("raw_section_role", "")),
+        )
         sections.append({"heading": heading, "body": snippet, "source_refs": []})
         source_id = str(item.get("source_id", "")).strip()
         if source_id:

@@ -118,6 +118,25 @@ def _section_role(raw_role: str) -> str:
     return "other"
 
 
+def _effective_section_slug(raw_leaf: str, raw_parent: str = "") -> str:
+    """Return the slug a block should be classified by, inheriting its parent section.
+
+    Wiki storyline subsections ("The Scourging", "Cataclysm", "Creation") classify to
+    ``"other"`` on their own, which strips their paragraphs of the enclosing
+    History/Lore role and collapses them downstream (Fix B). The ingest section walk
+    already records ``parent_section_role`` but consumers never fell back to it. When a
+    leaf subsection is unrecognized but the enclosing top-level section is recognized,
+    classify by the parent slug so the content keeps its real narrative role. RPG
+    parents stay RPG (``_section_role`` returns ``"in_the_rpg"``), so canon history is
+    never polluted with RPG content.
+    """
+    if _section_role(raw_leaf) != "other":
+        return raw_leaf
+    if raw_parent and _section_role(raw_parent) != "other":
+        return raw_parent
+    return raw_leaf
+
+
 def _is_noise_wiki_link(link: str) -> bool:
     if not isinstance(link, str):
         return True

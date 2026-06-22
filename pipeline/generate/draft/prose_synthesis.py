@@ -175,7 +175,10 @@ def synthesize_history_sections(
             snippet = clean_wiki_snippet(str(item.get("snippet", "")))
             if not snippet:
                 continue
-            heading = history_heading_from_role(str(item.get("section_role", "other")))
+            heading = history_heading_from_role(
+                str(item.get("section_role", "other")),
+                str(item.get("raw_section_role", "")),
+            )
             sections.append({"heading": heading, "body": snippet, "source_refs": []})
             used.append(str(item.get("source_id", "")))
         return sections, used
@@ -231,7 +234,10 @@ def synthesize_history_sections(
             snippet = clean_wiki_snippet(str(item.get("snippet", "")))
             if not snippet:
                 continue
-            heading = history_heading_from_role(str(item.get("section_role", "other")))
+            heading = history_heading_from_role(
+                str(item.get("section_role", "other")),
+                str(item.get("raw_section_role", "")),
+            )
             sections.append({"heading": heading, "body": snippet, "source_refs": []})
             used_ids.append(str(item.get("source_id", "")))
         return sections, used_ids
