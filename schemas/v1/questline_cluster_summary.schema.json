@@ -1,0 +1,74 @@
+{
+  "$defs": {
+    "Faction": {
+      "enum": [
+        "alliance",
+        "horde",
+        "shared"
+      ],
+      "title": "Faction",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Cluster-level summary produced by post-traverse questline clustering (Slice B).",
+  "properties": {
+    "algorithm_version": {
+      "default": "v1-prereq-graph",
+      "title": "Algorithm Version",
+      "type": "string"
+    },
+    "cluster_id": {
+      "minLength": 1,
+      "title": "Cluster Id",
+      "type": "string"
+    },
+    "faction": {
+      "$ref": "#/$defs/Faction",
+      "default": "shared"
+    },
+    "quest_count": {
+      "minimum": 0,
+      "title": "Quest Count",
+      "type": "integer"
+    },
+    "quest_node_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Quest Node Ids",
+      "type": "array"
+    },
+    "reputation_orgs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Reputation Orgs",
+      "type": "array"
+    },
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "unresolved_edge_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Unresolved Edge Count",
+      "type": "integer"
+    },
+    "zone_id": {
+      "minLength": 1,
+      "title": "Zone Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "zone_id",
+    "cluster_id",
+    "title",
+    "quest_count"
+  ],
+  "title": "QuestlineClusterSummary",
+  "type": "object"
+}

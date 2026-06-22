@@ -1,0 +1,110 @@
+{
+  "$defs": {
+    "Faction": {
+      "enum": [
+        "alliance",
+        "horde",
+        "shared"
+      ],
+      "title": "Faction",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Structured per-quest record extracted from the wiki Questbox parse tree.\n\nProduced during quest traversal (Slice A) and consumed by clustering /\nsignificance / anchor stages downstream. Most narrative fields are optional\nbecause wiki Questbox completeness varies by quest and expansion.",
+  "properties": {
+    "category": {
+      "default": "",
+      "title": "Category",
+      "type": "string"
+    },
+    "description": {
+      "default": "",
+      "title": "Description",
+      "type": "string"
+    },
+    "end_npc": {
+      "default": "",
+      "title": "End Npc",
+      "type": "string"
+    },
+    "faction": {
+      "$ref": "#/$defs/Faction",
+      "default": "shared"
+    },
+    "faction_mirror": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Faction Mirror",
+      "type": "array"
+    },
+    "has_questbox": {
+      "default": true,
+      "title": "Has Questbox",
+      "type": "boolean"
+    },
+    "next": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Next",
+      "type": "array"
+    },
+    "node_id": {
+      "minLength": 1,
+      "title": "Node Id",
+      "type": "string"
+    },
+    "previous": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Previous",
+      "type": "array"
+    },
+    "quest_title": {
+      "minLength": 1,
+      "title": "Quest Title",
+      "type": "string"
+    },
+    "reputation_org": {
+      "default": "",
+      "title": "Reputation Org",
+      "type": "string"
+    },
+    "source_link": {
+      "minLength": 1,
+      "title": "Source Link",
+      "type": "string"
+    },
+    "start_coords": {
+      "default": "",
+      "title": "Start Coords",
+      "type": "string"
+    },
+    "start_location": {
+      "default": "",
+      "title": "Start Location",
+      "type": "string"
+    },
+    "start_npc": {
+      "default": "",
+      "title": "Start Npc",
+      "type": "string"
+    },
+    "zone_id": {
+      "minLength": 1,
+      "title": "Zone Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "zone_id",
+    "node_id",
+    "quest_title",
+    "source_link"
+  ],
+  "title": "QuestRecord",
+  "type": "object"
+}

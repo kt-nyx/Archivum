@@ -13,6 +13,8 @@
     "instance",
     "instance_page",
     "location_card",
+    "quest_record",
+    "questline_cluster_summary",
     "sub_zone",
     "zone",
     "zone_page"
