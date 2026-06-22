@@ -46,7 +46,7 @@ def _no_llm(monkeypatch: pytest.MonkeyPatch) -> None:
     os.environ["WOW_LORE_WIKI_FIRST_NO_LLM"] = "1"
 
 
-def test_build_zone_page_wpl_emits_four_ql_cards_without_continued(
+def test_build_zone_page_wpl_emits_registry_ql_cards_without_continued(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     roster, records = _load_wpl()
@@ -119,11 +119,15 @@ def test_build_zone_page_wpl_emits_four_ql_cards_without_continued(
         included_cluster_ids=ranking["included_cluster_ids"],
     )
     cards = draft["major_questlines"]
-    # Membership-based binding: this synthetic fixture's Andorhal clusters carry real arc
-    # node-ids and emit; its Hearthglen/Mender placeholders bind to no arc (the full 3-card
-    # outcome is validated against real quest records elsewhere). No raw cluster-* ids.
+    # Membership-based binding on the live-distilled fixture emits all three registry arcs
+    # (Andorhal Alliance + Horde + Hearthglen), matching the oracle's three included cards.
+    # No raw cluster-* ids and no "-continued" overflow cards.
     card_ids = {card["id"] for card in cards}
-    assert card_ids == {"ql-andorhal-alliance", "ql-andorhal-horde"}
+    assert card_ids == {
+        "ql-andorhal-alliance",
+        "ql-andorhal-horde",
+        "ql-hearthglen-tirion-legacy",
+    }
     assert all(str(card["id"]).startswith("ql-") for card in cards)
     assert not any(str(card["id"]).endswith("-continued") for card in cards)
     anchors = _registry_anchor_by_card_id()

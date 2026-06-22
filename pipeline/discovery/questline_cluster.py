@@ -388,6 +388,20 @@ def _assign_faction_subclusters(
     return {key: sorted(value) for key, value in buckets.items() if value}
 
 
+def _cluster_start_anchor(
+    members: list[str],
+    roster_by_node: dict[str, dict[str, Any]],
+) -> str:
+    """Return the arc's start-anchor node: lowest ``order_in_cluster`` (tie-break node id)."""
+    return min(
+        members,
+        key=lambda node_id: (
+            int(roster_by_node.get(node_id, {}).get("order_in_cluster", 0) or 0),
+            node_id,
+        ),
+    )
+
+
 def _infer_cluster_title(
     members: list[str],
     *,
@@ -397,11 +411,12 @@ def _infer_cluster_title(
 ) -> str:
     """Derive a structural cluster title (no zone keyword tables).
 
-    Preference order: a shared start location (hub name) -> a dominant reputation org for
-    *multi-quest* clusters -> the first quest's title. Single-quest clusters never take an
-    org name as their title, so unrelated breadcrumb singletons that merely share a
-    reputation faction (e.g. "Stormwind (faction)") cannot collapse into one fake cluster.
-    Wiki disambiguation suffixes are stripped from the result.
+    Preference order: a dominant shared start location (hub name) -> the arc's start-anchor
+    quest title. ``reputation_org`` and ``category`` are deliberately *not* identity titles:
+    a rep-org (e.g. "Undercity (Horde)") or the zone category names a faction/zone, not a
+    storyline, so distinct arcs that share one would collide into a single fake cluster.
+    Rep-org is retained as a cluster attribute (``reputation_orgs`` on the summary), never as
+    the title. Wiki disambiguation suffixes are stripped from the result.
     """
 
     def _faction_tag(label: str) -> str:
@@ -423,24 +438,10 @@ def _infer_cluster_title(
         ][0]
         return _faction_tag(dominant_location)
 
-    if len(members) > 1:
-        org_counts: dict[str, int] = defaultdict(int)
-        for node_id in members:
-            org = str(records_by_node.get(node_id, {}).get("reputation_org", "")).strip()
-            if org:
-                org_counts[org] += 1
-        if org_counts:
-            dominant_org = sorted(org_counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
-            return _faction_tag(dominant_org)
-
-    for node_id in members:
-        category = str(records_by_node.get(node_id, {}).get("category", "")).strip()
-        if category:
-            return _faction_tag(category)
-
-    first = roster_by_node.get(members[0], {})
-    record_title = str(records_by_node.get(members[0], {}).get("quest_title", "")).strip()
-    return _faction_tag(record_title or str(first.get("title", "Questline")))
+    anchor = _cluster_start_anchor(members, roster_by_node)
+    record_title = str(records_by_node.get(anchor, {}).get("quest_title", "")).strip()
+    roster_title = str(roster_by_node.get(anchor, {}).get("title", "")).strip()
+    return _faction_tag(record_title or roster_title or "Questline")
 
 
 def _cluster_id_from_title(title: str, faction: str) -> str:
@@ -476,6 +477,114 @@ def _split_oversized_subcomponents(
     return segments
 
 
+_FACTION_VARIANT_SUFFIX_RE = re.compile(r"\s*\((alliance|horde)\)\s*$", re.IGNORECASE)
+
+
+def _variant_faction(title: str) -> str:
+    """Return 'alliance'/'horde' when a title ends with that faction-disambiguation suffix."""
+    match = _FACTION_VARIANT_SUFFIX_RE.search(str(title).strip())
+    return match.group(1).lower() if match else ""
+
+
+def materialize_faction_variant_beats(
+    roster_rows: list[dict[str, Any]],
+    quest_records: list[dict[str, Any]],
+    *,
+    zone_id: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split a stranded shared beat into per-faction variant nodes (Fix A step 4 / Option C).
+
+    Some cross-faction beats are two distinct same-named quests (e.g. "Combat Training" has a
+    separate Alliance and Horde quest) that the storyline lists once as a single
+    ``faction_binding="shared"`` node with no questbox. Each faction's chain references it as
+    ``"<title> (Alliance)"`` / ``"(Horde)"``; those suffixed titles never resolve to the bare
+    shared node, so it strands as an isolated singleton and is dropped downstream (#11).
+
+    This replaces such a *stranded* shared node with one faction-bound variant per referencing
+    faction, titled with the faction suffix so each faction's existing prev/next edge resolves
+    to it. The beat then joins each faction's arc (and both cards) without introducing a
+    cross-faction edge that would fuse the two arcs into one component. A shared node that owns
+    a real questbox record (a genuinely shared single quest) is left untouched.
+    """
+    has_record = {
+        str(rec.get("node_id", ""))
+        for rec in quest_records
+        if str(rec.get("zone_id", "")).strip() == zone_id and rec.get("has_questbox", True)
+    }
+    shared_by_title: dict[str, dict[str, Any]] = {}
+    for row in roster_rows:
+        if str(row.get("node_type", "")) != "quest":
+            continue
+        if str(row.get("faction_binding", "shared")) != "shared":
+            continue
+        node_id = str(row.get("node_id", ""))
+        if node_id in has_record:
+            continue  # a real shared quest, not a stranded storyline placeholder
+        shared_by_title.setdefault(normalize_quest_title(str(row.get("title", ""))), row)
+    if not shared_by_title:
+        return roster_rows, quest_records
+
+    variant_factions: dict[str, set[str]] = defaultdict(set)
+    shared_row_by_id: dict[str, dict[str, Any]] = {}
+    for rec in quest_records:
+        if str(rec.get("zone_id", "")).strip() != zone_id:
+            continue
+        for field in ("next", "previous"):
+            for ref in rec.get(field, []) or []:
+                faction = _variant_faction(ref)
+                if not faction:
+                    continue
+                base_key = normalize_quest_title(_FACTION_VARIANT_SUFFIX_RE.sub("", str(ref)))
+                shared = shared_by_title.get(base_key)
+                if shared is None:
+                    continue
+                sid = str(shared.get("node_id", ""))
+                variant_factions[sid].add(faction)
+                shared_row_by_id[sid] = shared
+    if not variant_factions:
+        return roster_rows, quest_records
+
+    new_roster = [row for row in roster_rows if str(row.get("node_id", "")) not in variant_factions]
+    new_records = [
+        rec for rec in quest_records if str(rec.get("node_id", "")) not in variant_factions
+    ]
+    for sid, factions in sorted(variant_factions.items()):
+        shared = shared_row_by_id[sid]
+        base_title = str(shared.get("title", "")).strip()
+        base_link = str(shared.get("source_link", "")).strip()
+        for faction in sorted(factions):
+            label = faction.capitalize()
+            variant_title = f"{base_title} ({label})"
+            variant_id = f"{sid}-{faction}"
+            variant_link = f"{base_link}_({label})" if base_link else ""
+            new_roster.append(
+                {
+                    **shared,
+                    "node_id": variant_id,
+                    "title": variant_title,
+                    "faction_binding": faction,
+                    "source_link": variant_link or base_link,
+                }
+            )
+            new_records.append(
+                {
+                    "zone_id": zone_id,
+                    "node_id": variant_id,
+                    "quest_title": variant_title,
+                    "source_link": variant_link or base_link,
+                    "has_questbox": True,
+                    "faction": faction,
+                    "previous": [],
+                    "next": [],
+                    "reputation_org": "",
+                    "category": "",
+                    "start_location": "",
+                    "description": "",
+                }
+            )
+    return new_roster, new_records
+
+
 def cluster_zone_questlines(
     *,
     zone_id: str,
@@ -486,6 +595,9 @@ def cluster_zone_questlines(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
     """Cluster flat roster rows using QuestRecord chains + storyline-section structure."""
     _ = storyline_html, zone_name
+    roster_rows, quest_records = materialize_faction_variant_beats(
+        roster_rows, quest_records, zone_id=zone_id
+    )
     quest_rows = [dict(row) for row in roster_rows if str(row.get("node_type", "")) == "quest"]
     non_quest_rows = [dict(row) for row in roster_rows if str(row.get("node_type", "")) != "quest"]
     if not quest_rows:
@@ -555,6 +667,22 @@ def cluster_zone_questlines(
                     if part_index > 1:
                         title = f"{title} (Part {part_index})"
                 cluster_assignments.append((cluster_id, title, faction, part))
+
+    # Distinct structural components must never share a cluster_id. Otherwise
+    # _summaries_from_rows / _cluster_groups (which group by cluster_id) would re-merge two
+    # arcs that the graph deliberately kept apart, just because their display titles slugged
+    # to the same value. When a base id collides, seed identity from each component's
+    # start-anchor quest so the two ids diverge.
+    id_counts: dict[str, int] = defaultdict(int)
+    for cluster_id, _title, _faction, _part in cluster_assignments:
+        id_counts[cluster_id] += 1
+    disambiguated: list[tuple[str, str, str, list[str]]] = []
+    for cluster_id, title, faction, part in cluster_assignments:
+        if id_counts[cluster_id] > 1:
+            anchor = _cluster_start_anchor(part, roster_by_node)
+            cluster_id = f"{cluster_id}-{_slugify(anchor)}"
+        disambiguated.append((cluster_id, title, faction, part))
+    cluster_assignments = disambiguated
 
     cluster_assignments.sort(
         key=lambda item: (

@@ -9,6 +9,7 @@ from pipeline.discovery.questline_cluster import (
     build_chain_adjacency,
     cluster_zone_questlines,
     connected_components,
+    materialize_faction_variant_beats,
     merge_org_bridged_components,
     normalize_quest_title,
     resolve_title_to_node_id,
@@ -275,7 +276,105 @@ def test_cluster_size_cap_splits_long_chain() -> None:
     assert len(summaries) >= 2
 
 
-def test_wpl_fixture_produces_distinct_storyline_clusters() -> None:
+def test_distinct_chains_sharing_rep_org_do_not_collapse() -> None:
+    """Two unrelated chains with the same reputation_org and no start_location must stay apart.
+
+    This reproduces the live WPL regression: with start_location empty, cluster identity used
+    to fall back to reputation_org, so two distinct graph components ("Argent Crusade") slugged
+    to one cluster_id and re-merged in _summaries_from_rows. Identity is now structural.
+    """
+    roster = [
+        _quest_row("quest-a1", "Alpha One", 1),
+        _quest_row("quest-a2", "Alpha Two", 2),
+        _quest_row("quest-b1", "Bravo One", 3),
+        _quest_row("quest-b2", "Bravo Two", 4),
+    ]
+    records = [
+        _record("quest-a1", "Alpha One", next_quests=["Alpha Two"], org="Argent Crusade"),
+        _record("quest-a2", "Alpha Two", previous=["Alpha One"], org="Argent Crusade"),
+        _record("quest-b1", "Bravo One", next_quests=["Bravo Two"], org="Argent Crusade"),
+        _record("quest-b2", "Bravo Two", previous=["Bravo One"], org="Argent Crusade"),
+    ]
+    rows, summaries, _unresolved = cluster_zone_questlines(
+        zone_id="zone-example",
+        roster_rows=roster,
+        quest_records=records,
+    )
+    cluster_ids = {row["cluster_id"] for row in rows if row.get("node_type") == "quest"}
+    assert len(cluster_ids) == 2, cluster_ids
+    assert len(summaries) == 2
+    assert all(summary["quest_count"] == 2 for summary in summaries)
+    # rep-org is retained as an attribute, never as the identity title.
+    assert all("Argent Crusade" not in summary["title"] for summary in summaries)
+    assert all(summary["reputation_orgs"] == ["Argent Crusade"] for summary in summaries)
+
+
+def _load_wpl_registry_arcs() -> dict[str, list[str]]:
+    """Return {arc_title: [chain_ref node_ids]} from the canonical questline oracle."""
+    registry = json.loads(
+        (Path("tests/fixtures/pilot/western_plaguelands_questline_registry.json")).read_text(
+            encoding="utf-8"
+        )
+    )
+    return {arc["title"]: list(arc.get("chain_refs", [])) for arc in registry["included_arcs"]}
+
+
+def test_materialize_variant_beats_splits_stranded_shared_node() -> None:
+    roster = [
+        _quest_row("quest-a1", "Alpha One", 1, faction="alliance"),
+        _quest_row("quest-h1", "Bravo One", 2, faction="horde"),
+        _quest_row("quest-combat-training", "Combat Training", 3, faction="shared"),
+    ]
+    records = [
+        _record(
+            "quest-a1", "Alpha One", faction="alliance", next_quests=["Combat Training (Alliance)"]
+        ),
+        _record("quest-h1", "Bravo One", faction="horde", next_quests=["Combat Training (Horde)"]),
+        # No record for the shared Combat Training node -> stranded storyline placeholder.
+    ]
+    new_roster, new_records = materialize_faction_variant_beats(
+        roster, records, zone_id="zone-example"
+    )
+    roster_ids = {row["node_id"] for row in new_roster}
+    assert "quest-combat-training" not in roster_ids
+    assert {"quest-combat-training-alliance", "quest-combat-training-horde"} <= roster_ids
+    by_id = {row["node_id"]: row for row in new_roster}
+    assert by_id["quest-combat-training-alliance"]["faction_binding"] == "alliance"
+    assert by_id["quest-combat-training-horde"]["title"] == "Combat Training (Horde)"
+    variant_records = {r["node_id"] for r in new_records if r.get("has_questbox")}
+    assert {"quest-combat-training-alliance", "quest-combat-training-horde"} <= variant_records
+
+
+def test_materialize_variant_beats_leaves_genuine_shared_quest_untouched() -> None:
+    # A shared node that owns a real questbox record is a genuine shared quest, not a stranded
+    # placeholder; it must not be split even if referenced with a faction suffix somewhere.
+    roster = [
+        _quest_row("quest-a1", "Alpha One", 1, faction="alliance"),
+        _quest_row("quest-shared", "Shared Beat", 2, faction="shared"),
+    ]
+    records = [
+        _record(
+            "quest-a1", "Alpha One", faction="alliance", next_quests=["Shared Beat (Alliance)"]
+        ),
+        _record("quest-shared", "Shared Beat", faction="shared"),  # has_questbox=True
+    ]
+    new_roster, _new_records = materialize_faction_variant_beats(
+        roster, records, zone_id="zone-example"
+    )
+    roster_ids = {row["node_id"] for row in new_roster}
+    assert "quest-shared" in roster_ids
+    assert "quest-shared-alliance" not in roster_ids
+
+
+def test_wpl_fixture_clusters_match_registry_arc_separation() -> None:
+    """Real-data clustering must keep the canonical storyline arcs apart (Fix A).
+
+    The fixture is distilled from the live ``test-run-wpl-1`` discovery artifacts
+    (`scripts/distill_clustering_fixture.py`), so this asserts the *component layer*
+    invariants against the questline registry oracle, not the synthetic ">=5 clusters"
+    heuristic that passed while the live run was wrong. The final 3-card grouping is a
+    later layer (significance/cluster-layers) and is out of scope here.
+    """
     roster, records = _load_wpl_fixture()
     rows, summaries, _unresolved = cluster_zone_questlines(
         zone_id=ZONE_ID,
@@ -284,40 +383,98 @@ def test_wpl_fixture_produces_distinct_storyline_clusters() -> None:
         zone_name="Western Plaguelands",
     )
     quest_rows = [row for row in rows if row.get("node_type") == "quest"]
-    cluster_ids = {row["cluster_id"] for row in quest_rows}
-    titles_by_cluster = {row["cluster_id"]: row["cluster_title"] for row in quest_rows}
+    cluster_by_node = {row["node_id"]: row["cluster_id"] for row in quest_rows}
+    cluster_ids = set(cluster_by_node.values())
+    faction_by_node = {rec["node_id"]: rec.get("faction", "") for rec in records}
 
     assert "unclustered" not in cluster_ids
-    assert len(cluster_ids) >= 5
+
+    # 1. No reputation-org mega-cluster: the old bug fused 21 quests into one "Argent
+    #    Crusade" cluster. Real components stay well under the size cap.
     assert all(summary["quest_count"] <= _MAX_CLUSTER_QUESTS for summary in summaries)
-    assert len(quest_rows) < len(roster) or len(cluster_ids) >= 5
+    assert max(summary["quest_count"] for summary in summaries) <= 12
 
-    def cluster_with_keyword(keyword: str) -> set[str]:
-        return {
-            cluster_id
-            for cluster_id, title in titles_by_cluster.items()
-            if keyword.lower() in title.lower()
+    # 2. Reputation org is an attribute, never the cluster identity/title.
+    for summary in summaries:
+        for org in ("Argent Crusade", "Undercity", "Stormwind", "Cenarion"):
+            assert org not in summary["title"], summary["title"]
+
+    # 3. Distinct registry arcs never share a cluster (no cross-arc bleed). Exclude
+    #    combat-training: it is the cross-faction shared beat both arcs legitimately claim
+    #    and is currently an isolated singleton (#11, asserted separately below).
+    arcs = _load_wpl_registry_arcs()
+    arc_clusters: dict[str, set[str]] = {}
+    for title, refs in arcs.items():
+        arc_clusters[title] = {
+            cluster_by_node[ref]
+            for ref in refs
+            if ref in cluster_by_node and ref != "quest-combat-training"
         }
+    arc_titles = list(arc_clusters)
+    for i in range(len(arc_titles)):
+        for j in range(i + 1, len(arc_titles)):
+            left, right = arc_clusters[arc_titles[i]], arc_clusters[arc_titles[j]]
+            assert left.isdisjoint(right), (arc_titles[i], arc_titles[j], left & right)
 
-    andorhal_alliance = cluster_with_keyword("andorhal") & {
-        cid for cid, title in titles_by_cluster.items() if "alliance" in title.lower()
-    }
-    andorhal_horde = cluster_with_keyword("andorhal") & {
-        cid for cid, title in titles_by_cluster.items() if "horde" in title.lower()
-    }
-    assert andorhal_alliance
-    assert andorhal_horde
-    assert andorhal_alliance.isdisjoint(andorhal_horde)
-
-    mender = cluster_with_keyword("mender") | cluster_with_keyword("cenarion")
-    hearthglen = cluster_with_keyword("hearthglen")
-    gahrron = cluster_with_keyword("gahrron")
-    northridge = cluster_with_keyword("northridge")
-    assert mender
-    assert hearthglen
-    assert gahrron
-    assert northridge
-    assert mender.isdisjoint(andorhal_alliance | andorhal_horde)
+    # 4. The Andorhal Alliance and Horde entry quests anchor different, faction-pure
+    #    clusters (the live run fragmented and cross-wired these).
+    alliance_entry = cluster_by_node["quest-hero-s-call-western-plaguelands"]
+    horde_entry = cluster_by_node["quest-warchief-s-command-western-plaguelands"]
+    assert alliance_entry != horde_entry
+    for node_id, cluster_id in cluster_by_node.items():
+        if cluster_id in (alliance_entry, horde_entry):
+            faction = faction_by_node.get(node_id, "")
+            if not faction or faction == "shared":
+                continue
+            expected = "alliance" if cluster_id == alliance_entry else "horde"
+            assert faction == expected, (node_id, cluster_id, faction)
 
     for summary in summaries:
         QuestlineClusterSummary.model_validate(summary)
+
+
+def test_wpl_combat_training_splits_into_per_faction_variants() -> None:
+    """Fix A step 4 / Option C: the same-name cross-faction beat is materialized per faction.
+
+    ``Combat Training`` is two distinct same-named quests the storyline lists once as a single
+    stranded ``shared`` node (no questbox); each faction's chain references it as
+    "Combat Training (Alliance)" / "(Horde)". ``materialize_faction_variant_beats`` replaces the
+    stranded shared node with one faction-bound variant per referencing faction, each joining
+    its own faction's arc (so it can reach both faction cards) without a cross-faction edge that
+    would fuse the two Andorhal arcs into one component.
+
+    NOTE: reaching *both rendered cards* additionally depends on the card layer, which currently
+    selects a single cluster per multi-part arc; this test pins the clustering-layer guarantee.
+    """
+    roster, records = _load_wpl_fixture()
+    rows, _summaries, _unresolved = cluster_zone_questlines(
+        zone_id=ZONE_ID,
+        roster_rows=roster,
+        quest_records=records,
+        zone_name="Western Plaguelands",
+    )
+    quest_rows = [row for row in rows if row.get("node_type") == "quest"]
+    cluster_by_node = {row["node_id"]: row["cluster_id"] for row in quest_rows}
+    faction_by_node = {row["node_id"]: row.get("faction_binding") for row in quest_rows}
+
+    # The stranded shared node is gone, replaced by two faction-bound variants.
+    assert "quest-combat-training" not in cluster_by_node
+    assert faction_by_node.get("quest-combat-training-alliance") == "alliance"
+    assert faction_by_node.get("quest-combat-training-horde") == "horde"
+
+    # Each variant joins its faction-chain neighbour's cluster (the next-ref now resolves).
+    assert (
+        cluster_by_node["quest-combat-training-alliance"]
+        == cluster_by_node["quest-this-is-our-army"]
+    )
+    assert (
+        cluster_by_node["quest-combat-training-horde"]
+        == cluster_by_node["quest-when-death-is-not-enough"]
+    )
+
+    # The split must NOT fuse the two faction arcs: the variants live in different clusters and
+    # no single cluster mixes both faction variants.
+    assert (
+        cluster_by_node["quest-combat-training-alliance"]
+        != cluster_by_node["quest-combat-training-horde"]
+    )

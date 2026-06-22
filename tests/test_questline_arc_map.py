@@ -49,11 +49,15 @@ def test_wpl_registry_maps_three_ql_card_ids() -> None:
         included_cluster_ids=ranking["included_cluster_ids"],
     )
     card_ids = {row["card_id"] for row in metadata_rows}
-    # Structural redesign: clusters bind to registry arcs by quest membership (not keyword
-    # tables). This synthetic fixture's Andorhal clusters carry real arc node-ids and bind;
-    # its Hearthglen/Mender clusters use placeholder node-ids that do not (the full-run
-    # 3-card outcome incl. Hearthglen is validated against real quest records elsewhere).
-    assert card_ids == {"ql-andorhal-alliance", "ql-andorhal-horde"}
+    # Clusters bind to registry arcs by quest membership (not keyword tables). The fixture is
+    # distilled from the live run (`scripts/distill_clustering_fixture.py`), so all three
+    # registry arcs carry real node-ids and bind — matching the oracle's
+    # expected_included_card_count of 3.
+    assert card_ids == {
+        "ql-andorhal-alliance",
+        "ql-andorhal-horde",
+        "ql-hearthglen-tirion-legacy",
+    }
     # Mender's Stead is no longer an included arc; nothing maps to it.
     assert "ql-menders-stead-healing" not in card_ids
     # No raw cluster-* ids; one card per arc (dedupe).
