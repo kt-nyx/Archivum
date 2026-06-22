@@ -5,6 +5,8 @@ from pipeline.generate.draft.prose_gate import (
     detect_list_shape,
     detect_midsentence_gap,
     detect_script_mixing,
+    detect_source_passthrough,
+    detect_splice_passthrough,
     prose_gate_rejects,
     prose_gate_violations,
 )
@@ -95,3 +97,68 @@ def test_violations_lists_both_artifact_classes() -> None:
     both = "the scourge сeded the vault to the"
     issues = prose_gate_violations(both)
     assert len(issues) == 2
+
+
+# --- Fix E: the central gate now backstops the navbox/splice/mid-sentence defect classes ---
+
+
+def test_gate_rejects_navbox_list_summary() -> None:
+    # Defect #2: the Argent Crusade faction summary shipped as a raw navbox place-name dump.
+    navbox = (
+        "Plaguelands Western Plaguelands The Bulwark Chillwind Camp Hearthglen "
+        "Menders' Stead Northridge Lumber Camp Eastern Plaguelands Light's Hope Chapel "
+        "Sanctum of Light Tyr's Hand Scarlet Bastion Crown Guard Tower Eastwall Tower."
+    )
+    assert prose_gate_rejects(navbox) is True
+
+
+def test_gate_rejects_midsentence_broken_cta() -> None:
+    # Defect #3: a raw zone-name strip left a dangling preposition mid-sentence.
+    assert prose_gate_rejects("Answer the call to, where the Scourge festers.") is True
+
+
+def test_detect_splice_passthrough_flags_features_prominently_splice() -> None:
+    # Defect #4: the old key-character fallback colon-spliced a raw, truncated snippet.
+    splice = (
+        "Barov features prominently in Scholomance: the Barov family once ruled these halls "
+        "before the"
+    )
+    assert detect_splice_passthrough(splice) is True
+    assert prose_gate_rejects(splice) is True
+
+
+def test_detect_splice_passthrough_allows_prose_without_colon_splice() -> None:
+    clean = "Jandice Barov features prominently in Scholomance as an illusionist boss."
+    assert detect_splice_passthrough(clean) is False
+    assert prose_gate_rejects(clean) is False
+
+
+def test_detect_source_passthrough_flags_verbatim_copy() -> None:
+    snippet = "The Forsaken seized Andorhal and drove the Alliance from the ruined town."
+    # A summary that is the snippet verbatim is a copy, not synthesis.
+    assert detect_source_passthrough(snippet, [snippet]) is True
+
+
+def test_detect_source_passthrough_allows_borrowed_sentence() -> None:
+    # A deterministic fallback that borrows one clean sentence from a longer source is allowed.
+    source = (
+        "Andorhal sits at the heart of the Western Plaguelands. The Forsaken and the Alliance "
+        "have fought for years over its grain stores, its crypts, and the roads that cross it, "
+        "while the Scourge still claws at the city's edges from the surrounding fields."
+    )
+    summary = "Andorhal sits at the heart of the Western Plaguelands."
+    assert detect_source_passthrough(summary, [source]) is False
+
+
+def test_gate_source_passthrough_only_active_with_sources() -> None:
+    snippet = "The Forsaken seized Andorhal and drove the Alliance from the ruined town."
+    # Without sources the copy is invisible to the gate; with sources it is rejected.
+    assert prose_gate_rejects(snippet) is False
+    assert prose_gate_rejects(snippet, source_snippets=[snippet]) is True
+
+
+def test_gate_passes_legitimate_short_summary() -> None:
+    # Negative case: real terse prose must survive the expanded gate.
+    summary = "The Argent Crusade holds the Bulwark and presses the Scourge across the fields."
+    assert prose_gate_rejects(summary) is False
+    assert prose_gate_rejects(summary, source_snippets=["unrelated evidence snippet here"]) is False

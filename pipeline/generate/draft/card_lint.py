@@ -8,7 +8,7 @@ from pipeline.generate.draft.prose_gate import (
     detect_dangling_terminal,
     detect_midsentence_gap,
 )
-from pipeline.generate.draft.prose_lint import word_count
+from pipeline.generate.draft.prose_lint import split_sentences, word_count
 
 MAX_CTA_HOOK_WORDS = 35
 _TRAILING_FRAGMENT_RE = re.compile(
@@ -17,7 +17,6 @@ _TRAILING_FRAGMENT_RE = re.compile(
 # A token-chop can land on a possessive/content word ("the Warchief's") that the stop-word
 # list above misses; flag a trailing possessive with no following noun as truncated too.
 _TRAILING_POSSESSIVE_RE = re.compile(r"\b[\w]+'s\.?$", re.IGNORECASE)
-_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.?!])\s+")
 
 
 def lint_cta_hook(text: str) -> list[str]:
@@ -46,10 +45,7 @@ def finalize_cta_hook(text: str, *, max_words: int = MAX_CTA_HOOK_WORDS) -> str:
     # rather than chopping the next sentence mid-clause (which produced "...the Warchief's.").
     kept: list[str] = []
     running = 0
-    for sentence in _SENTENCE_SPLIT_RE.split(cleaned):
-        sentence = sentence.strip()
-        if not sentence:
-            continue
+    for sentence in split_sentences(cleaned):
         sentence_words = word_count(sentence)
         if kept and running + sentence_words > max_words:
             break

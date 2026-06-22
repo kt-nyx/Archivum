@@ -12,6 +12,7 @@ from pipeline.generate.draft.prose_gate import detect_list_shape
 from pipeline.generate.draft.prose_lint import (
     has_currently_meta,
     has_historical_framing,
+    split_sentences,
     trim_words,
     word_count,
 )
@@ -49,7 +50,6 @@ _PATCH_NOTES_RE = re.compile(
 # source fragment, an unterminated clause, or list-bullet residue.
 _BULLET_MARKER_RE = re.compile(r"(?:^|\n)[ \t]*(?:[\u2022\u25E6\u25AA\u2023\u2043*]|-|\d+[.)])\s+")
 _FIRST_LETTER_RE = re.compile(r"[^\W\d_]", re.UNICODE)
-_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.?!])\s+")
 
 
 def ensure_sentence_terminator(text: str) -> str:
@@ -316,9 +316,8 @@ def _leading_complete_sentence(text: str, *, max_words: int) -> str:
     cleaned = text.strip()
     if not cleaned:
         return ""
-    first = next(
-        (chunk.strip() for chunk in _SENTENCE_SPLIT_RE.split(cleaned) if chunk.strip()), ""
-    )
+    sentences = split_sentences(cleaned)
+    first = sentences[0] if sentences else ""
     if not first or first[-1] not in ".?!" or detect_list_shape(first):
         return ""
     letter = _FIRST_LETTER_RE.search(first)

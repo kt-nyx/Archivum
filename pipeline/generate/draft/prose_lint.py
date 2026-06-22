@@ -44,6 +44,18 @@ _LOCATION_LIST_RE = re.compile(
 )
 
 
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.?!])\s+")
+
+
+def split_sentences(text: str) -> list[str]:
+    """Split on sentence-terminal punctuation, returning stripped, non-empty sentences.
+
+    Single source of truth for the ``(?<=[.?!])\\s+`` split used by the CTA finalizer and the
+    key-character sentence-borrow fallback (formerly a duplicated regex in each).
+    """
+    return [chunk.strip() for chunk in _SENTENCE_SPLIT_RE.split(text) if chunk.strip()]
+
+
 def word_count(text: str) -> int:
     return len(re.findall(r"\b[\w']+\b", text))
 

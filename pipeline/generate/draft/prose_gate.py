@@ -1,6 +1,6 @@
 """Deterministic prose-quality gate for synthesized draft prose.
 
-Runs after the LLM prose workers and catches two artifact classes the per-field
+Runs after the LLM prose workers and catches artifact classes the per-field
 lints miss, using pure string analysis (no second LLM call):
 
 1. **Script mixing** — stray letters from a non-Latin alphabet injected into
@@ -13,6 +13,13 @@ lints miss, using pure string analysis (no second LLM call):
    (e.g. ``...the war in the toward.``). Complements
    ``lint_passthrough_fragment``, which only checks that *a* terminator exists,
    not that the word before it is a real sentence ending.
+3. **Mid-sentence gap** — a preposition/article stranded mid-sentence by a naive
+   zone-name strip (``...the call to, where``); see :func:`detect_midsentence_gap`.
+4. **List/navbox shape** — a near-zero-connective place-name dump masquerading as
+   prose (the Argent Crusade navbox defect); see :func:`detect_list_shape`.
+5. **Copy passthrough** — a summary that is the ``"<name> features prominently in
+   ...: <raw snippet>"`` splice, or (when ``source_snippets`` are supplied) a
+   near-verbatim copy of its source evidence.
 
 The gate reports violations (a list of issue strings, mirroring the ``lint_*``
 helpers); callers treat a non-empty result like a lint failure and fall back to
@@ -23,6 +30,9 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Iterable
+
+from pipeline.common.text_sim import max_similarity_against_sources
 
 # Function words that should never be the final word of a finished sentence.
 # Curated for precision: articles, coordinating conjunctions, and prepositions
@@ -195,6 +205,34 @@ def detect_list_shape(text: str) -> bool:
     return function_words / n < _LIST_SHAPE_FUNCTION_RATIO
 
 
+# The deterministic key-character fallback used to colon-splice a raw, word-truncated evidence
+# snippet after a generic frame (``"<boss> features prominently in <instance>: <raw snippet>"`` —
+# defect #4). Fix C stopped emitting it; this regex is the gate backstop so the splice can never
+# ship again, even if another fallback reintroduces the shape.
+_SPLICE_PASSTHROUGH_RE = re.compile(r"\bfeatures prominently in\b[^:]*:\s+\S", re.IGNORECASE)
+
+# A synthesized summary that is ~identical to one of its source evidence snippets is a verbatim
+# copy, not synthesis (defect #2/#4). Tuned high: deterministic fallbacks legitimately *borrow* a
+# clean sentence (moderate overlap), so only near-total token overlap counts as passthrough.
+_COPY_PASSTHROUGH_THRESHOLD = 0.85
+
+
+def detect_splice_passthrough(text: str) -> bool:
+    """True when text is the ``"<name> features prominently in <x>: <raw snippet>"`` splice."""
+    return bool(_SPLICE_PASSTHROUGH_RE.search(text))
+
+
+def detect_source_passthrough(text: str, source_snippets: Iterable[str]) -> bool:
+    """True when text is a near-verbatim copy of any source evidence snippet.
+
+    Uses whitespace-token Jaccard against each source; only near-total overlap trips it, so a
+    deterministic fallback that borrows a single clean sentence is not mistaken for a raw copy.
+    """
+    if not text.strip():
+        return False
+    return max_similarity_against_sources(text, source_snippets) >= _COPY_PASSTHROUGH_THRESHOLD
+
+
 def _letter_script(ch: str) -> str | None:
     """Return the alphabet name (LATIN/CYRILLIC/GREEK/...) for an alphabetic char.
 
@@ -232,8 +270,15 @@ def detect_dangling_terminal(text: str) -> bool:
     return words[-1].lower() in _DANGLING_TERMINAL_WORDS
 
 
-def prose_gate_violations(text: str) -> list[str]:
-    """Report prose-quality artifacts. Empty/whitespace input has no violations."""
+def prose_gate_violations(
+    text: str, *, source_snippets: Iterable[str] | None = None
+) -> list[str]:
+    """Report prose-quality artifacts. Empty/whitespace input has no violations.
+
+    Pass ``source_snippets`` (the evidence the prose was synthesized from) to additionally reject
+    a summary that is a near-verbatim copy of its source. Without it, the source-passthrough check
+    is skipped (the other detectors are text-only).
+    """
     issues: list[str] = []
     if not text.strip():
         return issues
@@ -241,9 +286,17 @@ def prose_gate_violations(text: str) -> list[str]:
         issues.append("prose gate: mixed-script letters (non-Latin injection)")
     if detect_dangling_terminal(text):
         issues.append("prose gate: sentence ends on a dangling function word")
+    if detect_midsentence_gap(text):
+        issues.append("prose gate: mid-sentence gap (dangling preposition/article)")
+    if detect_list_shape(text):
+        issues.append("prose gate: list/navbox-shaped text (near-zero connective density)")
+    if detect_splice_passthrough(text):
+        issues.append("prose gate: verbatim evidence splice ('features prominently in ...:')")
+    if source_snippets is not None and detect_source_passthrough(text, source_snippets):
+        issues.append("prose gate: near-verbatim copy of source evidence")
     return issues
 
 
-def prose_gate_rejects(text: str) -> bool:
+def prose_gate_rejects(text: str, *, source_snippets: Iterable[str] | None = None) -> bool:
     """Convenience boolean form of :func:`prose_gate_violations`."""
-    return bool(prose_gate_violations(text))
+    return bool(prose_gate_violations(text, source_snippets=source_snippets))

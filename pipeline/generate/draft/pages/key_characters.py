@@ -239,7 +239,13 @@ def _finalize_key_characters(
                     summary, boss_name=candidate.name, instance_name=instance_name
                 )
                 or lint_passthrough_fragment(summary)
-                or prose_gate_rejects(summary)
+                # Backstop a verbatim evidence echo from the synthesizer against the pool it drew
+                # from (defect #4). The deterministic fallback below legitimately *borrows* a clean
+                # sentence, so it is gated text-only (no source comparison).
+                or prose_gate_rejects(
+                    summary,
+                    source_snippets=[str(row.get("snippet", "")) for row in pool],
+                )
             ):
                 summary, used = fallback_key_character_summary(
                     pool,
