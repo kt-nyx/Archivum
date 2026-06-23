@@ -1,4 +1,20 @@
-# Canonical JSON policy (refactor decision D-4): JSON is written with LF line
-# endings by pipeline.common.io.write_json; enforce LF on checkout/commit so
-# hand-authored fixtures and pipeline output do not diverge by line ending.
-*.json text eol=lf
+# Enforce LF line endings repo-wide, both inbound (checkout) and outbound
+# (commit). Git normalizes text files to LF in the repo and checks them out with
+# LF regardless of core.autocrlf, so hand-authored files and pipeline output
+# (pipeline.common.io.write_json) never diverge by line ending. Refactor D-4.
+* text=auto eol=lf
+
+# Binary assets must never be line-ending normalized.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.zip binary
+*.gz binary
+*.tga binary
+*.blp binary
+*.ttf binary
+*.otf binary
+*.pdf binary
