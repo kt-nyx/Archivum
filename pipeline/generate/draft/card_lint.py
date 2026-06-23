@@ -10,7 +10,7 @@ from pipeline.generate.draft.prose_gate import (
 )
 from pipeline.generate.draft.prose_lint import split_sentences, word_count
 
-MAX_CTA_HOOK_WORDS = 35
+MAX_CTA_HOOK_WORDS = 36
 _TRAILING_FRAGMENT_RE = re.compile(
     r"\b(and|or|but|with|for|to|the|a|an|in|on|at|of)\.?$", re.IGNORECASE
 )

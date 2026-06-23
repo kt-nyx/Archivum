@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from pipeline.discovery.instance_bosses import BossCandidate
-from pipeline.generate.draft.instance_lint import lint_overview
+from pipeline.generate.draft.instance_lint import MIN_OVERVIEW_WORDS, lint_overview
 from pipeline.generate.draft.pages import build_instance_page
 from pipeline.generate.draft.pages.key_characters import _finalize_key_characters
 from pipeline.generate.draft.prose_lint import word_count
@@ -95,7 +95,7 @@ def test_build_instance_page_no_llm_overview_and_bosses(monkeypatch) -> None:
             }
         ],
     )
-    assert word_count(str(draft["overview"])) >= 170
+    assert word_count(str(draft["overview"])) >= MIN_OVERVIEW_WORDS
     assert not lint_overview(str(draft["overview"]), instance_name=instance_name)
     enemy_names = {row["name"] for row in draft["key_characters"]}
     assert "Archivist Maelor" in enemy_names

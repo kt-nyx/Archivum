@@ -285,53 +285,53 @@ def _validate_zone_page(zone_page: ZonePage) -> list[ValidationIssue]:
     for field_name in ("at_a_glance", "currently"):
         value = getattr(zone_page, field_name)
         words = _word_count(value)
-        if field_name == "at_a_glance" and not (8 <= words <= 70):
+        if field_name == "at_a_glance" and not (18 <= words <= 48):
             issues.append(
                 ValidationIssue(
                     code="budget.section",
-                    message=f"{field_name} word count {words} is outside budget [8, 70]",
+                    message=f"{field_name} word count {words} is outside budget [18, 48]",
                     severity=ValidationSeverity.WARN,
                     path=f"$.{field_name}",
                 )
             )
-        if field_name == "currently" and not (20 <= words <= 220):
+        if field_name == "currently" and not (35 <= words <= 90):
             issues.append(
                 ValidationIssue(
                     code="budget.section",
-                    message=f"{field_name} word count {words} is outside budget [20, 220]",
+                    message=f"{field_name} word count {words} is outside budget [35, 90]",
                     severity=ValidationSeverity.HARD_FAIL,
                     path=f"$.{field_name}",
                 )
             )
     for index, section in enumerate(zone_page.history_sections):
         words = _word_count(section.body)
-        if not (25 <= words <= 260):
+        if not (40 <= words <= 110):
             issues.append(
                 ValidationIssue(
                     code="budget.history_section",
-                    message=f"history section word count {words} is outside budget [25, 260]",
+                    message=f"history section word count {words} is outside budget [40, 110]",
                     severity=ValidationSeverity.HARD_FAIL,
                     path=f"$.history_sections[{index}].body",
                 )
             )
     for index, card in enumerate(zone_page.major_factions):
         words = _word_count(card.summary)
-        if words < 12:
+        if words and not (18 <= words <= 48):
             issues.append(
                 ValidationIssue(
                     code="budget.faction_card",
-                    message=f"major_factions summary word count {words} is below minimum 12",
+                    message=f"major_factions summary word count {words} is outside budget [18, 48]",
                     severity=ValidationSeverity.WARN,
                     path=f"$.major_factions[{index}].summary",
                 )
             )
     for index, instance_card in enumerate(zone_page.instance_links):
         words = _word_count(instance_card.summary)
-        if words and not (10 <= words <= 35):
+        if words and not (18 <= words <= 48):
             issues.append(
                 ValidationIssue(
                     code="budget.instance_link_card",
-                    message=f"instance_links summary word count {words} is outside budget [10, 35]",
+                    message=f"instance_links summary word count {words} is outside budget [18, 48]",
                     severity=ValidationSeverity.WARN,
                     path=f"$.instance_links[{index}].summary",
                 )
@@ -399,11 +399,11 @@ def _validate_instance_page(
 
     for index, section in enumerate(instance_page.history_sections):
         words = _word_count(section.body)
-        if not (25 <= words <= 260):
+        if not (40 <= words <= 110):
             issues.append(
                 ValidationIssue(
                     code="budget.history_section",
-                    message=f"history section word count {words} is outside budget [25, 260]",
+                    message=f"history section word count {words} is outside budget [40, 110]",
                     severity=ValidationSeverity.HARD_FAIL,
                     path=f"$.history_sections[{index}].body",
                 )

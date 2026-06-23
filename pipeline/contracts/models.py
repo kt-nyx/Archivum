@@ -605,13 +605,13 @@ ZONE_BUDGET_RULES: dict[str, BudgetRule] = {
 
 INSTANCE_BUDGET_RULES: dict[str, BudgetRule] = {
     "identity_header": BudgetRule(
-        target_words=25, min_words=10, max_words=45, severity=BudgetSeverity.WARN
+        target_words=37, min_words=22, max_words=55, severity=BudgetSeverity.WARN
     ),
     "story_context": BudgetRule(
-        target_words=230, min_words=170, max_words=320, severity=BudgetSeverity.HARD_FAIL
+        target_words=105, min_words=70, max_words=160, severity=BudgetSeverity.HARD_FAIL
     ),
     "key_characters_card_summary": BudgetRule(
-        target_words=30, min_words=18, max_words=50, severity=BudgetSeverity.WARN
+        target_words=42, min_words=25, max_words=60, severity=BudgetSeverity.WARN
     ),
 }
 

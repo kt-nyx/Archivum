@@ -590,7 +590,7 @@ def test_linker_keeps_instance_page_schema_valid_with_glossary_refs(
                         "grim curricula. Darkmaster Gandling and his circle still coordinate recruitment, "
                         "battlefield reinforcement, and ritual escalation beyond Scholomance's crumbling gates.",
                     ]
-                    * 2
+                    * 1
                 ),
                 "history_sections": [
                     {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pipeline.generate.draft.instance_lint import (
+    MIN_OVERVIEW_WORDS,
     assess_role_diversity,
     fallback_instance_overview,
     fallback_key_character_summary,
@@ -82,7 +83,7 @@ def test_fallback_instance_overview_meets_word_floor() -> None:
     ]
     text, used = fallback_instance_overview(items, instance_name="Archive Vault")
     assert "Archive Vault" in text
-    assert len(text.split()) >= 170
+    assert len(text.split()) >= MIN_OVERVIEW_WORDS
     assert used == ["src-instance"]
 
 

@@ -39,9 +39,7 @@ def _valid_instance_payload() -> dict[str, Any]:
             "chains and contingency escorts. Archival records also document rotating priorities "
             "between civilian evacuation, supply escort duty, perimeter reinforcement, and rapid "
             "counter-strike operations, showing why the site remained strategically relevant "
-            "long after the initial crisis phase appeared contained. Command diaries further "
-            "emphasize leadership turnover, equipment shortfalls, and recurring communication "
-            "delays that forced tactical improvisation under pressure. Taken together, these "
+            "long after the initial crisis phase appeared contained. Taken together, these "
             "events explain both the fort's narrative significance and the player's present "
             "objective to secure operational continuity before adjacent regions "
             "rapidly destabilize, "
@@ -1125,7 +1123,7 @@ def test_instance_page_overview_within_story_context_budget_passes() -> None:
             "The Archive Vault was founded as a school for battle-mages who studied forbidden necromancy",
             "after the kingdom fell to plague and civil war across the blighted countryside.",
         ]
-        * 10
+        * 4
     )
     report = validate_payload("instance_page", payload)
     overview_issues = [

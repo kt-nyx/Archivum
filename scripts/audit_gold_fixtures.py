@@ -83,11 +83,10 @@ def audit_instance_page_gold(path: Path = INSTANCE_GOLD) -> list[Finding]:
             findings.append(
                 Finding("error", name, "classic_ref", f"Classic wiki_ref: {card.get('wiki_ref')}")
             )
-    for ref in payload.get("glossary_refs", []):
-        if isinstance(ref, dict) and _norm(ref.get("label", "")) in KNOWN_CLASSIC_ENTITIES:
-            findings.append(
-                Finding("error", name, "classic_glossary", f"Classic-only term: {ref.get('label')}")
-            )
+    # NOTE: glossary_refs are intentionally NOT retail-scoped. Per the retail-only scope
+    # decision, the cast (key_characters) must be retail-eligible, but history/glossary may
+    # legitimately reference Classic-era NPCs (e.g. Lord Alexei Barov, Weldon Barov) as lore
+    # context. Flagging glossary labels was a false-positive against the gold ground truth.
     return findings
 
 

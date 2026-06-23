@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pipeline.generate.draft.compendium_voice import COMPENDIUM_VOICE_CORE, zone_system_prompt
+from pipeline.generate.draft.instance_lint import MIN_OVERVIEW_WORDS
 from pipeline.generate.draft.prose_lint import MAX_AT_A_GLANCE_WORDS, word_count
 from pipeline.generate.draft.prose_selection import (
     classify_key_character_role_llm,
@@ -158,7 +159,7 @@ def test_instance_overview_deterministic_meets_word_floor(monkeypatch) -> None:
     )
     assert summary
     assert "Archive Vault" in summary
-    assert word_count(summary) >= 170
+    assert word_count(summary) >= MIN_OVERVIEW_WORDS
     assert used == ["src-instance"]
 
 

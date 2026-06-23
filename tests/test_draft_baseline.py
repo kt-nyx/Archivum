@@ -10,6 +10,7 @@ import pytest
 
 from pipeline.common.run_context import ensure_run_context
 from pipeline.contracts.models import Zone
+from pipeline.generate.draft.instance_lint import MIN_OVERVIEW_WORDS
 from pipeline.generate.draft_writer import run_draft_writer
 from tests.draft_llm_mocks import fake_draft_chat_by_schema
 
@@ -441,6 +442,6 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(
     assert instance_draft["history_sections"]
     assert instance_draft["key_characters"]
     assert instance_draft["sources"]
-    assert len(str(instance_draft.get("overview", "")).split()) >= 170
+    assert len(str(instance_draft.get("overview", "")).split()) >= MIN_OVERVIEW_WORDS
     enemy_names = {row["name"] for row in instance_draft["key_characters"]}
     assert "Darkmaster Gandling" in enemy_names

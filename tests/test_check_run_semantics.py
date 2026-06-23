@@ -517,7 +517,7 @@ def test_check_run_validates_instance_draft(tmp_path: Path, capsys) -> None:
             "Archive Vault was founded as a school for battle-mages who studied forbidden necromancy",
             "after the kingdom fell to plague and civil war across the blighted countryside.",
         ]
-        * 10
+        * 4
     )
     instance_draft = {
         "instance_id": instance_id,
@@ -702,7 +702,7 @@ def _minimal_instance_draft(**overrides: object) -> dict[str, object]:
             "Scholomance was founded as a school for battle-mages who studied forbidden necromancy",
             "after the kingdom fell to plague and civil war across the blighted countryside.",
         ]
-        * 10
+        * 4
     )
     draft: dict[str, object] = {
         "instance_id": "instance-scholomance",

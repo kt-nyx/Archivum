@@ -88,7 +88,7 @@ def minimal_instance_page_payload(*, instance_id: str = "instance-test-dungeon")
                 "forces, coordinated raids, and sustained pressure on nearby settlements across "
                 "repeated campaign cycles while patrols attempted to break ritual control.",
             ]
-            * 8
+            * 3
         ),
         "history_sections": [
             {
