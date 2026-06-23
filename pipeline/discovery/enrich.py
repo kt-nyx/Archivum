@@ -7,6 +7,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Literal
 
+from pipeline.common.content_role import classify_content_role
 from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext
 from pipeline.common.text_normalize import clean_wiki_snippet
@@ -255,6 +256,11 @@ def _build_evidence_packs(
                             "section_role": _section_role(
                                 str(snippet_row.get("section_role", "other"))
                             ),
+                            "content_role": classify_content_role(
+                                str(snippet_row.get("section_role", "other")),
+                                _section_role(str(snippet_row.get("section_role", "other"))),
+                                str(snippet_row.get("parent_section_role", "")),
+                            ),
                             "confidence": 1.0,
                         }
                     ],
@@ -291,6 +297,7 @@ def _build_evidence_packs(
             # verbatim (raw_section_role) so history headings stay distinct (#8).
             effective_section = _effective_section_slug(raw_section, parent_section)
             role = _section_role(effective_section)
+            content_role = classify_content_role(raw_section, role, parent_section)
             block_type = str(block.get("block_type", "paragraph"))
             snippet = clean_wiki_snippet(str(block.get("text", "")))
             if not snippet:
@@ -373,6 +380,7 @@ def _build_evidence_packs(
                     "subject_zone_id": subject_zone_id,
                     "section_role": role,
                     "raw_section_role": raw_section,
+                    "content_role": content_role,
                     "block_index": str(block_index),
                 }
                 if aux_role == "faction_profile":
@@ -405,6 +413,7 @@ def _build_evidence_packs(
                                 "snippet": snippet,
                                 "section_role": role,
                                 "raw_section_role": raw_section,
+                                "content_role": content_role,
                                 "block_index": block_index,
                                 "confidence": 1.0,
                             }

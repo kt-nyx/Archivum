@@ -174,6 +174,10 @@ class EvidenceItem(BaseModel):
     section_role: str = Field(min_length=1)
     confidence: float = Field(ge=0, le=1)
     raw_section_role: str | None = None
+    # Provenance taxonomy (Option A): what KIND of source prose this snippet is,
+    # derived from the wiki header. Drives locators independently of the
+    # discovery routing `section_role`. See pipeline/common/content_role.py.
+    content_role: str | None = None
     block_index: int | None = None
 
 

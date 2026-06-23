@@ -20,6 +20,18 @@
           "title": "Confidence",
           "type": "number"
         },
+        "content_role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Role"
+        },
         "raw_section_role": {
           "anyOf": [
             {
