@@ -1,0 +1,51 @@
+{
+  "id": "term-scarlet-crusade",
+  "slug": "scarlet-crusade",
+  "label": "Scarlet Crusade",
+  "category": "faction",
+  "aliases": [
+    "scarlet crusade",
+    "the scarlet crusade"
+  ],
+  "summary": "The Scarlet Crusade is a fanatical order of human zealots that splintered from the Knights of the Silver Hand to wage holy war against the undead Scourge. Convinced that anyone outside their ranks may be infected, they turn their crusade against the living as readily as the dead.",
+  "brief_history": "Formed in the aftermath of Lordaeron's fall, the Scarlet Crusade grew out of survivors who blamed both the Scourge and the wider Alliance for the kingdom's ruin. From strongholds such as the Scarlet Monastery and Hearthglen, they purged the Plaguelands of undead while executing refugees suspected of plague. Their leadership was secretly manipulated by the dreadlord Balnazzar, deepening their descent into paranoia and atrocity. Successive defeats at the hands of the Scourge, the Argent Dawn, and adventurers shattered the order, leaving only scattered remnants and the breakaway Scarlet Onslaught to carry its banner.",
+  "sources": [
+    {
+      "source_id": "src-wiki-scarlet",
+      "url": "https://wowpedia.fandom.com/wiki/Scarlet_Crusade"
+    }
+  ],
+  "provenance": {
+    "summary": [
+      {
+        "source_id": "src-wiki-scarlet",
+        "locator": "section:lead paragraph:1",
+        "revision_id": "oldid:444",
+        "excerpt_hash": "sha256:ababcdcdababcdcd"
+      }
+    ],
+    "brief_history": [
+      {
+        "source_id": "src-wiki-scarlet",
+        "locator": "section:history paragraph:2",
+        "revision_id": "oldid:444",
+        "excerpt_hash": "sha256:bcbcdededededede"
+      }
+    ]
+  },
+  "facets": {
+    "faction": {
+      "alignment": "zealot"
+    }
+  },
+  "timeline_hint": "Third War through Cataclysm era",
+  "expansion_tags": [
+    "wrath",
+    "cataclysm"
+  ],
+  "related_terms": [
+    "term-scarlet-onslaught",
+    "term-scourge",
+    "term-argent-dawn"
+  ]
+}

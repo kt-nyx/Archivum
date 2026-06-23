@@ -5,7 +5,7 @@ from pathlib import Path
 from pipeline.discovery.storyline_html import parse_storyline_html
 
 WPL_FIXTURE = Path("tests/fixtures/storyline/western_plaguelands_storyline.html")
-GENERIC_HANDOFF_FIXTURE = Path("tests/fixtures/storyline/cross_zone_handoff.html")
+QUESTLINK_OUTSIDE_LIST_FIXTURE = Path("tests/fixtures/storyline/questlink_outside_list_item.html")
 
 NAVIGATION_NOISE_TITLES = {
     "lordaeron",
@@ -58,7 +58,7 @@ def test_storyline_icon_parse_maps_faction_icons_to_bindings() -> None:
 
 
 def test_parse_storyline_html_ignores_questlinks_outside_list_items() -> None:
-    html = GENERIC_HANDOFF_FIXTURE.read_text(encoding="utf-8")
+    html = QUESTLINK_OUTSIDE_LIST_FIXTURE.read_text(encoding="utf-8")
     rows = parse_storyline_html(
         html,
         zone_id="zone-example",

@@ -604,9 +604,9 @@ def test_zone_page_failure_hard_fails_missing_glossary_provenance() -> None:
     assert any(issue.path == "$.provenance.glossary.term-scourge" for issue in report.issues)
 
 
-def test_ambiguity_fixture_passes_glossary_validation() -> None:
+def test_glossary_term_valid_fixture_passes_validation() -> None:
     report = validate_payload(
-        "glossary_term", _load_fixture("ambiguity", "glossary_ambiguity.json")
+        "glossary_term", _load_fixture("glossary", "glossary_term_valid.json")
     )
     assert report.passed is True
     assert report.hard_fail_count == 0
