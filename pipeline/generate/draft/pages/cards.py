@@ -25,6 +25,7 @@ from pipeline.generate.draft.location_scoring import (
     MAX_LOCATION_CARDS,
     LocationCandidate,
     _decision_reason_codes,
+    classification_to_location_type,
     collect_location_candidates,
     extract_subregion_tokens,
 )
@@ -280,11 +281,7 @@ def _finalize_location_card(
                     "name": candidate.name,
                     "summary": summary,
                     "wiki_url": candidate.wiki_url,
-                    "location_type": (
-                        "major_location"
-                        if candidate.classification == "major_location_candidate"
-                        else candidate.classification or "major_location"
-                    ),
+                    "location_type": classification_to_location_type(candidate.classification),
                     "significance": candidate.classification or "major_location_candidate",
                     "decision_reason_codes": reason_codes,
                 },
@@ -310,11 +307,7 @@ def _finalize_location_card(
                     "name": candidate.name,
                     "summary": summary,
                     "wiki_url": candidate.wiki_url,
-                    "location_type": (
-                        "major_location"
-                        if candidate.classification == "major_location_candidate"
-                        else candidate.classification or "major_location"
-                    ),
+                    "location_type": classification_to_location_type(candidate.classification),
                     "significance": candidate.classification or "major_location_candidate",
                     "decision_reason_codes": reason_codes,
                 },

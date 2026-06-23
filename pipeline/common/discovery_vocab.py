@@ -66,6 +66,28 @@ def location_rpg_tokens() -> tuple[str, ...]:
     return _tokens("location_rpg_tokens")
 
 
+def location_type_title_rules() -> tuple[tuple[str, frozenset[str]], ...]:
+    """Ordered (location_type, name-token set) rules for sub-location typing.
+
+    First matching category wins, so callers must preserve list order. See the
+    ``location_type_title_tokens`` entry in the vocab JSON for ordering rationale.
+    """
+    entry = _vocab().get("location_type_title_tokens")
+    if not isinstance(entry, dict):  # pragma: no cover - corrupt data file
+        raise RuntimeError("discovery vocab missing entry: location_type_title_tokens")
+    rules = entry.get("ordered_rules")
+    if not isinstance(rules, list):  # pragma: no cover - corrupt data file
+        raise RuntimeError("location_type_title_tokens missing 'ordered_rules' list")
+    out: list[tuple[str, frozenset[str]]] = []
+    for rule in rules:
+        if not isinstance(rule, dict):  # pragma: no cover - corrupt data file
+            raise RuntimeError("location_type_title_tokens rule must be an object")
+        location_type = str(rule["location_type"])
+        tokens = frozenset(str(token) for token in rule.get("tokens", []))
+        out.append((location_type, tokens))
+    return tuple(out)
+
+
 def lore_faction_tokens() -> tuple[str, ...]:
     return _tokens("lore_faction_tokens")
 

@@ -6,6 +6,7 @@ import hashlib
 import re
 from typing import Any
 
+from pipeline.common.content_role import classify_content_role
 from pipeline.common.retail import KNOWN_CLASSIC_ENTITIES
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.discovery.entity_typing import normalize_title
@@ -83,6 +84,9 @@ def _iter_evidence_items(
                             build_meta.get("raw_section_role", item.get("section_role", "")),
                         )
                     ),
+                    "content_role": str(
+                        item.get("content_role", build_meta.get("content_role", ""))
+                    ),
                     "block_index": block_index_value,
                     "source_id": str(build_meta.get("source_id", "")),
                     "field_name": str(row.get("field_name", "")),
@@ -129,16 +133,25 @@ def _pointer_for_item(
 ) -> dict[str, str] | None:
     source_id = str(item.get("source_id", "")).strip()
     snippet = str(item.get("snippet", "")).strip()
-    section_role = str(item.get("section_role", "other")).strip() or "other"
     if not source_id or not snippet:
         return None
     revision_id = revision_map.get(source_id)
     if not revision_id:
         return None
+    # Provenance locators carry the content_role taxonomy (Option A), not the
+    # discovery routing `section_role`. Prefer the value persisted on the
+    # evidence item; derive it from the raw header when older evidence predates
+    # the field.
+    content_role = str(item.get("content_role", "")).strip()
+    if not content_role:
+        content_role = classify_content_role(
+            str(item.get("raw_section_role", "")),
+            str(item.get("section_role", "other")),
+        )
     digest = hashlib.sha256(snippet.encode("utf-8")).hexdigest()[:16]
     return {
         "source_id": source_id,
-        "locator": f"section:{section_role} paragraph:{locator_index}",
+        "locator": f"section:{content_role} paragraph:{locator_index}",
         "revision_id": revision_id,
         "excerpt_hash": f"sha256:{digest}",
     }

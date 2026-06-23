@@ -5,7 +5,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from pipeline.common.discovery_vocab import location_hard_reject_tokens, location_rpg_tokens
+from pipeline.common.discovery_vocab import (
+    location_hard_reject_tokens,
+    location_rpg_tokens,
+    location_type_title_rules,
+)
 
 LOCATION_INCLUDE_MIN = 0.7
 
@@ -45,14 +49,25 @@ def name_in_seed_text(name: str, seed_text: str) -> bool:
     return _normalize_name(name) in _normalize_name(seed_text)
 
 
+# Settlement-tier classifications receive the large significance boost in
+# score_location_candidate; every other typed value is landmark-tier and shares
+# the generic scoring path with "major_location_candidate".
+SETTLEMENT_CLASSIFICATIONS = frozenset({"city", "starter_area"})
+
+
 def classify_location_candidate(name: str, *, hard_reject_reasons: list[str]) -> str:
+    """Type a sub-location from its name tokens (pre-fetch, no category signal).
+
+    Returns a ``LocationType`` value, or ``"major_location_candidate"`` when no
+    descriptive token matches (proper-noun-only names like Andorhal). Rules are
+    evaluated in vocab order; the first matching category wins.
+    """
     if hard_reject_reasons:
         return "reject"
-    name_lowered = _normalize_name(name)
-    if "city" in name_lowered:
-        return "city"
-    if "starter" in name_lowered:
-        return "starter_area"
+    tokens = {token for token in re.split(r"[^a-z]+", _normalize_name(name)) if token}
+    for location_type, type_tokens in location_type_title_rules():
+        if tokens & type_tokens:
+            return location_type
     return "major_location_candidate"
 
 
@@ -72,14 +87,14 @@ def score_location_candidate(
     location_class = classify_location_candidate(name, hard_reject_reasons=hard_reject_reasons)
     source_section_role = str(candidate.get("source_section_role", "other"))
     base_score = 0.15
-    if location_class in {"city", "starter_area"}:
+    if location_class in SETTLEMENT_CLASSIFICATIONS:
         base_score += 0.6
     else:
         base_score += 0.25
     base_score += LOCATION_INCLUDE_SECTION_WEIGHTS.get(source_section_role, 0.0)
     if name_in_seed_text(name, seed_text):
         base_score += 0.15
-    if is_named_place_title(name) and location_class == "major_location_candidate":
+    if is_named_place_title(name) and location_class not in SETTLEMENT_CLASSIFICATIONS:
         base_score += 0.15
     if any(marker in name_lowered for marker in _RPG_MARKERS):
         base_score -= 0.35

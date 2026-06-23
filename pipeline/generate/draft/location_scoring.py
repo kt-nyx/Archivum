@@ -6,13 +6,26 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from pipeline.contracts.models import LocationType
 from pipeline.discovery.entity_typing import normalize_title, should_reject_location_title
 
 MIN_LOCATION_CARDS = 3
 MAX_LOCATION_CARDS = 8
 MIN_SCORE = 2.0
 
-_INCLUDE_CLASSIFICATIONS = frozenset({"city", "starter_area", "major_location_candidate"})
+# Published LocationType values usable directly as a discovery classification token.
+_TYPED_CLASSIFICATIONS = frozenset(
+    member.value for member in LocationType if member is not LocationType.MAJOR_LOCATION
+)
+# "major_location_candidate" is the no-match default; it maps to MAJOR_LOCATION.
+_INCLUDE_CLASSIFICATIONS = _TYPED_CLASSIFICATIONS | {"major_location_candidate"}
+
+
+def classification_to_location_type(classification: str) -> str:
+    """Map a discovery classification token to a published LocationType value."""
+    if classification in _TYPED_CLASSIFICATIONS:
+        return classification
+    return LocationType.MAJOR_LOCATION.value
 _LEDE_ROLES = frozenset({"lead", "introduction"})
 _HIGH_WEIGHT_ROLES = frozenset({"maps_subregions", "geography_edit", "geography", "subregion"})
 _MEDIUM_WEIGHT_ROLES = frozenset({"history_edit", "history"})

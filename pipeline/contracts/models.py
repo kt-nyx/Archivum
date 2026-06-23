@@ -58,7 +58,13 @@ class EntityType(StrEnum):
 
 class LocationType(StrEnum):
     CITY = "city"
+    TOWN = "town"
     STARTER_AREA = "starter_area"
+    FORTRESS = "fortress"
+    RUINS = "ruins"
+    LANDMARK = "landmark"
+    OUTPOST = "outpost"
+    NATURAL_FEATURE = "natural_feature"
     MAJOR_LOCATION = "major_location"
 
 

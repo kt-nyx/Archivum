@@ -3,7 +3,13 @@
     "LocationType": {
       "enum": [
         "city",
+        "town",
         "starter_area",
+        "fortress",
+        "ruins",
+        "landmark",
+        "outpost",
+        "natural_feature",
         "major_location"
       ],
       "title": "LocationType",

@@ -209,5 +209,20 @@
       "gnomeregan army", "saronite", "adventurer", "event", "faction", "novels",
       "novellas", "short stories", "technology"
     ]
+  },
+  "location_type_title_tokens": {
+    "_why_no_structural_signal": "Sub-location typing happens at the same pre-fetch link-decision point as the rest of this file: no MediaWiki category/infobox is available, so the only cue is a descriptive common-noun token in the place name (Charred Outpost, Uther's Tomb, Northridge Lumber Mill). Proper-noun-only names (Andorhal, Caer Darrow, Hearthglen) carry no descriptor and fall through to 'major_location_candidate' by design; richer typing for those would require the post-fetch category signal.",
+    "_pilot_bias_note": "English descriptive nouns common to WoW zone geography. Tuned against WPL (Charred Outpost, Felstone Field, Uther's Tomb, Northridge Lumber Mill) but the vocabulary is generic zone-geography, not zone-specific. Rules are evaluated in order; first matching category wins, so destruction (ruins) outranks structure (fortress) outranks settlement (town).",
+    "_value_maps_to": "pipeline.contracts.models.LocationType; 'major_location_candidate' is the no-match default and maps to LocationType.MAJOR_LOCATION downstream.",
+    "ordered_rules": [
+      {"location_type": "city", "tokens": ["city"]},
+      {"location_type": "starter_area", "tokens": ["starter"]},
+      {"location_type": "ruins", "tokens": ["ruins", "ruin"]},
+      {"location_type": "fortress", "tokens": ["keep", "hold", "citadel", "fortress", "stronghold", "bastion", "garrison", "spire", "tower", "bulwark", "fort"]},
+      {"location_type": "landmark", "tokens": ["tomb", "shrine", "monument", "memorial", "statue", "altar", "obelisk", "crypt"]},
+      {"location_type": "outpost", "tokens": ["outpost", "camp", "encampment", "watch", "waystation", "stead", "post"]},
+      {"location_type": "town", "tokens": ["town", "village", "hamlet", "burg", "mill", "crossing", "holdings", "ville"]},
+      {"location_type": "natural_feature", "tokens": ["lake", "river", "falls", "mountain", "mount", "peak", "woods", "wood", "forest", "glade", "glen", "hills", "hill", "vale", "valley", "marsh", "swamp", "bog", "fen", "grove", "pass", "ridge", "hollow", "cleft", "basin", "gorge", "moor"]}
+    ]
   }
 }
