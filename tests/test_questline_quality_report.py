@@ -9,7 +9,7 @@ from tests.test_questline_promotion_gate import _gold_questlines, _write_wpl_run
 
 
 def test_questline_quality_report_passes_gold_run(tmp_path) -> None:
-    included = ["c1", "c2", "c3"]
+    included = ["c1", "c2", "c3", "c4"]
     metadata = [
         {
             "zone_id": "zone-western-plaguelands",

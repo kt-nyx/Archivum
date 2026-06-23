@@ -90,7 +90,7 @@ def _write_wpl_run(
 
 
 def test_check_questline_promotion_pilot_strict_passes_gold_shape(tmp_path: Path) -> None:
-    included = ["c1", "c2", "c3"]
+    included = ["c1", "c2", "c3", "c4"]
     metadata = [
         {
             "zone_id": WPL_ZONE_ID,

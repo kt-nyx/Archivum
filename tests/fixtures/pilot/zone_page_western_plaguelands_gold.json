@@ -1,28 +1,136 @@
 {
-  "schema_version": "pilot-zone-page-questlines-v1",
-  "entity_type": "zone_page",
   "zone_id": "zone-western-plaguelands",
-  "description": "Gold-standard major_questlines slice for Western Plaguelands. Matches pipeline draft shape (QuestlineCardV2 / ZonePage.major_questlines). CTAs and chain_refs come from western_plaguelands_questline_registry.json included_arcs.",
+  "name": "Western Plaguelands",
+  "wiki_url": "https://warcraft.wiki.gg/wiki/Western_Plaguelands",
+  "parent_continent": "eastern-kingdoms",
+  "expansion_context": "retail",
+  "at_a_glance": "The plague-scarred heartland of fallen Lordaeron, where ruined farms and haunted towns bear the legacy of the Scourge, even as life slowly begins to return to the rotted landscape.",
+  "currently": "The Western Plaguelands remain a scarred battleground even as the Argent Crusade and the Cenarion Circle labor to heal the blighted earth. Their efforts unfold under the pressure of renewed war, as Forsaken and Alliance forces press into the zone and clash over Andorhal and a renewed plague threatens their nascent restoration efforts.",
+  "history_sections": [
+    {
+      "heading": "Before the Scourge",
+      "body": "Before the Third War, the lands later known as the Western Plaguelands formed a fertile expanse of forests and farmland between Tirisfal Glades and the Eastweald. Hearthglen served as the region’s administrative center, while Andorhal stood as one of Lordaeron’s most important grain distribution hubs. Together, these settlements anchored a prosperous agricultural heartland that supplied much of the kingdom’s northern territories.",
+      "source_refs": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ]
+    },
+    {
+      "heading": "Scourging Of Lordaeron",
+      "body": "During the Scourging of Lordaeron, Ner’zhul, Kel’Thuzad, and the Cult of the Damned unleashed the Plague of Undeath across the region. Hidden plague cauldrons corrupted the countryside, while Andorhal’s grain network carried the contagion deep into northern Lordaeron. As settlements succumbed to the plague, their dead rose in service to the Lich King. By the war’s end, the Western Plaguelands had been transformed into a blighted wasteland marked by Scourge corruption and widespread ruin.",
+      "source_refs": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ]
+    },
+    {
+      "heading": "The Scarlet Crusade",
+      "body": "After Lordaeron fell, the Scarlet Crusade seized Hearthglen and established itself as the dominant human power in the region. From fortified strongholds, the Crusade waged a relentless campaign against the undead and any it suspected of corruption. Its zeal gradually hardened into fanaticism, bringing suffering to many of the very people it claimed to protect.",
+      "source_refs": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ]
+    },
+    {
+      "heading": "Coming of the Argent Dawn",
+      "body": "Several years later, the Argent Dawn launched a concerted effort to break the Scourge’s hold over the Western Plaguelands. The order targeted the plague cauldrons that sustained the region’s corruption and confronted the cauldron lords who oversaw them. With support from both Alliance and Horde forces, the campaign succeeded in weakening the Scourge’s influence and turning its own instruments of plague against the undead.",
+      "source_refs": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ]
+    },
+    {
+      "heading": "After the Lich King",
+      "body": "Following the war against the Lich King, Tirion Fordring and the Argent Crusade reclaimed Hearthglen and established it as their principal stronghold in Lordaeron. The city became a center for the Crusade’s efforts to secure and restore the surrounding lands. Around the time of the Cataclysm, the Cenarion Circle aided these efforts by cleansing large portions of the lingering plague, allowing vegetation and wildlife to gradually return.",
+      "source_refs": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ]
+    },
+    {
+      "heading": "Battle for Andorhal",
+      "body": "The region’s recovery remained incomplete, however. Control of Andorhal became the focus of a bitter struggle between Alliance forces and the Forsaken, each seeking to secure the strategic ruins. The Forsaken ultimately prevailed, claiming the city and extinguishing the last significant Scourge presence in the Western Plaguelands. During the Fourth War, the region once again served as a staging ground in the wider conflict between the Alliance and Horde, with Forsaken and Alliance forces bitterly contesting Andorhal itself.",
+      "source_refs": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ]
+    }
+  ],
+  "major_factions": [
+    {
+      "id": "faction-alliance",
+      "name": "Alliance",
+      "summary": "The Alliance holds territory and serves as a key force in the Western Plaguelands, where its members fight to preserve order and defend the realm against aggressors.",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Alliance"
+    },
+    {
+      "id": "faction-argent-crusade",
+      "name": "Argent Crusade",
+      "summary": "In Western Plaguelands, the Argent Crusade fights the Scourge and other evil, maintaining a neutral holy-warrior presence to restore the Plaguelands and continue the struggle against undead threats.",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Argent_Crusade"
+    },
+    {
+      "id": "faction-cenarion-circle",
+      "name": "Cenarion Circle",
+      "summary": "The Cenarion Circle guards and preserves nature’s balance in Western Plaguelands, watching over druids’ practices and maintaining the continuation of life’s cycle.",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Cenarion_Circle"
+    },
+    {
+      "id": "faction-forsaken",
+      "name": "Forsaken",
+      "summary": "The Forsaken control Andorhal in the Western Plaguelands after driving out the Alliance and ending Scourge presence there. Sylvanas Windrunner and Koltira Deathweaver commanded their forces in that battle.",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Forsaken"
+    },
+    {
+      "id": "faction-cult-of-the-damned",
+      "name": "Cult of the Damned",
+      "summary": "In Western Plaguelands, the Cult of the Damned operates as Scourge-aligned cultists, spreading plague and serving the Lich King; they also spy in settlements and recruit the living into the Cult or Scourge.",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Cult_of_the_Damned"
+    }
+  ],
   "major_questlines": [
     {
       "id": "ql-andorhal-horde",
       "title": "Andorhal Campaign (Horde)",
       "faction": "horde",
-      "cta_hook": "Join Koltira Deathweaver at Andorhal to break the Scourge hold on the city, then stand against the Alliance when Sylvanas deploys Val'kyr and the Forsaken's true ambitions surface.",
+      "cta_hook": "Heed the Warchief's command and march on Andorhal, where the Forsaken fight to wrench the plagued city from the Scourge's grip. The Alliance holds the ruins, and the war is far from over.",
       "start_anchor": "Warchief's Command: Western Plaguelands!",
       "chain_refs": [
         "quest-warchief-s-command-western-plaguelands",
         "quest-scourge-first-alliance-later",
+        "quest-victory-for-now-horde",
         "quest-after-the-crusade",
         "quest-foxes-and-hounds",
-        "quest-foes-before-hoes",
         "quest-latent-disease",
         "quest-who-needs-cauldrons",
         "quest-lower-the-boom",
         "quest-strange-new-faces",
         "quest-when-death-is-not-enough",
-        "quest-combat-training",
-        "quest-lindsay-ravensun-revealed"
+        "quest-combat-training-horde"
       ],
       "include_decision": "include",
       "reason_codes": [
@@ -33,37 +141,36 @@
       "wiki_refs": [
         "/wiki/Warchief%27s_Command:_Western_Plaguelands!",
         "/wiki/Scourge_First..._Alliance_Later",
+        "/wiki/Victory,_For_Now_(Horde)",
         "/wiki/After_the_Crusade",
         "/wiki/Foxes_and_Hounds",
-        "/wiki/Foes_Before_Hoes",
         "/wiki/Latent_Disease",
         "/wiki/Who_Needs_Cauldrons%3F",
         "/wiki/Lower_the_Boom",
         "/wiki/Strange_New_Faces",
         "/wiki/When_Death_is_Not_Enough",
-        "/wiki/Combat_Training",
-        "/wiki/Lindsay_Ravensun,_Revealed"
+        "/wiki/Combat_Training_(Horde)"
       ]
     },
     {
       "id": "ql-andorhal-alliance",
       "title": "Andorhal Campaign (Alliance)",
       "faction": "alliance",
-      "cta_hook": "Report to Thassarian at Andorhal and push the Alliance counteroffensive against the Scourge and Forsaken before Sylvanas can claim the ruined city.",
+      "cta_hook": "Answer the Alliance's call to Andorhal, the ruined grain-heart of old Lordaeron now caught between lingering Scourge and a watchful Forsaken host. Take the field before the uneasy calm breaks into open war.",
       "start_anchor": "Hero's Call: Western Plaguelands!",
       "chain_refs": [
         "quest-hero-s-call-western-plaguelands",
         "quest-scourge-first-horde-later",
+        "quest-the-endless-flow-alliance",
+        "quest-victory-for-now-alliance",
         "quest-go-fletch",
         "quest-a-mighty-hunger",
-        "quest-those-that-couldn-t-let-go",
         "quest-uther-s-blessing",
         "quest-the-abandoned-crypt",
         "quest-ambushed-western-plaguelands",
         "quest-the-writhing-haunt-quest",
         "quest-this-is-our-army",
-        "quest-combat-training",
-        "quest-the-depravity-of-the-forsaken"
+        "quest-combat-training-alliance"
       ],
       "include_decision": "include",
       "reason_codes": [
@@ -74,28 +181,26 @@
       "wiki_refs": [
         "/wiki/Hero%27s_Call:_Western_Plaguelands!",
         "/wiki/Scourge_First..._Horde_Later",
+        "/wiki/The_Endless_Flow_(Alliance)",
+        "/wiki/Victory,_For_Now_(Alliance)",
         "/wiki/Go_Fletch!",
         "/wiki/A_Mighty_Hunger",
-        "/wiki/Those_That_Couldn%27t_Let_Go",
         "/wiki/Uther%27s_Blessing",
         "/wiki/The_Abandoned_Crypt",
         "/wiki/Ambushed!_(Western_Plaguelands)",
         "/wiki/The_Writhing_Haunt_(quest)",
         "/wiki/This_Is_Our_Army",
-        "/wiki/Combat_Training",
-        "/wiki/The_Depravity_of_the_Forsaken"
+        "/wiki/Combat_Training_(Alliance)"
       ]
     },
     {
       "id": "ql-hearthglen-tirion-legacy",
-      "title": "Hearthglen / Tirion Fordring's Legacy",
+      "title": "Tirion Fordring's Legacy",
       "faction": "shared",
-      "cta_hook": "Ride to Hearthglen under Argent Crusade control and help resolve local threats while the order reckons with Tirion and Taelan Fordring's legacy in a reclaimed Scarlet stronghold.",
+      "cta_hook": "Ride to Hearthglen, the last bastion of the Argent Crusade in fallen Lordaeron. Take up the work of the Fordring line and the proud, hard-won legacy of faith that still shapes these plague-scarred lands.",
       "start_anchor": "An Audience with the Highlord",
       "chain_refs": [
         "quest-an-audience-with-the-highlord",
-        "quest-it-s-about-time",
-        "quest-drudges-sigh",
         "quest-taelan-fordring-s-legacy",
         "quest-unusual-behavior-even-for-gnolls",
         "quest-the-good-people-of-hearthglen",
@@ -109,14 +214,713 @@
       ],
       "wiki_refs": [
         "/wiki/An_Audience_with_the_Highlord",
-        "/wiki/It%27s_About_Time!",
-        "/wiki/Drudges..._*Sigh*",
         "/wiki/Taelan_Fordring%27s_Legacy",
         "/wiki/Unusual_Behavior..._Even_For_Gnolls",
         "/wiki/The_Good_People_of_Hearthglen",
         "/wiki/Bagging_Bisp",
         "/wiki/Turning_Yourself_In"
       ]
+    },
+    {
+      "id": "ql-gahrrons-withering",
+      "title": "The Renewed Plague",
+      "faction": "shared",
+      "cta_hook": "As the plague stirs anew at Gahrron's Withering, ride out to Mender's Stead to cleanse the last poisoned fields. Discover who still tends the Scourge's forgotten cauldrons, and put a stop to their plans.",
+      "start_anchor": "Gahrron's Withering Cauldron",
+      "chain_refs": [
+        "quest-gahrron-s-withering-cauldron",
+        "quest-return-to-the-stead",
+        "quest-desperate-acts",
+        "quest-students-of-krastinov"
+      ],
+      "include_decision": "include",
+      "reason_codes": [
+        "pilot_gold",
+        "restoration_arc"
+      ],
+      "wiki_refs": [
+        "/wiki/Gahrron%27s_Withering_Cauldron",
+        "/wiki/Return_to_the_Stead",
+        "/wiki/Desperate_Acts",
+        "/wiki/Students_of_Krastinov"
+      ]
+    }
+  ],
+  "location_cards": [
+    {
+      "id": "location-andorhal",
+      "name": "Andorhal",
+      "location_type": "ruins",
+      "zone_id": "zone-western-plaguelands",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Andorhal",
+      "summary": "Once northern Lordaeron’s grain hub, Andorhal became one of the plague’s first great vectors. Its ruins are now contested by the Alliance and the Forsaken.",
+      "significance": "The plague’s first great vector—contaminated grain shipped from Andorhal carried the Plague of Undeath across northern Lordaeron—and now the central prize in the Alliance–Forsaken struggle for the zone.",
+      "decision_reason_codes": [
+        "pilot_gold"
+      ],
+      "ui_hints": {
+        "render_as": "ruins"
+      },
+      "provenance": []
+    },
+    {
+      "id": "location-hearthglen",
+      "name": "Hearthglen",
+      "location_type": "town",
+      "zone_id": "zone-western-plaguelands",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Hearthglen",
+      "summary": "Formerly a seat of Lordaeron’s regional authority, Hearthglen passed from the Fordrings to the Scarlet Crusade before being reclaimed as the Argent Crusade’s main stronghold in Lordaeron.",
+      "significance": "The zone’s seat of power across every era: Fordring family holding, Scarlet Crusade bastion, and today the Argent Crusade’s principal stronghold in Lordaeron.",
+      "decision_reason_codes": [
+        "pilot_gold"
+      ],
+      "ui_hints": {
+        "render_as": "town"
+      },
+      "provenance": []
+    },
+    {
+      "id": "location-caer-darrow",
+      "name": "Caer Darrow",
+      "location_type": "ruins",
+      "zone_id": "zone-western-plaguelands",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Caer_Darrow",
+      "summary": "Caer Darrow is the ruined island fortress above Scholomance, where the Barovs’ seat became one of the Scourge’s most infamous schools of necromancy.",
+      "significance": "The ruined Barov keep on Darrowmere Lake whose catacombs became Scholomance, the Scourge’s most infamous school of necromancy in the Plaguelands.",
+      "decision_reason_codes": [
+        "pilot_gold"
+      ],
+      "ui_hints": {
+        "render_as": "ruins"
+      },
+      "provenance": []
+    },
+    {
+      "id": "location-uthers-tomb",
+      "name": "Uther's Tomb",
+      "location_type": "landmark",
+      "zone_id": "zone-western-plaguelands",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Uther%27s_Tomb",
+      "summary": "Uther’s Tomb is a sacred monument to Uther the Lightbringer at Sorrow Hill, standing as one of the last bright symbols of fallen Lordaeron.",
+      "significance": "The resting place of Uther the Lightbringer at Sorrow Hill—one of the last sacred symbols of fallen Lordaeron and a pilgrimage site for the faithful of the Light.",
+      "decision_reason_codes": [
+        "pilot_gold"
+      ],
+      "ui_hints": {
+        "render_as": "landmark"
+      },
+      "provenance": []
+    }
+  ],
+  "instance_links": [
+    {
+      "id": "instance-scholomance",
+      "name": "Scholomance",
+      "thumbnail_asset_id": null,
+      "summary": "Scholomance is the Scourge's foremost school of necromancy, hidden in the catacombs beneath Caer Darrow. Under Darkmaster Gandling, the Cult of the Damned trains the necromancers who replenish the Scourge's ranks."
+    }
+  ],
+  "glossary_refs": [
+    {
+      "term_id": "term-alliance",
+      "label": "Alliance",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Alliance"
+    },
+    {
+      "term_id": "term-andorhal",
+      "label": "Andorhal",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Andorhal"
+    },
+    {
+      "term_id": "term-argent-crusade",
+      "label": "Argent Crusade",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Argent_Crusade"
+    },
+    {
+      "term_id": "term-argent-dawn",
+      "label": "Argent Dawn",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Argent_Dawn"
+    },
+    {
+      "term_id": "term-barov",
+      "label": "Barov",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Barov"
+    },
+    {
+      "term_id": "term-caer-darrow",
+      "label": "Caer Darrow",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Caer_Darrow"
+    },
+    {
+      "term_id": "term-cataclysm-event",
+      "label": "Cataclysm (event)",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Cataclysm_(event)"
+    },
+    {
+      "term_id": "term-cenarion-circle",
+      "label": "Cenarion Circle",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Cenarion_Circle"
+    },
+    {
+      "term_id": "term-cult-of-the-damned",
+      "label": "Cult of the Damned",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Cult_of_the_Damned"
+    },
+    {
+      "term_id": "term-darrowmere-lake",
+      "label": "Darrowmere Lake",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Darrowmere_Lake"
+    },
+    {
+      "term_id": "term-eastweald",
+      "label": "Eastweald",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Eastweald"
+    },
+    {
+      "term_id": "term-fordring",
+      "label": "Fordring",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Fordring"
+    },
+    {
+      "term_id": "term-forsaken",
+      "label": "Forsaken",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Forsaken"
+    },
+    {
+      "term_id": "term-fourth-war",
+      "label": "Fourth War",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Fourth_War"
+    },
+    {
+      "term_id": "term-hearthglen",
+      "label": "Hearthglen",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Hearthglen"
+    },
+    {
+      "term_id": "term-horde",
+      "label": "Horde",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Horde"
+    },
+    {
+      "term_id": "term-kelthuzad",
+      "label": "Kel'Thuzad",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Kel%27Thuzad"
+    },
+    {
+      "term_id": "term-koltira-deathweaver",
+      "label": "Koltira Deathweaver",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Koltira_Deathweaver"
+    },
+    {
+      "term_id": "term-lich-king",
+      "label": "Lich King",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Lich_King"
+    },
+    {
+      "term_id": "term-lordaeron",
+      "label": "Lordaeron",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Lordaeron"
+    },
+    {
+      "term_id": "term-nerzhul",
+      "label": "Ner'zhul",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Ner%27zhul"
+    },
+    {
+      "term_id": "term-plague-of-undeath",
+      "label": "Plague of Undeath",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Plague_of_Undeath"
+    },
+    {
+      "term_id": "term-scarlet-crusade",
+      "label": "Scarlet Crusade",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Scarlet_Crusade"
+    },
+    {
+      "term_id": "term-scholomance",
+      "label": "Scholomance",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Scholomance"
+    },
+    {
+      "term_id": "term-scourge",
+      "label": "Scourge",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Scourge"
+    },
+    {
+      "term_id": "term-scourging-of-lordaeron",
+      "label": "Scourging of Lordaeron",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Scourging_of_Lordaeron"
+    },
+    {
+      "term_id": "term-sorrow-hill",
+      "label": "Sorrow Hill",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Sorrow_Hill"
+    },
+    {
+      "term_id": "term-sylvanas-windrunner",
+      "label": "Sylvanas Windrunner",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Sylvanas_Windrunner"
+    },
+    {
+      "term_id": "term-third-war",
+      "label": "Third War",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Third_War"
+    },
+    {
+      "term_id": "term-tirion-fordring",
+      "label": "Tirion Fordring",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Tirion_Fordring"
+    },
+    {
+      "term_id": "term-tirisfal-glades",
+      "label": "Tirisfal Glades",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Tirisfal_Glades"
+    },
+    {
+      "term_id": "term-uther-the-lightbringer",
+      "label": "Uther the Lightbringer",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Uther_the_Lightbringer"
+    },
+    {
+      "term_id": "term-western-plaguelands",
+      "label": "Western Plaguelands",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Western_Plaguelands"
+    }
+  ],
+  "provenance": {
+    "at_a_glance": [
+      {
+        "source_id": "src-handcrafted-placeholder",
+        "locator": "handcrafted-placeholder",
+        "revision_id": "handcrafted-placeholder",
+        "excerpt_hash": "handcrafted-placeholder"
+      }
+    ],
+    "currently": [
+      {
+        "source_id": "src-handcrafted-placeholder",
+        "locator": "handcrafted-placeholder",
+        "revision_id": "handcrafted-placeholder",
+        "excerpt_hash": "handcrafted-placeholder"
+      }
+    ],
+    "history": [
+      {
+        "source_id": "src-handcrafted-placeholder",
+        "locator": "handcrafted-placeholder",
+        "revision_id": "handcrafted-placeholder",
+        "excerpt_hash": "handcrafted-placeholder"
+      },
+      {
+        "source_id": "src-handcrafted-placeholder",
+        "locator": "handcrafted-placeholder",
+        "revision_id": "handcrafted-placeholder",
+        "excerpt_hash": "handcrafted-placeholder"
+      },
+      {
+        "source_id": "src-handcrafted-placeholder",
+        "locator": "handcrafted-placeholder",
+        "revision_id": "handcrafted-placeholder",
+        "excerpt_hash": "handcrafted-placeholder"
+      }
+    ],
+    "major_questlines_alliance": {
+      "ql-andorhal-alliance": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ]
+    },
+    "major_questlines_horde": {
+      "ql-andorhal-horde": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ]
+    },
+    "major_questlines_shared": {
+      "ql-hearthglen-tirion-legacy": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "ql-gahrrons-withering": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ]
+    },
+    "major_characters": {},
+    "major_factions": {
+      "faction-alliance": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "faction-argent-crusade": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "faction-cenarion-circle": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "faction-forsaken": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "faction-cult-of-the-damned": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ]
+    },
+    "instances": {
+      "instance-scholomance": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ]
+    },
+    "major_landmarks": {
+      "location-andorhal": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "location-hearthglen": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "location-caer-darrow": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "location-uthers-tomb": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ]
+    },
+    "glossary": {
+      "term-alliance": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-andorhal": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-argent-crusade": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-argent-dawn": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-barov": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-caer-darrow": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-cataclysm-event": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-cenarion-circle": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-cult-of-the-damned": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-darrowmere-lake": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-eastweald": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-fordring": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-forsaken": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-fourth-war": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-hearthglen": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-horde": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-kelthuzad": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-koltira-deathweaver": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-lich-king": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-lordaeron": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-nerzhul": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-plague-of-undeath": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-scarlet-crusade": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-scholomance": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-scourge": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-scourging-of-lordaeron": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-sorrow-hill": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-sylvanas-windrunner": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-third-war": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-tirion-fordring": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-tirisfal-glades": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-uther-the-lightbringer": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-western-plaguelands": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ]
+    }
+  },
+  "sources": [
+    {
+      "source_id": "src-handcrafted-placeholder",
+      "url": "https://placeholder.invalid/handcrafted-reference",
+      "revision_id": "handcrafted-placeholder"
     }
   ]
 }

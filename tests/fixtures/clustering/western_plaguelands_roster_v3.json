@@ -45,19 +45,6 @@
     "cluster_title": "",
     "cluster_order": 0,
     "order_in_cluster": 1,
-    "node_id": "quest-after-the-crusade",
-    "title": "After the Crusade",
-    "faction_binding": "horde",
-    "level_range": "[15-30]",
-    "source_link": "/wiki/After_the_Crusade"
-  },
-  {
-    "zone_id": "zone-western-plaguelands",
-    "node_type": "quest",
-    "cluster_id": "unclustered",
-    "cluster_title": "",
-    "cluster_order": 0,
-    "order_in_cluster": 1,
     "node_id": "quest-araj-the-summoner-quest",
     "title": "Araj the Summoner (quest)",
     "faction_binding": "shared",
@@ -97,19 +84,6 @@
     "cluster_title": "",
     "cluster_order": 0,
     "order_in_cluster": 1,
-    "node_id": "quest-combat-training",
-    "title": "Combat Training",
-    "faction_binding": "shared",
-    "level_range": "[15-30]",
-    "source_link": "/wiki/Combat_Training"
-  },
-  {
-    "zone_id": "zone-western-plaguelands",
-    "node_type": "quest",
-    "cluster_id": "unclustered",
-    "cluster_title": "",
-    "cluster_order": 0,
-    "order_in_cluster": 1,
     "node_id": "quest-foxes-and-hounds",
     "title": "Foxes and Hounds",
     "faction_binding": "horde",
@@ -128,19 +102,6 @@
     "faction_binding": "shared",
     "level_range": "[15-30]",
     "source_link": "/wiki/Gahrron%27s_Withering_Cauldron"
-  },
-  {
-    "zone_id": "zone-western-plaguelands",
-    "node_type": "quest",
-    "cluster_id": "unclustered",
-    "cluster_title": "",
-    "cluster_order": 0,
-    "order_in_cluster": 1,
-    "node_id": "quest-go-fletch",
-    "title": "Go Fletch!",
-    "faction_binding": "alliance",
-    "level_range": "[15-30]",
-    "source_link": "/wiki/Go_Fletch!"
   },
   {
     "zone_id": "zone-western-plaguelands",
@@ -240,11 +201,11 @@
     "cluster_title": "",
     "cluster_order": 0,
     "order_in_cluster": 1,
-    "node_id": "quest-supporting-the-troops",
-    "title": "Supporting the Troops",
-    "faction_binding": "shared",
+    "node_id": "quest-supporting-the-troops-alliance",
+    "title": "Supporting the Troops (Alliance)",
+    "faction_binding": "alliance",
     "level_range": "[15-30]",
-    "source_link": "/wiki/Supporting_the_Troops"
+    "source_link": "/wiki/Supporting_the_Troops_(Alliance)"
   },
   {
     "zone_id": "zone-western-plaguelands",
@@ -253,11 +214,11 @@
     "cluster_title": "",
     "cluster_order": 0,
     "order_in_cluster": 1,
-    "node_id": "quest-the-battle-for-andorhal",
-    "title": "The Battle for Andorhal",
-    "faction_binding": "shared",
+    "node_id": "quest-the-battle-for-andorhal-horde",
+    "title": "The Battle for Andorhal (Horde)",
+    "faction_binding": "horde",
     "level_range": "[15-30]",
-    "source_link": "/wiki/The_Battle_for_Andorhal"
+    "source_link": "/wiki/The_Battle_for_Andorhal_(Horde)"
   },
   {
     "zone_id": "zone-western-plaguelands",
@@ -271,32 +232,6 @@
     "faction_binding": "shared",
     "level_range": "[15-30]",
     "source_link": "/wiki/The_Battle_Resumes!"
-  },
-  {
-    "zone_id": "zone-western-plaguelands",
-    "node_type": "quest",
-    "cluster_id": "unclustered",
-    "cluster_title": "",
-    "cluster_order": 0,
-    "order_in_cluster": 1,
-    "node_id": "quest-the-depravity-of-the-forsaken",
-    "title": "The Depravity of the Forsaken",
-    "faction_binding": "alliance",
-    "level_range": "[15-30]",
-    "source_link": "/wiki/The_Depravity_of_the_Forsaken"
-  },
-  {
-    "zone_id": "zone-western-plaguelands",
-    "node_type": "quest",
-    "cluster_id": "unclustered",
-    "cluster_title": "",
-    "cluster_order": 0,
-    "order_in_cluster": 1,
-    "node_id": "quest-the-endless-flow",
-    "title": "The Endless Flow",
-    "faction_binding": "shared",
-    "level_range": "[15-30]",
-    "source_link": "/wiki/The_Endless_Flow"
   },
   {
     "zone_id": "zone-western-plaguelands",
@@ -344,11 +279,11 @@
     "cluster_title": "",
     "cluster_order": 0,
     "order_in_cluster": 1,
-    "node_id": "quest-victory-for-now",
-    "title": "Victory, For Now",
-    "faction_binding": "shared",
+    "node_id": "quest-victory-for-now-horde",
+    "title": "Victory, For Now (Horde)",
+    "faction_binding": "horde",
     "level_range": "[15-30]",
-    "source_link": "/wiki/Victory,_For_Now"
+    "source_link": "/wiki/Victory,_For_Now_(Horde)"
   },
   {
     "zone_id": "zone-western-plaguelands",
@@ -362,19 +297,6 @@
     "faction_binding": "shared",
     "level_range": "[15-30]",
     "source_link": "/wiki/War_Machines"
-  },
-  {
-    "zone_id": "zone-western-plaguelands",
-    "node_type": "quest",
-    "cluster_id": "unclustered",
-    "cluster_title": "",
-    "cluster_order": 0,
-    "order_in_cluster": 1,
-    "node_id": "quest-warchief-s-command-western-plaguelands",
-    "title": "Warchief's Command: Western Plaguelands!",
-    "faction_binding": "horde",
-    "level_range": "[15-30]",
-    "source_link": "/wiki/Warchief%27s_Command:_Western_Plaguelands!"
   },
   {
     "zone_id": "zone-western-plaguelands",
@@ -396,11 +318,11 @@
     "cluster_title": "",
     "cluster_order": 0,
     "order_in_cluster": 2,
-    "node_id": "quest-andorhal-once-and-for-all",
-    "title": "Andorhal, Once and For All",
+    "node_id": "quest-after-the-crusade",
+    "title": "After the Crusade",
     "faction_binding": "horde",
     "level_range": "[15-30]",
-    "source_link": "/wiki/Andorhal,_Once_and_For_All"
+    "source_link": "/wiki/After_the_Crusade"
   },
   {
     "zone_id": "zone-western-plaguelands",
@@ -409,11 +331,11 @@
     "cluster_title": "",
     "cluster_order": 0,
     "order_in_cluster": 2,
-    "node_id": "quest-brother-against-brother-western-plaguelands",
-    "title": "Brother Against Brother (Western Plaguelands)",
-    "faction_binding": "alliance",
+    "node_id": "quest-andorhal-once-and-for-all",
+    "title": "Andorhal, Once and For All",
+    "faction_binding": "horde",
     "level_range": "[15-30]",
-    "source_link": "/wiki/Brother_Against_Brother_(Western_Plaguelands)"
+    "source_link": "/wiki/Andorhal,_Once_and_For_All"
   },
   {
     "zone_id": "zone-western-plaguelands",
@@ -474,37 +396,50 @@
     "cluster_title": "",
     "cluster_order": 0,
     "order_in_cluster": 2,
-    "node_id": "quest-scourge-first-alliance-later",
-    "title": "Scourge First... Alliance Later",
+    "node_id": "quest-the-battle-for-andorhal-alliance",
+    "title": "The Battle for Andorhal (Alliance)",
+    "faction_binding": "alliance",
+    "level_range": "[15-30]",
+    "source_link": "/wiki/The_Battle_for_Andorhal_(Alliance)"
+  },
+  {
+    "zone_id": "zone-western-plaguelands",
+    "node_type": "quest",
+    "cluster_id": "unclustered",
+    "cluster_title": "",
+    "cluster_order": 0,
+    "order_in_cluster": 2,
+    "node_id": "quest-the-depravity-of-the-forsaken",
+    "title": "The Depravity of the Forsaken",
+    "faction_binding": "alliance",
+    "level_range": "[15-30]",
+    "source_link": "/wiki/The_Depravity_of_the_Forsaken"
+  },
+  {
+    "zone_id": "zone-western-plaguelands",
+    "node_type": "quest",
+    "cluster_id": "unclustered",
+    "cluster_title": "",
+    "cluster_order": 0,
+    "order_in_cluster": 2,
+    "node_id": "quest-victory-for-now-alliance",
+    "title": "Victory, For Now (Alliance)",
+    "faction_binding": "alliance",
+    "level_range": "[15-30]",
+    "source_link": "/wiki/Victory,_For_Now_(Alliance)"
+  },
+  {
+    "zone_id": "zone-western-plaguelands",
+    "node_type": "quest",
+    "cluster_id": "unclustered",
+    "cluster_title": "",
+    "cluster_order": 0,
+    "order_in_cluster": 2,
+    "node_id": "quest-warchief-s-command-western-plaguelands",
+    "title": "Warchief's Command: Western Plaguelands!",
     "faction_binding": "horde",
     "level_range": "[15-30]",
-    "source_link": "/wiki/Scourge_First..._Alliance_Later"
-  },
-  {
-    "zone_id": "zone-western-plaguelands",
-    "node_type": "quest",
-    "cluster_id": "unclustered",
-    "cluster_title": "",
-    "cluster_order": 0,
-    "order_in_cluster": 2,
-    "node_id": "quest-scourge-first-horde-later",
-    "title": "Scourge First... Horde Later",
-    "faction_binding": "alliance",
-    "level_range": "[15-30]",
-    "source_link": "/wiki/Scourge_First..._Horde_Later"
-  },
-  {
-    "zone_id": "zone-western-plaguelands",
-    "node_type": "quest",
-    "cluster_id": "unclustered",
-    "cluster_title": "",
-    "cluster_order": 0,
-    "order_in_cluster": 2,
-    "node_id": "quest-uther-s-blessing",
-    "title": "Uther's Blessing",
-    "faction_binding": "alliance",
-    "level_range": "[15-30]",
-    "source_link": "/wiki/Uther%27s_Blessing"
+    "source_link": "/wiki/Warchief%27s_Command:_Western_Plaguelands!"
   },
   {
     "zone_id": "zone-western-plaguelands",
@@ -565,6 +500,45 @@
     "cluster_title": "",
     "cluster_order": 0,
     "order_in_cluster": 3,
+    "node_id": "quest-brother-against-brother-western-plaguelands",
+    "title": "Brother Against Brother (Western Plaguelands)",
+    "faction_binding": "alliance",
+    "level_range": "[15-30]",
+    "source_link": "/wiki/Brother_Against_Brother_(Western_Plaguelands)"
+  },
+  {
+    "zone_id": "zone-western-plaguelands",
+    "node_type": "quest",
+    "cluster_id": "unclustered",
+    "cluster_title": "",
+    "cluster_order": 0,
+    "order_in_cluster": 3,
+    "node_id": "quest-combat-training-horde",
+    "title": "Combat Training (Horde)",
+    "faction_binding": "horde",
+    "level_range": "[15-30]",
+    "source_link": "/wiki/Combat_Training_(Horde)"
+  },
+  {
+    "zone_id": "zone-western-plaguelands",
+    "node_type": "quest",
+    "cluster_id": "unclustered",
+    "cluster_title": "",
+    "cluster_order": 0,
+    "order_in_cluster": 3,
+    "node_id": "quest-go-fletch",
+    "title": "Go Fletch!",
+    "faction_binding": "alliance",
+    "level_range": "[15-30]",
+    "source_link": "/wiki/Go_Fletch!"
+  },
+  {
+    "zone_id": "zone-western-plaguelands",
+    "node_type": "quest",
+    "cluster_id": "unclustered",
+    "cluster_title": "",
+    "cluster_order": 0,
+    "order_in_cluster": 3,
     "node_id": "quest-learning-the-ropes",
     "title": "Learning the Ropes",
     "faction_binding": "shared",
@@ -604,11 +578,11 @@
     "cluster_title": "",
     "cluster_order": 0,
     "order_in_cluster": 3,
-    "node_id": "quest-the-abandoned-crypt",
-    "title": "The Abandoned Crypt",
-    "faction_binding": "alliance",
+    "node_id": "quest-scourge-first-alliance-later",
+    "title": "Scourge First... Alliance Later",
+    "faction_binding": "horde",
     "level_range": "[15-30]",
-    "source_link": "/wiki/The_Abandoned_Crypt"
+    "source_link": "/wiki/Scourge_First..._Alliance_Later"
   },
   {
     "zone_id": "zone-western-plaguelands",
@@ -617,37 +591,11 @@
     "cluster_title": "",
     "cluster_order": 0,
     "order_in_cluster": 3,
-    "node_id": "quest-val-kyr-incursion",
-    "title": "Val'kyr Incursion",
+    "node_id": "quest-scourge-first-horde-later",
+    "title": "Scourge First... Horde Later",
     "faction_binding": "alliance",
     "level_range": "[15-30]",
-    "source_link": "/wiki/Val%27kyr_Incursion"
-  },
-  {
-    "zone_id": "zone-western-plaguelands",
-    "node_type": "quest",
-    "cluster_id": "unclustered",
-    "cluster_title": "",
-    "cluster_order": 0,
-    "order_in_cluster": 4,
-    "node_id": "quest-ambushed-western-plaguelands",
-    "title": "Ambushed! (Western Plaguelands)",
-    "faction_binding": "alliance",
-    "level_range": "[15-30]",
-    "source_link": "/wiki/Ambushed!_(Western_Plaguelands)"
-  },
-  {
-    "zone_id": "zone-western-plaguelands",
-    "node_type": "quest",
-    "cluster_id": "unclustered",
-    "cluster_title": "",
-    "cluster_order": 0,
-    "order_in_cluster": 4,
-    "node_id": "quest-aradne-quest",
-    "title": "Aradne (quest)",
-    "faction_binding": "alliance",
-    "level_range": "[15-30]",
-    "source_link": "/wiki/Aradne_(quest)"
+    "source_link": "/wiki/Scourge_First..._Horde_Later"
   },
   {
     "zone_id": "zone-western-plaguelands",
@@ -669,11 +617,24 @@
     "cluster_title": "",
     "cluster_order": 0,
     "order_in_cluster": 4,
-    "node_id": "quest-the-farmers-militia",
-    "title": "The Farmers' Militia",
+    "node_id": "quest-supporting-the-troops-horde",
+    "title": "Supporting the Troops (Horde)",
     "faction_binding": "horde",
     "level_range": "[15-30]",
-    "source_link": "/wiki/The_Farmers%27_Militia"
+    "source_link": "/wiki/Supporting_the_Troops_(Horde)"
+  },
+  {
+    "zone_id": "zone-western-plaguelands",
+    "node_type": "quest",
+    "cluster_id": "unclustered",
+    "cluster_title": "",
+    "cluster_order": 0,
+    "order_in_cluster": 4,
+    "node_id": "quest-the-endless-flow-alliance",
+    "title": "The Endless Flow (Alliance)",
+    "faction_binding": "alliance",
+    "level_range": "[15-30]",
+    "source_link": "/wiki/The_Endless_Flow_(Alliance)"
   },
   {
     "zone_id": "zone-western-plaguelands",
@@ -694,12 +655,25 @@
     "cluster_id": "unclustered",
     "cluster_title": "",
     "cluster_order": 0,
-    "order_in_cluster": 5,
-    "node_id": "quest-alas-andorhal",
-    "title": "Alas, Andorhal",
+    "order_in_cluster": 4,
+    "node_id": "quest-uther-s-blessing",
+    "title": "Uther's Blessing",
     "faction_binding": "alliance",
     "level_range": "[15-30]",
-    "source_link": "/wiki/Alas,_Andorhal"
+    "source_link": "/wiki/Uther%27s_Blessing"
+  },
+  {
+    "zone_id": "zone-western-plaguelands",
+    "node_type": "quest",
+    "cluster_id": "unclustered",
+    "cluster_title": "",
+    "cluster_order": 0,
+    "order_in_cluster": 4,
+    "node_id": "quest-val-kyr-incursion",
+    "title": "Val'kyr Incursion",
+    "faction_binding": "alliance",
+    "level_range": "[15-30]",
+    "source_link": "/wiki/Val%27kyr_Incursion"
   },
   {
     "zone_id": "zone-western-plaguelands",
@@ -721,6 +695,19 @@
     "cluster_title": "",
     "cluster_order": 0,
     "order_in_cluster": 5,
+    "node_id": "quest-aradne-quest",
+    "title": "Aradne (quest)",
+    "faction_binding": "alliance",
+    "level_range": "[15-30]",
+    "source_link": "/wiki/Aradne_(quest)"
+  },
+  {
+    "zone_id": "zone-western-plaguelands",
+    "node_type": "quest",
+    "cluster_id": "unclustered",
+    "cluster_title": "",
+    "cluster_order": 0,
+    "order_in_cluster": 5,
     "node_id": "quest-desperate-acts",
     "title": "Desperate Acts",
     "faction_binding": "shared",
@@ -734,11 +721,11 @@
     "cluster_title": "",
     "cluster_order": 0,
     "order_in_cluster": 5,
-    "node_id": "quest-the-reckoning-western-plaguelands",
-    "title": "The Reckoning (Western Plaguelands)",
-    "faction_binding": "horde",
+    "node_id": "quest-the-abandoned-crypt",
+    "title": "The Abandoned Crypt",
+    "faction_binding": "alliance",
     "level_range": "[15-30]",
-    "source_link": "/wiki/The_Reckoning_(Western_Plaguelands)"
+    "source_link": "/wiki/The_Abandoned_Crypt"
   },
   {
     "zone_id": "zone-western-plaguelands",
@@ -747,11 +734,37 @@
     "cluster_title": "",
     "cluster_order": 0,
     "order_in_cluster": 5,
-    "node_id": "quest-the-writhing-haunt-quest",
-    "title": "The Writhing Haunt (quest)",
+    "node_id": "quest-the-farmers-militia",
+    "title": "The Farmers' Militia",
+    "faction_binding": "horde",
+    "level_range": "[15-30]",
+    "source_link": "/wiki/The_Farmers%27_Militia"
+  },
+  {
+    "zone_id": "zone-western-plaguelands",
+    "node_type": "quest",
+    "cluster_id": "unclustered",
+    "cluster_title": "",
+    "cluster_order": 0,
+    "order_in_cluster": 6,
+    "node_id": "quest-alas-andorhal",
+    "title": "Alas, Andorhal",
     "faction_binding": "alliance",
     "level_range": "[15-30]",
-    "source_link": "/wiki/The_Writhing_Haunt_(quest)"
+    "source_link": "/wiki/Alas,_Andorhal"
+  },
+  {
+    "zone_id": "zone-western-plaguelands",
+    "node_type": "quest",
+    "cluster_id": "unclustered",
+    "cluster_title": "",
+    "cluster_order": 0,
+    "order_in_cluster": 6,
+    "node_id": "quest-ambushed-western-plaguelands",
+    "title": "Ambushed! (Western Plaguelands)",
+    "faction_binding": "alliance",
+    "level_range": "[15-30]",
+    "source_link": "/wiki/Ambushed!_(Western_Plaguelands)"
   },
   {
     "zone_id": "zone-western-plaguelands",
@@ -773,11 +786,11 @@
     "cluster_title": "",
     "cluster_order": 0,
     "order_in_cluster": 6,
-    "node_id": "quest-this-is-our-army",
-    "title": "This Is Our Army",
-    "faction_binding": "alliance",
+    "node_id": "quest-the-reckoning-western-plaguelands",
+    "title": "The Reckoning (Western Plaguelands)",
+    "faction_binding": "horde",
     "level_range": "[15-30]",
-    "source_link": "/wiki/This_Is_Our_Army"
+    "source_link": "/wiki/The_Reckoning_(Western_Plaguelands)"
   },
   {
     "zone_id": "zone-western-plaguelands",
@@ -812,6 +825,19 @@
     "cluster_title": "",
     "cluster_order": 0,
     "order_in_cluster": 7,
+    "node_id": "quest-the-writhing-haunt-quest",
+    "title": "The Writhing Haunt (quest)",
+    "faction_binding": "alliance",
+    "level_range": "[15-30]",
+    "source_link": "/wiki/The_Writhing_Haunt_(quest)"
+  },
+  {
+    "zone_id": "zone-western-plaguelands",
+    "node_type": "quest",
+    "cluster_id": "unclustered",
+    "cluster_title": "",
+    "cluster_order": 0,
+    "order_in_cluster": 7,
     "node_id": "quest-unusual-behavior-even-for-gnolls",
     "title": "Unusual Behavior... Even For Gnolls",
     "faction_binding": "shared",
@@ -837,12 +863,38 @@
     "cluster_id": "unclustered",
     "cluster_title": "",
     "cluster_order": 0,
+    "order_in_cluster": 8,
+    "node_id": "quest-this-is-our-army",
+    "title": "This Is Our Army",
+    "faction_binding": "alliance",
+    "level_range": "[15-30]",
+    "source_link": "/wiki/This_Is_Our_Army"
+  },
+  {
+    "zone_id": "zone-western-plaguelands",
+    "node_type": "quest",
+    "cluster_id": "unclustered",
+    "cluster_title": "",
+    "cluster_order": 0,
     "order_in_cluster": 9,
     "node_id": "quest-bagging-bisp",
     "title": "Bagging Bisp",
     "faction_binding": "shared",
     "level_range": "[15-30]",
     "source_link": "/wiki/Bagging_Bisp"
+  },
+  {
+    "zone_id": "zone-western-plaguelands",
+    "node_type": "quest",
+    "cluster_id": "unclustered",
+    "cluster_title": "",
+    "cluster_order": 0,
+    "order_in_cluster": 9,
+    "node_id": "quest-combat-training-alliance",
+    "title": "Combat Training (Alliance)",
+    "faction_binding": "alliance",
+    "level_range": "[15-30]",
+    "source_link": "/wiki/Combat_Training_(Alliance)"
   },
   {
     "zone_id": "zone-western-plaguelands",

@@ -149,9 +149,10 @@ def test_zone_page_gold_passes_validation_with_provenance_shell() -> None:
 
 def test_zone_page_gold_matches_questline_card_v2_contract() -> None:
     gold = _load_zone_page_gold()
-    assert gold["entity_type"] == "zone_page"
+    # The gold is now a full ZonePage payload (extra="forbid"), so it no longer carries the
+    # legacy "entity_type" marker key the slim questline-slice fixture used to.
     cards = gold["major_questlines"]
-    assert len(cards) == 3
+    assert len(cards) == 4
     for card in cards:
         parsed = QuestlineCardV2.model_validate(card)
         assert parsed.cta_hook
@@ -215,6 +216,7 @@ def test_registry_chain_refs_derive_from_wiki_titles() -> None:
         "ql-andorhal-horde",
         "ql-andorhal-alliance",
         "ql-hearthglen-tirion-legacy",
+        "ql-gahrrons-withering",
     ],
 )
 def test_zone_page_gold_cta_hooks_pass_card_lint(questline_id: str) -> None:
@@ -267,7 +269,10 @@ def test_registry_documents_cross_faction_shared_card_refs() -> None:
         if count > 1
     }
     assert cross_arc == documented
-    assert documented == frozenset({"quest-combat-training"})
+    # Combat Training (and the other Andorhal beats) are faction-specific quest pages
+    # ((Alliance)/(Horde) variants), so no quest is shared across the two faction cards'
+    # primary chain_refs. Genuinely-shared beats live in shared_beat_refs, not chain_refs.
+    assert documented == frozenset()
 
 
 def test_registry_shared_andorhal_beats_do_not_overlap_included_card_refs() -> None:
@@ -276,10 +281,13 @@ def test_registry_shared_andorhal_beats_do_not_overlap_included_card_refs() -> N
     shared = _registry_shared_beat_refs(registry)
     assert not (card_refs & shared)
     assert "quest-scholomancer" in shared
+    # Gahrron's Withering (Part 6) is now an included major card; the Part 1 shared beat
+    # quest-scholomancer must not be smuggled into its chain.
     gahrrons = next(
-        row for row in registry["excluded_arcs"] if row["id"] == "ql-gahrrons-withering-cleanup"
+        row for row in registry["included_arcs"] if row["id"] == "ql-gahrrons-withering"
     )
     assert "quest-scholomancer" not in set(gahrrons.get("chain_refs") or [])
+    assert "quest-scholomancer" not in set(gahrrons.get("overflow_chain_refs") or [])
 
 
 def test_registry_wiki_refs_pass_quest_graph_classifier() -> None:

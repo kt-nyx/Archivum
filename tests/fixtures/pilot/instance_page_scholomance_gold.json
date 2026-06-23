@@ -4,79 +4,67 @@
   "instance_type": "dungeon",
   "parent_zone_id": "zone-western-plaguelands",
   "expansion_context": "retail",
-  "wiki_url": "https://warcraft.wiki.gg/wiki/Western_Plaguelands",
-  "at_a_glance": "Hidden in the ruins of Caer Darrow, Scholomance is a blighted school of necromancy where the Scourge’s dark teachings endured long after Lordaeron fell. Its halls remain a symbol of undeath’s persistence and the Barov family’s ruin.",
-  "overview": "Scholomance is the black heart of Caer Darrow, a necromantic school concealed within the old Barov manor and crypts, where ambition, hunger for power, and the fear of death curdled into a lasting curse. Once a noble stronghold restored after the Second War, the estate was twisted when the Barovs struck a bargain with Kel’Thuzad of the Cult of the Damned, trading their legacy for power beyond the grave. In the years that followed, the halls filled with undead tutors, fallen servants, and vile experiments as the school became a proving ground for the Plague of Undeath and the creation of abominations. Even before the Scourge fully rose, the land around Caer Darrow was left ruined and haunted by the misery unleashed there. Though the Scourging of Lordaeron and the fall of many of its masters changed the balance of power, Scholomance endured, its corridors still animated by the dead and guarded by Darkmaster Gandling, a cruel master of the art who kept the institution alive through domination and corruption. After the death of the Lich King and the weakening of the Scourge, Gandling clung to the school as one of the last dark holdouts west of Thondroril, retreating deeper into its shadows when challenged. The place continued to draw foes of necromancy, survivors tied to the Barov curse, and agents seeking secrets buried in its depths. So long as Gandling survives, Caer Darrow remains chained to its blight, and the dead there will not rest.",
+  "wiki_url": "https://warcraft.wiki.gg/wiki/Scholomance",
+  "at_a_glance": "Hidden in the ruins of Caer Darrow, Scholomance is a blighted school of necromancy where the Scourge's dark teachings endured long after Lordaeron fell. Its halls remain a symbol of undeath's persistence and the Barov family's ruin.",
+  "overview": "Scholomance is the black heart of Caer Darrow, a necromantic school concealed within the old Barov manor and crypts, where ambition, hunger for power, and the fear of death curdled into a lasting curse. Once a noble stronghold restored after the Second War, the estate was twisted when the Barovs struck a bargain with Kel'Thuzad of the Cult of the Damned, trading their legacy for power beyond the grave. In the years that followed, the halls filled with undead tutors, fallen servants, and vile experiments as the school became a proving ground for the Plague of Undeath and the creation of abominations.",
   "history_sections": [
     {
-      "heading": "Historical era",
-      "body": "Following the Second War in 6 ADP , the fortress at Caer Darrow was restored. The manor was the Barov 's primary residence amidst their far-reaching empire which comprised Caer Darrow, Brill , Southshore , and Tarren Mill , but as the years closed to the Third War , the aristocrats became depressed, greedy, and rageful. After decades of rule, in order to preserve their fortune and hold of the land well past their lifespan, the Barovs made a deal with Kel'Thuzad , leader of the Cult of the Damned . The once opulent keep of Caer Darrow secretly became the horrific Scholomance, a school of necromancy.",
+      "heading": "Barovs' Bargain",
+      "body": "After its destruction during the Second War, Caer Darrow was restored as the chief seat of House Barov, whose holdings stretched through Brill, Southshore, and Tarren Mill. As the Third War drew near, the Barovs bargained with Kel'Thuzad and the Cult of the Damned to preserve their wealth and dominion beyond death. Beneath the manor, Caer Darrow was secretly transformed into Scholomance, a hidden academy devoted to necromancy and undeath.",
       "source_refs": [
         {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:other paragraph:1",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:47e7758b31c52195"
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
         }
       ]
     },
     {
-      "heading": "Historical era",
-      "body": "Six months passed, and the keep became decrepit and inhabited by dark undead beings. Acolytes of the Cult learned their craft, while the family servants were used as experiments for the Plague of Undeath . Finally, while the Scourge did not even yet fully exist in Lordaeron , a devastating disease, which was not the Plague that the Scourge would employ later but an experience of Scholomance, was unleashed and ravaged Caer Darrow before a visit from Uther the Lightbringer was scheduled. None survived, while the plague variant compelled its victims to wander as ghosts. The first abominations were also created in the catacombs of Scholomance from unearthed corpses that were hacked apart and pieced together. Salramm the Fleshcrafter was one of the first necromancers trained in the halls beneath Scholomance.",
+      "heading": "School of Necromancy",
+      "body": "In the months that followed, Scholomance became a center of plaguecraft, corpse-work, and occult instruction. Cult acolytes studied beneath Caer Darrow while the Barovs' servants were sacrificed to experiments. Before the Scourge had fully emerged in Lordaeron, a plague variant born from Scholomance's work swept through Caer Darrow, leaving no living survivors and binding many victims as ghosts.",
       "source_refs": [
         {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:other paragraph:2",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:10e3f87a49756f7d"
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
         }
       ]
     },
     {
-      "heading": "Historical era",
-      "body": "After the Scourging of Lordaeron in 20 ADP, the Barovs remained as undead monsters. One of Kel'Thuzad's mightiest agents, the Ravenian , also lived within the recesses of the school — ever ready to devour those students who showed any sign of weakness. The lich Ras Frostwhisper ruled over the site guarding it for the Scourge, until he was destroyed. The mortal necromancer, Darkmaster Gandling , serves as headmaster of the school, succeeding Araj the Summoner who was headmaster after Kel'Thuzad. Constructs, spirits, and demons are allowed to roam the halls untended, which is unexpected for such practiced necromancers.",
+      "heading": "Rise of the Dead",
+      "body": "After the Scourging of Lordaeron, Scholomance endured as a stronghold of the undead. The Barovs remained within its curse as monstrous remnants of their former house, while Kel'Thuzad's agents and creations haunted the school's depths. Darkmaster Gandling eventually ruled the academy after Kel'Thuzad and Araj the Summoner, as Scholomance decayed into a festering seat of necromantic ruin.",
       "source_refs": [
         {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:other paragraph:3",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:0c79259169b9b956"
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
         }
       ]
     },
     {
-      "heading": "Historical era",
-      "body": "With the death of the Lich King and many of its leaders, including those once found in Scholomance, the Scourge became weakened. With no leadership, Darkmaster Gandling used his ability to control the undead and began to unofficially take control of the Scourge forces using them to keep control of Scholomance, the last holdout west of Thondroril . Following the Cataclysm in 28 ADP, after he failed to take control of Andorhal , Gandling retreated back into Scholomance to bide his time.",
+      "heading": "Last Holdout",
+      "body": "In the aftermath of the Lich King's fall, the Scourge's command structure fractured, and Darkmaster Gandling turned Scholomance into his own power base. Following the Cataclysm, his failed bid to seize Andorhal forced him back to the academy, where he preserved the last major Scourge holdout west of the Thondroril River. Around the same period, Alexi and Weldon Barov turned against the corruption of their ancestral home, seeking to drive the Scourge from Caer Darrow and end the curse that had consumed their house.",
       "source_refs": [
         {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:other paragraph:4",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:0d452228cf1e0063"
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
         }
       ]
     },
     {
-      "heading": "Historical era",
-      "body": "During the third invasion of the Burning Legion in 32 ADP, the Shadow Council made a camp in Caer Darrow and spoke with the Cult of the Damned in Scholomance to get the Book of Medivh .",
+      "heading": "Fall of Lilian Voss",
+      "body": "During the campaign against Scholomance in the era of Pandaria, Lilian Voss entered the academy to destroy its necromancers. Gandling captured her and sought to turn her undeath against his enemies, but she survived his defeat and escaped. Lord Alexei Barov also aided the assault, hoping Gandling's death would finally break Caer Darrow's curse.",
       "source_refs": [
         {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:other paragraph:5",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:234a548fe522e4ab"
-        }
-      ]
-    },
-    {
-      "heading": "Historical era",
-      "body": "After the end of the Fourth War in 34 ADP, Mathias Shaw reported that Scholomance was still in operation as a school of necromancy and was under investigation by the Argent Crusade . The Crusade's reports mentioned that some of the Barovs are still there, and Darkmaster Gandling , still active, has many puppets to play with, including Jandice Barov and Rattlegore . The spymaster also advised the Crusade that the hood and the Barovian family sword should be locked in the manor, but the latters eventually ended up displayed in Mardenholde Keep of Hearthglen .",
-      "source_refs": [
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:other paragraph:6",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:f6f8652201dcf7df"
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
         }
       ]
     }
@@ -85,7 +73,7 @@
     {
       "id": "character-darkmaster-gandling",
       "name": "Darkmaster Gandling",
-      "summary": "Darkmaster Gandling is Scholomance’s sadistic headmaster, a necromancer who rules the school’s cursed crypts beneath Caer Darrow. He is the final obstacle to ending the site’s blight, and after the Scourge’s decline he clung to control of Scholomance and its undead host, retreating there to wait.",
+      "summary": "Darkmaster Gandling is Scholomance's sadistic headmaster, a necromancer who rules the school's cursed crypts beneath Caer Darrow. He is the final obstacle to ending the site's blight, and since the Scourge's decline he has clung to control of Scholomance and its undead host.",
       "role": "enemy",
       "wiki_ref": "https://warcraft.wiki.gg/wiki/Darkmaster_Gandling",
       "decision_reason_codes": [
@@ -98,7 +86,7 @@
     {
       "id": "character-instructor-chillheart",
       "name": "Instructor Chillheart",
-      "summary": "Instructor Chillheart is one of Scholomance’s undead lecturers, a Reliquary-served instructor whose lingering phylactery preserves her after defeat. She stands against intruders as a grim custodian of the academy’s dark teachings, embodying the school’s continued devotion to necromantic instruction.",
+      "summary": "Instructor Chillheart is one of Scholomance's foremost undead lecturers, a necromancer whose lingering phylactery preserves her beyond death. She stands against intruders as a grim custodian of the academy's dark teachings, embodying the school's continued devotion to necromantic instruction.",
       "role": "enemy",
       "wiki_ref": "https://warcraft.wiki.gg/wiki/Instructor_Chillheart",
       "decision_reason_codes": [
@@ -111,7 +99,7 @@
     {
       "id": "character-jandice-barov",
       "name": "Jandice Barov",
-      "summary": "Jandice Barov is one of the Barov family’s lingering dead, trapped within Scholomance’s necromantic halls and counted among Darkmaster Gandling’s puppets. She stands in opposition to those who enter, not by choice but by the school’s dark hold, and remains a symbol of the Barovs’ corruption.",
+      "summary": "Jandice Barov is one of the Barov family's lingering dead, trapped within Scholomance's necromantic halls and counted among Darkmaster Gandling's puppets. She stands in opposition to those who enter, not by choice but by the school's dark hold, and remains a symbol of the Barovs' corruption.",
       "role": "enemy",
       "wiki_ref": "https://warcraft.wiki.gg/wiki/Jandice_Barov",
       "decision_reason_codes": [
@@ -124,7 +112,7 @@
     {
       "id": "character-lilian-voss",
       "name": "Lilian Voss",
-      "summary": "Lilian Voss is a fallen crusader of Scholomance’s tale: she entered the necromancer’s halls to end their blight, but Darkmaster Gandling seized and subverted her. Though cast down, she survived the encounter and escaped, a tragic figure whose defiance and corruption haunt the dungeon’s story.",
+      "summary": "Lilian Voss came to Scholomance as a crusader against its necromancers, but Darkmaster Gandling seized and subverted her. Though cast down, she survived the encounter and escaped, a tragic figure whose defiance and corruption haunt the dungeon's legacy.",
       "role": "enemy",
       "wiki_ref": "https://warcraft.wiki.gg/wiki/Lilian_Voss",
       "decision_reason_codes": [
@@ -137,7 +125,7 @@
     {
       "id": "character-rattlegore",
       "name": "Rattlegore",
-      "summary": "Rattlegore is one of Darkmaster Gandling’s puppets within Scholomance, a lingering instrument of the school’s necromancy. It stands as a reanimated guardian of the manor, threatening any who enter while serving Gandling’s design and the Argent Crusade’s investigation into the academy’s surviving horrors.",
+      "summary": "Rattlegore is one of Darkmaster Gandling's puppets within Scholomance, a lingering instrument of the school's necromancy. It stands as a reanimated guardian of the manor, threatening any who enter while serving Gandling's design and the Argent Crusade's investigation into the academy's surviving horrors.",
       "role": "enemy",
       "wiki_ref": "https://warcraft.wiki.gg/wiki/Rattlegore",
       "decision_reason_codes": [
@@ -148,191 +136,462 @@
       "thumbnail_asset_id": null
     }
   ],
-  "major_factions": [],
+  "major_factions": [
+    {
+      "id": "faction-scourge",
+      "name": "Scourge",
+      "summary": "The undead Scourge raised Scholomance as a training ground for its necromancers, and though the Lich King's fall left it leaderless, its risen legions still hold the crypts beneath Caer Darrow under Darkmaster Gandling.",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Scourge"
+    },
+    {
+      "id": "faction-cult-of-the-damned",
+      "name": "Cult of the Damned",
+      "summary": "Kel'Thuzad's Cult of the Damned struck the bargain that made Caer Darrow into Scholomance, and the cult remains within its halls, its acolytes still practicing the plaguecraft and necromancy that doomed the Barovs' servants to undeath.",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Cult_of_the_Damned"
+    }
+  ],
   "lore_source": "instance_page",
   "lore_source_reason": null,
   "variant_policy": "standalone",
   "variant_reason_codes": [],
   "glossary_refs": [
     {
-      "term_id": "term-scholomance",
-      "label": "Scholomance",
-      "wiki_url": "https://warcraft.wiki.gg/wiki/Scholomance"
+      "term_id": "term-alexi-barov",
+      "label": "Alexi Barov",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Alexi_Barov"
     },
     {
       "term_id": "term-andorhal",
       "label": "Andorhal",
       "wiki_url": "https://warcraft.wiki.gg/wiki/Andorhal"
+    },
+    {
+      "term_id": "term-araj-the-summoner",
+      "label": "Araj the Summoner",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Araj_the_Summoner"
+    },
+    {
+      "term_id": "term-barov",
+      "label": "Barov",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Barov"
+    },
+    {
+      "term_id": "term-brill",
+      "label": "Brill",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Brill"
+    },
+    {
+      "term_id": "term-caer-darrow",
+      "label": "Caer Darrow",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Caer_Darrow"
+    },
+    {
+      "term_id": "term-cataclysm-event",
+      "label": "Cataclysm (event)",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Cataclysm_(event)"
+    },
+    {
+      "term_id": "term-cult-of-the-damned",
+      "label": "Cult of the Damned",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Cult_of_the_Damned"
+    },
+    {
+      "term_id": "term-darkmaster-gandling",
+      "label": "Darkmaster Gandling",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Darkmaster_Gandling"
+    },
+    {
+      "term_id": "term-ghost",
+      "label": "Ghost",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Ghost"
+    },
+    {
+      "term_id": "term-kelthuzad",
+      "label": "Kel'Thuzad",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Kel%27Thuzad"
+    },
+    {
+      "term_id": "term-lich-king",
+      "label": "Lich King",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Lich_King"
+    },
+    {
+      "term_id": "term-lilian-voss",
+      "label": "Lilian Voss",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Lilian_Voss"
+    },
+    {
+      "term_id": "term-lord-alexei-barov",
+      "label": "Lord Alexei Barov",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Lord_Alexei_Barov"
+    },
+    {
+      "term_id": "term-lordaeron",
+      "label": "Lordaeron",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Lordaeron"
+    },
+    {
+      "term_id": "term-necromancy",
+      "label": "Necromancy",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Necromancy"
+    },
+    {
+      "term_id": "term-pandaria",
+      "label": "Pandaria",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Pandaria"
+    },
+    {
+      "term_id": "term-plague-of-undeath",
+      "label": "Plague of Undeath",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Plague_of_Undeath"
+    },
+    {
+      "term_id": "term-scholomance",
+      "label": "Scholomance",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Scholomance"
+    },
+    {
+      "term_id": "term-scourge",
+      "label": "Scourge",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Scourge"
+    },
+    {
+      "term_id": "term-second-war",
+      "label": "Second War",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Second_War"
+    },
+    {
+      "term_id": "term-southshore",
+      "label": "Southshore",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Southshore"
+    },
+    {
+      "term_id": "term-tarren-mill",
+      "label": "Tarren Mill",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Tarren_Mill"
+    },
+    {
+      "term_id": "term-third-war",
+      "label": "Third War",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Third_War"
+    },
+    {
+      "term_id": "term-thondroril-river",
+      "label": "Thondroril River",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Thondroril_River"
+    },
+    {
+      "term_id": "term-undead",
+      "label": "Undead",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Undead"
+    },
+    {
+      "term_id": "term-weldon-barov",
+      "label": "Weldon Barov",
+      "wiki_url": "https://warcraft.wiki.gg/wiki/Weldon_Barov"
     }
   ],
   "provenance": {
     "identity_header": [
       {
-        "source_id": "src-scholomance-warcraft-overview",
-        "locator": "section:instances_or_dungeons paragraph:1",
-        "revision_id": "mw:6519872",
-        "excerpt_hash": "sha256:dfb5f245505b5408"
-      },
-      {
-        "source_id": "src-scholomance-warcraft-overview",
-        "locator": "section:instances_or_dungeons paragraph:2",
-        "revision_id": "mw:6519872",
-        "excerpt_hash": "sha256:5a00f098f258fd20"
-      },
-      {
-        "source_id": "src-scholomance-warcraft-overview",
-        "locator": "section:other paragraph:3",
-        "revision_id": "mw:6519872",
-        "excerpt_hash": "sha256:0c79259169b9b956"
+        "source_id": "src-handcrafted-placeholder",
+        "locator": "handcrafted-placeholder",
+        "revision_id": "handcrafted-placeholder",
+        "excerpt_hash": "handcrafted-placeholder"
       }
     ],
     "story_context": [
       {
-        "source_id": "src-scholomance-warcraft-overview",
-        "locator": "section:instances_or_dungeons paragraph:1",
-        "revision_id": "mw:6519872",
-        "excerpt_hash": "sha256:5a00f098f258fd20"
-      },
-      {
-        "source_id": "src-scholomance-warcraft-overview",
-        "locator": "section:other paragraph:2",
-        "revision_id": "mw:6519872",
-        "excerpt_hash": "sha256:47e7758b31c52195"
-      },
-      {
-        "source_id": "src-scholomance-warcraft-overview",
-        "locator": "section:other paragraph:3",
-        "revision_id": "mw:6519872",
-        "excerpt_hash": "sha256:10e3f87a49756f7d"
+        "source_id": "src-handcrafted-placeholder",
+        "locator": "handcrafted-placeholder",
+        "revision_id": "handcrafted-placeholder",
+        "excerpt_hash": "handcrafted-placeholder"
       }
     ],
     "key_characters": {
       "character-darkmaster-gandling": [
         {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:other paragraph:1",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:47e7758b31c52195"
-        },
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:instances_or_dungeons paragraph:2",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:dfb5f245505b5408"
-        },
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:instances_or_dungeons paragraph:3",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:1588abb4c0b03ba4"
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
         }
       ],
       "character-instructor-chillheart": [
         {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:instances_or_dungeons paragraph:1",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:2124f58da0b845a5"
-        },
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:instances_or_dungeons paragraph:2",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:1b13ac8f658bb2dc"
-        },
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:other paragraph:3",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:e5e6766801e7c18b"
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
         }
       ],
       "character-jandice-barov": [
         {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:instances_or_dungeons paragraph:1",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:ec8e3560838c2b58"
-        },
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:instances_or_dungeons paragraph:2",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:9ee6f2a38a7cad73"
-        },
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:other paragraph:3",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:295ca8b0307fb329"
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
         }
       ],
       "character-lilian-voss": [
         {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:instances_or_dungeons paragraph:1",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:f1e9d0e9ce937269"
-        },
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:instances_or_dungeons paragraph:2",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:4963943a10f225fc"
-        },
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:other paragraph:3",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:859af88608760a8d"
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
         }
       ],
       "character-rattlegore": [
         {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:instances_or_dungeons paragraph:1",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:191f0a8b1995e5a6"
-        },
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:instances_or_dungeons paragraph:2",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:47386bca08070d40"
-        },
-        {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:other paragraph:3",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:9eb70324cfcbb06d"
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
         }
       ]
     },
-    "major_factions": {},
-    "glossary": {
-      "term-scholomance": [
+    "major_factions": {
+      "faction-scourge": [
         {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:instances_or_dungeons paragraph:1",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:5a00f098f258fd20"
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "faction-cult-of-the-damned": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ]
+    },
+    "glossary": {
+      "term-alexi-barov": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
         }
       ],
       "term-andorhal": [
         {
-          "source_id": "src-scholomance-warcraft-overview",
-          "locator": "section:other paragraph:4",
-          "revision_id": "mw:6519872",
-          "excerpt_hash": "sha256:0d452228cf1e0063"
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-araj-the-summoner": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-barov": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-brill": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-caer-darrow": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-cataclysm-event": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-cult-of-the-damned": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-darkmaster-gandling": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-ghost": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-kelthuzad": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-lich-king": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-lilian-voss": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-lord-alexei-barov": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-lordaeron": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-necromancy": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-pandaria": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-plague-of-undeath": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-scholomance": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-scourge": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-second-war": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-southshore": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-tarren-mill": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-third-war": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-thondroril-river": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-undead": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
+        }
+      ],
+      "term-weldon-barov": [
+        {
+          "source_id": "src-handcrafted-placeholder",
+          "locator": "handcrafted-placeholder",
+          "revision_id": "handcrafted-placeholder",
+          "excerpt_hash": "handcrafted-placeholder"
         }
       ]
     }
   },
   "sources": [
     {
-      "source_id": "src-scholomance-warcraft-overview",
-      "url": "https://warcraft.wiki.gg/wiki/Scholomance",
-      "revision_id": "mw:6519872"
+      "source_id": "src-handcrafted-placeholder",
+      "url": "https://placeholder.invalid/handcrafted-reference",
+      "revision_id": "handcrafted-placeholder"
     }
   ]
 }

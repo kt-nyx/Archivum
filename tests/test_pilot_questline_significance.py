@@ -16,7 +16,7 @@ ZONE_ID = "zone-western-plaguelands"
 def test_inclusion_is_driven_by_registry_arc_membership() -> None:
     registry = load_registry(ZONE_ID)
     assert registry is not None
-    assert int(registry["pipeline_gap_analysis"]["expected_included_card_count"]) == 3
+    assert int(registry["pipeline_gap_analysis"]["expected_included_card_count"]) == 4
 
     roster = json.loads(
         (FIXTURE_DIR / "western_plaguelands_roster_v3.json").read_text(encoding="utf-8")
@@ -65,5 +65,7 @@ def test_inclusion_is_driven_by_registry_arc_membership() -> None:
     }
     assert "ql-andorhal-alliance" in included_arcs
     assert "ql-andorhal-horde" in included_arcs
+    # Gahrron's Withering (Part 6) is now an included arc and binds.
+    assert "ql-gahrrons-withering" in included_arcs
     # Mender's Stead is no longer an included arc; nothing binds to it.
     assert "ql-menders-stead-healing" not in included_arcs

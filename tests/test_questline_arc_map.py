@@ -29,7 +29,7 @@ def _load_wpl() -> tuple[list[dict], list[dict]]:
     return roster, records
 
 
-def test_wpl_registry_maps_three_ql_card_ids() -> None:
+def test_wpl_registry_maps_four_ql_card_ids() -> None:
     roster, records = _load_wpl()
     rows, summaries, _ = cluster_zone_questlines(
         zone_id=ZONE_ID, roster_rows=roster, quest_records=records, zone_name="Western Plaguelands"
@@ -50,13 +50,14 @@ def test_wpl_registry_maps_three_ql_card_ids() -> None:
     )
     card_ids = {row["card_id"] for row in metadata_rows}
     # Clusters bind to registry arcs by quest membership (not keyword tables). The fixture is
-    # distilled from the live run (`scripts/distill_clustering_fixture.py`), so all three
+    # distilled from the live run (`scripts/distill_clustering_fixture.py`), so all four
     # registry arcs carry real node-ids and bind — matching the oracle's
-    # expected_included_card_count of 3.
+    # expected_included_card_count of 4.
     assert card_ids == {
         "ql-andorhal-alliance",
         "ql-andorhal-horde",
         "ql-hearthglen-tirion-legacy",
+        "ql-gahrrons-withering",
     }
     # Mender's Stead is no longer an included arc; nothing maps to it.
     assert "ql-menders-stead-healing" not in card_ids

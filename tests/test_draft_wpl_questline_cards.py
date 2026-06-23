@@ -119,14 +119,15 @@ def test_build_zone_page_wpl_emits_registry_ql_cards_without_continued(
         included_cluster_ids=ranking["included_cluster_ids"],
     )
     cards = draft["major_questlines"]
-    # Membership-based binding on the live-distilled fixture emits all three registry arcs
-    # (Andorhal Alliance + Horde + Hearthglen), matching the oracle's three included cards.
-    # No raw cluster-* ids and no "-continued" overflow cards.
+    # Membership-based binding on the live-distilled fixture emits all four registry arcs
+    # (Andorhal Alliance + Horde + Hearthglen + Gahrron's Withering), matching the oracle's
+    # four included cards. No raw cluster-* ids and no "-continued" overflow cards.
     card_ids = {card["id"] for card in cards}
     assert card_ids == {
         "ql-andorhal-alliance",
         "ql-andorhal-horde",
         "ql-hearthglen-tirion-legacy",
+        "ql-gahrrons-withering",
     }
     assert all(str(card["id"]).startswith("ql-") for card in cards)
     assert not any(str(card["id"]).endswith("-continued") for card in cards)
