@@ -14,6 +14,7 @@ from pipeline.common.discovery_vocab import (
     faction_title_tokens,
     non_location_title_tokens,
 )
+from pipeline.common.draft_vocab import era_section_role_tokens
 from pipeline.common.io import read_json, write_json
 from pipeline.common.retail import is_classic_categorized
 from pipeline.common.run_context import RunContext
@@ -115,6 +116,13 @@ def _section_role(raw_role: str) -> str:
     for role, patterns in _SECTION_ROLE_PATTERNS.items():
         if any(pattern in lowered for pattern in patterns):
             return role
+    # Expansion-/era-named timeline sections ("Cataclysm", "Battle for Azeroth",
+    # "Legion", "Mists of Pandaria") are in-universe history even though their
+    # heading carries no "history"/"lore" token. Reuse the externalized era vocab
+    # (WS-C D-6) rather than a new inline keyword list so the timeline prose keeps
+    # its real history role instead of collapsing to "other".
+    if any(token in lowered for token in era_section_role_tokens()):
+        return "history"
     return "other"
 
 

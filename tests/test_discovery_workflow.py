@@ -26,6 +26,18 @@ def test_effective_section_slug_inherits_history_for_unrecognized_subsection() -
     assert _section_role(_effective_section_slug("the_scourging_edit", "history")) == "history"
 
 
+def test_section_role_recognizes_era_headings_as_history() -> None:
+    # Expansion-/era-named timeline sections are in-universe history even without a
+    # "history"/"lore" token, so their prose keeps a real role instead of "other" (WS-1).
+    assert _section_role("cataclysm_edit") == "history"
+    assert _section_role("battle_for_azeroth") == "history"
+    assert _section_role("legion") == "history"
+    assert _section_role("mists_of_pandaria_edit") == "history"
+    # Non-era unrecognized headings still fall through to "other".
+    assert _section_role("rewards_edit") == "other"
+    assert _section_role("external_links") == "other"
+
+
 def test_effective_section_slug_keeps_recognized_leaf_and_rpg_parent() -> None:
     # A leaf that classifies on its own is never overridden by its parent.
     assert _effective_section_slug("notable_characters", "history") == "notable_characters"
