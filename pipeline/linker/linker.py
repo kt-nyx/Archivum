@@ -527,6 +527,16 @@ def run_glossary_linker(
         selected_term_sections: dict[str, tuple[str, str]] = {}
         section_term_links: list[tuple[str, str]] = []
         seen_section_term: set[tuple[str, str]] = set()
+        # The link-density budget counts *distinct glossary terms*, not per-section link
+        # instances — otherwise a few terms that recur across many sections (Andorhal,
+        # Argent Crusade…) consume the whole budget and starve every other matched term,
+        # collapsing the glossary index. Terms already present from the seed glossary count
+        # as linked so they are never re-spent.
+        seen_term_ids: set[str] = set(output)
+        # Every section a term appears in (independent of the link budget) so the glossary
+        # provenance pointer lookup can fall back across sections — a term linked once must
+        # still find a section that carries a provenance pointer.
+        term_section_coverage: dict[str, list[str]] = {}
 
         def _process_candidate_group(
             group_key: tuple[str, str],
@@ -571,11 +581,18 @@ def run_glossary_linker(
                 )
                 return
             if best_confidence >= AUTO_LINK_MIN:
+                coverage = term_section_coverage.setdefault(best_term_id, [])
+                if section_name not in coverage:
+                    coverage.append(section_name)
                 section_key = (section_name, best_term_id)
-                if section_key in seen_section_term:
+                if section_key in seen_section_term or best_term_id in seen_term_ids:
+                    # Already linked this term (here or in an earlier section): record the
+                    # section for coverage but don't spend another unit of link budget.
+                    seen_section_term.add(section_key)
                     return
                 if added_links < max_total_links:
                     seen_section_term.add(section_key)
+                    seen_term_ids.add(best_term_id)
                     section_term_links.append(section_key)
                     added_links += 1
                     selected_term_sections[best_term_id] = (section_name, section_text)
@@ -650,14 +667,13 @@ def run_glossary_linker(
                 glossary_map = provenance.get("glossary")
                 if not isinstance(glossary_map, dict):
                     glossary_map = {}
-                used_glossary_pointer_keys: set[tuple[str, str]] = set()
                 for term_id in output:
                     section_candidates: list[str] = []
                     primary_section, _section_text = selected_term_sections.get(term_id, ("", ""))
                     if primary_section:
                         section_candidates.append(primary_section)
-                    for section_name, linked_term_id in section_term_links:
-                        if linked_term_id == term_id and section_name not in section_candidates:
+                    for section_name in term_section_coverage.get(term_id, []):
+                        if section_name not in section_candidates:
                             section_candidates.append(section_name)
                     pointer: dict[str, str] | None = None
                     for section_name in section_candidates:
@@ -666,10 +682,9 @@ def run_glossary_linker(
                             break
                     if pointer is None:
                         continue
-                    pointer_key = (pointer["source_id"], pointer["locator"])
-                    if pointer_key in used_glossary_pointer_keys:
-                        continue
-                    used_glossary_pointer_keys.add(pointer_key)
+                    # Multiple glossary terms legitimately share a citing paragraph, so the
+                    # term's provenance pointer is NOT deduped by (source_id, locator) — doing
+                    # so collapsed the glossary to one term per section (the breadth bug).
                     rows = glossary_map.get(term_id)
                     if not isinstance(rows, list) or not rows:
                         glossary_map[term_id] = [pointer]

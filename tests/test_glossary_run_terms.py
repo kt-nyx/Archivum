@@ -175,6 +175,61 @@ def test_build_run_terms_derives_terms_from_ingest_snapshots(tmp_path: Path) -> 
     assert "alive" not in thel["aliases"]
 
 
+def test_build_run_terms_harvests_seed_page_lore_links(tmp_path: Path) -> None:
+    # RC-5: the seed page's outbound lore links become glossary candidates, so the
+    # lexicon (Scourge, Lordaeron, Kel'Thuzad) is not limited to selected entities.
+    context = ensure_run_context("run-test-glossary-seed-links", artifacts_root=tmp_path / "runs")
+    _write_snapshots(
+        context,
+        [
+            {
+                "entity_id": "zone-wpl",
+                "entity_type": "zone",
+                "name": "Western Plaguelands",
+                "url": "https://warcraft.wiki.gg/wiki/Western_Plaguelands",
+                "structured_links": [
+                    {"href": "/wiki/Scourge", "label": "Scourge", "section_role": "lead"},
+                    {"href": "/wiki/Lordaeron", "label": "Lordaeron", "section_role": "history"},
+                    {
+                        "href": "/wiki/Kel%27Thuzad",
+                        "label": "Kel'Thuzad",
+                        "section_role": "history",
+                    },
+                    # Namespace + non-retail + RPG links are skipped.
+                    {"href": "/wiki/File:Map.jpg", "label": "File:Map.jpg", "section_role": "lead"},
+                    {
+                        "href": "/wiki/Andorhal_(Classic)",
+                        "label": "Andorhal (Classic)",
+                        "section_role": "history",
+                    },
+                    {
+                        "href": "/wiki/Grand_Tour",
+                        "label": "Grand Tour",
+                        "section_role": "in_the_rpg",
+                    },
+                ],
+            }
+        ],
+    )
+    output_path = build_run_terms(context)
+    rows = [
+        json.loads(line)
+        for line in output_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    term_ids = {row["term_id"] for row in rows}
+    assert "term-scourge" in term_ids
+    assert "term-lordaeron" in term_ids
+    # slugify folds the apostrophe to a hyphen (pipeline-wide convention).
+    assert "term-kel-thuzad" in term_ids
+    # Namespace, non-retail, and RPG-section links must not become terms.
+    assert not any("file" in t for t in term_ids)
+    assert "term-andorhal-classic" not in term_ids
+    assert "term-grand-tour" not in term_ids
+    lordaeron = next(row for row in rows if row["term_id"] == "term-lordaeron")
+    assert lordaeron["wiki_url"] == "https://warcraft.wiki.gg/wiki/Lordaeron"
+
+
 def test_build_run_terms_classifies_unknown_type_from_categories(tmp_path: Path) -> None:
     context = ensure_run_context(
         "run-test-glossary-category-signal", artifacts_root=tmp_path / "runs"

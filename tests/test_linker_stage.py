@@ -1184,3 +1184,83 @@ def test_linker_scans_major_faction_card_text(tmp_path: Path) -> None:
     run_glossary_linker(context, [draft_path], max_entity_concurrency=1)
     updated = json.loads(draft_path.read_text(encoding="utf-8"))
     assert any(row["term_id"] == "term-argent-dawn" for row in updated["glossary_refs"])
+
+
+def test_linker_links_multiple_terms_sharing_one_section(tmp_path: Path) -> None:
+    # WS-5b: several glossary terms mentioned in the same paragraph must all link — the
+    # link budget counts distinct terms (not per-section instances) and the provenance
+    # pointer is no longer deduped by (source_id, locator), so terms sharing a citing
+    # section are not collapsed to one.
+    context = ensure_run_context("run-test-linker-shared-section", artifacts_root=tmp_path / "runs")
+    glossary_dir = context.data_dir / "glossary"
+    glossary_dir.mkdir(parents=True, exist_ok=True)
+    (glossary_dir / "run_terms.jsonl").write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "term_id": f"term-{slug}",
+                    "label": label,
+                    "wiki_url": f"https://warcraft.wiki.gg/wiki/{label.replace(' ', '_')}",
+                    "category": "concept",
+                    "aliases": [label.lower()],
+                }
+            )
+            for slug, label in [
+                ("scourge", "Scourge"),
+                ("lordaeron", "Lordaeron"),
+                ("kel-thuzad", "Kel'Thuzad"),
+                ("plague-of-undeath", "Plague of Undeath"),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    draft_dir = context.data_dir / "drafts" / "zone_page"
+    draft_dir.mkdir(parents=True, exist_ok=True)
+    draft_path = draft_dir / "zone-example.json"
+    # Padding so the 4%-of-words link budget (int(words*0.04)) comfortably exceeds the
+    # four terms — the test exercises shared-section linking, not the density cap.
+    filler = " ".join(["history"] * 200)
+    draft_path.write_text(
+        json.dumps(
+            {
+                "id": "zone-example",
+                "history_sections": [
+                    {
+                        "heading": "Fall",
+                        "body": (
+                            "The Scourge unleashed the Plague of Undeath across Lordaeron at the "
+                            "command of Kel'Thuzad, and the kingdom fell into ruin. " + filler
+                        ),
+                        "source_refs": [
+                            {
+                                "source_id": "src-zone",
+                                "locator": "section:history paragraph:1",
+                                "revision_id": "mw:1",
+                                "excerpt_hash": "sha1:hist11111111111",
+                            }
+                        ],
+                    }
+                ],
+                "glossary_refs": [],
+                "provenance": {
+                    "history": [
+                        {
+                            "source_id": "src-zone",
+                            "locator": "section:history paragraph:1",
+                            "revision_id": "mw:1",
+                            "excerpt_hash": "sha1:hist11111111111",
+                        }
+                    ],
+                    "glossary": {},
+                },
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    run_glossary_linker(context, [draft_path], max_entity_concurrency=1)
+    updated = json.loads(draft_path.read_text(encoding="utf-8"))
+    linked = {row["term_id"] for row in updated["glossary_refs"]}
+    # All four terms share the single history paragraph and must all be linked.
+    assert {"term-scourge", "term-lordaeron", "term-kel-thuzad", "term-plague-of-undeath"} <= linked

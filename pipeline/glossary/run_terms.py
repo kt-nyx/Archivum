@@ -22,10 +22,30 @@ from pathlib import Path
 from typing import Any
 
 from pipeline.common.io import read_json
+from pipeline.common.retail import is_non_retail_title
 from pipeline.common.run_context import RunContext
 from pipeline.common.text_ids import slugify
 
 WIKI_BASE = "https://warcraft.wiki.gg/wiki"
+
+# Snapshot entity types whose own page is a seed (zone/instance overview). Their
+# outbound lore links are the lexicon the page actually references.
+_SEED_ENTITY_TYPES: frozenset[str] = frozenset({"zone", "instance"})
+
+# MediaWiki namespace prefixes that are never glossary terms.
+_LINK_NAMESPACE_PREFIXES: tuple[str, ...] = (
+    "file:",
+    "category:",
+    "template:",
+    "help:",
+    "special:",
+    "module:",
+    "talk:",
+    "user:",
+    "portal:",
+    "mediawiki:",
+    "wikipedia:",
+)
 
 _ENTITY_CATEGORY: dict[str, str] = {
     "zone": "place",
@@ -367,6 +387,61 @@ def _collect_from_snapshots(
         )
 
 
+def _is_harvestable_link(href: str, label: str) -> bool:
+    """A seed page's outbound link is a glossary candidate when it is a real article
+    link (not a File:/Category:/etc. namespace), carries a label, and is retail
+    (no ``(Classic)``/expansion parenthetical)."""
+    if not href or not label or len(label.strip()) < 2:
+        return False
+    title = href.split("/wiki/", 1)[-1].split("#", 1)[0]
+    if not title:
+        return False
+    if label.strip().lower().startswith(_LINK_NAMESPACE_PREFIXES):
+        return False
+    if is_non_retail_title(label) or is_non_retail_title(title.replace("_", " ")):
+        return False
+    return True
+
+
+def _collect_from_seed_links(
+    snapshots: list[dict[str, Any]],
+    acc: _TermAccumulator,
+) -> None:
+    """Harvest the lore lexicon from the seed pages' outbound wiki links (RC-5).
+
+    The zone/instance overview pages link to the lore proper-nouns that belong in the
+    glossary (Scourge, Lordaeron, Kel'Thuzad, Plague of Undeath, ...). Earlier passes
+    only emit terms for *entities the pipeline selected*, so this prose lexicon was
+    missing. We harvest the seed pages' ``structured_links`` (which carry section roles
+    and labels), skipping RPG (non-canon) sections, navbox/namespace links, and
+    non-retail titles. Terms are added as the generic ``concept`` category; the
+    accumulator upgrades any whose label also resolves to a typed entity elsewhere.
+    """
+    for snapshot in snapshots:
+        if str(snapshot.get("auxiliary_role", "")).strip():
+            continue
+        if str(snapshot.get("entity_type", "")).strip().lower() not in _SEED_ENTITY_TYPES:
+            continue
+        links = snapshot.get("structured_links")
+        if not isinstance(links, list):
+            continue
+        for link in links:
+            if not isinstance(link, dict):
+                continue
+            section_role = str(link.get("section_role", "")).lower()
+            parent_role = str(link.get("parent_section_role", "")).lower()
+            if section_role.startswith("in_the_rpg") or parent_role.startswith("in_the_rpg"):
+                continue
+            href = str(link.get("href", "")).strip()
+            label = str(link.get("label", "")).strip()
+            if not _is_harvestable_link(href, label):
+                continue
+            absolute = (
+                f"https://warcraft.wiki.gg{href}" if href.startswith("/wiki/") else href
+            )
+            acc.add(label=label, category="concept", wiki_url=absolute)
+
+
 def _collect_from_canonical_map(
     rows: list[dict[str, Any]],
     acc: _TermAccumulator,
@@ -406,6 +481,7 @@ def build_run_terms(context: RunContext) -> Path:
                 )
 
     _collect_from_snapshots(snapshots, acc)
+    _collect_from_seed_links(snapshots, acc)
 
     canonical_path = context.data_dir / "discovery" / "canonical_entity_map.jsonl"
     _collect_from_canonical_map(_load_jsonl(canonical_path), acc)
