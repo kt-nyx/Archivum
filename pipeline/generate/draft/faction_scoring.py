@@ -506,6 +506,31 @@ def rank_faction_candidates(
     )
 
 
+# The umbrella factions and the binding tag a sub-faction carries to mark itself as a member.
+# When a specific member is already elected (e.g. Forsaken — a Horde sub-faction that controls
+# Andorhal), the generic umbrella is redundant and is dropped so the card list names the concrete
+# actor instead of "Horde". The opposite side keeps its umbrella when no specific member is elected
+# (no Alliance sub-faction surfaces in WPL, so "Alliance" stays).
+_UMBRELLA_TAG_BY_ID: dict[str, str] = {"faction-horde": "horde", "faction-alliance": "alliance"}
+
+
+def _suppress_umbrella_factions(ranked: list[FactionCandidate]) -> list[FactionCandidate]:
+    elected_ids = {candidate.faction_id for candidate in ranked}
+    drop: set[str] = set()
+    for umbrella_id, tag in _UMBRELLA_TAG_BY_ID.items():
+        if umbrella_id not in elected_ids:
+            continue
+        for candidate in ranked:
+            if candidate.faction_id == umbrella_id:
+                continue
+            if tag in _bindings_for_faction_id(candidate.faction_id):
+                drop.add(umbrella_id)
+                break
+    if not drop:
+        return ranked
+    return [candidate for candidate in ranked if candidate.faction_id not in drop]
+
+
 def select_major_factions(
     candidates: list[FactionCandidate],
     *,
@@ -522,10 +547,8 @@ def select_major_factions(
     ]
     if not eligible:
         thin = [candidate for candidate in ranked if _candidate_is_finalize_eligible(candidate)]
-        return thin[:MAX_FACTION_CARDS]
-    if len(eligible) <= MIN_FACTION_CARDS:
-        return eligible[:MAX_FACTION_CARDS]
-    return eligible[:MAX_FACTION_CARDS]
+        return _suppress_umbrella_factions(thin)[:MAX_FACTION_CARDS]
+    return _suppress_umbrella_factions(eligible)[:MAX_FACTION_CARDS]
 
 
 def candidates_for_finalize(
@@ -553,7 +576,7 @@ def candidates_for_finalize(
         ]
     else:
         queue = [candidate for candidate in ranked if _candidate_is_finalize_eligible(candidate)]
-    return target_count, queue
+    return target_count, _suppress_umbrella_factions(queue)
 
 
 def finalize_evidence_pools(candidate: FactionCandidate) -> list[list[dict[str, Any]]]:

@@ -241,6 +241,55 @@ def test_alliance_included_with_quest_bindings() -> None:
     assert any(row.faction_id == "faction-alliance" for row in elected)
 
 
+def test_generic_horde_suppressed_when_forsaken_elected() -> None:
+    # Forsaken (a Horde sub-faction with strong zone presence) makes the generic "Horde" umbrella
+    # redundant; the card list should name the concrete actor and drop "Horde", which also frees a
+    # slot for the Alliance.
+    zone_id = "zone-example"
+    pools = {
+        "faction_pool": [
+            _profile_item(
+                "faction-forsaken",
+                "The Forsaken control Andorhal in Example Zone after driving out the Alliance.",
+                section_role="history",
+            ),
+            _profile_item(
+                "faction-horde",
+                "The Horde maintains a presence across Example Zone.",
+                section_role="history",
+            ),
+            _profile_item(
+                "faction-alliance",
+                "Alliance forces hold territory and patrol Example Zone's main road.",
+                section_role="history",
+            ),
+        ],
+        "faction_role_pool": [],
+    }
+    v3_rows = [
+        {"zone_id": zone_id, "node_type": "quest", "faction_binding": "horde"},
+        {"zone_id": zone_id, "node_type": "quest", "faction_binding": "horde"},
+        {"zone_id": zone_id, "node_type": "quest", "faction_binding": "alliance"},
+        {"zone_id": zone_id, "node_type": "quest", "faction_binding": "alliance"},
+    ]
+    targets = [
+        _target("faction-forsaken", "Forsaken"),
+        _target("faction-horde", "Horde"),
+        _target("faction-alliance", "Alliance"),
+    ]
+    candidates = collect_faction_candidates(
+        zone_id=zone_id,
+        evidence_rows=[],
+        pools=pools,
+        faction_profile_targets=targets,
+        v3_rows=v3_rows,
+    )
+    elected_ids = {row.faction_id for row in select_major_factions(candidates, zone_name="Example Zone")}
+    assert "faction-forsaken" in elected_ids
+    assert "faction-alliance" in elected_ids
+    assert "faction-horde" not in elected_ids
+
+
 def test_select_major_factions_ranks_by_score() -> None:
     zone_id = "zone-example"
     pools = {
