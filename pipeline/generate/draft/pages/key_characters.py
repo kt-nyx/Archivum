@@ -145,9 +145,13 @@ def build_instance_key_character_selection(
     if len(floor) > INSTANCE_MAX_KEY_CHARACTERS:
         floor = floor[:INSTANCE_MAX_KEY_CHARACTERS]
 
+    # When the page yields a structural boss roster (adventure guide / dungeon journal / faculty /
+    # boss table), that roster *is* the cast: don't pad it with the LLM, which otherwise pulls in
+    # denizen trash (random skeletons) and narrative-only figures the gold cast excludes. The LLM
+    # discovers the cast only for instances whose page exposes no structural roster.
     llm_names: list[str] = []
     remaining = INSTANCE_MAX_KEY_CHARACTERS - len(floor)
-    if remaining > 0:
+    if not floor and remaining > 0:
         prompt_pool = cap_pool_for_llm_prompt(
             pool,
             must_include_names=floor,

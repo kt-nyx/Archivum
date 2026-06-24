@@ -189,7 +189,8 @@ def test_faculty_and_denizens_section_roles_match() -> None:
     from pipeline.discovery.instance_bosses import is_boss_section_role
 
     assert "scholomance_faculty" not in _BOSS_SECTION_EXACT
-    assert not is_high_confidence_boss_section("scholomance_faculty")
+    # The faculty roster is an authoritative boss list (school-themed dungeon journal).
+    assert is_high_confidence_boss_section("scholomance_faculty")
     assert is_boss_section_role("scholomance_faculty")
     assert is_boss_section_role("denizens")
     assert is_boss_section_role("dungeon_journal")
@@ -438,8 +439,13 @@ def test_deterministic_pool_order_tiebreaks_on_section_weight() -> None:
 def test_high_confidence_boss_section_tokens() -> None:
     assert is_high_confidence_boss_section("dungeon_journal")
     assert is_high_confidence_boss_section("encounters")
+    # Authoritative boss-roster sections: faculty + the per-dungeon boss table.
+    assert is_high_confidence_boss_section("faculty")
+    assert is_high_confidence_boss_section("scholomance_faculty")
+    assert is_high_confidence_boss_section("dungeon_scholomance")
+    # Trash/denizen rosters are never the boss floor (a random skeleton is not a boss).
     assert not is_high_confidence_boss_section("denizens")
-    assert not is_high_confidence_boss_section("faculty")
+    assert not is_high_confidence_boss_section("dungeon_denizens")
 
 
 def test_collect_character_pool_from_faculty_html() -> None:
@@ -515,11 +521,36 @@ def test_must_include_from_boss_class_boss_pool() -> None:
     assert must_include == ["Darkmaster Gandling"]
 
 
-def test_must_include_excludes_faculty_only_boss_pool() -> None:
+def test_must_include_floors_faculty_boss_pool() -> None:
+    # The faculty roster is authoritative, so a faculty-listed boss floors deterministically
+    # (this is what makes the full Scholomance boss roster the cast without LLM padding).
     boss_pool = [
         {
             "snippet": "Faculty wing: /wiki/Darkmaster_Gandling",
             "section_role": "scholomance_faculty",
+            "source_id": "src-instance",
+        }
+    ]
+    pool = collect_character_pool(
+        section_blocks=[],
+        instance_name="Scholomance",
+        boss_pool_items=boss_pool,
+    )
+    pool = prefilter_character_pool(pool, instance_name="Scholomance")
+    must_include = must_include_key_character_names(
+        boss_pool_items=boss_pool,
+        pool=pool,
+        instance_name="Scholomance",
+    )
+    assert must_include == ["Darkmaster Gandling"]
+
+
+def test_must_include_excludes_denizen_only_boss_pool() -> None:
+    # A name appearing only in the denizens trash roster (a random skeleton) is never floored.
+    boss_pool = [
+        {
+            "snippet": "Roaming the halls: /wiki/Grandmaster_Architect_Holmberg",
+            "section_role": "dungeon_denizens",
             "source_id": "src-instance",
         }
     ]

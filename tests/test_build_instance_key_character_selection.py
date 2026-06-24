@@ -36,7 +36,9 @@ def test_must_include_appears_when_llm_returns_empty(monkeypatch) -> None:
     assert selection.selection_reasons["Must Include Boss"] == "must_include_floor"
 
 
-def test_cast_order_follows_merge_not_significance(monkeypatch) -> None:
+def test_structural_roster_is_not_padded_with_denizen_llm_picks(monkeypatch) -> None:
+    # When the page yields a structural boss roster, that roster IS the cast: the LLM does not
+    # pad it with denizen trash / narrative-only figures the gold cast excludes (e.g. Holmberg).
     monkeypatch.delenv("WOW_LORE_WIKI_FIRST_NO_LLM", raising=False)
     monkeypatch.setattr(
         workers, "load_ai_settings", lambda: type("S", (), {"openai_ready": True})()
@@ -80,10 +82,9 @@ def test_cast_order_follows_merge_not_significance(monkeypatch) -> None:
         ],
         snapshots=[],
     )
-    assert selection.cast[0].name == "Floor Boss"
-    assert selection.cast[1].name == "Story Figure"
+    assert [row.name for row in selection.cast] == ["Floor Boss"]
     assert selection.selection_reasons["Floor Boss"] == "must_include_floor"
-    assert selection.selection_reasons["Story Figure"] == "llm_selected"
+    assert "Story Figure" not in selection.selection_reasons
 
 
 def test_finalize_emits_selection_reason_codes(monkeypatch) -> None:

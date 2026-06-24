@@ -87,10 +87,31 @@ def _normalize_role(section_role: str) -> str:
     return re.sub(r"\s+", " ", section_role.strip()).lower().replace(" ", "_")
 
 
+# Trash/mob roster sections. A name appearing only here (e.g. a random skeleton like
+# "Grandmaster Architect Holmberg") is a denizen, not a boss, so it must never reach the floor.
+_DENIZEN_SECTION_TOKENS = ("denizen", "inhabitant")
+
+
+def _is_denizen_section(lowered_role: str) -> bool:
+    return any(token in lowered_role for token in _DENIZEN_SECTION_TOKENS)
+
+
 def is_high_confidence_boss_section(section_role: str) -> bool:
-    """True when boss_pool evidence should contribute to the must-include floor."""
+    """True for an authoritative boss-roster section that seeds the must-include floor.
+
+    Covers the dungeon journal / adventure guide / encounter lists, the school "faculty" roster,
+    and the per-dungeon boss table (``dungeon_<name>``) — but never the denizens/inhabitants trash
+    list. This is the structural boss roster; a name here is a boss, a name only in denizens is not.
+    """
     lowered = _normalize_role(section_role)
-    return any(token in lowered for token in HIGH_CONFIDENCE_BOSS_SECTION_TOKENS)
+    if _is_denizen_section(lowered):
+        return False
+    if any(token in lowered for token in HIGH_CONFIDENCE_BOSS_SECTION_TOKENS):
+        return True
+    if "faculty" in lowered:
+        return True
+    # Per-dungeon boss table, e.g. "dungeon_scholomance" (denizens already excluded above).
+    return lowered.startswith("dungeon_")
 
 
 def is_boss_section_role(section_role: str) -> bool:
