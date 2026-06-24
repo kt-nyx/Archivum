@@ -455,9 +455,11 @@ def _build_location_card_body(
     zone_name: str,
     reason_codes: list[str],
 ) -> dict[str, Any]:
-    # Real place type from the location's own name + evidence (not the routing classification enum).
+    # Real place type from the location's own categories + name + evidence (not the routing enum).
     evidence_text = _location_evidence_text(pool)
-    location_type = location_type_from_signals(candidate.name, evidence_text)
+    location_type = location_type_from_signals(
+        candidate.name, evidence_text, candidate.categories
+    )
     # Grounded one-sentence significance; never the routing enum (schema requires non-empty).
     significance, _ = synthesize_location_significance(
         pool,

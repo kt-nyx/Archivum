@@ -833,6 +833,23 @@ def run_traverse_seed(context: RunContext) -> dict[str, Path]:
                 _increment(zone_id, "faction_profile")
 
     if isinstance(location_targets, list):
+        # The per-zone traversal budget (_MAX_LOCATION) is small, so order matters: visit the
+        # lore-significant marquee landmarks (Hearthglen, Uther's Tomb, ...) before alphabetically
+        # earlier farms/outposts, otherwise the budget is spent on trivia and the landmarks never get
+        # a page snapshot (no categories to type them, no evidence pool to build their card).
+        _location_role_rank = {"history": 3, "notable_characters": 3, "maps_subregions": 2}
+
+        def _location_traverse_priority(target: dict[str, Any]) -> tuple[int, int, str]:
+            lore_first = 0 if bool(target.get("lore_significant")) else 1
+            role_rank = -_location_role_rank.get(
+                str(target.get("source_section_role", "")).strip(), 1
+            )
+            return (lore_first, role_rank, str(target.get("name", "")).lower())
+
+        location_targets = sorted(
+            (target for target in location_targets if isinstance(target, dict)),
+            key=_location_traverse_priority,
+        )
         seen_location: set[tuple[str, str]] = set()
         for target in location_targets:
             if not isinstance(target, dict):

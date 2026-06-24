@@ -709,6 +709,7 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
                         "name": title,
                         "source_link": link,
                         "source_section_role": inferred_role,
+                        "lore_significant": lore_significant,
                     }
                 )
 

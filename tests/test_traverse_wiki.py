@@ -341,6 +341,79 @@ def test_traverse_skips_defer_location_targets(
     assert not any("Defer_Hold" in url for url in fetched_urls)
 
 
+def test_traverse_prioritizes_lore_significant_locations_within_budget(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # With a tight budget, the lore-significant marquee landmark must be fetched even though it sorts
+    # alphabetically after a trivial farm — otherwise the landmark never gets a page snapshot.
+    context = ensure_run_context(
+        "run-test-traverse-location-priority", artifacts_root=tmp_path / "runs"
+    )
+    ingest_dir = context.stage_dir("ingest")
+    _write_ingest_fixtures(context, ingest_dir)
+    discovery_dir = context.data_dir / "discovery"
+    discovery_dir.mkdir(parents=True, exist_ok=True)
+    (discovery_dir / "location_profile_targets.json").write_text(
+        json.dumps(
+            [
+                {
+                    "zone_id": ZONE_ID,
+                    "location_id": "location-aaa-farm",
+                    "name": "Aaa Farm",
+                    "source_link": "/wiki/Aaa_Farm",
+                    "source_section_role": "maps_subregions",
+                    "lore_significant": False,
+                },
+                {
+                    "zone_id": ZONE_ID,
+                    "location_id": "location-zzz-tomb",
+                    "name": "Zzz Tomb",
+                    "source_link": "/wiki/Zzz_Tomb",
+                    "source_section_role": "history",
+                    "lore_significant": True,
+                },
+            ],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    decisions_dir = context.data_dir / "decisions"
+    decisions_dir.mkdir(parents=True, exist_ok=True)
+    (decisions_dir / "location_significance_decisions.json").write_text(
+        json.dumps(
+            [
+                {"subject_id": "location-aaa-farm", "final_decision": "include"},
+                {"subject_id": "location-zzz-tomb", "final_decision": "include"},
+            ],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("pipeline.ingest.traverse_wiki._MAX_LOCATION", 1)
+
+    fetched_urls: list[str] = []
+
+    def fake_fetch(url: str, source_class: str, *, include_parsetree: bool = False):
+        fetched_urls.append(url)
+        return FetchedSource(
+            "Location profile body with enough narrative detail for enrichment.",
+            "mw:200",
+            "section:lead paragraph:1",
+            [{"section_role": "lead", "text": "Location profile body."}],
+            [],
+            [],
+            "",
+        )
+
+    monkeypatch.setattr("pipeline.ingest.traverse_wiki._fetch_url_text", fake_fetch)
+    monkeypatch.setattr("pipeline.ingest.traverse_wiki._throttle", lambda seconds: None)
+    run_traverse_seed(context)
+
+    assert any("Zzz_Tomb" in url for url in fetched_urls)
+    assert not any("Aaa_Farm" in url for url in fetched_urls)
+
+
 def test_traverse_fetches_linked_lore_page_not_instance_page_source(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

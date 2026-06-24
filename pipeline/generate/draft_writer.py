@@ -200,6 +200,17 @@ def run_draft_writer(
         if isinstance(snapshots_blob, list):
             source_snapshots = [row for row in snapshots_blob if isinstance(row, dict)]
 
+    # Carry each traversed location page's own MediaWiki categories onto its candidate row so the
+    # draft can type the card from the authoritative wiki signal (e.g. Andorhal -> "Destroyed
+    # settlements" -> ruins; Hearthglen -> "Towns" -> town) instead of fragile evidence-text words.
+    for snapshot in source_snapshots:
+        if str(snapshot.get("auxiliary_role", "")).strip() != "location_profile":
+            continue
+        location_id = str(snapshot.get("auxiliary_target_id", "")).strip()
+        categories = snapshot.get("categories") or []
+        if location_id and categories and location_id in location_candidate_map:
+            location_candidate_map[location_id]["categories"] = list(categories)
+
     def _write(path: Path) -> tuple[Path | None, dict[str, object] | None]:
         fact_pack = json.loads(path.read_text(encoding="utf-8"))
         entity_type = str(fact_pack.get("entity_type", ""))

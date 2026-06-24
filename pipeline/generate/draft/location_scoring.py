@@ -70,19 +70,59 @@ def _name_has_token(name: str, tokens: frozenset[str]) -> bool:
     return bool(words & tokens)
 
 
-def location_type_from_signals(name: str, evidence_text: str = "") -> str:
-    """Derive a published LocationType from the place's own name and evidence, not the routing enum.
+# MediaWiki category substrings → published LocationType. The page's own categories are the most
+# authoritative type signal (INGEST-CAT); checked in priority order so an explicit destruction
+# category ("Destroyed settlements") wins over a co-tagged settlement category ("Cities").
+_CATEGORY_TYPE_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (LocationType.RUINS.value, ("destroyed settlement", "ruins", "razed")),
+    (LocationType.LANDMARK.value, ("tomb", "grave", "monument", "memorial", "shrine")),
+    (LocationType.CITY.value, ("cities", "capital")),
+    (LocationType.TOWN.value, ("towns", "villages")),
+    (LocationType.FORTRESS.value, ("keeps", "forts", "fortress", "citadel", "bastion")),
+    (LocationType.OUTPOST.value, ("camps", "farms", "outpost", "garrison")),
+    (LocationType.NATURAL_FEATURE.value, (
+        "islands", "lakes", "rivers", "mountains", "hills", "forests", "caves", "valley",
+    )),
+)
+# Category buckets that name a *current settlement*; trusted over contextual ruin words in the
+# surrounding prose (a town described next to plagued ruins is still a town).
+_CURRENT_SETTLEMENT_TYPES = frozenset({LocationType.CITY.value, LocationType.TOWN.value})
 
-    Priority: a destroyed/ruined place reads as ``ruins`` even when its name says "keep"; otherwise
-    the most specific name token wins (Tomb→landmark, town/village→town, camp/farm→outpost, natural
-    features→natural_feature). Falls back to ``major_location`` when nothing is distinctive.
+
+def _category_type(categories: list[str] | None) -> str:
+    lowered = " ".join(str(category).lower() for category in categories or [])
+    if not lowered:
+        return ""
+    for location_type, markers in _CATEGORY_TYPE_RULES:
+        if any(marker in lowered for marker in markers):
+            return location_type
+    return ""
+
+
+def location_type_from_signals(
+    name: str, evidence_text: str = "", categories: list[str] | None = None
+) -> str:
+    """Derive a published LocationType from the place's own categories, name, and evidence.
+
+    Priority: a Tomb-named place is a landmark even in ruins; then the page's own wiki categories
+    (authoritative — an explicit destruction category reads ``ruins``, a current-settlement category
+    is trusted over contextual ruin words); then self-referential ruination in the evidence overrides
+    a non-settlement category (a "keep" described as ruined is ruins); then name tokens and town-text;
+    finally ``major_location`` when nothing is distinctive.
     """
     # Strong name signals that ruination should not override (a Tomb is a landmark even in ruins).
     for location_type, tokens in _TYPE_NAME_TOKENS[:1]:
         if _name_has_token(name, tokens):
             return location_type
+    cat_type = _category_type(categories)
+    if cat_type == LocationType.RUINS.value:
+        return cat_type
+    if cat_type in _CURRENT_SETTLEMENT_TYPES:
+        return cat_type
     if evidence_text and _RUINS_TEXT_RE.search(evidence_text):
         return LocationType.RUINS.value
+    if cat_type:
+        return cat_type
     for location_type, tokens in _TYPE_NAME_TOKENS[1:]:
         if _name_has_token(name, tokens):
             return location_type
@@ -119,6 +159,9 @@ class LocationCandidate:
     # True when the place is named in the zone's history/lore narrative (a marquee landmark) rather
     # than only the maps/travel gazetteer. Set from discovery (workflow._zone_lore_body_text).
     lore_significant: bool = False
+    # The location page's own MediaWiki categories (authoritative type signal); empty when the page
+    # was not traversed/snapshotted. Populated from the snapshot map in draft_writer.
+    categories: list[str] = field(default_factory=list)
 
 
 def _normalize_role(section_role: str) -> str:
@@ -256,6 +299,11 @@ def collect_location_candidates(
                 classification=classification,
                 source_section_role=source_section_role,
                 lore_significant=bool(candidate_map_row.get("lore_significant", False)),
+                categories=[
+                    str(category)
+                    for category in (candidate_map_row.get("categories") or [])
+                    if str(category).strip()
+                ],
             )
         else:
             row = by_id[location_id]

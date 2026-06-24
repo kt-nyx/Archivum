@@ -40,6 +40,45 @@ def test_type_falls_back_to_major_location() -> None:
     assert location_type_from_signals("Mysterious Place", "an indistinct area") == "major_location"
 
 
+# --- category-first typing (authoritative wiki signal) --------------------------------------
+
+
+def test_category_destroyed_settlement_is_ruins_over_cities() -> None:
+    # Andorhal is co-tagged Cities + Destroyed settlements; the destruction category wins.
+    assert (
+        location_type_from_signals(
+            "Andorhal", "the granary of Lordaeron", ["Cities", "Destroyed settlements"]
+        )
+        == "ruins"
+    )
+
+
+def test_category_town_beats_contextual_ruin_words() -> None:
+    # Hearthglen is a current town; ruin words in the surrounding plague prose must not retype it.
+    assert (
+        location_type_from_signals(
+            "Hearthglen",
+            "the plagued ruined countryside around the reclaimed base",
+            ["Western Plaguelands subzones", "Towns"],
+        )
+        == "town"
+    )
+
+
+def test_ruined_evidence_overrides_non_settlement_category() -> None:
+    # Caer Darrow's category is "Keeps" but the keep is described as ruined -> ruins.
+    assert (
+        location_type_from_signals(
+            "Caer Darrow", "the ruined Barov keep on the lake", ["Keeps", "Islands"]
+        )
+        == "ruins"
+    )
+
+
+def test_category_village_is_town() -> None:
+    assert location_type_from_signals("Cinderhome", "", ["Villages"]) == "town"
+
+
 # --- significance synthesis (never the routing enum) ----------------------------------------
 
 
