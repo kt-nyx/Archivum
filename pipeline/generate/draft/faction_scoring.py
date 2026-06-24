@@ -585,18 +585,36 @@ def fallback_faction_summary(
         )
         return (1 if zone_hit else 0, word_count(snippet))
 
+    from pipeline.generate.draft.faction_lint import lint_faction_summary
+    from pipeline.generate.draft.prose_gate import prose_gate_rejects
+
     ranked = sorted(items, key=_zone_rank, reverse=True)
-    for item in ranked:
+
+    def _clean_summary(item: dict[str, Any]) -> str:
         snippet = str(item.get("snippet", "")).strip()
-        if has_currently_meta(snippet):
-            continue
-        # The (zone-hit, word_count) ranking above structurally *prefers* a navbox of zone
-        # place-names (the longest, most zone-dense snippet), so guard against list/navbox
-        # shape both before and after trimming rather than emitting it as prose.
-        if detect_list_shape(snippet):
-            continue
+        if has_currently_meta(snippet) or detect_list_shape(snippet):
+            return ""
         summary = trim_faction_summary(snippet, max_words)
-        if summary and not detect_list_shape(summary):
+        return summary if summary and not detect_list_shape(summary) else ""
+
+    # First pass: prefer a snippet whose summary actually clears BOTH the faction lint (zone anchor +
+    # role framing) and the deterministic prose gate — the same checks the card finalizer applies.
+    # The deterministic path must reliably yield a publishable card when the evidence supports one,
+    # rather than depending on the LLM summary passing: instance factions (Scourge, Cult of the
+    # Damned) otherwise drop to [] on an unlucky LLM phrasing.
+    for item in ranked:
+        summary = _clean_summary(item)
+        if (
+            summary
+            and not lint_faction_summary(summary, zone_name=zone_name, subregion_tokens=tokens)
+            and not prose_gate_rejects(summary)
+        ):
+            source_id = str(item.get("source_id", "")).strip()
+            return summary, [source_id] if source_id else []
+    # Second pass: any clean (non-list) snippet, even if it trips a soft lint.
+    for item in ranked:
+        summary = _clean_summary(item)
+        if summary:
             source_id = str(item.get("source_id", "")).strip()
             return summary, [source_id] if source_id else []
     return "", []

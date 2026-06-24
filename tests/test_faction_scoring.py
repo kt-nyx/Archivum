@@ -40,6 +40,31 @@ def test_fallback_faction_summary_returns_empty_when_only_navbox() -> None:
     assert sources == []
 
 
+def test_fallback_faction_summary_prefers_lint_and_gate_passing_snippet() -> None:
+    from pipeline.generate.draft.faction_lint import lint_faction_summary
+    from pipeline.generate.draft.prose_gate import prose_gate_rejects
+
+    # First (longest, zone-dense) snippet clears the lint but trips the prose gate; the fallback
+    # must skip it for a snippet that clears BOTH, so the deterministic path yields a card the
+    # finalizer accepts rather than dropping the faction to [].
+    gate_tripping = (
+        "On Azeroth, the abominations were created by Kel'Thuzad, and as such are mainly "
+        "found in the Scourge's and Forsaken ranks across the world at large."
+    )
+    clean = "In Scholomance the Scourge maintains the academy and guards its dark halls."
+    items = [
+        {"snippet": gate_tripping, "source_id": "src-gate"},
+        {"snippet": clean, "source_id": "src-clean"},
+    ]
+    summary, sources = fallback_faction_summary(
+        items, zone_name="Scholomance", subregion_tokens=["Caer Darrow"]
+    )
+    assert summary
+    assert not lint_faction_summary(summary, zone_name="Scholomance")
+    assert not prose_gate_rejects(summary)
+    assert sources == ["src-clean"]
+
+
 def _profile_item(
     faction_id: str,
     snippet: str,
