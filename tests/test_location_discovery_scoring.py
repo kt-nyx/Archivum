@@ -99,3 +99,26 @@ def test_real_landmarks_are_not_rejected() -> None:
             source_section_role="maps_subregions",
         )
         assert not reject, title
+
+
+def test_single_token_apostrophe_npc_rejected_outside_geography() -> None:
+    # Apostrophe-infix single-token names (Ner'zhul, Mal'Ganis) are characters, not places, when
+    # they surface outside a geography/maps section — caught by the name heuristic.
+    from pipeline.discovery.entity_typing import _is_likely_npc_name
+
+    for title in ("Ner'zhul", "Mal'Ganis", "Vol'jin"):
+        assert _is_likely_npc_name(title), title
+        reject, reasons = should_reject_location_title(
+            title, source_section_role="history", entity_type="location"
+        )
+        assert reject and "likely_npc" in reasons, title
+    # Possessive single tokens are not NPCs.
+    assert not _is_likely_npc_name("Dalson's")
+
+
+def test_possessive_geography_locations_not_treated_as_npc() -> None:
+    # A maps-section place with a possessive apostrophe must survive (gate protects geography).
+    reject, _ = should_reject_location_title(
+        "Dalson's Tears", source_section_role="maps_subregions", entity_type="location"
+    )
+    assert not reject

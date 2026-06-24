@@ -10,6 +10,7 @@ from typing import Literal
 from pipeline.common.discovery_vocab import (
     faction_as_location_denylist,
     location_meta_titles,
+    location_type_title_rules,
     meta_page_denylist,
     race_species_denylist,
 )
@@ -188,10 +189,22 @@ def should_reject_location_title(
     if (
         normalized_role not in _GEOGRAPHY_SOURCE_ROLES
         and source_section_role != "notable_characters"
+        and not _title_has_location_type_token(title)
         and _is_likely_npc_name(title)
     ):
         return True, ["likely_npc"]
     return False, []
+
+
+def _title_has_location_type_token(title: str) -> bool:
+    """True when a title carries a descriptive place token (tomb, crypt, keep, mill, ...).
+
+    Such a title is structurally a landmark/structure, so the 2-token NPC heuristic must not reject
+    it (e.g. "Uther's Tomb" surfacing in a history section)."""
+    tokens = set(re.findall(r"[a-z]+", title.lower()))
+    if not tokens:
+        return False
+    return any(tokens & type_tokens for _type, type_tokens in location_type_title_rules())
 
 
 def should_skip_registry_traversal(
@@ -238,6 +251,10 @@ def should_skip_registry_traversal(
 
 def _is_likely_npc_name(title: str) -> bool:
     parts = [part for part in re.split(r"\s+", title.strip()) if part]
+    # A single token with a mid-word apostrophe (not a possessive "'s") is almost always a
+    # character/NPC in WoW naming (Ner'zhul, Kel'Thuzad, Mal'Ganis), never a sub-location.
+    if len(parts) == 1:
+        return bool(re.search(r"[A-Za-z][''][A-Za-rt-z]", parts[0]))
     if len(parts) != 2:
         return False
     return all(part[:1].isupper() for part in parts if part)

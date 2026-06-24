@@ -12,6 +12,7 @@ from pipeline.common.discovery_vocab import (
     character_role_hints,
     event_title_tokens,
     faction_title_tokens,
+    location_type_title_rules,
     non_location_title_tokens,
 )
 from pipeline.common.draft_vocab import era_section_role_tokens
@@ -20,7 +21,7 @@ from pipeline.common.retail import is_classic_categorized
 from pipeline.common.run_context import RunContext
 from pipeline.common.text_ids import slugify
 from pipeline.contracts.models import DecisionArtifact
-from pipeline.discovery.entity_typing import should_reject_location_title
+from pipeline.discovery.entity_typing import normalize_title, should_reject_location_title
 from pipeline.discovery.location_discovery import (
     HARD_REJECT_MARKERS,
     build_location_decision_row,
@@ -208,18 +209,43 @@ def _infer_storyline_links(
     return inferred
 
 
+# When a link appears under several sections, prefer the most authoritative role for typing:
+# the cast roster settles characters; a maps/subregions entry settles a location. Generic chrome
+# ("lead", "getting there", "patch changes") must not win over these.
+_STRUCTURED_ROLE_PRECEDENCE = (
+    "notable_characters",
+    "maps_subregions",
+    "instances_or_dungeons",
+    "quests_or_storyline",
+    "history",
+)
+
+
+def _best_section_role(roles: list[str]) -> str:
+    ranked = sorted(
+        roles,
+        key=lambda role: _STRUCTURED_ROLE_PRECEDENCE.index(role)
+        if role in _STRUCTURED_ROLE_PRECEDENCE
+        else len(_STRUCTURED_ROLE_PRECEDENCE),
+    )
+    return ranked[0] if ranked else "other"
+
+
 def _link_section_role_from_structured(
     link: str,
     structured_links: list[dict[str, Any]],
 ) -> str | None:
     normalized = link.split("#", 1)[0]
+    matched_roles: list[str] = []
     for row in structured_links:
         if not isinstance(row, dict):
             continue
         href = str(row.get("href", "")).split("#", 1)[0]
         if href == normalized or href.endswith(normalized) or normalized.endswith(href):
-            return _section_role(str(row.get("section_role", "other")))
-    return None
+            matched_roles.append(_section_role(str(row.get("section_role", "other"))))
+    if not matched_roles:
+        return None
+    return _best_section_role(matched_roles)
 
 
 def _infer_link_section_role(
@@ -260,6 +286,13 @@ def _is_likely_character_title(title: str) -> bool:
     )
 
 
+def _title_has_location_type_token(title: str) -> bool:
+    tokens = set(re.findall(r"[a-z]+", title.lower()))
+    if not tokens:
+        return False
+    return any(tokens & type_tokens for _type, type_tokens in location_type_title_rules())
+
+
 def _infer_entity_type_for_link(title: str, inferred_section_role: str) -> str:
     # WS-C: the link's section role (WS-A structural signal) is the primary
     # classifier. The title-token fallbacks below only run when the section role
@@ -284,6 +317,10 @@ def _infer_entity_type_for_link(title: str, inferred_section_role: str) -> str:
         return "faction"
     if any(keyword in lowered for keyword in event_title_tokens()):
         return "event"
+    # A descriptive place token (tomb, crypt, keep, mill, ...) marks a landmark/structure even in an
+    # ambiguous section, so a possessive name like "Uther's Tomb" is not mistaken for a character.
+    if _title_has_location_type_token(title):
+        return "location"
     if _is_likely_character_title(title):
         return "character"
     return "location"
@@ -296,6 +333,91 @@ def _should_reject_location_candidate(title: str, entity_type: str) -> bool:
     if any(keyword in lowered for keyword in non_location_title_tokens()):
         return True
     return False
+
+
+# Section-role precedence used when collapsing location variants: a place's strongest role
+# (a maps/subregions or history mention) survives over a bare "other".
+_LOCATION_ROLE_PRECEDENCE = (
+    "maps_subregions",
+    "history",
+    "quests_or_storyline",
+    "instances_or_dungeons",
+    "other",
+)
+
+
+def _location_role_rank(role: str) -> int:
+    normalized = re.sub(r"\s+", " ", role.strip()).lower().replace(" ", "_")
+    try:
+        return _LOCATION_ROLE_PRECEDENCE.index(normalized)
+    except ValueError:
+        return len(_LOCATION_ROLE_PRECEDENCE)
+
+
+def _location_name_tokens(name: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", name.lower())
+
+
+def _is_contiguous_sublist(needle: list[str], haystack: list[str]) -> bool:
+    if not needle or len(needle) >= len(haystack):
+        return False
+    for start in range(len(haystack) - len(needle) + 1):
+        if haystack[start : start + len(needle)] == needle:
+            return True
+    return False
+
+
+def _collapse_location_variants(
+    candidates: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    """Collapse same-place variants into their canonical base candidate.
+
+    A candidate whose name is another candidate's name plus a descriptor — "Ruins of Andorhal"
+    over "Andorhal", "Hearthglen Hills/Pass/Woods" over "Hearthglen", "Sorrow Hill Crypt" over
+    "Sorrow Hill" — is a sub-feature/state of the base, not a distinct location. The base survives
+    and inherits the strongest section role across the group (so the marquee place isn't stranded
+    at ``other`` while its map-listed sub-features carried ``maps_subregions``). Returns the kept
+    candidates and a ``location_id -> best_role`` map for parallel target lists.
+
+    The base must be a *shorter* contiguous token-subsequence of the variant, so distinct
+    same-owner places ("Dalson's Tears" vs "Dalson's Farm", neither a subsequence of the other)
+    are left untouched.
+    """
+    by_zone: dict[str, list[dict[str, Any]]] = {}
+    for candidate in candidates:
+        by_zone.setdefault(str(candidate.get("zone_id", "")), []).append(candidate)
+
+    kept: list[dict[str, Any]] = []
+    best_role: dict[str, str] = {}
+    for _zone_id, group in by_zone.items():
+        # Bases first (fewest tokens) so a variant always meets its base already kept.
+        ordered = sorted(group, key=lambda row: len(_location_name_tokens(str(row.get("name", "")))))
+        kept_in_zone: list[dict[str, Any]] = []
+        for candidate in ordered:
+            tokens = _location_name_tokens(str(candidate.get("name", "")))
+            role = str(candidate.get("source_section_role", "other"))
+            base = next(
+                (
+                    existing
+                    for existing in kept_in_zone
+                    if _is_contiguous_sublist(
+                        _location_name_tokens(str(existing.get("name", ""))), tokens
+                    )
+                ),
+                None,
+            )
+            if base is not None:
+                base_id = str(base.get("location_id", ""))
+                if _location_role_rank(role) < _location_role_rank(
+                    str(base.get("source_section_role", "other"))
+                ):
+                    base["source_section_role"] = role
+                best_role[base_id] = str(base.get("source_section_role", "other"))
+                continue
+            kept_in_zone.append(candidate)
+            best_role[str(candidate.get("location_id", ""))] = role
+        kept.extend(kept_in_zone)
+    return kept, best_role
 
 
 def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> dict[str, Path]:
@@ -429,6 +551,16 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
 
         processing_links = sorted(set(clean_links))
 
+        # The zone page's "notable characters" links are the cast roster; a sub-location candidate
+        # whose title matches one is a misfiled NPC (e.g. Thassarian), not a place. Reject those.
+        notable_character_titles = {
+            normalize_title(str(link_row.get("label", "")))
+            for link_row in structured_links
+            if isinstance(link_row, dict)
+            and "character" in str(link_row.get("section_role", "")).lower()
+            and str(link_row.get("label", "")).strip()
+        }
+
         for link in processing_links:
             title = _normalized_wiki_title(link)
             lowered = title.lower()
@@ -496,6 +628,8 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
                     title, inferred_entity_type
                 ):
                     continue
+                if normalize_title(title) in notable_character_titles:
+                    continue
                 # WS-C: section-role-first typing now admits whole maps/subregions sections,
                 # which can include meta-placeholder pages ("Lore location", "Undisplayed
                 # location"). The downstream classification already hard-rejects these by name;
@@ -534,6 +668,21 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
         seen_candidates.add(key)
         deduped_candidates.append(candidate)
     location_candidates = deduped_candidates
+
+    # Collapse same-place variants (Ruins of Andorhal -> Andorhal; Hearthglen Hills -> Hearthglen)
+    # and drop the matching profile targets so traversal/enrich don't re-introduce them.
+    location_candidates, _variant_best_role = _collapse_location_variants(location_candidates)
+    kept_location_ids = {str(row.get("location_id", "")) for row in location_candidates}
+    collapsed_profile_targets: list[dict[str, Any]] = []
+    for target in location_profile_targets:
+        target_id = str(target.get("location_id", ""))
+        if target_id not in kept_location_ids:
+            continue
+        upgraded_role = _variant_best_role.get(target_id)
+        if upgraded_role:
+            target["source_section_role"] = upgraded_role
+        collapsed_profile_targets.append(target)
+    location_profile_targets = collapsed_profile_targets
 
     zone_seed_text_by_id = {
         str(snapshot.get("entity_id", "")).strip(): build_zone_seed_text(

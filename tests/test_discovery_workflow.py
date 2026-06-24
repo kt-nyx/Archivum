@@ -5,6 +5,7 @@ from pathlib import Path
 
 from pipeline.common.run_context import ensure_run_context
 from pipeline.discovery.workflow import (
+    _collapse_location_variants,
     _effective_section_slug,
     _section_role,
     run_discovery_workflow,
@@ -390,3 +391,194 @@ def test_discovery_workflow_hard_rejects_meta_pages_from_maps_section(tmp_path: 
     assert "Felstone Field" in names
     assert "Lore location" not in names
     assert "Undisplayed location" not in names
+
+
+def _loc(name: str, role: str = "maps_subregions", zone: str = "z") -> dict[str, object]:
+    slug = name.lower().replace("'", "").replace(" ", "-")
+    return {
+        "zone_id": zone,
+        "location_id": f"location-{slug}",
+        "name": name,
+        "source_section_role": role,
+    }
+
+
+def test_collapse_variants_folds_descriptor_names_into_base() -> None:
+    cands = [
+        _loc("Andorhal", role="history"),
+        _loc("Ruins of Andorhal"),
+        _loc("Hearthglen", role="other"),
+        _loc("Hearthglen Hills"),
+        _loc("Hearthglen Woods"),
+        _loc("Sorrow Hill"),
+        _loc("Sorrow Hill Crypt"),
+        _loc("Caer Darrow"),
+        _loc("Isle of Darrow"),
+    ]
+    kept, _roles = _collapse_location_variants(cands)
+    names = {c["name"] for c in kept}
+    assert "Andorhal" in names and "Ruins of Andorhal" not in names
+    assert "Hearthglen" in names and "Hearthglen Hills" not in names and "Hearthglen Woods" not in names
+    assert "Sorrow Hill" in names and "Sorrow Hill Crypt" not in names
+    # Distinct places (not a token-subsequence of one another) survive.
+    assert "Caer Darrow" in names and "Isle of Darrow" in names
+
+
+def test_collapse_variants_upgrades_base_role_to_strongest_in_group() -> None:
+    # Hearthglen is mentioned in "other" prose but its map-listed sub-features carry
+    # maps_subregions; the surviving base inherits the strongest role so it is not stranded.
+    cands = [_loc("Hearthglen", role="other"), _loc("Hearthglen Pass", role="maps_subregions")]
+    kept, roles = _collapse_location_variants(cands)
+    base = next(c for c in kept if c["name"] == "Hearthglen")
+    assert base["source_section_role"] == "maps_subregions"
+    assert roles[str(base["location_id"])] == "maps_subregions"
+
+
+def test_collapse_variants_keeps_same_owner_distinct_places() -> None:
+    # "Dalson's Tears" and "Dalson's Farm" share an owner but neither is a subsequence of the
+    # other, so the conservative rule leaves both.
+    cands = [_loc("Dalson's Tears"), _loc("Dalson's Farm")]
+    kept, _roles = _collapse_location_variants(cands)
+    assert {c["name"] for c in kept} == {"Dalson's Tears", "Dalson's Farm"}
+
+
+def test_discovery_workflow_extracts_marquee_landmarks_from_mixed_sections(tmp_path: Path) -> None:
+    # Caer Darrow is linked under "lead" first but also under maps/subregions; role resolution must
+    # prefer the location-bearing section so the 2-token NPC heuristic does not wrongly drop it.
+    # Uther's Tomb is linked only under "other" but its place token (tomb) types it as a location.
+    context = ensure_run_context("run-test-disc-marquee", artifacts_root=tmp_path / "runs")
+    ingest_dir = context.stage_dir("ingest")
+    snapshots_path = ingest_dir / "source_snapshots.json"
+    manifest_path = ingest_dir / "source_manifest.json"
+    snapshots_path.write_text(
+        json.dumps(
+            [
+                {
+                    "entity_id": ZONE_ID,
+                    "entity_type": "zone",
+                    "name": ZONE_NAME,
+                    "source_id": "src-zone",
+                    "url": f"https://warcraft.wiki.gg/wiki/{ZONE_WIKI}",
+                    "body": "Zone overview.",
+                    "section_blocks": [
+                        {"section_role": "Lead", "text": "Caer Darrow sits on the lake."},
+                        {"section_role": "Maps and subregions", "text": "Caer Darrow; Sorrow Hill."},
+                        {"section_role": "History", "text": "Uther's Tomb stands at Sorrow Hill."},
+                    ],
+                    "wiki_links": ["/wiki/Caer_Darrow", "/wiki/Uther%27s_Tomb", "/wiki/Sorrow_Hill"],
+                    "structured_links": [
+                        {"href": "/wiki/Caer_Darrow", "section_role": "Lead", "label": "Caer Darrow"},
+                        {
+                            "href": "/wiki/Caer_Darrow",
+                            "section_role": "Maps and subregions",
+                            "label": "Caer Darrow",
+                        },
+                        {
+                            "href": "/wiki/Uther%27s_Tomb",
+                            "section_role": "History",
+                            "label": "Uther's Tomb",
+                        },
+                        {
+                            "href": "/wiki/Sorrow_Hill",
+                            "section_role": "Maps and subregions",
+                            "label": "Sorrow Hill",
+                        },
+                    ],
+                }
+            ],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    manifest_path.write_text(
+        json.dumps(
+            [{"source_id": "src-zone", "source_class": "warcraft_wiki", "entity_type": "zone"}],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    outputs = run_discovery_workflow(context, manifest_path)
+    names = {
+        row["name"]
+        for row in json.loads(outputs["location_profile_targets"].read_text(encoding="utf-8"))
+    }
+    assert "Caer Darrow" in names
+    assert "Uther's Tomb" in names
+
+
+def test_discovery_workflow_excludes_cast_named_in_history_and_characters(tmp_path: Path) -> None:
+    # A character linked in BOTH the history prose and the notable-characters roster had its
+    # inferred section role resolve to "history", slipping past section-role typing into the
+    # location pool (Thassarian). The notable-characters roster is an authoritative cast denylist;
+    # such a name must never become a location. Ner'zhul (apostrophe-infix NPC in a non-geography
+    # section) is rejected by the name heuristic.
+    context = ensure_run_context("run-test-disc-cast", artifacts_root=tmp_path / "runs")
+    ingest_dir = context.stage_dir("ingest")
+    snapshots_path = ingest_dir / "source_snapshots.json"
+    manifest_path = ingest_dir / "source_manifest.json"
+    snapshots_path.write_text(
+        json.dumps(
+            [
+                {
+                    "entity_id": ZONE_ID,
+                    "entity_type": "zone",
+                    "name": ZONE_NAME,
+                    "source_id": "src-zone",
+                    "url": f"https://warcraft.wiki.gg/wiki/{ZONE_WIKI}",
+                    "body": "Zone overview.",
+                    "section_blocks": [
+                        {"section_role": "History", "text": "Thassarian and Ner'zhul fought here."},
+                        {"section_role": "Notable characters", "text": "Cast."},
+                        {"section_role": "Maps and subregions", "text": "Subregions."},
+                    ],
+                    "wiki_links": [
+                        "/wiki/Thassarian",
+                        "/wiki/Ner%27zhul",
+                        "/wiki/Caer_Darrow",
+                    ],
+                    "structured_links": [
+                        # Thassarian appears in history first, but is rostered as a character.
+                        {
+                            "href": "/wiki/Thassarian",
+                            "section_role": "History",
+                            "label": "Thassarian",
+                        },
+                        {
+                            "href": "/wiki/Thassarian",
+                            "section_role": "Notable characters",
+                            "label": "Thassarian",
+                        },
+                        {
+                            "href": "/wiki/Ner%27zhul",
+                            "section_role": "History",
+                            "label": "Ner'zhul",
+                        },
+                        {
+                            "href": "/wiki/Caer_Darrow",
+                            "section_role": "Maps and subregions",
+                            "label": "Caer Darrow",
+                        },
+                    ],
+                }
+            ],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    manifest_path.write_text(
+        json.dumps(
+            [{"source_id": "src-zone", "source_class": "warcraft_wiki", "entity_type": "zone"}],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    outputs = run_discovery_workflow(context, manifest_path)
+    names = {
+        row["name"]
+        for row in json.loads(outputs["location_profile_targets"].read_text(encoding="utf-8"))
+    }
+    assert "Caer Darrow" in names  # a real maps-section landmark survives
+    assert "Thassarian" not in names  # rostered cast member
+    assert "Ner'zhul" not in names  # apostrophe-infix NPC
