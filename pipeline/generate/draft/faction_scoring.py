@@ -6,7 +6,9 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from pipeline.common.discovery_vocab import faction_title_tokens, lore_faction_tokens
 from pipeline.common.draft_vocab import era_section_role_tokens
+from pipeline.common.text_ids import slugify
 from pipeline.generate.draft.faction_lint import trim_faction_summary
 from pipeline.generate.draft.prose_gate import detect_list_shape
 from pipeline.generate.draft.prose_lint import has_currently_meta, word_count
@@ -94,6 +96,165 @@ def _count_quest_bindings(faction_id: str, v3_rows: list[dict[str, Any]], zone_i
         if binding in bindings:
             count += 1
     return count
+
+
+# A Title-Case proper-noun phrase (allowing of/the/and connectors), used to harvest faction names
+# from free instance prose where no faction_pool evidence exists (WS-8).
+_FACTION_NAME_RE = re.compile(
+    r"\b([A-Z][A-Za-z']+(?:(?:\s+(?:of|the))*\s+[A-Z][A-Za-z']+){0,4})"
+)
+# Single-word phrases are too generic to be a faction unless they are an actual faction proper noun.
+# (Generic org words like "cult"/"order"/"dawn" only count inside a multi-word name.)
+_STANDALONE_FACTION_NAMES = frozenset(
+    {"scourge", "horde", "alliance", "forsaken", "legion"}
+)
+
+
+def _faction_token_set() -> tuple[frozenset[str], frozenset[str]]:
+    tokens = set(faction_title_tokens()) | set(lore_faction_tokens())
+    single = frozenset(token for token in tokens if " " not in token)
+    multi = frozenset(token for token in tokens if " " in token)
+    return single, multi
+
+
+def _phrase_is_faction(phrase: str, single: frozenset[str], multi: frozenset[str]) -> bool:
+    low = phrase.lower()
+    words = [word for word in re.findall(r"[a-z']+", low) if word]
+    if len(words) == 1:
+        return words[0] in _STANDALONE_FACTION_NAMES
+    if set(words) & single:
+        return True
+    return any(token in low for token in multi)
+
+
+_LEADING_QUALIFIER_RE = re.compile(r"^[A-Z][A-Za-z']+\s+of\s+(?:the\s+)?([A-Z][A-Za-z'].*)$")
+
+
+def _canonicalize_faction_phrase(
+    phrase: str, single: frozenset[str], multi: frozenset[str]
+) -> str:
+    """Trim a leading ``X of [the] <FACTION>`` qualifier (e.g. "Members of the Cult of the Damned"
+    -> "Cult of the Damned") so a faction reads under one canonical name. Only trims when the
+    remaining tail is itself a recognized faction, leaving names like "Scarlet Crusade" intact.
+    """
+    current = phrase
+    for _ in range(4):
+        match = _LEADING_QUALIFIER_RE.match(current)
+        if not match:
+            break
+        tail = match.group(1).strip()
+        if _phrase_is_faction(tail, single, multi):
+            current = tail
+        else:
+            break
+    return current
+
+
+def harvest_instance_faction_targets(
+    *,
+    instance_id: str,
+    instance_name: str,
+    evidence_rows: list[dict[str, Any]],
+    field_names: frozenset[str] | None = None,
+    min_mentions: int = 3,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Harvest faction candidates from the instance's *own* evidence prose.
+
+    Instances carry no ``faction_pool`` evidence and no faction_profile_targets of their own, so
+    ``build_major_factions`` (scoped to the parent zone) returns nothing — yet pages like Scholomance
+    are saturated with Scourge / Cult of the Damned. This scans the instance evidence snippets for
+    faction proper nouns (gated by the shared faction-token vocab) and returns synthetic
+    profile-target rows scoped to ``instance_id`` plus a flattened seed-mention role pool, which the
+    existing faction scorer + summary path consumes unchanged. Returns ``([], [])`` when nothing
+    clears ``min_mentions`` (callers then fall back to the parent-zone targets).
+    """
+    single, multi = _faction_token_set()
+    role_pool: list[dict[str, Any]] = []
+    counts: dict[str, int] = {}
+    display: dict[str, str] = {}
+    instance_low = instance_name.strip().lower()
+    for row in evidence_rows:
+        if field_names and str(row.get("field_name", "")).strip() not in field_names:
+            continue
+        section_role = str(row.get("section_role", row.get("field_name", "")))
+        for item in row.get("evidence_items", []) or []:
+            if not isinstance(item, dict):
+                continue
+            snippet = str(item.get("snippet", ""))
+            if not snippet:
+                continue
+            role_pool.append(
+                {
+                    "source_id": str(item.get("source_id", "")),
+                    "snippet": snippet,
+                    "section_role": str(item.get("section_role", section_role)),
+                    "field_name": str(row.get("field_name", "")),
+                    "source_title": str(item.get("source_title", "")),
+                }
+            )
+            for match in _FACTION_NAME_RE.finditer(snippet):
+                phrase = re.sub(r"^the\s+", "", match.group(1).strip(), flags=re.IGNORECASE).strip()
+                if not phrase or not _phrase_is_faction(phrase, single, multi):
+                    continue
+                phrase = _canonicalize_faction_phrase(phrase, single, multi)
+                if phrase.lower() == instance_low:
+                    continue
+                key = phrase.lower()
+                counts[key] = counts.get(key, 0) + 1
+                display.setdefault(key, phrase)
+    targets: list[dict[str, Any]] = []
+    for key, count in counts.items():
+        if count < min_mentions:
+            continue
+        name = display[key]
+        targets.append(
+            {
+                "zone_id": instance_id,
+                "faction_id": f"faction-{slugify(name)}",
+                "name": name,
+                "source_link": "",
+            }
+        )
+    targets.sort(key=lambda row: (-counts[str(row["name"]).lower()], str(row["name"]).lower()))
+    return targets, role_pool
+
+
+def harvest_instance_anchor_tokens(
+    evidence_rows: list[dict[str, Any]],
+    *,
+    instance_name: str,
+    field_names: frozenset[str] | None = None,
+    top_n: int = 12,
+    min_mentions: int = 3,
+) -> list[str]:
+    """Frequent proper nouns in the instance's evidence (places/figures: Caer Darrow, Barov,
+    Lordaeron, …), used as extra zone-anchor tokens so an instance-native faction summary clears the
+    anchor lint without naming the instance verbatim. Multi-word names are favored; the instance name
+    and pure stop-words are excluded."""
+    counts: dict[str, int] = {}
+    display: dict[str, str] = {}
+    instance_low = instance_name.strip().lower()
+    stop = {"the", "a", "an", "of", "and", "in", "on", "after", "before", "during", "second", "war"}
+    for row in evidence_rows:
+        if field_names and str(row.get("field_name", "")).strip() not in field_names:
+            continue
+        for item in row.get("evidence_items", []) or []:
+            if not isinstance(item, dict):
+                continue
+            for match in _FACTION_NAME_RE.finditer(str(item.get("snippet", ""))):
+                phrase = re.sub(
+                    r"^the\s+", "", match.group(1).strip(), flags=re.IGNORECASE
+                ).strip()
+                low = phrase.lower()
+                if not phrase or low == instance_low or low in stop:
+                    continue
+                counts[low] = counts.get(low, 0) + 1
+                display.setdefault(low, phrase)
+    ranked = sorted(
+        (key for key, count in counts.items() if count >= min_mentions),
+        key=lambda key: (-counts[key], -len(key)),
+    )
+    return [display[key] for key in ranked[:top_n]]
 
 
 def _targets_for_zone(

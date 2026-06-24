@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from pipeline.generate.draft.faction_scoring import (
+    harvest_instance_anchor_tokens,
+    harvest_instance_faction_targets,
+)
 from pipeline.generate.draft.instance_lint import (
     fallback_instance_overview,
     lint_overview,
@@ -51,7 +55,11 @@ from pipeline.generate.draft.prose_synthesis import (
     synthesize_at_a_glance,
     synthesize_instance_overview,
 )
-from pipeline.generate.draft.provenance import build_revision_index, collect_sources_manifest
+from pipeline.generate.draft.provenance import (
+    build_revision_index,
+    collect_sources_manifest,
+    select_identity_url,
+)
 
 
 def _finalize_instance_at_a_glance(
@@ -142,6 +150,44 @@ def build_instance_major_factions(
     faction_profile_targets: list[dict[str, Any]] | None = None,
     parent_zone_evidence_rows: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, str]]]]:
+    # WS-8: harvest faction candidates from the instance's *own* evidence first. Scholomance et al.
+    # carry no faction_pool evidence, so the parent-zone-scoped path returns nothing despite the page
+    # being saturated with Scourge / Cult of the Damned.
+    native_targets, native_role_pool = harvest_instance_faction_targets(
+        instance_id=instance_id,
+        instance_name=instance_name,
+        evidence_rows=evidence_rows,
+    )
+    if native_targets:
+        role_pool = native_role_pool or pools.get("faction_role_pool", [])
+        anchor_tokens = harvest_instance_anchor_tokens(
+            evidence_rows, instance_name=instance_name
+        )
+        if parent_zone_name.strip():
+            anchor_tokens.append(parent_zone_name.strip())
+        cards, provenance = build_major_factions(
+            zone_id=instance_id,
+            zone_name=instance_name,
+            evidence_rows=evidence_rows,
+            pools={
+                **pools,
+                "questline_pool": [],
+                "quest_cluster_lore_pool": [],
+                "quest_lore_pool": [],
+                "faction_role_pool": role_pool,
+                "currently_pool": role_pool,
+                "history_pool": role_pool,
+            },
+            questline_rows=[],
+            revision_map=revision_map,
+            faction_profile_targets=native_targets,
+            instance_name=instance_name,
+            extra_subregion_tokens=anchor_tokens,
+        )
+        if cards:
+            return cards, provenance
+
+    # Fallback: the parent zone's faction targets + faction_pool evidence.
     scoped_targets = [
         row
         for row in (faction_profile_targets or [])
@@ -189,11 +235,7 @@ def build_instance_page(
     name = str(fact_pack.get("name", instance_id))
     parent_zone_id = str(fact_pack.get("parent_zone_id", "zone-unknown"))
     revision_map, source_urls = build_revision_index(fact_pack, snapshots)
-    source_url = ""
-    for source_id, url in source_urls.items():
-        if source_id and url:
-            source_url = str(url)
-            break
+    source_url = select_identity_url(source_urls, name)
     inferred_type = "dungeon"
     lower_claims = " ".join(str(claim) for claim in fact_pack.get("claims", [])).lower()
     if "raid" in lower_claims:
