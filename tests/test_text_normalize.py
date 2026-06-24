@@ -33,6 +33,23 @@ def test_clean_wiki_snippet_strips_citations_and_entities() -> None:
     )
 
 
+def test_clean_wiki_snippet_strips_ipa_pronunciation_guides() -> None:
+    # The lead pronunciation guide carries non-Latin IPA glyphs that trip the prose
+    # script-mixing gate; strip the whole parenthetical (WS regression on Scholomance).
+    raw = (
+        "The Scholomance ( /ˈskoʊ.loʊ.mæns/ SKOH-loh-mance ), "
+        "also known as the School of Necromancy, is a vile academy."
+    )
+    assert clean_wiki_snippet(raw) == (
+        "The Scholomance, also known as the School of Necromancy, is a vile academy."
+    )
+
+
+def test_clean_wiki_snippet_keeps_ordinary_parentheticals_with_slash() -> None:
+    # A normal parenthetical that happens to contain a slash is not a pronunciation guide.
+    assert clean_wiki_snippet("Testing (A/B variants) here.") == "Testing (A/B variants) here."
+
+
 def test_clean_wiki_snippet_handles_empty() -> None:
     assert clean_wiki_snippet("") == ""
     assert clean_wiki_snippet("   ") == ""

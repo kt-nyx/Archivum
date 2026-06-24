@@ -7,6 +7,11 @@ import re
 
 _HTML_ENTITY_RE = re.compile(r"&#\d+;|&[a-zA-Z]+;")
 _CITATION_RE = re.compile(r"\[\s*\d+\s*\]")
+# Wiki lead pronunciation guides — e.g. "( /ˈskoʊ.loʊ.mæns/ SKOH-loh-mance )". The IPA
+# carries non-Latin phonetic glyphs that trip the prose script-mixing gate (and are noise
+# in lore prose), so strip the whole parenthetical. Keyed on the leading "/IPA/" slash
+# block so ordinary parentheticals (even ones containing "/") are left intact.
+_PRONUNCIATION_RE = re.compile(r"\(\s*/[^/()]*/[^)]*\)")
 _WHITESPACE_RE = re.compile(r"\s+")
 # Wiki inline-link stripping leaves a stray space before punctuation/possessives
 # (e.g. "Third War ,", "Lordaeron 's"). Repair those here, the central choke point for
@@ -23,6 +28,7 @@ def clean_wiki_snippet(text: str) -> str:
     decoded = html.unescape(text)
     decoded = _HTML_ENTITY_RE.sub(" ", decoded)
     decoded = _CITATION_RE.sub(" ", decoded)
+    decoded = _PRONUNCIATION_RE.sub(" ", decoded)
     decoded = _WHITESPACE_RE.sub(" ", decoded)
     decoded = _SPACE_BEFORE_PUNCT_RE.sub(r"\1", decoded)
     decoded = _SPACE_BEFORE_POSSESSIVE_RE.sub(r"'\1", decoded)

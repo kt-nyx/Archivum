@@ -66,6 +66,14 @@ def trim_words(text: str, max_words: int, *, ensure_terminal_punct: bool = False
         result = text.strip()
     else:
         result = " ".join(words[:max_words]).strip()
+    # `word_count` (regex) splits on punctuation/dashes, so it can count *more* words than
+    # the whitespace split above ("necromancy—located" is one split token but two regex
+    # words). The linters enforce the regex count, so trim further until that count is in
+    # budget — otherwise a one-word overshoot rejects the field and ships it empty.
+    trimmed = result.split()
+    while trimmed and word_count(result) > max_words:
+        trimmed = trimmed[:-1]
+        result = " ".join(trimmed).strip()
     if ensure_terminal_punct and result and result[-1] not in ".?!":
         return f"{result}."
     return result
