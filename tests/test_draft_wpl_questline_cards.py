@@ -132,7 +132,16 @@ def test_build_zone_page_wpl_emits_registry_ql_cards_without_continued(
     assert all(str(card["id"]).startswith("ql-") for card in cards)
     assert not any(str(card["id"]).endswith("-continued") for card in cards)
     anchors = _registry_anchor_by_card_id()
+    registry = load_registry(ZONE_ID) or {}
+    chain_by_card = {
+        str(arc["id"]): [str(ref) for ref in arc.get("chain_refs", [])]
+        for arc in registry.get("included_arcs", [])
+    }
     for card in cards:
         assert card["start_anchor"] == anchors[card["id"]]
         assert not lint_cta_hook(str(card["cta_hook"]))
         assert len(card["chain_refs"]) <= 12
+        # WS-2: a registry-bound card publishes the authoritative full chain (membership +
+        # order), not a single cluster fragment. The anchor quest is therefore present.
+        expected_chain = chain_by_card[card["id"]]
+        assert card["chain_refs"] == expected_chain[:12]

@@ -82,12 +82,24 @@ def build_zone_questline_card_metadata(
             # but guard here too so a stray cluster can't leak a non-ql id.
             unmapped_count += 1
             continue
+        registry_chain_refs: list[str] = []
+        registry_wiki_refs: list[str] = []
         if registry_arc_id and registry:
             for arc in registry.get("included_arcs", []):
                 if isinstance(arc, dict) and str(arc.get("id", "")).strip() == registry_arc_id:
                     registry_anchor = str(arc.get("start_anchor", "")).strip()
                     if registry_anchor:
                         start_anchor = registry_anchor
+                    # WS-2: the registry arc is the authoritative chain (membership + order).
+                    # A single cluster only covers one fragment of a multi-part arc, so carry
+                    # the registry's chain_refs/wiki_refs forward and let the draft publish them
+                    # instead of the lone cluster's members.
+                    registry_chain_refs = [
+                        str(ref).strip() for ref in arc.get("chain_refs", []) if str(ref).strip()
+                    ]
+                    registry_wiki_refs = [
+                        str(ref).strip() for ref in arc.get("wiki_refs", []) if str(ref).strip()
+                    ]
                     break
         if registry_arc_id:
             mapped_registry_count += 1
@@ -106,6 +118,8 @@ def build_zone_questline_card_metadata(
                 "display_title": display_title,
                 "faction": faction,
                 "suppress_continued_card": suppress_continued,
+                "registry_chain_refs": registry_chain_refs,
+                "registry_wiki_refs": registry_wiki_refs,
                 "algorithm_version": _ALGORITHM_VERSION,
             }
         )

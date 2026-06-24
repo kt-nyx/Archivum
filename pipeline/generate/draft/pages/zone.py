@@ -58,7 +58,11 @@ from pipeline.generate.draft.prose_synthesis import (
     synthesize_currently,
     synthesize_questline_cta_hook,
 )
-from pipeline.generate.draft.provenance import build_revision_index, collect_sources_manifest
+from pipeline.generate.draft.provenance import (
+    build_revision_index,
+    collect_sources_manifest,
+    select_identity_url,
+)
 
 
 def _best_snippet_for_term(items: list[dict[str, Any]], term: str, min_words: int = 8) -> str:
@@ -181,11 +185,7 @@ def build_zone_page(
     zone_id = str(fact_pack.get("entity_id", "zone-unknown"))
     name = str(fact_pack.get("name", zone_id))
     revision_map, source_urls = build_revision_index(fact_pack, snapshots)
-    source_url = ""
-    for source_id, url in source_urls.items():
-        if source_id and url:
-            source_url = str(url)
-            break
+    source_url = select_identity_url(source_urls, name)
     pools = _build_evidence_pools(evidence_rows)
     used_source_ids: set[str] = set()
 
@@ -348,16 +348,30 @@ def build_zone_page(
         card_id_override = str(card_meta.get("card_id", "")).strip()
         suppress_continued_card = bool(card_meta.get("suppress_continued_card"))
         quests = _lead_chain_with_anchor(quests, start_anchor)
-        chain_refs = [
-            str(row.get("node_id", ""))
-            for row in quests
-            if isinstance(row, dict) and row.get("node_id")
+        # WS-2: when the cluster maps to a registry arc, the registry is the authoritative
+        # chain (full membership + canonical order across all fragments of a multi-part arc).
+        # Publish it directly so a single cluster fragment can't truncate/misorder the chain;
+        # fall back to the cluster's own node order for non-registry (generic) zones.
+        registry_chain_refs = [
+            str(ref).strip() for ref in card_meta.get("registry_chain_refs", []) if str(ref).strip()
         ]
-        wiki_refs = [
-            str(row.get("source_link", ""))
-            for row in quests
-            if isinstance(row, dict) and str(row.get("source_link", "")).strip()
+        registry_wiki_refs = [
+            str(ref).strip() for ref in card_meta.get("registry_wiki_refs", []) if str(ref).strip()
         ]
+        if registry_chain_refs:
+            chain_refs = registry_chain_refs
+            wiki_refs = registry_wiki_refs
+        else:
+            chain_refs = [
+                str(row.get("node_id", ""))
+                for row in quests
+                if isinstance(row, dict) and row.get("node_id")
+            ]
+            wiki_refs = [
+                str(row.get("source_link", ""))
+                for row in quests
+                if isinstance(row, dict) and str(row.get("source_link", "")).strip()
+            ]
         scoped_pool = _cluster_lore_pool(pools, cluster_id)
         scoped_pool = _faction_scoped_lore_pool(scoped_pool, quests, faction)
         if not scoped_pool:
