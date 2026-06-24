@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import unquote
 
+from pipeline.common.text_ids import slugify
 from pipeline.generate.draft.common import min_pointers, pick_pointers
 
 
@@ -47,6 +49,33 @@ def build_revision_index(
                 source_urls[sid] = str(url)
 
     return revision_map, source_urls
+
+
+def select_identity_url(
+    source_urls: dict[str, str],
+    entity_name: str,
+    *,
+    default: str = "https://warcraft.wiki.gg/",
+) -> str:
+    """Pick the entity's *own* wiki page URL from the source index.
+
+    The page's identity ``wiki_url`` must point at the entity's own article (e.g.
+    Scholomance), not merely the first source in the index — which is often the parent
+    zone overview (RC-7). Match the source whose wiki title slug equals the entity name
+    slug; fall back to the first usable URL, then to the wiki root.
+    """
+    name_slug = slugify(entity_name)
+    first = ""
+    for source_id, url in source_urls.items():
+        if not source_id or not url:
+            continue
+        text = str(url)
+        if not first:
+            first = text
+        title = unquote(text.split("/wiki/", 1)[-1]).split("#", 1)[0]
+        if name_slug and slugify(title) == name_slug:
+            return text
+    return first or default
 
 
 def _collect_pointer_source_ids(pointers: object, source_ids: set[str]) -> None:

@@ -118,11 +118,19 @@ def _pointers_for_source_ids(
     source_ids: list[str],
     revision_map: dict[str, str],
 ) -> list[dict[str, str]]:
+    # Dedupe by excerpt_hash so duplicated evidence rows (a snippet repeated in the
+    # pool) can't yield several pointers with the same hash but incrementing locators
+    # (RC-6). Locator paragraph numbering runs over the *kept* distinct pointers.
     pointers: list[dict[str, str]] = []
-    for index, item in enumerate(_items_for_source_ids(items, source_ids), start=1):
+    seen_hashes: set[str] = set()
+    index = 1
+    for item in _items_for_source_ids(items, source_ids):
         pointer = _pointer_for_item(item, revision_map, index)
-        if pointer:
-            pointers.append(pointer)
+        if pointer is None or pointer["excerpt_hash"] in seen_hashes:
+            continue
+        seen_hashes.add(pointer["excerpt_hash"])
+        pointers.append(pointer)
+        index += 1
     return pointers
 
 
@@ -195,6 +203,9 @@ def _ensure_pointer_count(
         return pointers
     supplemented = list(pointers)
     seen = {(pointer["source_id"], pointer["locator"]) for pointer in supplemented}
+    # Also track excerpt_hash so we never supplement with a pointer that repeats an
+    # existing excerpt under a fresh locator (RC-6: same-hash/different-locator dupes).
+    seen_hashes = {pointer["excerpt_hash"] for pointer in supplemented}
     locator_index = len(supplemented) + 1
     for item in pool:
         if len(supplemented) >= min_count:
@@ -203,10 +214,11 @@ def _ensure_pointer_count(
         if pointer is None:
             continue
         key = (pointer["source_id"], pointer["locator"])
-        if key in seen:
+        if key in seen or pointer["excerpt_hash"] in seen_hashes:
             continue
         supplemented.append(pointer)
         seen.add(key)
+        seen_hashes.add(pointer["excerpt_hash"])
         locator_index += 1
     return supplemented
 

@@ -92,9 +92,20 @@ def pick_pointers(
         )
     if not fact_items:
         return output
-    for idx in range(max(min_count, 1)):
-        item = fact_items[idx % len(fact_items)]
-        output.append(pointer_from_fact_item(item, entity_id=entity_id))
+    # Emit distinct pointers only — never wrap-repeat the same fact_item to pad up to
+    # min_count, which produced duplicate excerpt_hashes (RC-6). When fewer distinct
+    # items exist than min_count, return the distinct set rather than fabricating dupes.
+    target = max(min_count, 1)
+    seen: set[tuple[str, str, str]] = set()
+    for item in fact_items:
+        ptr = pointer_from_fact_item(item, entity_id=entity_id)
+        key = (ptr["source_id"], ptr["locator"], ptr["excerpt_hash"])
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(ptr)
+        if len(output) >= target:
+            break
     return output
 
 
