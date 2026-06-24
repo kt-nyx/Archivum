@@ -294,6 +294,16 @@ def _finalize_key_characters(
                 )
                 if role != "uncertain":
                     role_reason = "llm_tiebreaker"
+            # WS-4 confidence gate: stop padding the roster to the cap with narrative-only
+            # mentions. A non-floor candidate must carry a real in-instance structural
+            # signal; a pure narrative fallback (no boss/denizen section, no adventure-guide
+            # signal) is dropped rather than emitted as a low-confidence "uncertain" card.
+            # The boss floor (must_include) always passes, so confident bosses are never
+            # dropped. card is still None here, so breaking the pool loop drops the
+            # candidate via the `if card is None` guard below.
+            is_floor = (selection_reasons or {}).get(candidate.name) == "must_include_floor"
+            if not is_floor and candidate.source_section_role == "narrative_fallback":
+                break
             reason_codes: list[str] = []
             selection_reason = (selection_reasons or {}).get(candidate.name)
             if selection_reason:

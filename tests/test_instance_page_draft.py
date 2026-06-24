@@ -508,3 +508,44 @@ def test_finalize_key_characters_pointer_fallback_when_used_empty(monkeypatch) -
     assert len(cards) == 1
     assert cards[0]["name"] == "Darkmaster Gandling"
     assert provenance["character-darkmaster-gandling"]
+
+
+def test_finalize_key_characters_drops_non_floor_narrative_fallback(monkeypatch) -> None:
+    # WS-4: a non-floor candidate sourced only from a narrative fallback (no boss/denizen
+    # section signal) is dropped rather than padding the roster with a low-confidence card.
+    monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
+    monkeypatch.setattr(
+        "pipeline.generate.draft.pages.key_characters.synthesize_key_character_summary",
+        lambda *a, **k: ("Lich King looms over the campaign from afar.", ["src-x"]),
+    )
+    boss_pool = [
+        {
+            "snippet": "The Lich King is mentioned in passing.",
+            "section_role": "other",
+            "source_id": "src-x",
+        }
+    ]
+    narrative = BossCandidate(
+        boss_id="character-lich-king",
+        name="Lich King",
+        wiki_url="https://warcraft.wiki.gg/wiki/Lich_King",
+        source_section_role="narrative_fallback",
+    )
+    narrative.profile_pool = boss_pool
+    cards, _prov, _used = _finalize_key_characters(
+        instance_name="Scholomance",
+        boss_candidates=[narrative],
+        boss_pool=boss_pool,
+        revision_map={"src-x": "mw:1"},
+    )
+    assert cards == []
+
+    # The same candidate survives when it is on the must-include floor.
+    cards_floor, _p, _u = _finalize_key_characters(
+        instance_name="Scholomance",
+        boss_candidates=[narrative],
+        boss_pool=boss_pool,
+        revision_map={"src-x": "mw:1"},
+        selection_reasons={"Lich King": "must_include_floor"},
+    )
+    assert [c["name"] for c in cards_floor] == ["Lich King"]
