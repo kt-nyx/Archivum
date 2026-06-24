@@ -463,7 +463,7 @@ def test_discovery_workflow_extracts_marquee_landmarks_from_mixed_sections(tmp_p
                     "section_blocks": [
                         {"section_role": "Lead", "text": "Caer Darrow sits on the lake."},
                         {"section_role": "Maps and subregions", "text": "Caer Darrow; Sorrow Hill."},
-                        {"section_role": "History", "text": "Uther's Tomb stands at Sorrow Hill."},
+                        {"section_role": "History", "text": "Uther's Tomb stands above the lake."},
                     ],
                     "wiki_links": ["/wiki/Caer_Darrow", "/wiki/Uther%27s_Tomb", "/wiki/Sorrow_Hill"],
                     "structured_links": [
@@ -505,6 +505,16 @@ def test_discovery_workflow_extracts_marquee_landmarks_from_mixed_sections(tmp_p
     }
     assert "Caer Darrow" in names
     assert "Uther's Tomb" in names
+
+    # Lore-significance: a place named in the history narrative is a marquee landmark; a maps-only
+    # entry (Sorrow Hill, listed only under "Maps and subregions") is gameplay chrome.
+    candidates = {
+        row["name"]: row
+        for row in json.loads(outputs["zone_location_candidates"].read_text(encoding="utf-8"))
+    }
+    assert candidates["Caer Darrow"]["lore_significant"] is True
+    assert candidates["Uther's Tomb"]["lore_significant"] is True
+    assert candidates["Sorrow Hill"]["lore_significant"] is False
 
 
 def test_discovery_workflow_excludes_cast_named_in_history_and_characters(tmp_path: Path) -> None:

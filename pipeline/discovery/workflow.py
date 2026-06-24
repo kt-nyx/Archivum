@@ -335,6 +335,57 @@ def _should_reject_location_candidate(title: str, entity_type: str) -> bool:
     return False
 
 
+# Lore/narrative sections that mark a place as story-significant (a card-worthy landmark) vs the
+# gameplay gazetteer. A location named in the zone's history/lore prose is marquee; one appearing
+# only in maps/getting-there/travel/loot/etc. chrome is a gameplay waypoint, not a landmark.
+_LOCATION_LORE_SECTION_TOKENS = (
+    "history",
+    "scourg",
+    "background",
+    "lore",
+    "story",
+    "lead",
+    "exploring",
+    "legacy",
+    "aftermath",
+)
+_LOCATION_GAMEPLAY_SECTION_TOKENS = (
+    "maps",
+    "subregion",
+    "getting_there",
+    "travel",
+    "patch",
+    "reference",
+    "achievement",
+    "loot",
+    "navbox",
+    "adventure",
+    "trivia",
+    "gallery",
+)
+
+
+def _zone_lore_body_text(section_blocks: list[dict[str, Any]]) -> str:
+    """Concatenated, lowercased body text of the zone's lore/history narrative sections.
+
+    Excludes gameplay/chrome sections so a name's presence here means narrative significance.
+    Era headings (Cataclysm, Legion, ...) count as lore via the shared era vocab.
+    """
+    era_tokens = era_section_role_tokens()
+    parts: list[str] = []
+    for block in section_blocks:
+        if not isinstance(block, dict):
+            continue
+        role = re.sub(r"\s+", "_", str(block.get("section_role", "")).strip().lower())
+        if any(token in role for token in _LOCATION_GAMEPLAY_SECTION_TOKENS):
+            continue
+        if any(token in role for token in _LOCATION_LORE_SECTION_TOKENS) or any(
+            era in role for era in era_tokens
+        ):
+            parts.append(str(block.get("text", "")))
+    return " ".join(parts).lower()
+
+
 # Section-role precedence used when collapsing location variants: a place's strongest role
 # (a maps/subregions or history mention) survives over a bare "other".
 _LOCATION_ROLE_PRECEDENCE = (
@@ -561,6 +612,8 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
             and str(link_row.get("label", "")).strip()
         }
 
+        lore_body_text = _zone_lore_body_text(section_blocks)
+
         for link in processing_links:
             title = _normalized_wiki_title(link)
             lowered = title.lower()
@@ -636,6 +689,7 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
                 # apply the same gate here so they never become traversal targets/candidates.
                 if hard_reject_markers(title):
                     continue
+                lore_significant = title.lower() in lore_body_text
                 location_candidates.append(
                     {
                         "zone_id": str(snapshot.get("entity_id", "")),
@@ -645,6 +699,7 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
                         "source_section_role": inferred_role,
                         "entity_type": inferred_entity_type,
                         "reject_reasons": reject_reasons,
+                        "lore_significant": lore_significant,
                     }
                 )
                 location_profile_targets.append(

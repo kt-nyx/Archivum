@@ -116,6 +116,9 @@ class LocationCandidate:
     lede_only: bool = False
     rejected: bool = False
     reject_reasons: list[str] = field(default_factory=list)
+    # True when the place is named in the zone's history/lore narrative (a marquee landmark) rather
+    # than only the maps/travel gazetteer. Set from discovery (workflow._zone_lore_body_text).
+    lore_significant: bool = False
 
 
 def _normalize_role(section_role: str) -> str:
@@ -252,6 +255,7 @@ def collect_location_candidates(
                 wiki_url=_wiki_url_from_link(link) if link else _wiki_url_from_link(name),
                 classification=classification,
                 source_section_role=source_section_role,
+                lore_significant=bool(candidate_map_row.get("lore_significant", False)),
             )
         else:
             row = by_id[location_id]
@@ -394,12 +398,24 @@ def rank_location_candidates(candidates: list[LocationCandidate]) -> list[Locati
     return sorted(
         scored,
         key=lambda row: (
+            0 if row.lore_significant else 1,  # marquee (lore-named) landmarks first
             -row.score,
             -len(row.profile_items),
             0 if _normalize_role(row.source_section_role) == "maps_subregions" else 1,
             row.name.lower(),
         ),
     )
+
+
+def _lore_significant_pool(candidates: list[LocationCandidate]) -> list[LocationCandidate]:
+    """Marquee landmarks: places named in the zone's history/lore narrative, not maps-only chrome."""
+    return [
+        candidate
+        for candidate in candidates
+        if candidate.lore_significant
+        and not candidate.rejected
+        and (candidate.profile_items or candidate.seed_mentions)
+    ]
 
 
 def _candidate_is_finalize_eligible(candidate: LocationCandidate) -> bool:
@@ -422,6 +438,11 @@ def _is_electable(candidate: LocationCandidate) -> bool:
 
 def select_location_cards(candidates: list[LocationCandidate]) -> list[LocationCandidate]:
     ranked = rank_location_candidates(candidates)
+    # When the zone's lore narrative names enough landmarks, those ARE the location cards — the
+    # maps/travel gazetteer (farms, lakes, travel hubs) is gameplay chrome, not compendium content.
+    lore = _lore_significant_pool(ranked)
+    if len(lore) >= MIN_LOCATION_CARDS:
+        return lore[:MAX_LOCATION_CARDS]
     eligible = [candidate for candidate in ranked if _is_electable(candidate)]
     if not eligible:
         thin = [candidate for candidate in ranked if _candidate_is_finalize_eligible(candidate)]
@@ -434,6 +455,9 @@ def candidates_for_finalize(
 ) -> tuple[int, list[LocationCandidate]]:
     ranked = rank_location_candidates(candidates)
     target_count = len(select_location_cards(candidates))
+    lore = _lore_significant_pool(ranked)
+    if len(lore) >= MIN_LOCATION_CARDS:
+        return target_count, lore
     has_eligible = any(_is_electable(candidate) for candidate in ranked)
     if has_eligible:
         queue = [candidate for candidate in ranked if _is_electable(candidate)]
