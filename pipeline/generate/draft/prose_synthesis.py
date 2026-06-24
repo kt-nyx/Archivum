@@ -80,8 +80,12 @@ def synthesize_at_a_glance(
         system_prompt = zone_system_prompt(
             field_voice=AT_A_GLANCE_VOICE,
             task_lines=(
-                f"Write a concise zone at-a-glance summary using ONLY the evidence snippets. "
-                f"Maximum {max_words} words. Do not list locations, characters, factions, or patch/reputation meta. "
+                f"Write an evocative zone at-a-glance summary using ONLY the evidence snippets. "
+                f"Maximum {max_words} words. Lead with the zone's defining identity and fate in one "
+                "vivid sentence rather than a dry gazetteer line. Name the precise faction or actor "
+                "when the evidence specifies it (e.g. 'Forsaken', not the generic 'Horde'; "
+                "'the Scourge', not 'the undead'). "
+                "Do not list locations, characters, factions, or patch/reputation meta. "
                 "No extrapolation."
             ),
         )
@@ -141,6 +145,8 @@ def synthesize_currently(
             task_lines=(
                 f"Write a 'currently' zone summary using ONLY evidence snippets. "
                 f"Maximum {max_words} words. Describe active conflict or state. "
+                "Name the precise faction or actor the evidence specifies (e.g. 'Forsaken', not the "
+                "generic 'Horde'; 'Scarlet Crusade', not 'humans'). "
                 "Do not write quest walkthrough steps, reputation/achievement meta, adjacent-zone geography hubs, "
                 "or out-of-universe player instructions."
             ),
@@ -208,7 +214,12 @@ def synthesize_history_sections(
             field_voice=HISTORY_VOICE,
             task_lines=(
                 "Produce chronological historical arc sections from evidence only. "
-                f"Up to {max_sections} sections with short era headings. "
+                f"Up to {max_sections} sections. "
+                "Each heading must be a short (2–5 word) thematic title that names the event or "
+                "turning point described in that section's body (e.g. 'Scourging of Lordaeron', "
+                "'Coming of the Argent Dawn', 'Battle for Andorhal'). Never use bare expansion or "
+                "era labels as headings (no 'History', 'World of Warcraft', 'Cataclysm', 'Legion', "
+                "'Exploring Azeroth'). "
                 "Do not list locations. Cover through the latest era in evidence."
             ),
         ),
@@ -242,6 +253,144 @@ def synthesize_history_sections(
             used_ids.append(str(item.get("source_id", "")))
         return sections, used_ids
     return sections_out, used
+
+
+# Headings that are bare wiki TOC / expansion-era labels rather than thematic event titles.
+# These describe *when* a section sits in the timeline, not *what* it narrates, so they read as
+# noise next to a content-derived title ("Scourging of Lordaeron"). Detected case-insensitively;
+# era tokens (cataclysm, legion, …) come from the shared draft vocab so the list stays single-source.
+_GENERIC_HISTORY_HEADINGS = frozenset(
+    {
+        "history",
+        "lore",
+        "background",
+        "story",
+        "overview",
+        "introduction",
+        "historical era",
+        "world of warcraft",
+        "exploring azeroth",
+        "classic",
+        "vanilla",
+        "the burning crusade",
+        "burning crusade",
+        "wrath of the lich king",
+        "cataclysm",
+        "mists of pandaria",
+        "warlords of draenor",
+        "legion",
+        "battle for azeroth",
+        "shadowlands",
+        "dragonflight",
+        "the war within",
+        "war within",
+    }
+)
+
+
+def _heading_is_generic(heading: str) -> bool:
+    """True for bare TOC / expansion-era labels (matched as the *whole* heading).
+
+    Matched against the full lowered heading only — never as a substring — so thematic gold
+    titles that happen to contain an era word ("Battle for Andorhal", "Wrath of the Lich King"
+    is itself an expansion and stays listed, but "Battle for Andorhal" must NOT match
+    "battle_for") are preserved.
+    """
+    lowered = heading.strip().lower()
+    if not lowered:
+        return True
+    return lowered in _GENERIC_HISTORY_HEADINGS
+
+
+def relabel_history_headings(
+    sections: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Replace bare era/TOC history headings with thematic, body-derived titles via the LLM.
+
+    The body text may come from LLM synthesis *or* the deterministic wiki-snippet fallback; either
+    way the heading frequently echoes the raw wiki subsection label ("World of Warcraft",
+    "Cataclysm", "Historical era"). This runs a single batched LLM call to re-title only the generic
+    headings from each section's body content, so the published titles read like the gold fixtures
+    ("Before the Scourge", "Rise of the Dead"). Headings already thematic are left untouched.
+
+    Offline / no-OpenAI: returns the sections unchanged (deterministic path keeps the cleaned label).
+    """
+    if not sections:
+        return sections
+    targets = [
+        index
+        for index, section in enumerate(sections)
+        if isinstance(section, dict)
+        and str(section.get("body", "")).strip()
+        and _heading_is_generic(str(section.get("heading", "")))
+    ]
+    if not targets:
+        return sections
+    settings = load_ai_settings()
+    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
+        return sections
+    body_lines = "\n\n".join(
+        f"[{position}] {clean_wiki_snippet(str(sections[index].get('body', '')))}"
+        for position, index in enumerate(targets, start=1)
+    )
+    result = llm_json_with_retry(
+        required_keys=("headings",),
+        response_json_schema={
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["headings"],
+            "properties": {
+                "headings": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["index", "heading"],
+                        "properties": {
+                            "index": {"type": "integer"},
+                            "heading": {"type": "string"},
+                        },
+                    },
+                }
+            },
+        },
+        system_prompt=zone_system_prompt(
+            field_voice=HISTORY_VOICE,
+            task_lines=(
+                "You are titling history sections. For each numbered body, write a short (2–5 word) "
+                "thematic title that names the central event or turning point it narrates, in "
+                "Title Case (e.g. 'Before the Scourge', 'Coming of the Argent Dawn', "
+                "'Rise of the Dead', 'Battle for Andorhal'). Ground the title strictly in that "
+                "body's content. Never return a bare expansion or era label "
+                "('History', 'World of Warcraft', 'Cataclysm', 'Legion', 'Exploring Azeroth'). "
+                "Return one heading per input index."
+            ),
+        ),
+        user_prompt=f"Bodies:\n{body_lines}",
+        response_schema_name="wiki_first_history_headings",
+        substep="wiki_first_history_headings",
+    )
+    relabeled = [dict(section) for section in sections]
+    raw = result.get("headings", [])
+    if isinstance(raw, list):
+        for row in raw:
+            if not isinstance(row, dict):
+                continue
+            try:
+                position = int(row.get("index", 0))
+            except (TypeError, ValueError):
+                continue
+            heading = clean_wiki_snippet(str(row.get("heading", "")))
+            if not heading or position < 1 or position > len(targets):
+                continue
+            if _heading_is_generic(heading):
+                continue
+            relabeled[targets[position - 1]]["heading"] = heading
+    return relabeled
 
 
 def synthesize_faction_summary(
@@ -380,6 +529,81 @@ def synthesize_location_summary(
             if snippet:
                 return snippet, [str(item.get("source_id", ""))]
     return summary, used
+
+
+def _readable_location_type(location_type: str) -> str:
+    return location_type.replace("_", " ") if location_type else "location"
+
+
+def synthesize_location_significance(
+    items: list[dict[str, Any]],
+    *,
+    location_name: str,
+    zone_name: str,
+    location_type: str = "",
+    max_words: int = 40,
+) -> tuple[str, list[str]]:
+    """One-sentence significance ("why this place matters to the zone's story").
+
+    Distinct from the descriptive ``summary``: this names the place's role/importance. Never emits
+    the routing classification enum. Offline, derives a grounded sentence from the most historical
+    evidence snippet, then a templated name/type sentence so the required field is always non-empty.
+    """
+    from pipeline.generate.draft.location_lint import trim_location_summary
+
+    def _fallback() -> tuple[str, list[str]]:
+        ranked = sorted(items, key=_snippet_rank_key, reverse=True)
+        for item in ranked:
+            snippet = clean_wiki_snippet(str(item.get("snippet", "")))
+            if not snippet:
+                continue
+            sentence = snippet.split(". ")[0].strip().rstrip(".")
+            text = trim_location_summary(f"{sentence}.", max_words)
+            if text and word_count(text) >= 4:
+                return text, [str(item.get("source_id", ""))]
+        readable = _readable_location_type(location_type)
+        zone_clause = f" of {zone_name}" if zone_name else ""
+        return f"{location_name} is a notable {readable}{zone_clause}.", []
+
+    if not items:
+        readable = _readable_location_type(location_type)
+        zone_clause = f" of {zone_name}" if zone_name else ""
+        return f"{location_name} is a notable {readable}{zone_clause}.", []
+    settings = load_ai_settings()
+    if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
+        return _fallback()
+    result = llm_json_with_retry(
+        required_keys=("significance", "used_evidence_ids"),
+        response_json_schema={
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["significance", "used_evidence_ids"],
+            "properties": {
+                "significance": {"type": "string"},
+                "used_evidence_ids": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+        system_prompt=(
+            f"Write a single sentence on why '{location_name}' matters to the story of zone "
+            f"'{zone_name}' using ONLY evidence. Maximum {max_words} words. Name its role, the events "
+            "tied to it, or who held it — not a generic description. Encyclopedic tone; do not copy "
+            "wiki ledes, faction lists, reputation/achievement meta, or out-of-zone plot."
+        ),
+        user_prompt=f"Evidence:\n{_format_evidence_block(items)}",
+        response_schema_name="wiki_first_location_significance",
+        substep="wiki_first_location_significance",
+    )
+    significance = trim_location_summary(
+        clean_wiki_snippet(str(result.get("significance", ""))), max_words
+    )
+    used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
+    if significance and word_count(significance) >= 4:
+        return significance, used
+    return _fallback()
 
 
 def _early_chain_ref_limit(chain_refs: list[str], *, arc_title: str) -> int:

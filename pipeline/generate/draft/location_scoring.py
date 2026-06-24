@@ -26,6 +26,69 @@ def classification_to_location_type(classification: str) -> str:
     if classification in _TYPED_CLASSIFICATIONS:
         return classification
     return LocationType.MAJOR_LOCATION.value
+
+
+# Name-token → LocationType, checked in priority order (most specific first). The discovery
+# *classification* enum is a routing signal, not a real place type, so the published card type is
+# derived from the place's own name + evidence instead (WS-3). Matched as whole words.
+_TYPE_NAME_TOKENS: tuple[tuple[str, frozenset[str]], ...] = (
+    (LocationType.LANDMARK.value, frozenset(
+        {"tomb", "grave", "crypt", "barrow", "monument", "shrine", "statue", "obelisk",
+         "memorial", "tower"}
+    )),
+    (LocationType.FORTRESS.value, frozenset(
+        {"keep", "fortress", "citadel", "bastion", "stronghold", "spire", "hold"}
+    )),
+    (LocationType.CITY.value, frozenset({"city", "capital"})),
+    (LocationType.TOWN.value, frozenset({"town", "village", "hamlet", "burg", "borough"})),
+    (LocationType.OUTPOST.value, frozenset(
+        {"outpost", "camp", "post", "garrison", "encampment", "farm", "field", "fields",
+         "mill", "orchard", "stead", "village area"}
+    )),
+    (LocationType.NATURAL_FEATURE.value, frozenset(
+        {"river", "lake", "hill", "hills", "woods", "wood", "forest", "cave", "glade", "vale",
+         "valley", "peak", "isle", "island", "dell", "grove", "pass", "marsh", "swamp",
+         "mountain", "ridge", "haunt", "cove", "shore", "lakeshore"}
+    )),
+)
+
+# Evidence-text markers that override a generic name (a "keep" described as ruined is ruins).
+_RUINS_TEXT_RE = re.compile(
+    r"\b(ruin|ruins|ruined|razed|destroyed|abandoned|rubble|crumbling|derelict|burned[- ]out|"
+    r"shattered remains|in ruins)\b",
+    re.IGNORECASE,
+)
+_TOWN_TEXT_RE = re.compile(
+    r"\b(seat of|town of|village of|settlement|populated|inhabitants|townsfolk|"
+    r"regional administration|the capital of)\b",
+    re.IGNORECASE,
+)
+
+
+def _name_has_token(name: str, tokens: frozenset[str]) -> bool:
+    words = set(re.findall(r"[a-z]+", name.lower()))
+    return bool(words & tokens)
+
+
+def location_type_from_signals(name: str, evidence_text: str = "") -> str:
+    """Derive a published LocationType from the place's own name and evidence, not the routing enum.
+
+    Priority: a destroyed/ruined place reads as ``ruins`` even when its name says "keep"; otherwise
+    the most specific name token wins (Tomb→landmark, town/village→town, camp/farm→outpost, natural
+    features→natural_feature). Falls back to ``major_location`` when nothing is distinctive.
+    """
+    # Strong name signals that ruination should not override (a Tomb is a landmark even in ruins).
+    for location_type, tokens in _TYPE_NAME_TOKENS[:1]:
+        if _name_has_token(name, tokens):
+            return location_type
+    if evidence_text and _RUINS_TEXT_RE.search(evidence_text):
+        return LocationType.RUINS.value
+    for location_type, tokens in _TYPE_NAME_TOKENS[1:]:
+        if _name_has_token(name, tokens):
+            return location_type
+    if evidence_text and _TOWN_TEXT_RE.search(evidence_text):
+        return LocationType.TOWN.value
+    return LocationType.MAJOR_LOCATION.value
 _LEDE_ROLES = frozenset({"lead", "introduction"})
 _HIGH_WEIGHT_ROLES = frozenset({"maps_subregions", "geography_edit", "geography", "subregion"})
 _MEDIUM_WEIGHT_ROLES = frozenset({"history_edit", "history"})
@@ -282,16 +345,30 @@ def score_location_candidate(candidate: LocationCandidate) -> LocationCandidate:
 
     score = float(_SECTION_WEIGHTS.get(_normalize_role(candidate.source_section_role), 0.0))
 
+    # Diminishing returns per role bucket: a place merely listed several times in the same
+    # maps/subregions table is not more important than one listed once, while a landmark woven
+    # through the zone's *history* across multiple sections is marquee. The first mention in a
+    # bucket scores full weight; repeats score half. (WS-3: stops maps-list farms out-scoring
+    # history-prominent landmarks like Hearthglen / Caer Darrow / Uther's Tomb.)
+    bucket_counts = {"maps": 0, "history": 0, "other": 0}
     for item in candidate.seed_mentions:
         role = _normalize_role(str(item.get("section_role", "")))
         if role in _HIGH_WEIGHT_ROLES or any(
             hint in role for hint in ("maps", "subregion", "geography")
         ):
-            score += 3.0
+            bucket, weight = "maps", 3.0
         elif role in _MEDIUM_WEIGHT_ROLES or role.startswith("history"):
-            score += 1.5
+            bucket, weight = "history", 2.0
         else:
-            score += 1.0
+            bucket, weight = "other", 1.0
+        score += weight if bucket_counts[bucket] == 0 else weight * 0.5
+        bucket_counts[bucket] += 1
+
+    # Narrative-prominence bonus: each additional history section a place appears in compounds its
+    # importance, so a landmark woven through the zone's story overtakes a farm merely repeated in
+    # one maps table.
+    if bucket_counts["history"] >= 2:
+        score += 2.0 * (bucket_counts["history"] - 1)
 
     if candidate.profile_items:
         score += 2.0
