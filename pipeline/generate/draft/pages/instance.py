@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from pipeline.generate.draft import finalize_trace
 from pipeline.generate.draft.faction_scoring import (
     harvest_instance_anchor_tokens,
     harvest_instance_faction_targets,
@@ -46,12 +47,13 @@ from pipeline.generate.draft.prose_election import (
     select_at_a_glance_pool,
     select_history_pool,
 )
-from pipeline.generate.draft.prose_gate import prose_gate_rejects
+from pipeline.generate.draft.prose_gate import prose_gate_rejects, prose_gate_violations
 from pipeline.generate.draft.prose_lint import (
     MAX_AT_A_GLANCE_WORDS,
     MAX_HISTORY_SECTIONS,
 )
 from pipeline.generate.draft.prose_synthesis import (
+    passthrough_corpus,
     synthesize_at_a_glance,
     synthesize_instance_overview,
 )
@@ -120,20 +122,36 @@ def _finalize_instance_overview(
         if combined not in pools_to_try:
             pools_to_try.append(combined)
 
+    def _reject_reasons(candidate: str, snippets: list[str] | None) -> list[str]:
+        reasons = list(lint_overview(candidate, instance_name=instance_name))
+        if lint_passthrough_fragment(candidate):
+            reasons.append("passthrough_fragment")
+        reasons.extend(prose_gate_violations(candidate, source_snippets=snippets))
+        return reasons
+
     for pool in pools_to_try:
+        # Source-aware passthrough: reject a verbatim copy of the evidence from *either* the LLM
+        # synth (whose internal empty-result path borrows verbatim) or the deterministic fallback.
+        # Without the snippets the gate is blind to copying, so the fallback shipped a whole source
+        # paragraph as the overview (the licensing exposure). Gate-fail beats shipping copy. Active
+        # only in a live LLM run (``passthrough_corpus`` returns None offline, where borrowing is the
+        # accepted fallback) so offline pages still render.
+        pool_snippets = passthrough_corpus(pool)
         text, used = synthesize_instance_overview(pool, instance_name=instance_name)
-        if (
-            not lint_overview(text, instance_name=instance_name)
-            and not lint_passthrough_fragment(text)
-            and not prose_gate_rejects(text)
-        ):
+        synth_reasons = _reject_reasons(text, pool_snippets)
+        if not synth_reasons:
+            finalize_trace.record("overview.finalize", outcome="llm", gate_active=pool_snippets is not None)
             return text, used, pool
         text, used = fallback_instance_overview(pool, instance_name=instance_name)
-        if (
-            not lint_overview(text, instance_name=instance_name)
-            and not lint_passthrough_fragment(text)
-            and not prose_gate_rejects(text)
-        ):
+        fallback_reasons = _reject_reasons(text, pool_snippets)
+        finalize_trace.record(
+            "overview.finalize",
+            outcome="deterministic_fallback" if not fallback_reasons else "rejected",
+            gate_active=pool_snippets is not None,
+            llm_reject=synth_reasons,
+            fallback_reject=fallback_reasons,
+        )
+        if not fallback_reasons:
             return text, used, pool
     return "", [], []
 

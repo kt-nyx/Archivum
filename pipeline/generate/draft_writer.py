@@ -14,7 +14,7 @@ from pipeline.common.run_context import RunContext
 from pipeline.discovery.instance_bosses import classify_character_role
 from pipeline.discovery.questline_card_polish import load_questline_card_metadata
 from pipeline.discovery.questline_significance import load_included_cluster_ids_by_zone
-from pipeline.generate.draft import generate_entity_draft, is_valid_draft
+from pipeline.generate.draft import finalize_trace, generate_entity_draft, is_valid_draft
 from pipeline.generate.draft.llm import draft_chat_json_completion, set_draft_verbose
 from pipeline.generate.draft.mode import draft_pipeline_mode
 from pipeline.generate.draft.pages import (
@@ -216,6 +216,7 @@ def run_draft_writer(
         entity_type = str(fact_pack.get("entity_type", ""))
         entity_id = str(fact_pack.get("entity_id", path.stem))
         if entity_type in {"zone", "instance"} and evidence_rows:
+            finalize_trace.begin(entity_id)
             instance_key_character_decisions: dict[str, Any] | None = None
             scoped_evidence = [
                 row for row in evidence_rows if str(row.get("subject_id", "")).strip() == entity_id
@@ -320,6 +321,7 @@ def run_draft_writer(
                         selection=selection_sink[0],
                         emitted_cards=draft.get("key_characters", []),
                     )
+            prose_finalize_records = finalize_trace.drain()
             entity_dir = stage_dir / f"{entity_type}_page"
             entity_dir.mkdir(parents=True, exist_ok=True)
             out_path = entity_dir / f"{entity_id}.json"
@@ -334,6 +336,8 @@ def run_draft_writer(
             }
             if isinstance(overflow, list):
                 decision["questline_overflow"] = overflow
+            if prose_finalize_records:
+                decision["prose_finalize"] = prose_finalize_records
             if instance_key_character_decisions is not None:
                 decision["instance_key_character_decisions"] = instance_key_character_decisions
             return out_path, decision
@@ -384,6 +388,7 @@ def run_draft_writer(
     outputs: list[Path] = []
     decisions: list[dict[str, object]] = []
     instance_key_character_decisions: list[dict[str, Any]] = []
+    prose_finalize_decisions: list[dict[str, Any]] = []
     with ThreadPoolExecutor(max_workers=max_entity_concurrency) as executor:
         futures = [executor.submit(_write, path) for path in fact_pack_paths]
         for future in futures:
@@ -394,6 +399,9 @@ def run_draft_writer(
                 kc_decision = decision.pop("instance_key_character_decisions", None)
                 if isinstance(kc_decision, dict):
                     instance_key_character_decisions.append(kc_decision)
+                prose_records = decision.pop("prose_finalize", None)
+                if isinstance(prose_records, list):
+                    prose_finalize_decisions.extend(prose_records)
                 decisions.append(decision)
                 overflow = decision.pop("questline_overflow", None)
                 if isinstance(overflow, list):
@@ -416,4 +424,5 @@ def run_draft_writer(
     write_json(
         (decisions_dir / "instance_key_character_decisions.json"), instance_key_character_decisions
     )
+    write_json((decisions_dir / "prose_finalize_decisions.json"), prose_finalize_decisions)
     return outputs

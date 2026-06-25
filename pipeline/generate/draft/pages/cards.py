@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from pipeline.common.wiki_evidence_filters import cap_history_pool
+from pipeline.generate.draft import finalize_trace
 from pipeline.generate.draft.faction_lint import ensure_sentence_terminator, lint_faction_summary
 from pipeline.generate.draft.faction_scoring import (
     MAX_FACTION_CARDS,
@@ -46,7 +47,7 @@ from pipeline.generate.draft.prose_election import (
     history_section_cap,
     select_history_pool,
 )
-from pipeline.generate.draft.prose_gate import prose_gate_rejects
+from pipeline.generate.draft.prose_gate import prose_gate_rejects, prose_gate_violations
 from pipeline.generate.draft.prose_lint import (
     MAX_HISTORY_SECTIONS,
     MIN_HISTORY_SECTIONS,
@@ -55,6 +56,7 @@ from pipeline.generate.draft.prose_lint import (
     word_count,
 )
 from pipeline.generate.draft.prose_synthesis import (
+    passthrough_corpus,
     relabel_history_headings,
     synthesize_faction_summary,
     synthesize_history_sections,
@@ -69,12 +71,31 @@ _HISTORY_SECTION_MIN_WORDS = 40
 _HISTORY_SECTION_MAX_WORDS = 110
 
 
-def _sections_trip_gate(sections: list[dict[str, Any]]) -> bool:
+def _section_gate_reasons(
+    sections: list[dict[str, Any]], source_snippets: list[str] | None = None
+) -> list[str]:
+    """Prose-gate violation reasons across all section bodies (deduped, for diagnostics).
+
+    Pass ``source_snippets`` (the history evidence pool) so a body that is a near-verbatim copy of
+    its source paragraph is flagged — otherwise the deterministic history fallback shipped whole
+    wiki paragraphs verbatim (the licensing exposure the LLM-synth guard alone did not cover).
+    """
+    reasons: list[str] = []
+    for section in sections:
+        if isinstance(section, dict):
+            for issue in prose_gate_violations(
+                str(section.get("body", "")), source_snippets=source_snippets
+            ):
+                if issue not in reasons:
+                    reasons.append(issue)
+    return reasons
+
+
+def _sections_trip_gate(
+    sections: list[dict[str, Any]], source_snippets: list[str] | None = None
+) -> bool:
     """True when any history section body fails the deterministic prose gate."""
-    return any(
-        isinstance(section, dict) and prose_gate_rejects(str(section.get("body", "")))
-        for section in sections
-    )
+    return bool(_section_gate_reasons(sections, source_snippets))
 
 
 def _history_sections_from_pool(
@@ -108,13 +129,49 @@ def _finalize_history_sections(
 ) -> tuple[list[dict[str, Any]], list[str]]:
     section_cap = max_history or MIN_HISTORY_SECTIONS
     lint_cap = max_history or MAX_HISTORY_SECTIONS
+    # Source-aware passthrough corpus: reject history bodies that copy their evidence paragraph
+    # verbatim, from the LLM synth or either deterministic fallback (the licensing exposure). Active
+    # only in a live LLM run (None offline, where borrowing source prose is the accepted fallback).
+    pool_snippets = passthrough_corpus(history_pool)
     sections, used = synthesize_history_sections(history_pool, max_sections=section_cap)
     sections = _apply_history_section_budget(_merge_consecutive_history_headings(sections))
-    if lint_history_sections(sections, max_sections=lint_cap) or _sections_trip_gate(sections):
-        sections, used = fallback_history_sections(history_pool, max_sections=section_cap)
-        sections = _apply_history_section_budget(_merge_consecutive_history_headings(sections))
-        if lint_history_sections(sections, max_sections=lint_cap) or _sections_trip_gate(sections):
-            sections, used = [], []
+    # Capture why each stage is (or is not) accepted so an empty history is attributable.
+    synth_count = len(sections)
+    synth_lint = lint_history_sections(sections, max_sections=lint_cap)
+    synth_gate = _section_gate_reasons(sections, pool_snippets)
+    outcome = "llm"
+    salvaged_count: int | None = None
+    fallback_count: int | None = None
+    fallback_lint: list[str] = []
+    fallback_gate: list[str] = []
+    pool_count: int | None = None
+    if synth_lint or synth_gate:
+        # Per-section salvage: a single failing section must not discard the whole clean LLM batch
+        # and force the verbatim deterministic fallback (which the gate then rejects → empty). Keep
+        # the sections that individually pass BOTH lint and the source-aware prose gate — so a
+        # verbatim section is still dropped, preserving the anti-verbatim guarantee — and only fall
+        # to the deterministic fallback when fewer than the minimum survive. Mirrors the pool path.
+        kept = [
+            section
+            for section in sections
+            if not lint_history_sections([section], max_sections=1)
+            and not _sections_trip_gate([section], pool_snippets)
+        ]
+        if len(kept) >= MIN_HISTORY_SECTIONS:
+            sections = kept[:section_cap]
+            salvaged_count = len(sections)
+            outcome = "llm_salvaged"
+        else:
+            sections, used = fallback_history_sections(history_pool, max_sections=section_cap)
+            sections = _apply_history_section_budget(_merge_consecutive_history_headings(sections))
+            fallback_count = len(sections)
+            fallback_lint = lint_history_sections(sections, max_sections=lint_cap)
+            fallback_gate = _section_gate_reasons(sections, pool_snippets)
+            if fallback_lint or fallback_gate:
+                sections, used = [], []
+                outcome = "rejected"
+            else:
+                outcome = "deterministic_fallback"
     if not sections:
         pool_sections, pool_used = _history_sections_from_pool(
             history_pool, evidence_rows=evidence_rows
@@ -128,9 +185,28 @@ def _finalize_history_sections(
             candidate_sections = _apply_history_section_budget(
                 _merge_consecutive_history_headings(kept_sections or pool_sections)
             )
-            if not lint_history_sections(candidate_sections, max_sections=lint_cap):
+            if not lint_history_sections(
+                candidate_sections, max_sections=lint_cap
+            ) and not _sections_trip_gate(candidate_sections, pool_snippets):
                 sections = candidate_sections[:section_cap]
                 used = pool_used
+                pool_count = len(sections)
+                outcome = "pool"
+    if not sections:
+        outcome = "empty"
+    finalize_trace.record(
+        "history.finalize",
+        outcome=outcome,
+        gate_active=pool_snippets is not None,
+        llm_section_count=synth_count,
+        llm_lint=synth_lint,
+        llm_gate=synth_gate,
+        llm_salvaged_count=salvaged_count,
+        fallback_section_count=fallback_count,
+        fallback_lint=fallback_lint,
+        fallback_gate=fallback_gate,
+        pool_section_count=pool_count,
+    )
     # Re-title bare era/TOC headings ("World of Warcraft", "Cataclysm") with thematic, body-derived
     # titles. Runs whichever path produced the bodies, so wiki-fallback sections still get LLM
     # headings; offline this is a no-op (deterministic label is kept).
@@ -308,6 +384,7 @@ def _finalize_faction_card(
             pool,
             zone_name=zone_name,
             subregion_tokens=subregion_tokens,
+            faction_name=candidate.name,
         )
         summary = ensure_sentence_terminator(summary)
         if not lint_faction_summary(
@@ -375,6 +452,21 @@ def build_major_factions(
             continue
         cards.append(card)
         pointers = _cap_card_pointers(_pointers_for_source_ids(pool, used, revision_map))
+        if not pointers:
+            # The summary's reported used-ids resolved to no pointer — either none were
+            # reported, or they reference a related-lore source absent from the page's
+            # revision_map (e.g. a deterministic fallback that borrowed a snippet from a linked
+            # "abomination" page). Fall back to any pool item the card was synthesized from whose
+            # source *is* resolvable, so an emitted card always carries >=1 provenance pointer —
+            # the release gate hard-fails (provenance.missing_card_pointers) without one.
+            pool_source_ids = [
+                str(item.get("source_id", ""))
+                for item in pool
+                if str(item.get("source_id", "")).strip()
+            ]
+            pointers = _cap_card_pointers(
+                _pointers_for_source_ids(pool, pool_source_ids, revision_map)
+            )
         if pointers:
             provenance_map[str(card["id"])] = pointers
         if target_count and len(cards) >= target_count:

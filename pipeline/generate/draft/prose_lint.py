@@ -30,6 +30,13 @@ _PAST_TENSE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Generic English past-tense/participle morphology (regular -ed / -en endings on a word stem).
+# Used only for history-section *framing* detection — a domain-general grammar signal, not a lore
+# vocabulary list — so legitimate past-tense narration (razed, marched, perished, abandoned, …) is
+# recognized without enumerating zone verbs. Present-dominant sections that happen to contain an
+# -ed adjective are still caught by `has_dominant_present_tense` (the framing check's `elif` branch).
+_PAST_TENSE_MORPH_RE = re.compile(r"\b[a-z]{2,}(?:ed|en)\b", re.IGNORECASE)
+
 _PRESENT_TENSE_RE = re.compile(
     r"\b("
     r"is|are|remains|remain|continues|continue|stands|stand|holds|hold|"
@@ -60,12 +67,10 @@ def word_count(text: str) -> int:
     return len(re.findall(r"\b[\w']+\b", text))
 
 
-def trim_words(text: str, max_words: int, *, ensure_terminal_punct: bool = False) -> str:
+def _hard_trim_words(text: str, max_words: int) -> str:
+    """Whitespace word-cap trim with a regex-count backstop (no sentence awareness)."""
     words = text.split()
-    if len(words) <= max_words:
-        result = text.strip()
-    else:
-        result = " ".join(words[:max_words]).strip()
+    result = " ".join(words[:max_words]).strip() if len(words) > max_words else text.strip()
     # `word_count` (regex) splits on punctuation/dashes, so it can count *more* words than
     # the whitespace split above ("necromancy—located" is one split token but two regex
     # words). The linters enforce the regex count, so trim further until that count is in
@@ -74,6 +79,33 @@ def trim_words(text: str, max_words: int, *, ensure_terminal_punct: bool = False
     while trimmed and word_count(result) > max_words:
         trimmed = trimmed[:-1]
         result = " ".join(trimmed).strip()
+    return result
+
+
+def trim_words(text: str, max_words: int, *, ensure_terminal_punct: bool = False) -> str:
+    """Trim ``text`` to ``max_words``, preferring whole-sentence boundaries.
+
+    Over-budget text keeps the longest leading run of *complete* sentences that fits the cap,
+    so a hard cut never severs the final sentence mid-phrase (the "...Caer Darrow secretly."
+    defect). Falls back to a hard word-cap trim only when even the first sentence overflows the
+    cap (a single long run-on, or punctuation-free text), so the result is always bounded and
+    never dropped to empty.
+    """
+    cleaned = text.strip()
+    if word_count(cleaned) <= max_words:
+        result = cleaned
+    else:
+        kept: list[str] = []
+        running = 0
+        for sentence in split_sentences(cleaned):
+            sentence_words = word_count(sentence)
+            if running + sentence_words > max_words and (kept or sentence_words > max_words):
+                break
+            kept.append(sentence)
+            running += sentence_words
+        # A kept run always ends on a sentence terminator (the split point), so it satisfies
+        # `ensure_terminal_punct` without an appended period. The hard-trim fallback may not.
+        result = " ".join(kept).strip() if kept else _hard_trim_words(cleaned, max_words)
     if ensure_terminal_punct and result and result[-1] not in ".?!":
         return f"{result}."
     return result
@@ -99,6 +131,15 @@ def has_dominant_present_tense(
 def past_marker_score(text: str) -> int:
     past, present = tense_marker_counts(text)
     return past * 2 - present
+
+
+def has_past_tense_signal(text: str) -> bool:
+    """Generic past-tense signal: a common irregular past verb or regular -ed/-en morphology.
+
+    Domain-general grammar rule (no lore/proper-noun tokens) used for history-section framing, so a
+    legitimate past-tense section is not rejected merely for avoiding the small irregular-verb list.
+    """
+    return bool(_PAST_TENSE_RE.search(text)) or bool(_PAST_TENSE_MORPH_RE.search(text))
 
 
 def has_historical_framing(text: str) -> bool:
@@ -176,7 +217,7 @@ def lint_history_sections(
         if not body:
             issues.append(f"history_sections[{index}] has empty body")
             continue
-        has_framing = bool(_PAST_TENSE_RE.search(body)) or has_historical_framing(body)
+        has_framing = has_past_tense_signal(body) or has_historical_framing(body)
         if not has_framing:
             issues.append(f"history_sections[{index}] lacks past-tense historical framing")
         elif has_dominant_present_tense(body, short_text_word_limit=0):

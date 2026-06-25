@@ -150,6 +150,40 @@ def test_detect_source_passthrough_allows_borrowed_sentence() -> None:
     assert detect_source_passthrough(summary, [source]) is False
 
 
+def test_detect_source_passthrough_flags_paragraph_copied_from_large_article() -> None:
+    # A multi-sentence body copied verbatim from one paragraph of a large article: set Jaccard is
+    # diluted by the article's size (so the old detector missed it), but contiguous shingle
+    # containment catches it. This is the history/overview verbatim-copy class.
+    paragraph = (
+        "After the Second War the keep at Caer Darrow was restored as the seat of House Barov, "
+        "whose holdings stretched through Brill and Southshore until the family bargained with "
+        "Kelthuzad to preserve their wealth and dominion well beyond the reach of death itself."
+    )
+    big_article = (
+        " ".join(f"geography note {i} about roads and travel" for i in range(40))
+        + " "
+        + paragraph
+        + " "
+        + " ".join(f"reference link {i} and further reading" for i in range(40))
+    )
+    assert detect_source_passthrough(paragraph, [big_article]) is True
+
+
+def test_detect_source_passthrough_allows_long_paraphrase() -> None:
+    # A genuine 30+ word paraphrase reusing the same facts but no long verbatim runs must pass.
+    source = (
+        "After the Second War the keep at Caer Darrow was restored as the seat of House Barov, "
+        "whose holdings stretched through Brill and Southshore until the family bargained with "
+        "Kelthuzad to preserve their wealth and dominion well beyond the reach of death itself."
+    )
+    paraphrase = (
+        "Rebuilt once the fighting ended, the Barov estate again crowned its island lake. The "
+        "family's reach spanned several northern towns, yet their dread of mortality drove them "
+        "into a pact with a lich, trading everything they owned for endless unlife."
+    )
+    assert detect_source_passthrough(paraphrase, [source]) is False
+
+
 def test_gate_source_passthrough_only_active_with_sources() -> None:
     snippet = "The Forsaken seized Andorhal and drove the Alliance from the ruined town."
     # Without sources the copy is invisible to the gate; with sources it is rejected.

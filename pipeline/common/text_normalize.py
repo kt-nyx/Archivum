@@ -19,6 +19,15 @@ _WHITESPACE_RE = re.compile(r"\s+")
 # ellipses (which have no preceding space) are untouched.
 _SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([,.;:!?])")
 _SPACE_BEFORE_POSSESSIVE_RE = re.compile(r"\s+'(s\b|\s|$)")
+# Some wiki dungeon/zone descriptions open with a source-attribution preface quoting an external
+# page — e.g. "From the World Dungeons page on the official World of Warcraft Community Site:".
+# That attribution is not lore and must never surface as prose (it leaked verbatim into a
+# Scholomance overview). Strip a leading "From [the] ... <page/site/...> ... :" preface. Anchored
+# to the page/site attribution words and bounded so it cannot swallow ordinary opening sentences.
+_SOURCE_ATTRIBUTION_RE = re.compile(
+    r"^From\s+(?:the\s+)?.{1,120}?\b(?:page|site|website|guide|manual|journal)\b.{0,120}?:\s*",
+    re.IGNORECASE,
+)
 
 
 def clean_wiki_snippet(text: str) -> str:
@@ -30,6 +39,7 @@ def clean_wiki_snippet(text: str) -> str:
     decoded = _CITATION_RE.sub(" ", decoded)
     decoded = _PRONUNCIATION_RE.sub(" ", decoded)
     decoded = _WHITESPACE_RE.sub(" ", decoded)
+    decoded = _SOURCE_ATTRIBUTION_RE.sub("", decoded)
     decoded = _SPACE_BEFORE_PUNCT_RE.sub(r"\1", decoded)
     decoded = _SPACE_BEFORE_POSSESSIVE_RE.sub(r"'\1", decoded)
     return decoded.strip()

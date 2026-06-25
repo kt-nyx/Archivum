@@ -32,7 +32,10 @@ import re
 import unicodedata
 from collections.abc import Iterable
 
-from pipeline.common.text_sim import max_similarity_against_sources
+from pipeline.common.text_sim import (
+    max_shingle_containment_against_sources,
+    max_similarity_against_sources,
+)
 
 # Function words that should never be the final word of a finished sentence.
 # Curated for precision: articles, coordinating conjunctions, and prepositions
@@ -216,6 +219,18 @@ _SPLICE_PASSTHROUGH_RE = re.compile(r"\bfeatures prominently in\b[^:]*:\s+\S", r
 # clean sentence (moderate overlap), so only near-total token overlap counts as passthrough.
 _COPY_PASSTHROUGH_THRESHOLD = 0.85
 
+# Set-overlap (above) misses a short body lifted contiguously from a *much larger* article: the
+# source's union dilutes the Jaccard toward zero even when the body is a word-for-word copy of one
+# paragraph (the history/overview verbatim-copy defect). Contiguous k-word shingle containment
+# measures how much of the body reproduces unbroken runs of the source, independent of source
+# length. Empirically the two classes are bimodal with a wide gap: near-verbatim run bodies score
+# ~0.95-1.0 while genuine paraphrase stays <=0.15, so 0.6 separates them with large margin.
+# Gated on a word floor so borrowing a single clean sentence (a legitimate deterministic-fallback
+# move) is not mistaken for copying a whole multi-sentence paragraph.
+_COPY_SHINGLE_K = 5
+_COPY_SHINGLE_THRESHOLD = 0.6
+_COPY_MIN_WORDS = 25
+
 
 def detect_splice_passthrough(text: str) -> bool:
     """True when text is the ``"<name> features prominently in <x>: <raw snippet>"`` splice."""
@@ -225,12 +240,21 @@ def detect_splice_passthrough(text: str) -> bool:
 def detect_source_passthrough(text: str, source_snippets: Iterable[str]) -> bool:
     """True when text is a near-verbatim copy of any source evidence snippet.
 
-    Uses whitespace-token Jaccard against each source; only near-total overlap trips it, so a
-    deterministic fallback that borrows a single clean sentence is not mistaken for a raw copy.
+    Trips on either signal: whitespace-token Jaccard (near-total set overlap — a short body that
+    *is* a whole short snippet), or contiguous k-word shingle containment (a body that reproduces
+    unbroken runs of a much larger source paragraph, where Jaccard is diluted to near-zero).
     """
     if not text.strip():
         return False
-    return max_similarity_against_sources(text, source_snippets) >= _COPY_PASSTHROUGH_THRESHOLD
+    snippets = list(source_snippets)
+    if max_similarity_against_sources(text, snippets) >= _COPY_PASSTHROUGH_THRESHOLD:
+        return True
+    if len(_WORD_RE.findall(text)) < _COPY_MIN_WORDS:
+        return False
+    return (
+        max_shingle_containment_against_sources(text, snippets, k=_COPY_SHINGLE_K)
+        >= _COPY_SHINGLE_THRESHOLD
+    )
 
 
 def _letter_script(ch: str) -> str | None:

@@ -118,6 +118,35 @@ def test_harvested_factions_feed_scorer_and_rank_by_evidence() -> None:
     assert scored["Scourge"] > scored["Cult of the Damned"] > 0
 
 
+def test_harvest_reads_source_id_from_pack_build_meta() -> None:
+    # Real evidence items carry no item-level ``source_id`` — it lives on the pack's
+    # ``build_meta``. Reading it from the item left every role-pool row with ``source_id=""``,
+    # so faction provenance pointers could not resolve and the instance gate hard-failed.
+    rows = [
+        {
+            "field_name": "history_digest",
+            "section_role": "history",
+            "build_meta": {"source_id": "src-scholomance-overview"},
+            "evidence_items": [
+                {
+                    "snippet": "The Scourge raised the dead beneath Scholomance.",
+                    "content_role": "lore_history",
+                    "raw_section_role": "history_edit",
+                }
+            ],
+        }
+    ]
+    _, pool = harvest_instance_faction_targets(
+        instance_id="instance-scholomance",
+        instance_name="Scholomance",
+        evidence_rows=rows,
+    )
+    assert pool
+    assert all(item["source_id"] == "src-scholomance-overview" for item in pool)
+    # The role/content fields ride along so pointer locators stay accurate.
+    assert pool[0]["content_role"] == "lore_history"
+
+
 def test_anchor_tokens_harvest_frequent_places_excluding_instance() -> None:
     rows = [
         _row("Caer Darrow held the Barov estate.") for _ in range(3)

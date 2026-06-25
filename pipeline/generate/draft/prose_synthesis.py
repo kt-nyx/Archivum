@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from typing import Any
 
 from pipeline.ai.config import load_ai_settings
 from pipeline.common.text_normalize import clean_wiki_snippet
+from pipeline.generate.draft import finalize_trace
 from pipeline.generate.draft.card_lint import finalize_cta_hook
 from pipeline.generate.draft.compendium_voice import (
     AT_A_GLANCE_VOICE,
@@ -27,8 +29,10 @@ from pipeline.generate.draft.prose_election import (
     history_heading_from_role,
     precompress_at_a_glance_evidence,
 )
+from pipeline.generate.draft.prose_gate import detect_source_passthrough
 from pipeline.generate.draft.prose_lint import (
     MAX_HISTORY_SECTIONS,
+    lint_history_sections,
     past_marker_score,
     trim_words,
     word_count,
@@ -49,6 +53,139 @@ def _format_evidence_block(items: list[dict[str, Any]], *, max_items: int = 8) -
         source_id = str(item.get("source_id", f"ev-{index}"))
         lines.append(f"[{source_id}] {snippet}")
     return "\n".join(lines)
+
+
+# Appended to a synthesis task on the *retry* after the first attempt reproduced source runs.
+# The base prompts already say "never copy source phrasing"; the model still copies under the
+# "from evidence only" pressure, so the retry escalates with a concrete word-run constraint.
+PARAPHRASE_REINFORCE = (
+    " Your previous attempt reproduced the evidence too closely. Rewrite it completely in your "
+    "own words: change the sentence structure and wording so that no run of five or more "
+    "consecutive words matches the evidence. Preserve only the facts, names, and chronology."
+)
+
+
+def lint_reinforce(reasons: list[str]) -> str:
+    """Corrective feedback appended to a synthesis retry after the first attempt failed editorial lint.
+
+    Mirrors :data:`PARAPHRASE_REINFORCE` for copying: the base prompt already states the rule (e.g.
+    `HISTORY_VOICE` says "Past tense only"), but the model occasionally slips on a section, so the
+    retry feeds the *specific* failed checks back. Generic across zones — it echoes the lint reasons
+    and a tense directive, never zone vocabulary.
+    """
+    if not reasons:
+        return ""
+    joined = "; ".join(reasons[:6])
+    return (
+        " Your previous attempt failed these editorial checks: "
+        f"{joined}. Rewrite so every section passes them — in particular, narrate all historical "
+        "events in the past tense, never the present, and keep the sections that were already fine."
+    )
+
+
+def _evidence_snippets(items: list[dict[str, Any]]) -> list[str]:
+    """Cleaned source snippets used as the anti-verbatim comparison corpus."""
+    return [
+        snippet
+        for item in items
+        if (snippet := clean_wiki_snippet(str(item.get("snippet", ""))))
+    ]
+
+
+def llm_synthesis_active() -> bool:
+    """True when a real LLM run is in effect (OpenAI ready and not forced offline).
+
+    The anti-verbatim passthrough gate keys off this: a live LLM run *can* paraphrase, so copying
+    source text is a licensing exposure that must gate-fail. An offline/`WOW_LORE_WIKI_FIRST_NO_LLM`
+    run has no LLM to paraphrase, so the deterministic fallbacks legitimately borrow source prose and
+    the gate must stay disabled (else every offline page would fail).
+    """
+    settings = load_ai_settings()
+    if os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}:
+        return False
+    return bool(getattr(settings, "openai_ready", False))
+
+
+def passthrough_corpus(items: list[dict[str, Any]]) -> list[str] | None:
+    """Source snippets for the finalize-level anti-verbatim gate, or ``None`` when inactive.
+
+    Returns the evidence snippets only in a live LLM run (see :func:`llm_synthesis_active`); offline
+    it returns ``None`` so callers pass no corpus and the passthrough check is skipped.
+    """
+    if not llm_synthesis_active():
+        return None
+    return [str(item.get("snippet", "")) for item in items]
+
+
+def enforce_non_passthrough(
+    result: dict[str, Any],
+    *,
+    call: Callable[[str], dict[str, Any]],
+    extract_bodies: Callable[[dict[str, Any]], list[str]],
+    source_snippets: list[str],
+    label: str = "",
+    lint_reasons: Callable[[dict[str, Any]], list[str]] | None = None,
+) -> dict[str, Any]:
+    """Re-prompt once with corrective feedback when the first synthesis attempt is sub-par.
+
+    ``call(reinforce)`` runs one synthesis attempt; ``reinforce`` is a feedback string appended to
+    the task ("" for the first attempt). Two failure modes trigger the one retry:
+
+    * **Copying** — a body reproduces the source (:func:`detect_source_passthrough`, contiguous-run
+      copies, not just set overlap). Feedback: :data:`PARAPHRASE_REINFORCE`.
+    * **Lint** — when ``lint_reasons`` is supplied, the first attempt failing an editorial check
+      (e.g. a history section that slipped into present tense) feeds those reasons back via
+      :func:`lint_reinforce`. This fixes-and-keeps the section at the source instead of letting the
+      finalize layer drop it.
+
+    The retry runs at most once (bounded cost). The *better* of the two attempts is kept — fewer
+    combined problems (copies + lint hits) wins; a tie keeps the original. If both attempts are still
+    flawed, the caller's finalize-level gate/salvage handles the residue gracefully rather than this
+    raising and aborting the draft stage.
+    """
+
+    def _copies(payload: dict[str, Any]) -> bool:
+        return bool(source_snippets) and any(
+            body and detect_source_passthrough(body, source_snippets)
+            for body in extract_bodies(payload)
+        )
+
+    def _lint(payload: dict[str, Any]) -> list[str]:
+        return lint_reasons(payload) if lint_reasons else []
+
+    first_copied = _copies(result)
+    first_lint = _lint(result)
+    if not first_copied and not first_lint:
+        finalize_trace.record(
+            f"{label}.synth_guard",
+            first_attempt_copied=False,
+            first_attempt_lint=[],
+            retried=False,
+        )
+        return result
+
+    feedback = ""
+    if first_copied:
+        feedback += PARAPHRASE_REINFORCE
+    if first_lint:
+        feedback += lint_reinforce(first_lint)
+    retried = call(feedback)
+    retry_copied = _copies(retried)
+    retry_lint = _lint(retried)
+    # Keep the better attempt: fewer combined problems wins, tie keeps the original (no needless churn).
+    retry_score = int(retry_copied) + len(retry_lint)
+    first_score = int(first_copied) + len(first_lint)
+    chosen = retried if retry_score < first_score else result
+    finalize_trace.record(
+        f"{label}.synth_guard",
+        first_attempt_copied=first_copied,
+        first_attempt_lint=first_lint,
+        retried=True,
+        retry_still_copied=retry_copied,
+        retry_lint=retry_lint,
+        kept_retry=chosen is retried,
+    )
+    return chosen
 
 
 def synthesize_at_a_glance(
@@ -175,6 +312,7 @@ def synthesize_history_sections(
         "true",
         "yes",
     }:
+        finalize_trace.record("history.synth", path="no_llm")
         sections: list[dict[str, Any]] = []
         used: list[str] = []
         for item in items[:max_sections]:
@@ -188,44 +326,66 @@ def synthesize_history_sections(
             sections.append({"heading": heading, "body": snippet, "source_refs": []})
             used.append(str(item.get("source_id", "")))
         return sections, used
-    result = llm_json_with_retry(
-        required_keys=("sections", "used_evidence_ids"),
-        response_json_schema={
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["sections", "used_evidence_ids"],
-            "properties": {
-                "sections": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": False,
-                        "required": ["heading", "body"],
-                        "properties": {
-                            "heading": {"type": "string"},
-                            "body": {"type": "string"},
+    history_task = (
+        "Produce chronological historical arc sections from evidence only. "
+        f"Up to {max_sections} sections. "
+        "Each heading must be a short (2–5 word) thematic title that names the event or "
+        "turning point described in that section's body (e.g. 'Scourging of Lordaeron', "
+        "'Coming of the Argent Dawn', 'Battle for Andorhal'). Never use bare expansion or "
+        "era labels as headings (no 'History', 'World of Warcraft', 'Cataclysm', 'Legion', "
+        "'Exploring Azeroth'). "
+        "Do not list locations. Cover through the latest era in evidence."
+    )
+
+    def _call(reinforce: str) -> dict[str, Any]:
+        return llm_json_with_retry(
+            required_keys=("sections", "used_evidence_ids"),
+            response_json_schema={
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["sections", "used_evidence_ids"],
+                "properties": {
+                    "sections": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": ["heading", "body"],
+                            "properties": {
+                                "heading": {"type": "string"},
+                                "body": {"type": "string"},
+                            },
                         },
                     },
+                    "used_evidence_ids": {"type": "array", "items": {"type": "string"}},
                 },
-                "used_evidence_ids": {"type": "array", "items": {"type": "string"}},
             },
-        },
-        system_prompt=zone_system_prompt(
-            field_voice=HISTORY_VOICE,
-            task_lines=(
-                "Produce chronological historical arc sections from evidence only. "
-                f"Up to {max_sections} sections. "
-                "Each heading must be a short (2–5 word) thematic title that names the event or "
-                "turning point described in that section's body (e.g. 'Scourging of Lordaeron', "
-                "'Coming of the Argent Dawn', 'Battle for Andorhal'). Never use bare expansion or "
-                "era labels as headings (no 'History', 'World of Warcraft', 'Cataclysm', 'Legion', "
-                "'Exploring Azeroth'). "
-                "Do not list locations. Cover through the latest era in evidence."
+            system_prompt=zone_system_prompt(
+                field_voice=HISTORY_VOICE,
+                task_lines=history_task + reinforce,
             ),
-        ),
-        user_prompt=f"Evidence:\n{_format_evidence_block(items, max_items=max_sections)}",
-        response_schema_name="wiki_first_history",
-        substep="wiki_first_history",
+            user_prompt=f"Evidence:\n{_format_evidence_block(items, max_items=max_sections)}",
+            response_schema_name="wiki_first_history",
+            substep="wiki_first_history",
+        )
+
+    def _history_lint(payload: dict[str, Any]) -> list[str]:
+        rows = [
+            row for row in (payload.get("sections") or []) if isinstance(row, dict)
+        ][:max_sections]
+        return lint_history_sections(rows, max_sections=max_sections)
+
+    result = enforce_non_passthrough(
+        _call(""),
+        call=_call,
+        extract_bodies=lambda payload: [
+            str(row.get("body", ""))
+            for row in (payload.get("sections") or [])
+            if isinstance(row, dict)
+        ],
+        source_snippets=_evidence_snippets(items),
+        label="history",
+        lint_reasons=_history_lint,
     )
     sections_out: list[dict[str, Any]] = []
     raw_sections = result.get("sections", [])
@@ -239,6 +399,9 @@ def synthesize_history_sections(
                 sections_out.append({"heading": heading, "body": body, "source_refs": []})
     used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
     if not sections_out:
+        # The LLM returned no usable sections; borrow verbatim snippets (rejected later by the
+        # finalize gate in a live run). Recorded so an empty history is attributable to "LLM empty".
+        finalize_trace.record("history.synth", path="llm_empty_fallback")
         sections = []
         used_ids: list[str] = []
         for item in items[:max_sections]:
@@ -252,6 +415,7 @@ def synthesize_history_sections(
             sections.append({"heading": heading, "body": snippet, "source_refs": []})
             used_ids.append(str(item.get("source_id", "")))
         return sections, used_ids
+    finalize_trace.record("history.synth", path="llm", section_count=len(sections_out))
     return sections_out, used
 
 
@@ -766,50 +930,72 @@ def synthesize_instance_overview(
     items: list[dict[str, Any]],
     *,
     instance_name: str,
-    max_words: int = 320,
+    max_words: int | None = None,
 ) -> tuple[str, list[str]]:
     if not items:
         return "", []
     from pipeline.generate.draft.instance_lint import (
+        MAX_OVERVIEW_WORDS,
+        MIN_OVERVIEW_WORDS,
         fallback_instance_overview,
         trim_instance_overview,
     )
 
+    # Default + prompt target must match the ``lint_overview`` cap. The old "Target 170-320 words"
+    # prompt (max_words=320) could never satisfy ``lint_overview`` (<= MAX_OVERVIEW_WORDS=160), so
+    # every LLM overview was rejected and the page fell back to a verbatim borrow. Bound the target
+    # to the lint range so synthesis can actually pass.
+    if max_words is None:
+        max_words = MAX_OVERVIEW_WORDS
     settings = load_ai_settings()
     if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {
         "1",
         "true",
         "yes",
     }:
+        finalize_trace.record("overview.synth", path="no_llm")
         return fallback_instance_overview(items, instance_name=instance_name, max_words=max_words)
-    result = llm_json_with_retry(
-        required_keys=("summary", "used_evidence_ids"),
-        response_json_schema={
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["summary", "used_evidence_ids"],
-            "properties": {
-                "summary": {"type": "string"},
-                "used_evidence_ids": {"type": "array", "items": {"type": "string"}},
+    overview_task = (
+        f"Write an in-universe story-context overview for instance '{instance_name}' "
+        f"using ONLY evidence. Target {MIN_OVERVIEW_WORDS}-{max_words} words."
+    )
+
+    def _call(reinforce: str) -> dict[str, Any]:
+        return llm_json_with_retry(
+            required_keys=("summary", "used_evidence_ids"),
+            response_json_schema={
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["summary", "used_evidence_ids"],
+                "properties": {
+                    "summary": {"type": "string"},
+                    "used_evidence_ids": {"type": "array", "items": {"type": "string"}},
+                },
             },
-        },
-        system_prompt=instance_system_prompt(
-            field_voice=INSTANCE_OVERVIEW_VOICE,
-            task_lines=(
-                f"Write an in-universe story-context overview for instance '{instance_name}' "
-                f"using ONLY evidence. Target 170-{max_words} words."
+            system_prompt=instance_system_prompt(
+                field_voice=INSTANCE_OVERVIEW_VOICE,
+                task_lines=overview_task + reinforce,
             ),
-        ),
-        user_prompt=f"Evidence:\n{_format_evidence_block(items, max_items=12)}",
-        response_schema_name="wiki_first_instance_overview",
-        substep="wiki_first_instance_overview",
+            user_prompt=f"Evidence:\n{_format_evidence_block(items, max_items=12)}",
+            response_schema_name="wiki_first_instance_overview",
+            substep="wiki_first_instance_overview",
+        )
+
+    result = enforce_non_passthrough(
+        _call(""),
+        call=_call,
+        extract_bodies=lambda payload: [str(payload.get("summary", ""))],
+        source_snippets=_evidence_snippets(items),
+        label="overview",
     )
     summary = trim_instance_overview(
         clean_wiki_snippet(str(result.get("summary", ""))), max_words=max_words
     )
     used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
     if not summary:
+        finalize_trace.record("overview.synth", path="llm_empty_fallback")
         return fallback_instance_overview(items, instance_name=instance_name, max_words=max_words)
+    finalize_trace.record("overview.synth", path="llm", words=word_count(summary))
     return summary, used
 
 

@@ -40,6 +40,28 @@ def test_fallback_faction_summary_returns_empty_when_only_navbox() -> None:
     assert sources == []
 
 
+def test_fallback_faction_summary_prefers_subject_mentioning_snippet() -> None:
+    # A longer, zone-dense snippet that never names the faction must lose to a shorter one that
+    # actually describes it — borrowing the former filled an Alliance card with Cenarion text.
+    off_subject = (
+        "Despite being where the plague first took hold, the Western Plaguelands recovered better "
+        "than the east, and the Cenarion Circle nursed much of the land back during the Cataclysm."
+    )
+    on_subject = (
+        "The Alliance holds the Western Plaguelands and defends the ruined city of Andorhal "
+        "against the Forsaken."
+    )
+    items = [
+        {"snippet": off_subject, "source_id": "src-off"},
+        {"snippet": on_subject, "source_id": "src-on"},
+    ]
+    summary, sources = fallback_faction_summary(
+        items, zone_name="Western Plaguelands", faction_name="Alliance"
+    )
+    assert "Alliance" in summary
+    assert sources == ["src-on"]
+
+
 def test_fallback_faction_summary_prefers_lint_and_gate_passing_snippet() -> None:
     from pipeline.generate.draft.faction_lint import lint_faction_summary
     from pipeline.generate.draft.prose_gate import prose_gate_rejects

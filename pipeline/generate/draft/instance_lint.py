@@ -267,10 +267,11 @@ def fallback_instance_overview(
 ) -> tuple[str, list[str]]:
     if not items:
         return "", []
+    # Clean each snippet (not just the LLM path) so the deterministic overview borrow also drops
+    # source-attribution prefaces ("From the World Dungeons page ... Community Site:") and link
+    # artifacts — otherwise the preamble shipped verbatim when synthesis fell back to this path.
     snippets = [
-        str(item.get("snippet", "")).strip()
-        for item in items
-        if str(item.get("snippet", "")).strip()
+        cleaned for item in items if (cleaned := clean_wiki_snippet(str(item.get("snippet", ""))))
     ]
     if not snippets:
         return "", []

@@ -50,6 +50,31 @@ def test_clean_wiki_snippet_keeps_ordinary_parentheticals_with_slash() -> None:
     assert clean_wiki_snippet("Testing (A/B variants) here.") == "Testing (A/B variants) here."
 
 
+def test_clean_wiki_snippet_strips_source_attribution_preamble() -> None:
+    # The dungeon "Description" section opens with a Blizzard Community-Site attribution that
+    # leaked verbatim into a Scholomance overview. It is not lore and must be stripped.
+    raw = (
+        "From the World Dungeons page on the official World of Warcraft Community Site: "
+        "Individuals seeking to master the powers of undeath know well of Scholomance."
+    )
+    assert clean_wiki_snippet(raw) == (
+        "Individuals seeking to master the powers of undeath know well of Scholomance."
+    )
+
+
+@pytest.mark.parametrize(
+    "ordinary",
+    [
+        "From the ashes of Lordaeron rose the Forsaken, free at last.",
+        "From the high walls of Hearthglen, the Argent Crusade watches the plague.",
+        "From the start of the Third War, the Scourge spread plague across the land.",
+    ],
+)
+def test_clean_wiki_snippet_keeps_ordinary_from_clauses(ordinary: str) -> None:
+    # The attribution strip must not swallow ordinary prose that opens with "From the ...".
+    assert clean_wiki_snippet(ordinary) == ordinary
+
+
 def test_clean_wiki_snippet_handles_empty() -> None:
     assert clean_wiki_snippet("") == ""
     assert clean_wiki_snippet("   ") == ""

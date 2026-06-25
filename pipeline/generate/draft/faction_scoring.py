@@ -177,6 +177,13 @@ def harvest_instance_faction_targets(
         if field_names and str(row.get("field_name", "")).strip() not in field_names:
             continue
         section_role = str(row.get("section_role", row.get("field_name", "")))
+        build_meta = row.get("build_meta") or {}
+        # Evidence items carry no item-level ``source_id``; it lives on the pack's build_meta
+        # (the source the whole pack was extracted from). Reading it from the item left every
+        # harvested role-pool row with ``source_id=""``, so the faction card's provenance map
+        # came back empty and tripped ``provenance.missing_card_pointers`` (instance gate fail).
+        # Carry the pack source_id plus the content/raw role so pointer locators stay accurate.
+        pack_source_id = str(build_meta.get("source_id", "")).strip()
         for item in row.get("evidence_items", []) or []:
             if not isinstance(item, dict):
                 continue
@@ -185,9 +192,11 @@ def harvest_instance_faction_targets(
                 continue
             role_pool.append(
                 {
-                    "source_id": str(item.get("source_id", "")),
+                    "source_id": str(item.get("source_id") or pack_source_id),
                     "snippet": snippet,
                     "section_role": str(item.get("section_role", section_role)),
+                    "raw_section_role": str(item.get("raw_section_role", "")),
+                    "content_role": str(item.get("content_role", "")),
                     "field_name": str(row.get("field_name", "")),
                     "source_title": str(item.get("source_title", "")),
                 }
@@ -596,17 +605,22 @@ def fallback_faction_summary(
     max_words: int = MAX_FACTION_SUMMARY_WORDS,
     zone_name: str = "",
     subregion_tokens: list[str] | None = None,
+    faction_name: str = "",
 ) -> tuple[str, list[str]]:
     if not items:
         return "", []
     tokens = subregion_tokens or []
 
-    def _zone_rank(item: dict[str, Any]) -> tuple[int, int]:
+    def _zone_rank(item: dict[str, Any]) -> tuple[int, int, int]:
         snippet = str(item.get("snippet", ""))
+        # Prefer a snippet that actually names this faction over a longer/zone-dense one that does
+        # not: borrowing the highest-ranked zone snippet regardless of subject filled an Alliance
+        # card with a Cenarion-Circle paragraph (it never mentioned the Alliance at all).
+        faction_hit = _name_in_text(faction_name, snippet)
         zone_hit = _name_in_text(zone_name, snippet) or any(
             _name_in_text(token, snippet) for token in tokens
         )
-        return (1 if zone_hit else 0, word_count(snippet))
+        return (1 if faction_hit else 0, 1 if zone_hit else 0, word_count(snippet))
 
     from pipeline.generate.draft.faction_lint import lint_faction_summary
     from pipeline.generate.draft.prose_gate import prose_gate_rejects

@@ -6,7 +6,46 @@ from pipeline.generate.draft.prose_lint import (
     lint_at_a_glance,
     lint_currently,
     lint_history_sections,
+    trim_words,
+    word_count,
 )
+
+
+def test_trim_words_under_budget_is_unchanged() -> None:
+    text = "A short clean sentence about the academy."
+    assert trim_words(text, 40) == text
+
+
+def test_trim_words_keeps_whole_sentences_over_budget() -> None:
+    # Three sentences (7 + 7 + 11 regex words); only the first two fit a 15-word cap. The
+    # trimmer must drop the whole third sentence, not chop it mid-phrase to "...Caer Darrow
+    # secretly." (the overview truncation defect).
+    text = (
+        "The Barovs struck a bargain with Kel'Thuzad. "
+        "The manor became a school of necromancy. "
+        "The once opulent keep of Caer Darrow secretly fell to ruin."
+    )
+    result = trim_words(text, 15, ensure_terminal_punct=True)
+    assert result == "The Barovs struck a bargain with Kel'Thuzad. The manor became a school of necromancy."
+    assert "secretly" not in result
+    assert result.endswith("necromancy.")
+    assert word_count(result) <= 15
+
+
+def test_trim_words_falls_back_to_hard_trim_for_single_runon() -> None:
+    # A single punctuation-free run-on cannot be split on a sentence boundary, so the cap is
+    # still enforced (and terminal punctuation added) rather than dropping the field to empty.
+    text = " ".join(["plague"] * 30)
+    result = trim_words(text, 12, ensure_terminal_punct=True)
+    assert word_count(result) <= 12
+    assert result.endswith(".")
+
+
+def test_trim_words_does_not_double_punctuate_sentence_run() -> None:
+    text = "First sentence here. Second sentence here. Third sentence trails on much longer than the cap allows."
+    result = trim_words(text, 8, ensure_terminal_punct=True)
+    assert result == "First sentence here. Second sentence here."
+    assert not result.endswith("..")
 
 
 def test_at_a_glance_rejects_dominant_present() -> None:
@@ -69,6 +108,36 @@ def test_history_accepts_clean_past_body() -> None:
         }
     ]
     assert not lint_history_sections(sections)
+
+
+def test_history_accepts_past_body_outside_irregular_whitelist() -> None:
+    # Legitimate past-tense narration that avoids the small irregular-verb list (razed, slaughtered,
+    # fled, perished) must be recognized via generic -ed/-en morphology, not rejected for framing.
+    sections = [
+        {
+            "heading": "Scourging",
+            "body": (
+                "The Scourge razed Andorhal and slaughtered its people. Survivors fled west as the "
+                "plague perished crops and abandoned farmsteads dotted the ruined countryside."
+            ),
+        }
+    ]
+    assert not lint_history_sections(sections)
+
+
+def test_history_flags_present_body_even_with_ed_adjective() -> None:
+    # An -ed adjective ("sacred") satisfies the framing signal, but a genuinely present-dominant
+    # section is still caught — now by the dominant-present check rather than the framing check.
+    sections = [
+        {
+            "heading": "Now",
+            "body": (
+                "The sacred academy stands today and the Scourge controls its halls, where acolytes "
+                "study dark arts and necromancers raise the dead to serve their masters."
+            ),
+        }
+    ]
+    assert any("dominant present tense" in issue for issue in lint_history_sections(sections))
 
 
 def test_currently_requires_present_markers() -> None:
