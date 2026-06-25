@@ -3,6 +3,7 @@ Reference/
 __pycache__/
 *.py[cod]
 .venv/
+.vscode
 
 # Local secrets and overrides (use `.env.example` as the template)
 .env
