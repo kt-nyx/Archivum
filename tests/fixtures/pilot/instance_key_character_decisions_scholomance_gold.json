@@ -7,105 +7,35 @@
         "role": "enemy",
         "emitted": true,
         "merge_rank": 1,
-        "selection_reason": "llm_selected"
+        "selection_reason": "must_include_floor"
       },
       {
         "name": "Instructor Chillheart",
         "role": "uncertain",
         "emitted": true,
         "merge_rank": 2,
-        "selection_reason": "llm_selected"
+        "selection_reason": "must_include_floor"
       },
       {
         "name": "Jandice Barov",
         "role": "uncertain",
         "emitted": true,
         "merge_rank": 3,
-        "selection_reason": "llm_selected"
+        "selection_reason": "must_include_floor"
       },
       {
         "name": "Lilian Voss",
         "role": "uncertain",
         "emitted": true,
         "merge_rank": 4,
-        "selection_reason": "llm_selected"
+        "selection_reason": "must_include_floor"
       },
       {
         "name": "Rattlegore",
         "role": "uncertain",
         "emitted": true,
         "merge_rank": 5,
-        "selection_reason": "llm_selected"
-      },
-      {
-        "name": "Doctor Theolen Krastinov",
-        "role": "enemy",
-        "emitted": false,
-        "merge_rank": null,
-        "selection_reason": null
-      },
-      {
-        "name": "Professor Slate",
-        "role": "enemy",
-        "emitted": false,
-        "merge_rank": null,
-        "selection_reason": null
-      },
-      {
-        "name": "Ravenian",
-        "role": "uncertain",
-        "emitted": false,
-        "merge_rank": null,
-        "selection_reason": null
-      },
-      {
-        "name": "Weldon Barov",
-        "role": "uncertain",
-        "emitted": false,
-        "merge_rank": null,
-        "selection_reason": null
-      },
-      {
-        "name": "Lord Alexei Barov",
-        "role": "uncertain",
-        "emitted": false,
-        "merge_rank": null,
-        "selection_reason": null
-      },
-      {
-        "name": "Barov",
-        "role": "uncertain",
-        "emitted": false,
-        "merge_rank": null,
-        "selection_reason": null
-      },
-      {
-        "name": "Second War",
-        "role": "uncertain",
-        "emitted": false,
-        "merge_rank": null,
-        "selection_reason": null
-      },
-      {
-        "name": "Third War",
-        "role": "uncertain",
-        "emitted": false,
-        "merge_rank": null,
-        "selection_reason": null
-      },
-      {
-        "name": "World of Warcraft",
-        "role": "uncertain",
-        "emitted": false,
-        "merge_rank": null,
-        "selection_reason": null
-      },
-      {
-        "name": "Acolyte",
-        "role": "enemy",
-        "emitted": false,
-        "merge_rank": null,
-        "selection_reason": null
+        "selection_reason": "must_include_floor"
       },
       {
         "name": "Boneweaver",
@@ -206,13 +136,6 @@
         "selection_reason": null
       },
       {
-        "name": "Abomination",
-        "role": "uncertain",
-        "emitted": false,
-        "merge_rank": null,
-        "selection_reason": null
-      },
-      {
         "name": "Ancient Arkhana",
         "role": "uncertain",
         "emitted": false,
@@ -220,28 +143,7 @@
         "selection_reason": null
       },
       {
-        "name": "Barovian Family Sword",
-        "role": "uncertain",
-        "emitted": false,
-        "merge_rank": null,
-        "selection_reason": null
-      },
-      {
-        "name": "Fourth War",
-        "role": "uncertain",
-        "emitted": false,
-        "merge_rank": null,
-        "selection_reason": null
-      },
-      {
         "name": "Kharmeera",
-        "role": "uncertain",
-        "emitted": false,
-        "merge_rank": null,
-        "selection_reason": null
-      },
-      {
-        "name": "Lich",
         "role": "uncertain",
         "emitted": false,
         "merge_rank": null,
@@ -256,20 +158,6 @@
       },
       {
         "name": "Mathias Shaw",
-        "role": "uncertain",
-        "emitted": false,
-        "merge_rank": null,
-        "selection_reason": null
-      },
-      {
-        "name": "Necromancer",
-        "role": "uncertain",
-        "emitted": false,
-        "merge_rank": null,
-        "selection_reason": null
-      },
-      {
-        "name": "Ras Frostwhisper",
         "role": "uncertain",
         "emitted": false,
         "merge_rank": null,

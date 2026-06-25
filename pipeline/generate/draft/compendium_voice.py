@@ -10,6 +10,17 @@ COMPENDIUM_VOICE_CORE = (
     "No player meta, reputation/achievement language, or quest walkthrough steps."
 )
 
+# Generation-time completeness guard for the short, budget-bounded fields (key-character summary,
+# questline cta hook) where the model occasionally emits an incomplete final clause ending on a
+# transitive verb that still expects its object ("...whose death can break.", "...and help keep.").
+# Prevention, not detection: a post-hoc check cannot distinguish a transitive verb-final clause from
+# a valid intransitive one ("the empire collapsed.", "the defenders could retreat.") without a verb
+# lexicon, so a detector would reject good prose — this list-free mandate fixes it at the source.
+COMPLETE_CLAUSE_MANDATE = (
+    " End on a grammatically complete clause: never finish on a verb that still needs an object "
+    "(avoid trailing fragments like '...can break.' or '...help keep.')."
+)
+
 AT_A_GLANCE_VOICE = (
     "Zone flavor caption. Past tense only. 1–2 sentences tracing historical identity through the latest era in evidence. "
     "Do not describe present retail state — that belongs in currently. "
@@ -61,7 +72,7 @@ INSTANCE_OVERVIEW_VOICE = (
 KEY_CHARACTER_VOICE = (
     "Key-character card. State who this figure is and their role within the instance's story — "
     "whether they oppose, aid, or stand neutral toward those who enter, and why they matter. "
-    "Characterize motive and significance, not combat tactics or abilities."
+    "Characterize motive and significance, not combat tactics or abilities." + COMPLETE_CLAUSE_MANDATE
 )
 
 INSTANCE_FACTION_VOICE = (
@@ -74,7 +85,7 @@ INSTANCE_FACTION_VOICE = (
 QUESTLINE_CTA_VOICE = (
     "Questline card hook. One imperative sentence (max 35 words). Spoiler-light: stakes and invitation, "
     "not walkthrough steps or quest-by-quest spoilers. No zone-name filler, no meta, no achievement language. "
-    "Do not repeat the arc title verbatim; do not copy evidence phrasing."
+    "Do not repeat the arc title verbatim; do not copy evidence phrasing." + COMPLETE_CLAUSE_MANDATE
 )
 
 
