@@ -19,6 +19,7 @@ from pipeline.validate.types import ValidationIssue, ValidationSeverity
 
 WORD_RE = re.compile(r"[a-z0-9']+")
 HTML_TAG_RE = re.compile(r"<[^>]+>")
+HISTORY_SECTION_BODY_RE = re.compile(r"^history_sections\[(?P<index>\d+)\]\.body$")
 
 
 def _section_claims(entity_type: str, payload: dict[str, Any]) -> list[tuple[str, str]]:
@@ -75,21 +76,68 @@ def _clean_snippet(text: str, *, max_len: int = 280) -> str:
     return cleaned[:max_len]
 
 
-def _section_pointer_source_ids(payload: dict[str, Any], section_name: str) -> list[str]:
-    provenance = payload.get("provenance")
-    if not isinstance(provenance, dict):
-        return []
-    section_pointers = provenance.get(section_name)
-    if not isinstance(section_pointers, list):
+def _claim_provenance_keys(entity_type: str, section_name: str) -> list[str]:
+    keys = [section_name]
+    if section_name.startswith("history_sections["):
+        if entity_type == "instance_page":
+            keys.append("story_context")
+        else:
+            keys.append("history")
+    elif entity_type == "instance_page":
+        if section_name == "at_a_glance":
+            keys.append("identity_header")
+        elif section_name == "overview":
+            keys.append("story_context")
+    return list(dict.fromkeys(keys))
+
+
+def _pointer_source_ids(pointers: object) -> list[str]:
+    if not isinstance(pointers, list):
         return []
     source_ids: list[str] = []
-    for pointer in section_pointers:
+    for pointer in pointers:
         if not isinstance(pointer, dict):
             continue
         source_id = pointer.get("source_id")
         if isinstance(source_id, str) and source_id:
             source_ids.append(source_id)
     return source_ids
+
+
+def _history_section_source_ref_ids(payload: dict[str, Any], section_name: str) -> list[str]:
+    match = HISTORY_SECTION_BODY_RE.match(section_name)
+    if match is None:
+        return []
+    history_sections = payload.get("history_sections")
+    if not isinstance(history_sections, list):
+        return []
+    section_index = int(match.group("index"))
+    if section_index >= len(history_sections):
+        return []
+    section_row = history_sections[section_index]
+    if not isinstance(section_row, dict):
+        return []
+    return _pointer_source_ids(section_row.get("source_refs"))
+
+
+def _section_pointer_source_ids(
+    payload: dict[str, Any],
+    *,
+    entity_type: str,
+    section_name: str,
+) -> list[str]:
+    history_source_ids = _history_section_source_ref_ids(payload, section_name)
+    if history_source_ids:
+        return history_source_ids
+
+    provenance = payload.get("provenance")
+    if not isinstance(provenance, dict):
+        return []
+    for provenance_key in _claim_provenance_keys(entity_type, section_name):
+        source_ids = _pointer_source_ids(provenance.get(provenance_key))
+        if source_ids:
+            return source_ids
+    return []
 
 
 def _local_snapshot_map(
@@ -349,7 +397,11 @@ def validate_fact_check_rules(
             claim_status = "insufficient_evidence"
             claim_confidence = 0.9
 
-        section_source_ids = _section_pointer_source_ids(payload, section_name)
+        section_source_ids = _section_pointer_source_ids(
+            payload,
+            entity_type=entity_type,
+            section_name=section_name,
+        )
         local_best_score = 0.0
         local_supported = False
         for source_id in section_source_ids:

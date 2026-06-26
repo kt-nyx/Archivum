@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -18,6 +19,7 @@ SIMILARITY_HARD_FAIL_THRESHOLD = 0.72
 
 # Truncate very long wiki bodies for stable cost and to emphasize local overlap.
 _MAX_SOURCE_BODY_CHARS = 6000
+HISTORY_SECTION_BODY_RE = re.compile(r"^history_sections\[(?P<index>\d+)\]\.body$")
 
 
 def _ingest_unavailable_severity(
@@ -50,21 +52,40 @@ def _narrative_section_names(entity_type: str) -> tuple[str, ...]:
     return ()
 
 
-def _section_pointer_source_ids(payload: dict[str, Any], section_name: str) -> list[str]:
-    provenance = payload.get("provenance")
-    if not isinstance(provenance, dict):
-        return []
-    section_pointers = provenance.get(section_name)
-    if not isinstance(section_pointers, list):
+def _pointer_source_ids(pointers: object) -> list[str]:
+    if not isinstance(pointers, list):
         return []
     source_ids: list[str] = []
-    for pointer in section_pointers:
+    for pointer in pointers:
         if not isinstance(pointer, dict):
             continue
         source_id = pointer.get("source_id")
         if isinstance(source_id, str) and source_id:
             source_ids.append(source_id)
     return source_ids
+
+
+def _section_pointer_source_ids(payload: dict[str, Any], section_name: str) -> list[str]:
+    provenance = payload.get("provenance")
+    if not isinstance(provenance, dict):
+        return []
+    return _pointer_source_ids(provenance.get(section_name))
+
+
+def _history_section_source_ref_ids(payload: dict[str, Any], section_name: str) -> list[str]:
+    match = HISTORY_SECTION_BODY_RE.match(section_name)
+    if match is None:
+        return []
+    history_sections = payload.get("history_sections")
+    if not isinstance(history_sections, list):
+        return []
+    section_index = int(match.group("index"))
+    if section_index >= len(history_sections):
+        return []
+    section_row = history_sections[section_index]
+    if not isinstance(section_row, dict):
+        return []
+    return _pointer_source_ids(section_row.get("source_refs"))
 
 
 def _snapshot_bodies_by_source_id(
@@ -151,16 +172,20 @@ def validate_similarity_rules(
     if has_history_list:
         history_sections = payload.get("history_sections")
         if isinstance(history_sections, list):
-            history_source_ids = _section_pointer_source_ids(payload, "history")
             for index, history_row in enumerate(history_sections):
                 if not isinstance(history_row, dict):
                     continue
                 body = history_row.get("body")
                 if not isinstance(body, str) or not body.strip():
                     continue
-                section_entries.append(
-                    (f"history_sections[{index}].body", body, history_source_ids)
-                )
+                section_name = f"history_sections[{index}].body"
+                history_source_ids = _history_section_source_ref_ids(payload, section_name)
+                if not history_source_ids:
+                    fallback_section = (
+                        "story_context" if entity_type == "instance_page" else "history"
+                    )
+                    history_source_ids = _section_pointer_source_ids(payload, fallback_section)
+                section_entries.append((section_name, body, history_source_ids))
 
     for section_name, text_value, source_ids in section_entries:
         snippets = [body_by_source[sid] for sid in source_ids if sid in body_by_source]

@@ -416,6 +416,52 @@ def _valid_instance_page_payload() -> dict[str, Any]:
     }
 
 
+def _instance_page_payload_with_distinct_prose_sources() -> dict[str, Any]:
+    payload = _valid_instance_page_payload()
+    payload["sources"] = [
+        {
+            "source_id": "src-instance-identity",
+            "url": "https://example.test/scholomance/identity",
+            "revision_id": "mw:identity",
+        },
+        {
+            "source_id": "src-instance-story",
+            "url": "https://example.test/scholomance/story",
+            "revision_id": "mw:story",
+        },
+        {
+            "source_id": "src-instance-history",
+            "url": "https://example.test/scholomance/history",
+            "revision_id": "mw:history",
+        },
+    ]
+    payload["provenance"]["identity_header"] = [
+        {
+            "source_id": "src-instance-identity",
+            "locator": "section:lead paragraph:1",
+            "revision_id": "mw:identity",
+            "excerpt_hash": "sha256:identity1111",
+        }
+    ]
+    payload["provenance"]["story_context"] = [
+        {
+            "source_id": "src-instance-story",
+            "locator": "section:overview paragraph:1",
+            "revision_id": "mw:story",
+            "excerpt_hash": "sha256:story1111",
+        }
+    ]
+    payload["history_sections"][0]["source_refs"] = [
+        {
+            "source_id": "src-instance-history",
+            "locator": "section:history paragraph:1",
+            "revision_id": "mw:history",
+            "excerpt_hash": "sha256:history1111",
+        }
+    ]
+    return payload
+
+
 def _valid_sub_zone_payload() -> dict[str, Any]:
     return {
         "id": "subzone-andorhal",
@@ -849,6 +895,86 @@ def test_fact_check_uses_local_snapshots_for_evidence() -> None:
     assert any(row["status"] == "supported" for row in rows)
 
 
+def test_fact_check_uses_zone_page_history_provenance_for_history_sections() -> None:
+    payload = _validation_ready_zone_page_payload()
+    report = validate_payload(
+        "zone_page",
+        payload,
+        validation_context={
+            "fact_check_profile": "warn",
+            "fact_check_source_snapshots": [
+                {
+                    "source_id": "src-wiki-wpl",
+                    "url": "https://example.test/wpl",
+                    "body": payload["history_sections"][0]["body"],
+                }
+            ],
+        },
+    )
+
+    assert report.fact_check_report is not None
+    rows = cast(list[dict[str, object]], report.fact_check_report["claims"])
+    history_row = next(row for row in rows if row["path"] == "$.history_sections[0].body")
+    assert history_row["status"] == "supported"
+    history_issues = [
+        issue
+        for issue in report.issues
+        if issue.code == "fact_check.insufficient_evidence"
+        and issue.path == "$.history_sections[0].body"
+    ]
+    assert not history_issues
+
+
+def test_fact_check_resolves_instance_page_claims_to_provenance_buckets() -> None:
+    payload = _instance_page_payload_with_distinct_prose_sources()
+    report = validate_payload(
+        "instance_page",
+        payload,
+        validation_context={
+            "fact_check_profile": "warn",
+            "fact_check_source_snapshots": [
+                {
+                    "source_id": "src-instance-identity",
+                    "url": "https://example.test/scholomance/identity",
+                    "body": payload["at_a_glance"],
+                },
+                {
+                    "source_id": "src-instance-story",
+                    "url": "https://example.test/scholomance/story",
+                    "body": payload["overview"],
+                },
+                {
+                    "source_id": "src-instance-history",
+                    "url": "https://example.test/scholomance/history",
+                    "body": payload["history_sections"][0]["body"],
+                },
+            ],
+        },
+    )
+
+    assert report.fact_check_report is not None
+    rows = cast(list[dict[str, object]], report.fact_check_report["claims"])
+    rows_by_path = {str(row["path"]): row for row in rows}
+    assert rows_by_path["$.at_a_glance"]["status"] == "supported"
+    assert rows_by_path["$.overview"]["status"] == "supported"
+    assert rows_by_path["$.history_sections[0].body"]["status"] == "supported"
+    assert [
+        evidence["source_id"]
+        for evidence in cast(list[dict[str, object]], rows_by_path["$.at_a_glance"]["evidence"])
+    ] == ["src-instance-identity"]
+    assert [
+        evidence["source_id"]
+        for evidence in cast(list[dict[str, object]], rows_by_path["$.overview"]["evidence"])
+    ] == ["src-instance-story"]
+    assert [
+        evidence["source_id"]
+        for evidence in cast(
+            list[dict[str, object]],
+            rows_by_path["$.history_sections[0].body"]["evidence"],
+        )
+    ] == ["src-instance-history"]
+
+
 def test_fact_check_warns_when_web_toggle_enabled_without_google_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1000,6 +1126,39 @@ def test_similarity_hard_fails_on_near_verbatim_ingest_body() -> None:
     )
     codes = {issue.code for issue in report.issues}
     assert "similarity.verbatim_overlap_hard" in codes
+
+
+def test_similarity_uses_instance_page_history_source_refs() -> None:
+    payload = _instance_page_payload_with_distinct_prose_sources()
+    report = validate_payload(
+        "instance_page",
+        payload,
+        validation_context={
+            "fact_check_source_snapshots": [
+                {
+                    "source_id": "src-instance-identity",
+                    "url": "https://example.test/scholomance/identity",
+                    "body": "Orbital charts describe weather instruments and abstract route math.",
+                },
+                {
+                    "source_id": "src-instance-story",
+                    "url": "https://example.test/scholomance/story",
+                    "body": "Archive ledgers cover color theory and remote logistics diagrams.",
+                },
+                {
+                    "source_id": "src-instance-history",
+                    "url": "https://example.test/scholomance/history",
+                    "body": payload["history_sections"][0]["body"],
+                },
+            ],
+        },
+    )
+
+    assert any(
+        issue.code == "similarity.verbatim_overlap_hard"
+        and issue.path == "$.history_sections[0].body"
+        for issue in report.issues
+    )
 
 
 def test_similarity_clean_when_draft_diverges_from_ingest_body() -> None:
@@ -1272,8 +1431,8 @@ def _low_overlap_fact_check_context(source_id: str = "src-zone") -> dict[str, ob
                 "source_id": source_id,
                 "url": "https://example.test/unrelated",
                 "body": (
-                    "Unrelated encyclopedic content about distant continents, trade routes, "
-                    "and historical events with no overlap to the draft narrative sections."
+                    "Orbital mathematics describe silent mineral catalogues, glass instruments, "
+                    "and abstract color theory without shared factual terms."
                 ),
             }
         ],
