@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from pipeline.discovery.instance_bosses import BossCandidate
 from pipeline.generate.draft import prose_selection as workers
 from pipeline.generate.draft.pages import (
     build_instance_key_character_selection,
     build_instance_page,
 )
+from pipeline.generate.draft.pages import key_characters as key_character_page
 
 
 def test_must_include_appears_when_llm_returns_empty(monkeypatch) -> None:
@@ -187,3 +189,42 @@ def test_sidecar_rows_include_merge_rank() -> None:
     # emitted set equals the page-emitted cast (no emitted&&merge_rank==null divergence).
     assert all(item["merge_rank"] is not None for item in emitted)
     assert {item["name"] for item in emitted} == {"Floor Boss"}
+
+
+def test_finalize_overrides_enemy_role_from_ally_summary(monkeypatch) -> None:
+    monkeypatch.setattr(
+        key_character_page,
+        "synthesize_key_character_summary",
+        lambda pool, boss_name, instance_name: (
+            "Lilian Voss is a brief, tragic ally who helps adventurers in Test Keep.",
+            ["src-lilian"],
+        ),
+    )
+    pool = [
+        {
+            "source_id": "src-lilian",
+            "snippet": "Lilian Voss is a brief, tragic ally in Test Keep.",
+            "section_role": "dungeon_journal",
+        }
+    ]
+    cards, _, _ = key_character_page._finalize_key_characters(
+        instance_name="Test Keep",
+        boss_candidates=[
+            BossCandidate(
+                boss_id="character-lilian-voss",
+                name="Lilian Voss",
+                wiki_url="https://warcraft.wiki.gg/wiki/Lilian_Voss",
+                source_section_role="dungeon_journal",
+                profile_pool=pool,
+                role="enemy",
+                role_reason="enemy_section",
+            )
+        ],
+        boss_pool=pool,
+        revision_map={"src-lilian": "mw:1"},
+        selection_reasons={"Lilian Voss": "must_include_floor"},
+    )
+
+    assert cards
+    assert cards[0]["role"] == "ally"
+    assert "role:ally:summary_ally_descriptor" in cards[0]["decision_reason_codes"]

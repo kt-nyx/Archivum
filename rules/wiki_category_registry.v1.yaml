@@ -67,6 +67,14 @@ strong_drop_roots:
   - Item sets
   - Objects
 
+direct_strong_drop_roots:
+  - Game terms
+  - Game Guides
+  - Heroic mode
+
+direct_strong_drop_prefixes:
+  - "Achievements:"
+
 soft_drop_roots:
   - Mobs
   - Named mobs

@@ -135,14 +135,28 @@ def classify_page_categories(
 
     direct_strong_drop_roots = _matching_direct_roots(
         category_names,
-        _list_rule(loaded_rules, "strong_drop_roots"),
+        [
+            *_list_rule(loaded_rules, "strong_drop_roots"),
+            *_list_rule(loaded_rules, "direct_strong_drop_roots"),
+        ],
     )
-    if direct_strong_drop_roots:
+    direct_strong_drop_prefixes = _matching_direct_prefixes(
+        category_names,
+        _list_rule(loaded_rules, "direct_strong_drop_prefixes"),
+    )
+    if direct_strong_drop_roots or direct_strong_drop_prefixes:
+        reasons = []
+        if direct_strong_drop_roots:
+            reasons.append("direct_strong_drop_root")
+        if direct_strong_drop_prefixes:
+            reasons.append("direct_strong_drop_prefix")
         return CategorySignal(
             bucket="noise",
             disposition="strong_drop",
-            matched_roots=direct_strong_drop_roots,
-            reasons=("direct_strong_drop_root",),
+            matched_roots=tuple(
+                sorted({*direct_strong_drop_roots, *direct_strong_drop_prefixes})
+            ),
+            reasons=tuple(reasons),
         )
 
     strong_includes = [
@@ -235,6 +249,16 @@ def _matching_root_values(root_norms: Mapping[str, str], candidates: Iterable[st
 def _matching_direct_roots(values: Iterable[str], candidates: Iterable[str]) -> tuple[str, ...]:
     root_norms = {_normalize_root(value): value for value in values}
     return _matching_root_values(root_norms, candidates)
+
+
+def _matching_direct_prefixes(values: Iterable[str], prefixes: Iterable[str]) -> tuple[str, ...]:
+    prefix_norms = [_normalize_root(prefix) for prefix in prefixes if str(prefix).strip()]
+    matches: set[str] = set()
+    for value in values:
+        normalized = _normalize_root(value)
+        if any(normalized.startswith(prefix) for prefix in prefix_norms):
+            matches.add(str(value).strip())
+    return tuple(sorted(matches))
 
 
 def _strong_include_matches(

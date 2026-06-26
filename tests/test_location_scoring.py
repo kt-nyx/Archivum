@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pipeline.generate.draft.location_scoring import (
     MIN_SCORE,
+    LocationCandidate,
     collect_location_candidates,
     extract_subregion_tokens,
     location_zone_relevant,
@@ -53,6 +54,33 @@ def _decision(location_id: str, final: str) -> dict[str, object]:
         "final_decision": final,
         "reason_codes": ["score_based"] if final == "include" else ["defer"],
     }
+
+
+def _location_candidate(
+    location_id: str,
+    name: str,
+    snippet: str,
+    *,
+    lore_significant: bool = True,
+    source_section_role: str = "history",
+) -> LocationCandidate:
+    return LocationCandidate(
+        location_id=location_id,
+        name=name,
+        wiki_url=f"https://warcraft.wiki.gg/wiki/{name.replace(' ', '_')}",
+        profile_items=[
+            {
+                "source_id": f"src-{location_id}",
+                "source_title": name,
+                "snippet": snippet,
+                "section_role": source_section_role,
+            }
+        ],
+        decision="include",
+        source_section_role=source_section_role,
+        zone_relevant=True,
+        lore_significant=lore_significant,
+    )
 
 
 def test_collect_and_select_include_only_locations() -> None:
@@ -196,3 +224,35 @@ def test_location_pool_does_not_fall_back_to_history_digest() -> None:
     assert pools["location_pool"][0]["snippet"] == "Profile-only location evidence."
     assert len(pools["location_seed_pool"]) == 1
     assert "Example Subregion" in pools["location_seed_pool"][0]["snippet"]
+
+
+def test_select_location_cards_suppresses_child_keep_when_parent_is_selected() -> None:
+    selected = select_location_cards(
+        [
+            _location_candidate(
+                "location-hearthglen",
+                "Hearthglen",
+                "Hearthglen is a major fortified settlement in Example Zone.",
+            ),
+            _location_candidate(
+                "location-mardenholde-keep",
+                "Mardenholde Keep",
+                "Mardenholde Keep is a keep within Hearthglen in Example Zone.",
+                source_section_role="maps_subregions",
+            ),
+            _location_candidate(
+                "location-caer-darrow",
+                "Caer Darrow",
+                "Caer Darrow anchors the lake crossing in Example Zone.",
+            ),
+            _location_candidate(
+                "location-uthers-tomb",
+                "Uther's Tomb",
+                "Uther's Tomb marks a major memorial in Example Zone.",
+            ),
+        ]
+    )
+    names = [candidate.name for candidate in selected]
+
+    assert "Hearthglen" in names
+    assert "Mardenholde Keep" not in names

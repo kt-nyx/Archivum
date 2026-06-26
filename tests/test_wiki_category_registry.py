@@ -110,6 +110,25 @@ def test_direct_fatal_drop_categories_beat_strong_includes() -> None:
     assert "Images" in image_character.matched_roots
 
 
+def test_direct_meta_game_categories_beat_page_strong_includes() -> None:
+    achievement = classify_page_categories(
+        ["Achievements: Dungeons & Raids Pandaria Dungeon", "Scholomance"],
+        {"Scholomance": ["Instances"]},
+    )
+    heroic_mode = classify_page_categories(
+        ["Game terms", "Heroic mode", "Instances", "Raids"],
+        {"Instances": ["Locations"], "Raids": ["Instances"]},
+    )
+    game_guide = classify_page_categories(["Game Guides", "Dungeons"])
+
+    assert achievement.bucket == "noise"
+    assert achievement.disposition == "strong_drop"
+    assert heroic_mode.bucket == "noise"
+    assert heroic_mode.disposition == "strong_drop"
+    assert game_guide.bucket == "noise"
+    assert game_guide.disposition == "strong_drop"
+
+
 def test_generic_npc_occupation_page_does_not_become_a_person() -> None:
     necromancer = classify_page_categories(
         ["NPC occupations", "World of Warcraft: The Roleplaying Game"],

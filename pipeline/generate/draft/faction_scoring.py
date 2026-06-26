@@ -310,6 +310,34 @@ def _candidates_from_evidence(
     return discovered
 
 
+def _candidates_from_high_weight_seed_mentions(
+    faction_role_pool: list[dict[str, Any]],
+) -> dict[str, dict[str, str]]:
+    single, multi = _faction_token_set()
+    discovered: dict[str, dict[str, str]] = {}
+    for item in faction_role_pool:
+        if not isinstance(item, dict) or not _is_high_weight_seed_item(item):
+            continue
+        snippet = str(item.get("snippet", "")).strip()
+        if not snippet or has_currently_meta(snippet):
+            continue
+        for match in _FACTION_NAME_RE.finditer(snippet):
+            phrase = re.sub(r"^the\s+", "", match.group(1).strip(), flags=re.IGNORECASE).strip()
+            if not phrase or not _phrase_is_faction(phrase, single, multi):
+                continue
+            name = _canonicalize_faction_phrase(phrase, single, multi)
+            faction_id = f"faction-{slugify(name)}"
+            if faction_id:
+                discovered.setdefault(
+                    faction_id,
+                    {
+                        "name": name,
+                        "wiki_url": _wiki_url_from_name(name),
+                    },
+                )
+    return discovered
+
+
 def _discover_candidates_from_v3_bindings(
     v3_rows: list[dict[str, Any]] | None,
     zone_id: str,
@@ -356,15 +384,16 @@ def collect_faction_candidates(
     discovered = _candidates_from_evidence(evidence_rows, zone_id)
     faction_pool = pools.get("faction_pool", [])
     faction_role_pool = pools.get("faction_role_pool", [])
+    seed_discovered = _candidates_from_high_weight_seed_mentions(faction_role_pool)
 
-    candidate_ids = set(target_map) | set(discovered)
+    candidate_ids = set(target_map) | set(discovered) | set(seed_discovered)
     v3_discovered = _discover_candidates_from_v3_bindings(v3_rows, zone_id)
     candidate_ids.update(v3_discovered)
 
     candidates: list[FactionCandidate] = []
     for faction_id in sorted(candidate_ids):
         target = target_map.get(faction_id, {})
-        meta = discovered.get(faction_id, {})
+        meta = discovered.get(faction_id, seed_discovered.get(faction_id, {}))
         name = str(
             target.get("name") or meta.get("name") or v3_discovered.get(faction_id) or ""
         ).strip()

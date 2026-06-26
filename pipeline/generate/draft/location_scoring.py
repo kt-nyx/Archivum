@@ -484,18 +484,73 @@ def _is_electable(candidate: LocationCandidate) -> bool:
     return candidate.score >= MIN_SCORE
 
 
+_CONTAINED_LOCATION_NAME_TOKENS = frozenset(
+    {
+        "camp",
+        "chamber",
+        "chapel",
+        "farm",
+        "field",
+        "hall",
+        "hold",
+        "inn",
+        "keep",
+        "mill",
+        "orchard",
+        "outpost",
+        "post",
+        "stead",
+        "tower",
+        "wing",
+    }
+)
+
+
+def _candidate_evidence_text(candidate: LocationCandidate) -> str:
+    parts = [candidate.name, candidate.source_section_role]
+    for item in candidate.profile_items + candidate.seed_mentions:
+        parts.append(str(item.get("source_title", "")))
+        parts.append(str(item.get("snippet", "")))
+        parts.append(str(item.get("section_role", "")))
+    return " ".join(part for part in parts if part)
+
+
+def _is_contained_location(child: LocationCandidate, parent: LocationCandidate) -> bool:
+    if child.location_id == parent.location_id:
+        return False
+    if not parent.lore_significant:
+        return False
+    if not _name_in_text(parent.name, _candidate_evidence_text(child)):
+        return False
+    role = _normalize_role(child.source_section_role)
+    return role in _HIGH_WEIGHT_ROLES or _name_has_token(
+        child.name, _CONTAINED_LOCATION_NAME_TOKENS
+    )
+
+
+def _suppress_contained_locations(
+    selected: list[LocationCandidate],
+) -> list[LocationCandidate]:
+    kept: list[LocationCandidate] = []
+    for candidate in selected:
+        if any(_is_contained_location(candidate, parent) for parent in selected):
+            continue
+        kept.append(candidate)
+    return kept
+
+
 def select_location_cards(candidates: list[LocationCandidate]) -> list[LocationCandidate]:
     ranked = rank_location_candidates(candidates)
     # When the zone's lore narrative names enough landmarks, those ARE the location cards — the
     # maps/travel gazetteer (farms, lakes, travel hubs) is gameplay chrome, not compendium content.
     lore = _lore_significant_pool(ranked)
     if len(lore) >= MIN_LOCATION_CARDS:
-        return lore[:MAX_LOCATION_CARDS]
+        return _suppress_contained_locations(lore[:MAX_LOCATION_CARDS])
     eligible = [candidate for candidate in ranked if _is_electable(candidate)]
     if not eligible:
         thin = [candidate for candidate in ranked if _candidate_is_finalize_eligible(candidate)]
-        return thin[:MAX_LOCATION_CARDS]
-    return eligible[:MAX_LOCATION_CARDS]
+        return _suppress_contained_locations(thin[:MAX_LOCATION_CARDS])
+    return _suppress_contained_locations(eligible[:MAX_LOCATION_CARDS])
 
 
 def candidates_for_finalize(
@@ -505,13 +560,13 @@ def candidates_for_finalize(
     target_count = len(select_location_cards(candidates))
     lore = _lore_significant_pool(ranked)
     if len(lore) >= MIN_LOCATION_CARDS:
-        return target_count, lore
+        return target_count, _suppress_contained_locations(lore)
     has_eligible = any(_is_electable(candidate) for candidate in ranked)
     if has_eligible:
         queue = [candidate for candidate in ranked if _is_electable(candidate)]
     else:
         queue = [candidate for candidate in ranked if _candidate_is_finalize_eligible(candidate)]
-    return target_count, queue
+    return target_count, _suppress_contained_locations(queue)
 
 
 def finalize_evidence_pools(candidate: LocationCandidate) -> list[list[dict[str, Any]]]:

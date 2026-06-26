@@ -432,3 +432,37 @@ def test_seed_only_target_discovered_from_high_weight_mention() -> None:
     argent = next(row for row in candidates if row.faction_id == "faction-argent-crusade")
     assert argent.seed_mentions
     assert score_faction_candidate(argent).score >= MIN_SCORE
+
+
+def test_high_weight_current_mentions_discover_missing_faction_targets() -> None:
+    zone_id = "zone-example"
+    pools = {
+        "faction_pool": [
+            _profile_item(
+                "faction-redpine-tribe",
+                "The Redpine tribe is a small local group near Example Zone.",
+                section_role="history",
+            )
+        ],
+        "faction_role_pool": [
+            _seed_item(
+                (
+                    "In Example Zone, the Argent Crusade and Cenarion Circle press on with "
+                    "efforts to cleanse and restore the land."
+                ),
+                section_role="cataclysm_edit",
+            )
+        ],
+    }
+    candidates = collect_faction_candidates(
+        zone_id=zone_id,
+        evidence_rows=[],
+        pools=pools,
+        faction_profile_targets=[_target("faction-redpine-tribe", "Redpine tribe")],
+    )
+    elected = select_major_factions(candidates, zone_name="Example Zone")
+    elected_ids = [row.faction_id for row in elected]
+
+    assert "faction-argent-crusade" in elected_ids
+    assert "faction-cenarion-circle" in elected_ids
+    assert elected_ids.index("faction-argent-crusade") < elected_ids.index("faction-redpine-tribe")

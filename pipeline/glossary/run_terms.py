@@ -49,6 +49,24 @@ _LINK_NAMESPACE_PREFIXES: tuple[str, ...] = (
     "wikipedia:",
 )
 
+_META_GLOSSARY_TITLES: frozenset[str] = frozenset(
+    {
+        "faction",
+        "game guide",
+        "game guides",
+        "game terms",
+        "heroic mode",
+        "instance portal",
+        "lore",
+        "lore location",
+    }
+)
+_META_GLOSSARY_TITLE_PREFIXES: tuple[str, ...] = (
+    "achievements:",
+    "game guide/",
+    "heroic:",
+)
+
 _ENTITY_CATEGORY: dict[str, str] = {
     "zone": "place",
     "instance": "place",
@@ -160,6 +178,13 @@ def _title_from_href(href: str) -> str:
 
 def _link_category_lookup_key(title: str) -> str:
     return title.replace("_", " ").strip().casefold()
+
+
+def _is_meta_glossary_title(title: str) -> bool:
+    normalized = _link_category_lookup_key(title)
+    return normalized in _META_GLOSSARY_TITLES or normalized.startswith(
+        _META_GLOSSARY_TITLE_PREFIXES
+    )
 
 
 def _category_for_entity_type(entity_type: str) -> str:
@@ -451,10 +476,12 @@ def _is_harvestable_link(href: str, label: str) -> bool:
     (no ``(Classic)``/expansion parenthetical)."""
     if not href or not label or len(label.strip()) < 2:
         return False
-    title = href.split("/wiki/", 1)[-1].split("#", 1)[0]
+    title = _title_from_href(href)
     if not title:
         return False
     if label.strip().lower().startswith(_LINK_NAMESPACE_PREFIXES):
+        return False
+    if _is_meta_glossary_title(title) or _is_meta_glossary_title(label):
         return False
     if _is_abbreviation_shape(label):
         return False

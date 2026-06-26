@@ -297,6 +297,18 @@ def test_build_run_terms_uses_seed_link_category_cache(tmp_path: Path) -> None:
                     {"href": "/wiki/Lich", "label": "Lich", "section_role": "history"},
                     {"href": "/wiki/Third_War", "label": "Third War", "section_role": "history"},
                     {"href": "/wiki/Lich_King", "label": "Lich King", "section_role": "history"},
+                    {"href": "/wiki/Lore", "label": "Lore", "section_role": "history"},
+                    {"href": "/wiki/Faction", "label": "Faction", "section_role": "history"},
+                    {
+                        "href": "/wiki/Game_Guide/World_Dungeons",
+                        "label": "Game Guide/World Dungeons",
+                        "section_role": "history",
+                    },
+                    {
+                        "href": "/wiki/Heroic:_Scholomance",
+                        "label": "Heroic: Scholomance",
+                        "section_role": "history",
+                    },
                 ],
             }
         ],
@@ -309,6 +321,11 @@ def test_build_run_terms_uses_seed_link_category_cache(tmp_path: Path) -> None:
             "lich": {"signal": {"bucket": "noise", "disposition": "soft_drop"}},
             "third war": {"signal": {"bucket": "event", "disposition": "strong_include"}},
             "lich king": {"signal": {"bucket": "person", "disposition": "strong_include"}},
+            "lore": {"signal": {"bucket": "concept", "disposition": "review"}},
+            "faction": {"signal": {"bucket": "faction", "disposition": "strong_include"}},
+            "heroic: scholomance": {
+                "signal": {"bucket": "place", "disposition": "strong_include"}
+            },
         },
     )
 
@@ -323,6 +340,10 @@ def test_build_run_terms_uses_seed_link_category_cache(tmp_path: Path) -> None:
     assert "term-human" not in terms_by_id
     assert "term-academy" not in terms_by_id
     assert "term-lich" not in terms_by_id
+    assert "term-lore" not in terms_by_id
+    assert "term-faction" not in terms_by_id
+    assert "term-game-guide-world-dungeons" not in terms_by_id
+    assert "term-heroic-scholomance" not in terms_by_id
     assert terms_by_id["term-third-war"]["category"] == "event"
     assert terms_by_id["term-lich-king"]["category"] == "person"
 
