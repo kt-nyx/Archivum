@@ -259,6 +259,7 @@ def run_pipeline_flow(
             fact_pack_paths,
             max_entity_concurrency=max_entity_concurrency,
             verbose=verbose,
+            release_gate=release_gate,
         ),
         retries=retries_per_stage,
         on_fail_manifest_inputs=[str(path) for path in fact_pack_paths],

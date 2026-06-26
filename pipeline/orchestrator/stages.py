@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from pipeline.addon import build_addon_bundle
+from pipeline.ai.config import load_ai_settings
 from pipeline.coalesce.resolve_entities import run_resolve_entities
 from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext, append_trace_event, write_stage_manifest
@@ -256,6 +257,7 @@ def run_draft_stage(
     *,
     max_entity_concurrency: int = 4,
     verbose: bool = False,
+    release_gate: bool = False,
 ) -> list[Path]:
     draft_entity_ids = [path.stem for path in fact_pack_paths]
     for entity_id in draft_entity_ids:
@@ -266,6 +268,18 @@ def run_draft_stage(
             status="start",
         )
     try:
+        if release_gate:
+            forced_no_llm = os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {
+                "1",
+                "true",
+                "yes",
+            }
+            settings = load_ai_settings()
+            if forced_no_llm or not getattr(settings, "openai_ready", False):
+                raise RuntimeError(
+                    "release-gate draft requires OpenAI-backed prose synthesis; "
+                    "unset WOW_LORE_WIKI_FIRST_NO_LLM and configure OPENAI_API_KEY"
+                )
         outputs = run_draft_writer(
             context,
             fact_pack_paths,
@@ -295,7 +309,7 @@ def run_draft_stage(
         status="ok",
         inputs=[str(path) for path in fact_pack_paths],
         outputs=[str(path) for path in outputs],
-        metadata={"max_entity_concurrency": max_entity_concurrency},
+        metadata={"max_entity_concurrency": max_entity_concurrency, "release_gate": release_gate},
     )
     return outputs
 

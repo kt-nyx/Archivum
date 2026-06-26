@@ -177,6 +177,37 @@ def test_mp3_draft_fails_when_llm_output_stays_invalid(
         run_draft_stage(context, fact_pack_paths, max_entity_concurrency=4)
 
 
+@pytest.mark.parametrize(
+    ("openai_ready", "forced_no_llm"),
+    [
+        (False, False),
+        (True, True),
+    ],
+)
+def test_release_gate_draft_requires_live_llm(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    openai_ready: bool,
+    forced_no_llm: bool,
+) -> None:
+    context = ensure_run_context(
+        "run-test-release-gate-draft-llm-required",
+        artifacts_root=tmp_path / "runs",
+    )
+    monkeypatch.setattr(
+        "pipeline.orchestrator.stages.load_ai_settings",
+        lambda: _draft_settings(openai_ready=openai_ready),
+    )
+    if forced_no_llm:
+        monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
+    else:
+        monkeypatch.delenv("WOW_LORE_WIKI_FIRST_NO_LLM", raising=False)
+
+    fact_pack = context.data_dir / "facts" / "zone-example.json"
+    with pytest.raises(RuntimeError, match="release-gate draft requires OpenAI"):
+        run_draft_stage(context, [fact_pack], release_gate=True)
+
+
 def test_ingest_fails_when_manifest_is_missing(tmp_path: Path) -> None:
     context = ensure_run_context(
         "run-test-mp3-manifest-missing",
