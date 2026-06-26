@@ -20,6 +20,7 @@ import json
 import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 from pipeline.common.io import read_json
 from pipeline.common.retail import is_non_retail_title
@@ -27,6 +28,7 @@ from pipeline.common.run_context import RunContext
 from pipeline.common.text_ids import slugify
 
 WIKI_BASE = "https://warcraft.wiki.gg/wiki"
+_LINK_CATEGORY_CACHE_NAME = "link_category_cache.json"
 
 # Snapshot entity types whose own page is a seed (zone/instance overview). Their
 # outbound lore links are the lexicon the page actually references.
@@ -58,6 +60,9 @@ _ENTITY_CATEGORY: dict[str, str] = {
     "artifact": "artifact",
     "concept": "concept",
 }
+_CATEGORY_SIGNAL_BUCKETS: frozenset[str] = frozenset(
+    {"person", "place", "faction", "event", "artifact"}
+)
 
 # Infobox header labels (lower-cased) that carry alternate names for an entity.
 # Values are split on the punctuation below into individual alias candidates.
@@ -142,6 +147,21 @@ def _wiki_url(label: str, existing_url: str = "") -> str:
     return f"{WIKI_BASE}/{wiki_slug}"
 
 
+def _title_from_href(href: str) -> str:
+    if "://" in href:
+        path = urlparse(href).path
+    else:
+        path = href
+    if "/wiki/" not in path:
+        return ""
+    title = path.split("/wiki/", 1)[-1].split("#", 1)[0]
+    return unquote(title).replace("_", " ").strip()
+
+
+def _link_category_lookup_key(title: str) -> str:
+    return title.replace("_", " ").strip().casefold()
+
+
 def _category_for_entity_type(entity_type: str) -> str:
     return _ENTITY_CATEGORY.get(entity_type.strip().lower(), "concept")
 
@@ -202,6 +222,19 @@ def _load_snapshots(context: RunContext) -> list[dict[str, Any]]:
     if not isinstance(blob, list):
         return []
     return [snapshot for snapshot in blob if isinstance(snapshot, dict)]
+
+
+def _load_link_category_cache(context: RunContext) -> dict[str, dict[str, Any]]:
+    cache_path = context.data_dir / "ingest" / _LINK_CATEGORY_CACHE_NAME
+    if not cache_path.exists():
+        return {}
+    blob = _load_json(cache_path)
+    if not isinstance(blob, dict):
+        return {}
+    entries = blob.get("entries")
+    if not isinstance(entries, dict):
+        return {}
+    return {str(key): value for key, value in entries.items() if isinstance(value, dict)}
 
 
 def _ingest_url_by_entity(snapshots: list[dict[str, Any]]) -> dict[str, str]:
@@ -430,9 +463,39 @@ def _is_harvestable_link(href: str, label: str) -> bool:
     return True
 
 
+def _seed_link_category_from_cache(
+    *,
+    href: str,
+    label: str,
+    link_category_cache: dict[str, dict[str, Any]],
+) -> str | None:
+    """Return a glossary category from cached wiki category signals.
+
+    ``None`` means the link should be skipped. ``"concept"`` means the cache did
+    not provide a strong type, so the legacy seed-link behavior remains.
+    """
+
+    title = _title_from_href(href) or label
+    entry = link_category_cache.get(_link_category_lookup_key(title))
+    if not entry:
+        return "concept"
+    signal = entry.get("signal")
+    if not isinstance(signal, dict):
+        return "concept"
+    disposition = str(signal.get("disposition", "")).strip()
+    if disposition in {"strong_drop", "soft_drop"}:
+        return None
+    bucket = str(signal.get("bucket", "")).strip()
+    if disposition in {"strong_include", "weak_include"} and bucket in _CATEGORY_SIGNAL_BUCKETS:
+        return bucket
+    return "concept"
+
+
 def _collect_from_seed_links(
     snapshots: list[dict[str, Any]],
     acc: _TermAccumulator,
+    *,
+    link_category_cache: dict[str, dict[str, Any]],
 ) -> None:
     """Harvest the lore lexicon from the seed pages' outbound wiki links (RC-5).
 
@@ -440,9 +503,10 @@ def _collect_from_seed_links(
     glossary (Scourge, Lordaeron, Kel'Thuzad, Plague of Undeath, ...). Earlier passes
     only emit terms for *entities the pipeline selected*, so this prose lexicon was
     missing. We harvest the seed pages' ``structured_links`` (which carry section roles
-    and labels), skipping RPG (non-canon) sections, navbox/namespace links, and
-    non-retail titles. Terms are added as the generic ``concept`` category; the
-    accumulator upgrades any whose label also resolves to a typed entity elsewhere.
+    and labels), skipping RPG (non-canon) sections, navbox/namespace links,
+    non-retail titles, and links whose cached wiki categories classify them as
+    noise. Strong cached category signals upgrade generic links into person,
+    place, faction, event, or artifact terms.
     """
     for snapshot in snapshots:
         if str(snapshot.get("auxiliary_role", "")).strip():
@@ -463,10 +527,17 @@ def _collect_from_seed_links(
             label = str(link.get("label", "")).strip()
             if not _is_harvestable_link(href, label):
                 continue
+            category = _seed_link_category_from_cache(
+                href=href,
+                label=label,
+                link_category_cache=link_category_cache,
+            )
+            if category is None:
+                continue
             absolute = (
                 f"https://warcraft.wiki.gg{href}" if href.startswith("/wiki/") else href
             )
-            acc.add(label=label, category="concept", wiki_url=absolute)
+            acc.add(label=label, category=category, wiki_url=absolute)
 
 
 def _collect_from_canonical_map(
@@ -493,6 +564,7 @@ def build_run_terms(context: RunContext) -> Path:
     """Generate data/glossary/run_terms.jsonl from drafts and discovery artifacts."""
     acc = _TermAccumulator()
     snapshots = _load_snapshots(context)
+    link_category_cache = _load_link_category_cache(context)
     ingest_urls = _ingest_url_by_entity(snapshots)
     draft_root = context.data_dir / "drafts"
 
@@ -508,7 +580,7 @@ def build_run_terms(context: RunContext) -> Path:
                 )
 
     _collect_from_snapshots(snapshots, acc)
-    _collect_from_seed_links(snapshots, acc)
+    _collect_from_seed_links(snapshots, acc, link_category_cache=link_category_cache)
 
     canonical_path = context.data_dir / "discovery" / "canonical_entity_map.jsonl"
     _collect_from_canonical_map(_load_jsonl(canonical_path), acc)

@@ -144,6 +144,23 @@ def _write_snapshots(context, snapshots: list[dict]) -> None:
     )
 
 
+def _write_link_category_cache(context, entries: dict[str, dict]) -> None:
+    ingest_dir = context.data_dir / "ingest"
+    ingest_dir.mkdir(parents=True, exist_ok=True)
+    (ingest_dir / "link_category_cache.json").write_text(
+        json.dumps(
+            {
+                "run_id": context.run_id,
+                "generated_at": "2026-01-01T00:00:00+00:00",
+                "source": "seed_structured_links",
+                "entries": entries,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_build_run_terms_derives_terms_from_ingest_snapshots(tmp_path: Path) -> None:
     context = ensure_run_context("run-test-glossary-snapshots", artifacts_root=tmp_path / "runs")
     _write_snapshots(
@@ -260,6 +277,54 @@ def test_build_run_terms_skips_abbreviation_shape_seed_links(tmp_path: Path) -> 
     assert "term-adp" not in term_ids
     assert "term-bdp" not in term_ids
     assert "term-third-war" in term_ids
+
+
+def test_build_run_terms_uses_seed_link_category_cache(tmp_path: Path) -> None:
+    context = ensure_run_context(
+        "run-test-glossary-link-category-cache", artifacts_root=tmp_path / "runs"
+    )
+    _write_snapshots(
+        context,
+        [
+            {
+                "entity_id": "zone-wpl",
+                "entity_type": "zone",
+                "name": "Western Plaguelands",
+                "url": "https://warcraft.wiki.gg/wiki/Western_Plaguelands",
+                "structured_links": [
+                    {"href": "/wiki/Human", "label": "Human", "section_role": "history"},
+                    {"href": "/wiki/Academy", "label": "Academy", "section_role": "history"},
+                    {"href": "/wiki/Lich", "label": "Lich", "section_role": "history"},
+                    {"href": "/wiki/Third_War", "label": "Third War", "section_role": "history"},
+                    {"href": "/wiki/Lich_King", "label": "Lich King", "section_role": "history"},
+                ],
+            }
+        ],
+    )
+    _write_link_category_cache(
+        context,
+        {
+            "human": {"signal": {"bucket": "noise", "disposition": "soft_drop"}},
+            "academy": {"signal": {"bucket": "noise", "disposition": "strong_drop"}},
+            "lich": {"signal": {"bucket": "noise", "disposition": "soft_drop"}},
+            "third war": {"signal": {"bucket": "event", "disposition": "strong_include"}},
+            "lich king": {"signal": {"bucket": "person", "disposition": "strong_include"}},
+        },
+    )
+
+    output_path = build_run_terms(context)
+    rows = [
+        json.loads(line)
+        for line in output_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    terms_by_id = {row["term_id"]: row for row in rows}
+
+    assert "term-human" not in terms_by_id
+    assert "term-academy" not in terms_by_id
+    assert "term-lich" not in terms_by_id
+    assert terms_by_id["term-third-war"]["category"] == "event"
+    assert terms_by_id["term-lich-king"]["category"] == "person"
 
 
 def test_build_run_terms_deduplicates_leading_article_terms(tmp_path: Path) -> None:

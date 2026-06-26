@@ -1,0 +1,334 @@
+version: v1
+
+strong_include_roots:
+  person:
+    - Characters
+    - Characters by appearances
+    - Characters by class
+    - Characters by race
+    - Characters by organization
+    - NPCs by zone
+    - NPCs by instance
+    - Bosses
+  place:
+    - Burial sites
+    - Subzones
+    - Zones
+    - Settlements
+    - Cities
+    - Forts
+    - Forests
+    - Islands
+    - Keeps
+    - Locations
+    - Territories
+    - Regions
+    - Kingdoms
+    - Nations
+    - Ruins
+    - Geography
+    - Instances
+    - Dungeons
+    - Raids
+  faction:
+    - Factions
+    - Organizations
+    - Organizations by class
+    - Organizations by race
+    - Alliance
+    - Horde
+  event:
+    - Afflictions
+    - Events
+    - Battles
+    - Wars
+  artifact:
+    - Artifacts
+
+strong_drop_roots:
+  - Images
+  - User created content
+  - Hidden categories
+  - World of Warcraft items
+  - World of Warcraft items by quality
+  - Quests
+  - API events
+  - API images
+  - API stubs
+  - API types
+  - Macro API
+  - Achievements
+  - Templates
+  - Disambiguations
+  - Image requests
+  - Concept art
+  - Developer showcases
+  - Maps
+  - Item sets
+  - Objects
+
+soft_drop_roots:
+  - Mobs
+  - Named mobs
+  - World of Warcraft creatures
+  - Roleplaying
+  - Glossary
+  - World of Warcraft
+  - Potentially out-of-date content
+  - Reputation
+  - Warcraft RPG
+  - "Warcraft: The Roleplaying Game"
+  - "World of Warcraft: The Roleplaying Game"
+  - Races
+  - Classes
+  - NPC classes
+  - NPC occupations
+  - Schools
+  - Monster Guide
+  - Manual of Monsters
+
+strong_drop_tokens:
+  - api
+  - achievement
+  - achievements
+  - hotfix
+  - stub
+  - stubs
+  - macro
+  - macros
+  - lua
+  - widget
+  - xml
+  - template
+  - templates
+  - navbox
+  - screenshot
+  - screenshots
+  - icon
+  - icons
+  - image
+  - images
+  - request
+  - requests
+  - redirect
+  - redirects
+  - deprecated
+  - unformatted
+  - noflavor
+  - namespace
+  - namespaces
+  - patch
+  - beta
+  - ptr
+  - quest
+  - quests
+  - item
+  - items
+  - inventory
+  - armor
+  - weapon
+  - weapons
+  - ability
+  - abilities
+  - spell
+  - spells
+  - mount
+  - mounts
+  - pet
+  - pets
+  - recipe
+  - recipes
+  - profession
+  - professions
+  - reward
+  - rewards
+  - tcg
+  - set
+  - sets
+  - vendor
+  - vendors
+  - trainer
+  - trainers
+  - drop
+  - drops
+  - decor
+  - housing
+  - server
+  - season
+  - talent
+  - talents
+  - plate
+  - cloth
+  - leather
+  - mail
+  - hearthstone
+  - wowpedia
+  - wikipedia
+  - disambiguation
+  - disambiguations
+  - acronym
+  - acronyms
+  - removed
+  - classic
+  - rpg
+
+strong_drop_phrases:
+  - added in patch
+  - removed in patch
+  - removed from
+  - pages using
+  - pages with
+  - articles with
+  - articles using
+  - articles containing
+  - articles needing
+  - to be
+  - feats of strength
+  - param empty
+  - id param
+  - out-of-date
+  - flavor text
+  - custom level
+  - card images
+  - card backs
+  - world quests
+  - image requests
+  - concept art
+  - developer showcases
+  - rare mobs
+  - elite mobs
+  - mobs by zone
+  - mobs by instance
+  - campaign missions
+
+include_tokens:
+  person:
+    - character
+    - characters
+    - npc
+    - npcs
+    - boss
+    - bosses
+    - leader
+    - leaders
+    - villain
+    - villains
+    - demigod
+    - demigods
+    - deity
+    - deities
+    - monarch
+    - monarchs
+    - king
+    - kings
+    - queen
+    - queens
+    - hero
+    - heroes
+  place:
+    - zone
+    - zones
+    - subzone
+    - subzones
+    - city
+    - cities
+    - town
+    - towns
+    - settlement
+    - settlements
+    - territory
+    - territories
+    - location
+    - locations
+    - region
+    - regions
+    - capital
+    - capitals
+    - continent
+    - continents
+    - instance
+    - instances
+    - dungeon
+    - dungeons
+    - raid
+    - raids
+    - kingdom
+    - kingdoms
+    - realm
+    - realms
+    - island
+    - islands
+    - forest
+    - forests
+    - mountain
+    - mountains
+    - village
+    - villages
+    - outpost
+    - outposts
+    - district
+    - districts
+    - hub
+    - hubs
+    - burial
+    - battleground
+    - battlegrounds
+    - keep
+    - keeps
+    - hall
+    - halls
+    - temple
+    - temples
+    - isle
+  faction:
+    - faction
+    - factions
+    - organization
+    - organizations
+    - order
+    - orders
+    - clan
+    - clans
+    - tribe
+    - tribes
+    - house
+    - houses
+    - guild
+    - guilds
+    - army
+    - armies
+    - legion
+    - legions
+    - cult
+    - cults
+    - covenant
+    - covenants
+    - council
+    - councils
+    - crusade
+    - crusades
+  event:
+    - war
+    - wars
+    - battle
+    - battles
+    - event
+    - events
+    - conflict
+    - conflicts
+    - invasion
+    - invasions
+    - campaign
+    - campaigns
+    - affliction
+    - afflictions
+    - plague
+    - plagues
+    - cataclysm
+    - cataclysms
+    - scourging
+  artifact:
+    - artifact
+    - artifacts
+    - relic
+    - relics

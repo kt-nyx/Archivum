@@ -12,9 +12,10 @@ from typing import Any
 
 from pipeline.common import wiki_html
 from pipeline.common.io import write_json
-from pipeline.common.retail import is_classic_categorized
+from pipeline.common.retail import is_classic_categorized, is_non_retail_title
 from pipeline.common.run_context import RunContext
 from pipeline.common.text_normalize import clean_wiki_snippet
+from pipeline.common.wiki_category_registry import classify_page_categories
 from pipeline.contracts.models import QuestRecord
 from pipeline.discovery.entity_typing import (
     is_bogus_traversal_link,
@@ -55,6 +56,21 @@ _MAX_PARENT_LORE = 1
 _MAX_RELATED_LORE = 3
 # Politeness throttle between quest page fetches (seconds), env-overridable.
 _QUEST_FETCH_SLEEP_SECONDS = float(os.environ.get("WOWLORE_QUEST_FETCH_SLEEP", "0.35"))
+
+_LINK_CATEGORY_CACHE_NAME = "link_category_cache.json"
+_LINK_NAMESPACE_PREFIXES: tuple[str, ...] = (
+    "file:",
+    "category:",
+    "template:",
+    "help:",
+    "special:",
+    "module:",
+    "talk:",
+    "user:",
+    "portal:",
+    "mediawiki:",
+    "wikipedia:",
+)
 
 
 def _throttle(seconds: float) -> None:
@@ -570,6 +586,7 @@ def _persist_traverse_state(
     manifest_rows: list[dict[str, Any]],
     report_rows: list[dict[str, Any]],
     quest_records: list[dict[str, Any]] | None = None,
+    link_category_cache: dict[str, Any] | None = None,
 ) -> dict[str, Path]:
     ingest_dir = context.stage_dir("ingest")
     snapshots_path = ingest_dir / "source_snapshots.json"
@@ -586,6 +603,10 @@ def _persist_traverse_state(
         "source_snapshots": snapshots_path,
         "source_manifest": manifest_path,
     }
+    if link_category_cache is not None:
+        link_category_cache_path = ingest_dir / _LINK_CATEGORY_CACHE_NAME
+        write_json(link_category_cache_path, link_category_cache, sort_keys=True)
+        outputs["link_category_cache"] = link_category_cache_path
     if quest_records is not None:
         discovery_dir = context.data_dir / "discovery"
         discovery_dir.mkdir(parents=True, exist_ok=True)
@@ -699,6 +720,202 @@ def _exclude_classic_instance_characters(
                     "names": excluded,
                 }
             )
+
+
+def _link_category_cache_path(context: RunContext) -> Path:
+    return context.data_dir / "ingest" / _LINK_CATEGORY_CACHE_NAME
+
+
+def _load_existing_link_category_cache(context: RunContext) -> dict[str, Any]:
+    path = _link_category_cache_path(context)
+    if not path.exists():
+        return {"run_id": context.run_id, "entries": {}}
+    blob = _load_json(path)
+    if isinstance(blob, dict):
+        return blob
+    return {"run_id": context.run_id, "entries": {}}
+
+
+def _add_unique_text(values: list[str], value: str) -> None:
+    cleaned = value.strip()
+    if cleaned and cleaned not in values:
+        values.append(cleaned)
+
+
+def _is_link_category_candidate(href: str, label: str) -> bool:
+    if not href or not label:
+        return False
+    title = _wiki_title(href)
+    if not title:
+        return False
+    lowered_title = title.casefold()
+    lowered_label = label.casefold()
+    if lowered_title.startswith(_LINK_NAMESPACE_PREFIXES) or lowered_label.startswith(
+        _LINK_NAMESPACE_PREFIXES
+    ):
+        return False
+    if is_non_retail_title(title) or is_non_retail_title(label):
+        return False
+    return "/wiki/" in href or not href.startswith(("http://", "https://"))
+
+
+def _seed_link_category_targets(snapshots: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    targets: dict[str, dict[str, Any]] = {}
+    for snapshot in snapshots:
+        if str(snapshot.get("auxiliary_role", "")).strip():
+            continue
+        if str(snapshot.get("entity_type", "")).strip().lower() not in {"zone", "instance"}:
+            continue
+        links = snapshot.get("structured_links")
+        if not isinstance(links, list):
+            continue
+        for link in links:
+            if not isinstance(link, dict):
+                continue
+            section_role = str(link.get("section_role", "")).strip().lower()
+            parent_role = str(link.get("parent_section_role", "")).strip().lower()
+            if section_role.startswith("in_the_rpg") or parent_role.startswith("in_the_rpg"):
+                continue
+            href = str(link.get("canonical_path") or link.get("href") or "").strip()
+            label = str(link.get("label", "")).strip()
+            if not _is_link_category_candidate(href, label):
+                continue
+            title = _wiki_title(href)
+            key = _category_lookup_key(title)
+            target = targets.setdefault(key, {"title": title, "labels": [], "hrefs": []})
+            _add_unique_text(target["labels"], label)
+            _add_unique_text(target["hrefs"], href)
+    return targets
+
+
+def _entry_list(entry: dict[str, Any], key: str) -> list[str]:
+    raw = entry.get(key)
+    if not isinstance(raw, list):
+        return []
+    return [str(item).strip() for item in raw if str(item).strip()]
+
+
+def _entry_parent_map(entry: dict[str, Any]) -> dict[str, list[str]]:
+    raw = entry.get("category_parents")
+    if not isinstance(raw, dict):
+        return {}
+    parents: dict[str, list[str]] = {}
+    for category, values in raw.items():
+        if isinstance(values, list):
+            cleaned = [str(value).strip() for value in values if str(value).strip()]
+            parents[str(category)] = cleaned
+    return parents
+
+
+def _fetch_category_map(
+    titles: list[str],
+    *,
+    report_rows: list[dict[str, Any]],
+    role: str,
+) -> dict[str, list[str]]:
+    if not titles:
+        return {}
+    try:
+        return fetch_categories_for_titles(titles, retries=1)
+    except Exception as exc:  # noqa: BLE001 - best-effort category enrichment
+        report_rows.append(
+            {
+                "status": "skipped",
+                "link": f"<{role}>",
+                "reason": f"category_fetch_failed:{exc!r}",
+                "role": "link_category_cache",
+            }
+        )
+        return {}
+
+
+def _build_link_category_cache(
+    context: RunContext,
+    snapshots: list[dict[str, Any]],
+    report_rows: list[dict[str, Any]],
+    captured_at: str,
+) -> dict[str, Any]:
+    targets = _seed_link_category_targets(snapshots)
+    existing = _load_existing_link_category_cache(context)
+    raw_existing_entries = existing.get("entries")
+    existing_entries: dict[str, Any] = (
+        raw_existing_entries if isinstance(raw_existing_entries, dict) else {}
+    )
+
+    categories_by_key: dict[str, list[str]] = {}
+    missing_titles: list[str] = []
+    for key, target in targets.items():
+        existing_entry = existing_entries.get(key)
+        if isinstance(existing_entry, dict):
+            categories_by_key[key] = _entry_list(existing_entry, "categories")
+        if key not in categories_by_key:
+            missing_titles.append(str(target.get("title", "")))
+
+    fetched_categories = _fetch_category_map(
+        sorted(title for title in missing_titles if title),
+        report_rows=report_rows,
+        role="link-category-cache",
+    )
+    for title in missing_titles:
+        key = _category_lookup_key(title)
+        categories_by_key[key] = fetched_categories.get(key, [])
+
+    parent_map_by_category: dict[str, list[str]] = {}
+    for key in targets:
+        existing_entry = existing_entries.get(key)
+        if isinstance(existing_entry, dict):
+            for category, parents in _entry_parent_map(existing_entry).items():
+                parent_map_by_category[_category_lookup_key(category)] = parents
+
+    all_categories = sorted(
+        {
+            category
+            for categories in categories_by_key.values()
+            for category in categories
+            if category.strip()
+        }
+    )
+    missing_parent_titles = [
+        f"Category:{category}"
+        for category in all_categories
+        if _category_lookup_key(category) not in parent_map_by_category
+    ]
+    fetched_parents = _fetch_category_map(
+        missing_parent_titles,
+        report_rows=report_rows,
+        role="link-category-parent-cache",
+    )
+    for category in all_categories:
+        category_key = _category_lookup_key(category)
+        parent_title = f"Category:{category}"
+        parent_map_by_category.setdefault(
+            category_key,
+            fetched_parents.get(_category_lookup_key(parent_title), []),
+        )
+
+    entries: dict[str, Any] = {}
+    for key, target in sorted(targets.items()):
+        categories = categories_by_key.get(key, [])
+        category_parents = {
+            category: parent_map_by_category.get(_category_lookup_key(category), [])
+            for category in categories
+        }
+        signal = classify_page_categories(categories, category_parents)
+        entries[key] = {
+            "title": str(target.get("title", "")),
+            "labels": sorted(_entry_list(target, "labels")),
+            "hrefs": sorted(_entry_list(target, "hrefs")),
+            "categories": categories,
+            "category_parents": category_parents,
+            "signal": signal.to_dict(),
+        }
+
+    return {
+        "run_id": context.run_id,
+        "generated_at": captured_at,
+        "source": "seed_structured_links",
+        "entries": entries,
+    }
 
 
 def _ordered_v3_quest_nodes(v3_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -983,12 +1200,19 @@ def run_traverse_seed(context: RunContext) -> dict[str, Path]:
             _increment(instance_id, aux_role)
 
     _exclude_classic_instance_characters(snapshots, report_rows)
+    link_category_cache = _build_link_category_cache(
+        context,
+        snapshots,
+        report_rows,
+        captured_at,
+    )
 
     return _persist_traverse_state(
         context,
         snapshots=snapshots,
         manifest_rows=manifest_rows,
         report_rows=report_rows,
+        link_category_cache=link_category_cache,
     )
 
 

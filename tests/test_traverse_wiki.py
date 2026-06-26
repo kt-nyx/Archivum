@@ -10,7 +10,11 @@ from pipeline.discovery.enrich import run_discovery_enrich
 from pipeline.discovery.storyline_html import parse_storyline_html
 from pipeline.discovery.workflow import run_discovery_workflow
 from pipeline.ingest.fetch_wiki import FetchedSource
-from pipeline.ingest.traverse_wiki import run_traverse_quests, run_traverse_seed
+from pipeline.ingest.traverse_wiki import (
+    _build_link_category_cache,
+    run_traverse_quests,
+    run_traverse_seed,
+)
 
 STORYLINE_HTML = Path("tests/fixtures/storyline/western_plaguelands_storyline.html").read_text(
     encoding="utf-8"
@@ -98,6 +102,85 @@ def _write_ingest_fixtures(context, ingest_dir: Path) -> None:
     (ingest_dir / "source_manifest.json").write_text(
         json.dumps(manifest, indent=2), encoding="utf-8"
     )
+
+
+def test_build_link_category_cache_classifies_seed_outbound_links(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = ensure_run_context("run-test-link-category-cache", artifacts_root=tmp_path / "runs")
+    snapshots = [
+        {
+            "entity_id": ZONE_ID,
+            "entity_type": "zone",
+            "name": ZONE_NAME,
+            "auxiliary_role": "",
+            "structured_links": [
+                {"href": "/wiki/Human", "label": "Human", "section_role": "lead"},
+                {"href": "/wiki/Academy", "label": "Academy", "section_role": "lead"},
+                {"href": "/wiki/Lich", "label": "Lich", "section_role": "history"},
+                {"href": "/wiki/Third_War", "label": "Third War", "section_role": "history"},
+                {
+                    "href": "/wiki/Lich_King",
+                    "label": "Lich King",
+                    "section_role": "history",
+                },
+                {
+                    "href": "/wiki/Grand_Tour",
+                    "label": "Grand Tour",
+                    "section_role": "in_the_rpg",
+                },
+            ],
+        }
+    ]
+
+    def key(title: str) -> str:
+        return title.replace("_", " ").strip().casefold()
+
+    def fake_categories(titles: object, **kwargs: object) -> dict[str, list[str]]:
+        result: dict[str, list[str]] = {}
+        title_list = titles if isinstance(titles, list) else []
+        for raw_title in title_list:
+            title = str(raw_title)
+            if title.startswith("Category:"):
+                category = title.split(":", 1)[1]
+                result[key(title)] = {
+                    "Races": ["World of Warcraft"],
+                    "Disambiguations": ["Hidden categories"],
+                    "Schools": ["World of Warcraft"],
+                    "Liches": ["World of Warcraft creatures"],
+                    "Wars": ["Events", "Lore"],
+                    "Characters": ["NPCs"],
+                }.get(category, [])
+                continue
+            result[key(title)] = {
+                "Human": ["Races"],
+                "Academy": ["Disambiguations", "Schools"],
+                "Lich": ["Liches"],
+                "Third War": ["Wars"],
+                "Lich King": ["Characters"],
+            }.get(title, [])
+        return result
+
+    monkeypatch.setattr("pipeline.ingest.traverse_wiki.fetch_categories_for_titles", fake_categories)
+
+    report_rows: list[dict[str, object]] = []
+    cache = _build_link_category_cache(
+        context,
+        snapshots,
+        report_rows,
+        "2026-01-01T00:00:00+00:00",
+    )
+
+    entries = cache["entries"]
+    assert set(entries) == {"academy", "human", "lich", "lich king", "third war"}
+    assert entries["human"]["signal"]["disposition"] == "soft_drop"
+    assert entries["academy"]["signal"]["disposition"] == "strong_drop"
+    assert entries["lich"]["signal"]["disposition"] == "soft_drop"
+    assert entries["third war"]["signal"]["bucket"] == "event"
+    assert entries["third war"]["signal"]["disposition"] == "strong_include"
+    assert entries["lich king"]["signal"]["bucket"] == "person"
+    assert report_rows == []
 
 
 def test_traverse_fetches_v3_quests_from_graph_not_wiki_link_dump(
