@@ -1208,7 +1208,7 @@ def test_linker_links_multiple_terms_sharing_one_section(tmp_path: Path) -> None
             for slug, label in [
                 ("scourge", "Scourge"),
                 ("lordaeron", "Lordaeron"),
-                ("kel-thuzad", "Kel'Thuzad"),
+                ("kelthuzad", "Kel'Thuzad"),
                 ("plague-of-undeath", "Plague of Undeath"),
             ]
         )
@@ -1263,4 +1263,4 @@ def test_linker_links_multiple_terms_sharing_one_section(tmp_path: Path) -> None
     updated = json.loads(draft_path.read_text(encoding="utf-8"))
     linked = {row["term_id"] for row in updated["glossary_refs"]}
     # All four terms share the single history paragraph and must all be linked.
-    assert {"term-scourge", "term-lordaeron", "term-kel-thuzad", "term-plague-of-undeath"} <= linked
+    assert {"term-scourge", "term-lordaeron", "term-kelthuzad", "term-plague-of-undeath"} <= linked

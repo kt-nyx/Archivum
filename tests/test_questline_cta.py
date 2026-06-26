@@ -125,7 +125,7 @@ def test_synthesize_questline_cta_hook_no_llm_passes_lint(monkeypatch, no_llm: s
     monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", no_llm)
     items = [
         {
-            "quest_node_id": "quest-hero-s-call-western-plaguelands",
+            "quest_node_id": "quest-heros-call-western-plaguelands",
             "snippet": "Push back the Scourge and secure the ruined city before the Forsaken advance.",
             "source_id": "src-hero",
         },
@@ -140,9 +140,9 @@ def test_synthesize_questline_cta_hook_no_llm_passes_lint(monkeypatch, no_llm: s
         arc_title="Andorhal Campaign (Alliance)",
         start_anchor="Hero's Call: Western Plaguelands!",
         faction="alliance",
-        chain_refs=["quest-hero-s-call-western-plaguelands", "quest-late"],
+        chain_refs=["quest-heros-call-western-plaguelands", "quest-late"],
         quest_descriptions={
-            "quest-hero-s-call-western-plaguelands": (
+            "quest-heros-call-western-plaguelands": (
                 "Push back the Scourge and secure the ruined city before the Forsaken advance."
             )
         },

@@ -220,14 +220,87 @@ def test_build_run_terms_harvests_seed_page_lore_links(tmp_path: Path) -> None:
     term_ids = {row["term_id"] for row in rows}
     assert "term-scourge" in term_ids
     assert "term-lordaeron" in term_ids
-    # slugify folds the apostrophe to a hyphen (pipeline-wide convention).
-    assert "term-kel-thuzad" in term_ids
+    # slugify removes the intra-word apostrophe (pipeline-wide convention).
+    assert "term-kelthuzad" in term_ids
     # Namespace, non-retail, and RPG-section links must not become terms.
     assert not any("file" in t for t in term_ids)
     assert "term-andorhal-classic" not in term_ids
     assert "term-grand-tour" not in term_ids
     lordaeron = next(row for row in rows if row["term_id"] == "term-lordaeron")
     assert lordaeron["wiki_url"] == "https://warcraft.wiki.gg/wiki/Lordaeron"
+
+
+def test_build_run_terms_skips_abbreviation_shape_seed_links(tmp_path: Path) -> None:
+    context = ensure_run_context(
+        "run-test-glossary-abbreviation-links", artifacts_root=tmp_path / "runs"
+    )
+    _write_snapshots(
+        context,
+        [
+            {
+                "entity_id": "zone-wpl",
+                "entity_type": "zone",
+                "name": "Western Plaguelands",
+                "url": "https://warcraft.wiki.gg/wiki/Western_Plaguelands",
+                "structured_links": [
+                    {"href": "/wiki/ADP", "label": "ADP", "section_role": "history"},
+                    {"href": "/wiki/BDP", "label": "BDP", "section_role": "history"},
+                    {"href": "/wiki/Third_War", "label": "Third War", "section_role": "history"},
+                ],
+            }
+        ],
+    )
+    output_path = build_run_terms(context)
+    rows = [
+        json.loads(line)
+        for line in output_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    term_ids = {row["term_id"] for row in rows}
+    assert "term-adp" not in term_ids
+    assert "term-bdp" not in term_ids
+    assert "term-third-war" in term_ids
+
+
+def test_build_run_terms_deduplicates_leading_article_terms(tmp_path: Path) -> None:
+    context = ensure_run_context(
+        "run-test-glossary-leading-article", artifacts_root=tmp_path / "runs"
+    )
+    _write_snapshots(
+        context,
+        [
+            {
+                "entity_id": "zone-wpl",
+                "entity_type": "zone",
+                "name": "Western Plaguelands",
+                "url": "https://warcraft.wiki.gg/wiki/Western_Plaguelands",
+                "structured_links": [
+                    {
+                        "href": "/wiki/The_Battle_for_Andorhal",
+                        "label": "The Battle for Andorhal",
+                        "section_role": "history",
+                    },
+                    {
+                        "href": "/wiki/Battle_for_Andorhal",
+                        "label": "Battle for Andorhal",
+                        "section_role": "history",
+                    },
+                ],
+            }
+        ],
+    )
+    output_path = build_run_terms(context)
+    rows = [
+        json.loads(line)
+        for line in output_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    battle_rows = [row for row in rows if "battle-for-andorhal" in row["term_id"]]
+    assert len(battle_rows) == 1
+    battle = battle_rows[0]
+    assert battle["term_id"] == "term-battle-for-andorhal"
+    assert battle["label"] == "Battle for Andorhal"
+    assert battle["aliases"] == ["battle for andorhal", "the battle for andorhal"]
 
 
 def test_build_run_terms_classifies_unknown_type_from_categories(tmp_path: Path) -> None:

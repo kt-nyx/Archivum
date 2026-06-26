@@ -120,7 +120,7 @@
       "cta_hook": "Heed the Warchief's command and march on Andorhal, where the Forsaken fight to wrench the plagued city from the Scourge's grip. The Alliance holds the ruins, and the war is far from over.",
       "start_anchor": "Warchief's Command: Western Plaguelands!",
       "chain_refs": [
-        "quest-warchief-s-command-western-plaguelands",
+        "quest-warchiefs-command-western-plaguelands",
         "quest-scourge-first-alliance-later",
         "quest-victory-for-now-horde",
         "quest-after-the-crusade",
@@ -159,13 +159,13 @@
       "cta_hook": "Answer the Alliance's call to Andorhal, the ruined grain-heart of old Lordaeron now caught between lingering Scourge and a watchful Forsaken host. Take the field before the uneasy calm breaks into open war.",
       "start_anchor": "Hero's Call: Western Plaguelands!",
       "chain_refs": [
-        "quest-hero-s-call-western-plaguelands",
+        "quest-heros-call-western-plaguelands",
         "quest-scourge-first-horde-later",
         "quest-the-endless-flow-alliance",
         "quest-victory-for-now-alliance",
         "quest-go-fletch",
         "quest-a-mighty-hunger",
-        "quest-uther-s-blessing",
+        "quest-uthers-blessing",
         "quest-the-abandoned-crypt",
         "quest-ambushed-western-plaguelands",
         "quest-the-writhing-haunt-quest",
@@ -201,7 +201,7 @@
       "start_anchor": "An Audience with the Highlord",
       "chain_refs": [
         "quest-an-audience-with-the-highlord",
-        "quest-taelan-fordring-s-legacy",
+        "quest-taelan-fordrings-legacy",
         "quest-unusual-behavior-even-for-gnolls",
         "quest-the-good-people-of-hearthglen",
         "quest-bagging-bisp",
@@ -228,7 +228,7 @@
       "cta_hook": "As the plague stirs anew at Gahrron's Withering, ride out to Mender's Stead to cleanse the last poisoned fields. Discover who still tends the Scourge's forgotten cauldrons, and put a stop to their plans.",
       "start_anchor": "Gahrron's Withering Cauldron",
       "chain_refs": [
-        "quest-gahrron-s-withering-cauldron",
+        "quest-gahrrons-withering-cauldron",
         "quest-return-to-the-stead",
         "quest-desperate-acts",
         "quest-students-of-krastinov"

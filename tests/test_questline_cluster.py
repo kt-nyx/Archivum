@@ -418,8 +418,8 @@ def test_wpl_fixture_clusters_match_registry_arc_separation() -> None:
 
     # 4. The Andorhal Alliance and Horde entry quests anchor different, faction-pure
     #    clusters (the live run fragmented and cross-wired these).
-    alliance_entry = cluster_by_node["quest-hero-s-call-western-plaguelands"]
-    horde_entry = cluster_by_node["quest-warchief-s-command-western-plaguelands"]
+    alliance_entry = cluster_by_node["quest-heros-call-western-plaguelands"]
+    horde_entry = cluster_by_node["quest-warchiefs-command-western-plaguelands"]
     assert alliance_entry != horde_entry
     for node_id, cluster_id in cluster_by_node.items():
         if cluster_id in (alliance_entry, horde_entry):

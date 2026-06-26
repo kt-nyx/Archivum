@@ -78,7 +78,7 @@ def test_membership_binds_hearthglen_arc_from_real_node_ids() -> None:
         faction="shared",
         member_node_ids=[
             "quest-an-audience-with-the-highlord",
-            "quest-taelan-fordring-s-legacy",
+            "quest-taelan-fordrings-legacy",
             "quest-the-good-people-of-hearthglen",
         ],
         registry=registry,

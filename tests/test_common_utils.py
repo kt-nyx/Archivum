@@ -14,9 +14,13 @@ from pipeline.common.text_sim import (
 
 
 def test_slugify_basic() -> None:
-    assert slugify("Hero's Call: Western Plaguelands!") == "hero-s-call-western-plaguelands"
+    assert slugify("Hero's Call: Western Plaguelands!") == "heros-call-western-plaguelands"
     assert slugify("  Drudges... *Sigh*  ") == "drudges-sigh"
     assert slugify("") == ""
+    # Intra-word apostrophes (straight and curly) are removed, not collapsed to a separator.
+    assert slugify("Kel'Thuzad") == "kelthuzad"
+    assert slugify("Ner'zhul") == "nerzhul"
+    assert slugify("Uther’s Tomb") == "uthers-tomb"
 
 
 def test_slugify_separator_and_strip_options() -> None:

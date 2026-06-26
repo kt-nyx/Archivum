@@ -79,6 +79,27 @@ _INFOBOX_ALIAS_FIELDS: frozenset[str] = frozenset(
 
 _ALIAS_SPLIT_RE = re.compile(r"[,;/\n]")
 
+# A short, all-uppercase single token (ADP, NPC, BDP) is a wiki abbreviation/date
+# notation, not a lore proper noun — proper nouns are mixed-case. Requires at least
+# one letter so this is a *shape* rule, not a content list.
+_ABBREVIATION_RE = re.compile(r"[A-Z0-9]{2,5}")
+
+# A leading article is dropped when deriving the dedup key/slug so "The Battle for
+# Andorhal" and "Battle for Andorhal" collapse to one term (one rule, no per-term data).
+_LEADING_ARTICLE_RE = re.compile(r"^the\s+", re.IGNORECASE)
+
+
+def _is_abbreviation_shape(label: str) -> bool:
+    token = label.strip()
+    if not token or " " in token or "-" in token:
+        return False
+    return bool(_ABBREVIATION_RE.fullmatch(token)) and any(ch.isalpha() for ch in token)
+
+
+def _strip_leading_article(label: str) -> str:
+    stripped = _LEADING_ARTICLE_RE.sub("", label).strip()
+    return stripped or label
+
 # Structural MediaWiki-category -> glossary-category decoder. It matches against
 # the authoritative category names captured at ingest (INGEST-CAT), not free body
 # text, so it is the structural signal WS-C/D-6 sanctions. Used only to refine a
@@ -218,11 +239,15 @@ class _TermAccumulator:
         cleaned = label.strip()
         if not cleaned or len(cleaned) < 2:
             return
-        norm = _normalize_alias(cleaned)
+        # Key (and slug) on the article-stripped form so "The Battle for Andorhal"
+        # dedups against "Battle for Andorhal"; both surface forms stay as aliases so
+        # the linker can still match either in prose.
+        keyed = _strip_leading_article(cleaned)
+        norm = _normalize_alias(keyed)
         if not norm:
             return
-        url = _wiki_url(cleaned, wiki_url)
-        aliases = {_normalize_alias(cleaned)}
+        url = _wiki_url(keyed, wiki_url)
+        aliases = {_normalize_alias(cleaned), _normalize_alias(keyed)}
         if extra_aliases:
             for alias in extra_aliases:
                 normalized = _normalize_alias(alias)
@@ -244,7 +269,7 @@ class _TermAccumulator:
             if existing.get("category", "concept") == "concept" and category != "concept":
                 existing["category"] = category
             return
-        base_slug = _term_slug(cleaned)
+        base_slug = _term_slug(keyed)
         term_id = f"term-{base_slug}"
         suffix = 2
         while term_id in self._term_ids:
@@ -253,7 +278,7 @@ class _TermAccumulator:
         self._term_ids.add(term_id)
         self._by_label[norm] = {
             "term_id": term_id,
-            "label": cleaned,
+            "label": keyed,
             "wiki_url": url,
             "category": category,
             "aliases": sorted(aliases),
@@ -397,6 +422,8 @@ def _is_harvestable_link(href: str, label: str) -> bool:
     if not title:
         return False
     if label.strip().lower().startswith(_LINK_NAMESPACE_PREFIXES):
+        return False
+    if _is_abbreviation_shape(label):
         return False
     if is_non_retail_title(label) or is_non_retail_title(title.replace("_", " ")):
         return False
