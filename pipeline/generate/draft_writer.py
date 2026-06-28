@@ -16,6 +16,10 @@ from pipeline.discovery.instance_bosses import classify_character_role
 from pipeline.discovery.questline_card_polish import load_questline_card_metadata
 from pipeline.discovery.questline_significance import load_included_cluster_ids_by_zone
 from pipeline.generate.draft import finalize_trace, generate_entity_draft, is_valid_draft
+from pipeline.generate.draft.claim_routing import (
+    apply_claim_views_to_evidence_rows,
+    build_claim_view_routing_decisions,
+)
 from pipeline.generate.draft.llm import draft_chat_json_completion, set_draft_verbose
 from pipeline.generate.draft.mode import draft_pipeline_mode
 from pipeline.generate.draft.pages import (
@@ -238,6 +242,7 @@ def run_draft_writer(
     canonical_temporal_decisions: list[dict[str, Any]] = []
     canonical_claim_decisions: list[dict[str, Any]] = []
     claim_temporal_decisions: list[dict[str, Any]] = []
+    claim_view_routing_decisions: list[dict[str, Any]] = []
     if evidence_rows:
         (
             evidence_rows,
@@ -260,6 +265,8 @@ def run_draft_writer(
             return_claim_decisions=True,
             return_claim_temporal_decisions=True,
         )
+        evidence_rows = apply_claim_views_to_evidence_rows(evidence_rows, claim_temporal_decisions)
+        claim_view_routing_decisions = build_claim_view_routing_decisions(evidence_rows)
 
     # Carry each traversed location page's own MediaWiki categories onto its candidate row so the
     # draft can type the card from the authoritative wiki signal (e.g. Andorhal -> "Destroyed
@@ -547,6 +554,7 @@ def run_draft_writer(
         canonical_claim_decisions,
     )
     write_json((decisions_dir / "claim_temporal_decisions.json"), claim_temporal_decisions)
+    write_json((decisions_dir / "claim_view_routing_decisions.json"), claim_view_routing_decisions)
     write_json(
         (decisions_dir / "instance_key_character_decisions.json"), instance_key_character_decisions
     )

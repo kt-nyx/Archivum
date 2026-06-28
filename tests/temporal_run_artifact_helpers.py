@@ -79,6 +79,7 @@ def summarize_temporal_run_artifacts(run_dir: Path) -> TemporalRunSummary:
         "entry_state_contract_decisions.json",
         "canonical_claim_extraction_decisions.json",
         "claim_temporal_decisions.json",
+        "claim_view_routing_decisions.json",
         "section_coverage_decisions.json",
     }
     present = {name for name in sidecars if (decisions_dir / name).exists()}

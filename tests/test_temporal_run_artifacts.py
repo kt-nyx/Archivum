@@ -264,6 +264,7 @@ def test_future_temporal_sidecars_exist_when_claim_routing_lands(tmp_path: Path)
 
     assert "canonical_claim_extraction_decisions.json" in summary.sidecars_present
     assert "claim_temporal_decisions.json" in summary.sidecars_present
+    assert "claim_view_routing_decisions.json" in summary.sidecars_present
     assert "section_coverage_decisions.json" in summary.sidecars_present
 
 

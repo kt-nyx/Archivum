@@ -13,11 +13,13 @@ from pipeline.discovery.instance_bosses import (
     cap_pool_for_llm_prompt,
     collect_character_pool,
     deterministic_pool_order,
+    is_boss_section_role,
     merge_key_character_cast,
     merged_cast_candidates,
     must_include_key_character_names,
     prefilter_character_pool,
 )
+from pipeline.generate.draft.claim_routing import KEY_CHARACTER_ROUTE, route_claim_views_for_pool
 from pipeline.generate.draft.instance_lint import (
     fallback_key_character_summary,
     lint_key_character_summary,
@@ -207,6 +209,30 @@ def build_instance_key_character_roster(
     ).cast
 
 
+def _key_character_summary_pool(pool: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return route_claim_views_for_pool(pool, KEY_CHARACTER_ROUTE)
+
+
+def _structural_presence_summary_pool(
+    *,
+    candidate: BossCandidate,
+    instance_name: str,
+    source_pool: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not source_pool or not is_boss_section_role(candidate.source_section_role):
+        return []
+    base = dict(source_pool[0])
+    base["snippet"] = (
+        f"{candidate.name} is present in {instance_name} as one of the setting's notable "
+        f"figures, helping define the threats and power structure encountered there."
+    )
+    base["source_excerpt"] = str(source_pool[0].get("source_excerpt") or source_pool[0].get("snippet", ""))
+    base["is_claim_view"] = True
+    base["claim_id"] = ""
+    base["spoiler_safety"] = "encounter_setup"
+    return [base]
+
+
 def _finalize_key_characters(
     *,
     instance_name: str,
@@ -234,6 +260,16 @@ def _finalize_key_characters(
         card_pointers: list[dict[str, str]] = []
         structural_role = candidate.role or "uncertain"
         for pool in pools_to_try:
+            source_pool = pool
+            pool = _key_character_summary_pool(source_pool)
+            if not pool:
+                pool = _structural_presence_summary_pool(
+                    candidate=candidate,
+                    instance_name=instance_name,
+                    source_pool=source_pool,
+                )
+            if not pool:
+                continue
             summary, used = synthesize_key_character_summary(
                 pool,
                 boss_name=candidate.name,

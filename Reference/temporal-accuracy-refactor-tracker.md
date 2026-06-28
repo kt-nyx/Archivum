@@ -910,7 +910,7 @@ Risks:
 
 ## Slice 6 - Claim-Level Routed Evidence Views
 
-Status: Not started
+Status: Verified
 
 Goal: make drafting pools consume safe claims while preserving paragraph provenance.
 
@@ -975,6 +975,45 @@ Acceptance:
 
 - Claim pools are visible in debug output or sidecars.
 - Existing paragraph-only tests pass via fallback.
+
+Implementation notes:
+
+- Added `pipeline/generate/draft/claim_routing.py` to attach claim-level drafting views to
+  enriched evidence rows after claim temporal classification.
+- Drafting views expose `snippet=claim_text` for synthesis while keeping `source_excerpt` as the
+  original paragraph text for audit/provenance hashing.
+- Added field-specific claim routes for history, currently, at-a-glance, faction context, location
+  context, instance overview, and key-character summary pools.
+- `pages/assembly.py` now opts section pools into the relevant claim route and keeps paragraph
+  fallback when no claim sidecar exists.
+- Key-character selection still uses structural boss paragraphs for roster discovery, while summary
+  prose uses safe claim views when present. If a structural roster claim is mechanics-unsafe and no
+  safe claim text exists, card finalization uses a neutral structural-presence summary backed by the
+  roster paragraph for provenance rather than exposing the mechanics claim.
+- Provenance pointers for claim views still omit `claim_id` publicly and hash the original
+  paragraph/source excerpt rather than the shorter claim text.
+- Draft writer now persists `data/decisions/claim_view_routing_decisions.json` so routeable claim
+  counts are visible in non-public artifacts.
+- Added `tests/test_claim_routing.py` for mixed-claim routing, paragraph fallback, key-character
+  mechanics exclusion, routing sidecar counts, and paragraph-hash provenance.
+- Verification run: `uv run pytest tests/test_claim_routing.py tests/test_claim_temporal_classifier.py tests/test_temporal_evidence_classifier.py tests/test_temporal_run_artifacts.py tests/test_draft_baseline.py tests/test_instance_page_draft.py tests/test_zone_prose_draft.py tests/test_zone_faction_draft.py tests/test_zone_location_draft.py tests/test_build_instance_key_character_selection.py -q`.
+- Verification run: `uv run ruff check .`.
+- Verification run: `uv run mypy pipeline/generate/draft/claim_routing.py pipeline/generate/draft/pages/assembly.py pipeline/generate/draft/pages/key_characters.py pipeline/generate/draft_writer.py`.
+
+Review cycle (2026-06-28):
+
+- Confirmed `_claim_allowed_for_route` hard-blocks outcome/post-active/noncanon scopes and all
+  unsafe spoiler-safety labels before any per-route check, so no field route can leak an outcome.
+- Confirmed each route filter is at least as strict as the downstream `filter_temporal_items`/
+  `filter_history_items` set it feeds, so the layered filtering is consistent.
+- Confirmed paragraph fallback is preserved on both the per-item assembly path and the pooled
+  key-character path when no claim sidecar exists.
+- Confirmed claim-view provenance hashes the original `source_excerpt` and omits `claim_id` from
+  public pointers.
+- Noted (non-blocking) that claim-view snippets bypass the paragraph empty-`snippet` guard; claim
+  extraction guarantees non-empty `claim_text`, so no live defect.
+- Full suite green: 859 passed, 6 skipped, 1 xfailed. `ruff check` and targeted `mypy` clean.
+  `git diff --check` clean.
 
 Risks:
 
@@ -1403,3 +1442,5 @@ Scholomance:
 Add dated entries here as slices move.
 
 - 2026-06-27: Tracker created after review of `test-run-wpl-3` temporal artifacts.
+- 2026-06-28: Slice 6 reviewed and verified (full suite 859 passed / 6 skipped / 1 xfailed, ruff +
+  mypy clean); committed claim-level routed evidence views.

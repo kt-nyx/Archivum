@@ -11,6 +11,16 @@ from pipeline.common.retail import KNOWN_CLASSIC_ENTITIES
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.discovery.entity_typing import normalize_title
 from pipeline.discovery.world_registry import entry_kinds
+from pipeline.generate.draft.claim_routing import (
+    AT_A_GLANCE_ROUTE,
+    CURRENTLY_ROUTE,
+    FACTION_CONTEXT_ROUTE,
+    HISTORY_ROUTE,
+    INSTANCE_OVERVIEW_ROUTE,
+    LOCATION_CONTEXT_ROUTE,
+    item_has_claim_views,
+    route_claim_views_for_item,
+)
 from pipeline.generate.draft.lore_selection import (
     dedupe_lore_items,
     filter_relevant_lore_items,
@@ -59,6 +69,8 @@ def _source_entries(fact_pack: dict[str, Any]) -> list[dict[str, Any]]:
 def _iter_evidence_items(
     evidence_rows: list[dict[str, Any]],
     field_names: set[str] | None = None,
+    *,
+    claim_route: str | None = None,
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for row in evidence_rows:
@@ -70,6 +82,9 @@ def _iter_evidence_items(
         for item in evidence_items:
             if not isinstance(item, dict):
                 continue
+            if claim_route and item_has_claim_views(item):
+                items.extend(route_claim_views_for_item(item, claim_route))
+                continue
             snippet = _clean_snippet(str(item.get("snippet", "")))
             if not snippet:
                 continue
@@ -79,58 +94,58 @@ def _iter_evidence_items(
                 block_index_value = int(block_index)
             except (TypeError, ValueError):
                 block_index_value = 0
-            items.append(
-                {
-                    "snippet": snippet,
-                    "source_url": str(item.get("source_url", "")),
-                    "source_title": str(item.get("source_title", "")),
-                    "section_role": str(item.get("section_role", "")),
-                    "raw_section_role": str(
-                        item.get(
-                            "raw_section_role",
-                            build_meta.get("raw_section_role", item.get("section_role", "")),
-                        )
-                    ),
-                    "content_role": str(
-                        item.get("content_role", build_meta.get("content_role", ""))
-                    ),
-                    "block_index": block_index_value,
-                    "source_id": str(build_meta.get("source_id", "")),
-                    "field_name": str(row.get("field_name", "")),
-                    "cluster_id": str(build_meta.get("cluster_id", "")),
-                    "quest_node_id": str(build_meta.get("quest_node_id", "")),
-                    "faction_id": str(build_meta.get("faction_id", "")),
-                    "faction_name": str(build_meta.get("faction_name", "")),
-                    "location_id": str(build_meta.get("location_id", "")),
-                    "location_name": str(build_meta.get("location_name", "")),
-                    "lore_scope": str(build_meta.get("lore_scope", "")),
-                    "lore_source_title": str(build_meta.get("lore_source_title", "")),
-                    "canonical_evidence_id": str(
-                        item.get(
-                            "canonical_evidence_id",
-                            build_meta.get("canonical_evidence_id", ""),
-                        )
-                    ),
-                    "temporal_scope": str(
-                        item.get("temporal_scope", build_meta.get("temporal_scope", ""))
-                    ),
-                    "temporal_confidence": item.get(
-                        "temporal_confidence", build_meta.get("temporal_confidence")
-                    ),
-                    "temporal_reason": str(
-                        item.get("temporal_reason", build_meta.get("temporal_reason", ""))
-                    ),
-                    "temporal_event_label": str(
-                        item.get("temporal_event_label", build_meta.get("temporal_event_label", ""))
-                    ),
-                    "history_eligibility": str(
-                        item.get("history_eligibility", build_meta.get("history_eligibility", ""))
-                    ),
-                    "history_reason": str(
-                        item.get("history_reason", build_meta.get("history_reason", ""))
-                    ),
-                }
-            )
+            out_item = {
+                "snippet": snippet,
+                "source_url": str(item.get("source_url", "")),
+                "source_title": str(item.get("source_title", "")),
+                "section_role": str(item.get("section_role", "")),
+                "raw_section_role": str(
+                    item.get(
+                        "raw_section_role",
+                        build_meta.get("raw_section_role", item.get("section_role", "")),
+                    )
+                ),
+                "content_role": str(item.get("content_role", build_meta.get("content_role", ""))),
+                "block_index": block_index_value,
+                "source_id": str(build_meta.get("source_id", "")),
+                "field_name": str(row.get("field_name", "")),
+                "cluster_id": str(build_meta.get("cluster_id", "")),
+                "quest_node_id": str(build_meta.get("quest_node_id", "")),
+                "faction_id": str(build_meta.get("faction_id", "")),
+                "faction_name": str(build_meta.get("faction_name", "")),
+                "location_id": str(build_meta.get("location_id", "")),
+                "location_name": str(build_meta.get("location_name", "")),
+                "lore_scope": str(build_meta.get("lore_scope", "")),
+                "lore_source_title": str(build_meta.get("lore_source_title", "")),
+                "canonical_evidence_id": str(
+                    item.get(
+                        "canonical_evidence_id",
+                        build_meta.get("canonical_evidence_id", ""),
+                    )
+                ),
+                "temporal_scope": str(
+                    item.get("temporal_scope", build_meta.get("temporal_scope", ""))
+                ),
+                "temporal_confidence": item.get(
+                    "temporal_confidence", build_meta.get("temporal_confidence")
+                ),
+                "temporal_reason": str(
+                    item.get("temporal_reason", build_meta.get("temporal_reason", ""))
+                ),
+                "temporal_event_label": str(
+                    item.get("temporal_event_label", build_meta.get("temporal_event_label", ""))
+                ),
+                "history_eligibility": str(
+                    item.get("history_eligibility", build_meta.get("history_eligibility", ""))
+                ),
+                "history_reason": str(
+                    item.get("history_reason", build_meta.get("history_reason", ""))
+                ),
+            }
+            claim_views = item.get("_claim_views")
+            if isinstance(claim_views, list) and claim_views:
+                out_item["_claim_views"] = claim_views
+            items.append(out_item)
     return items
 
 
@@ -187,7 +202,10 @@ def _pointer_for_item(
             str(item.get("raw_section_role", "")),
             str(item.get("section_role", "other")),
         )
-    digest = hashlib.sha256(snippet.encode("utf-8")).hexdigest()[:16]
+    hash_text = str(item.get("source_excerpt", "") if item.get("is_claim_view") else snippet).strip()
+    if not hash_text:
+        hash_text = snippet
+    digest = hashlib.sha256(hash_text.encode("utf-8")).hexdigest()[:16]
     return {
         "source_id": source_id,
         "locator": f"section:{content_role} paragraph:{locator_index}",
@@ -320,7 +338,11 @@ def _is_geography_seed_item(item: dict[str, Any]) -> bool:
 def _build_location_seed_pool(evidence_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     seed_items = filter_temporal_items(
-        _iter_evidence_items(evidence_rows, {"history_digest", "at_a_glance_input"}),
+        _iter_evidence_items(
+            evidence_rows,
+            {"history_digest", "at_a_glance_input"},
+            claim_route=LOCATION_CONTEXT_ROUTE,
+        ),
         {PRE_ENTRY_HISTORY, ENTRY_STATE, ACTIVE_STORYLINE},
     )
     for item in seed_items:
@@ -330,33 +352,49 @@ def _build_location_seed_pool(evidence_rows: list[dict[str, Any]]) -> list[dict[
 
 
 def _build_evidence_pools(evidence_rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    history_pool = filter_history_items(_iter_evidence_items(evidence_rows, {"history_digest"}))
+    history_pool = filter_history_items(
+        _iter_evidence_items(evidence_rows, {"history_digest"}, claim_route=HISTORY_ROUTE)
+    )
     at_a_glance_pool = filter_temporal_items(
-        _iter_evidence_items(evidence_rows, {"at_a_glance_input"}),
+        _iter_evidence_items(
+            evidence_rows,
+            {"at_a_glance_input"},
+            claim_route=AT_A_GLANCE_ROUTE,
+        ),
         {PRE_ENTRY_HISTORY, ENTRY_STATE},
     )
     currently_pool = filter_temporal_items(
-        _iter_evidence_items(evidence_rows, {"currently_input"}),
-        {ENTRY_STATE, PRE_ENTRY_HISTORY},
+        _iter_evidence_items(
+            evidence_rows,
+            {"currently_input"},
+            claim_route=CURRENTLY_ROUTE,
+        ),
+        {ENTRY_STATE, PRE_ENTRY_HISTORY, ACTIVE_STORYLINE},
     )
     questline_pool = _iter_evidence_items(evidence_rows, {"questline_pool"})
     quest_cluster_lore_pool = _iter_evidence_items(evidence_rows, {"quest_cluster_lore"})
     quest_lore_pool = _iter_evidence_items(evidence_rows, {"quest_lore"})
     faction_pool = filter_temporal_items(
-        _iter_evidence_items(evidence_rows, {"faction_pool"}),
+        _iter_evidence_items(evidence_rows, {"faction_pool"}, claim_route=FACTION_CONTEXT_ROUTE),
         {PRE_ENTRY_HISTORY, ENTRY_STATE},
     )
     location_pool = filter_temporal_items(
-        _iter_evidence_items(evidence_rows, {"location_pool"}),
+        _iter_evidence_items(evidence_rows, {"location_pool"}, claim_route=LOCATION_CONTEXT_ROUTE),
         {PRE_ENTRY_HISTORY, ENTRY_STATE, ACTIVE_STORYLINE},
     )
     location_seed_pool = _build_location_seed_pool(evidence_rows)
     instance_pool = filter_temporal_items(
-        _iter_evidence_items(evidence_rows, {"instances_or_dungeons", "history_digest"}),
+        _iter_evidence_items(
+            evidence_rows,
+            {"instances_or_dungeons", "history_digest"},
+            claim_route=INSTANCE_OVERVIEW_ROUTE,
+        ),
         {PRE_ENTRY_HISTORY, ENTRY_STATE},
     )
     faction_role_pool = _iter_evidence_items(
-        evidence_rows, {"history_digest", "currently_input", "questline_pool", "at_a_glance_input"}
+        evidence_rows,
+        {"history_digest", "currently_input", "questline_pool", "at_a_glance_input"},
+        claim_route=FACTION_CONTEXT_ROUTE,
     )
     faction_role_pool = filter_temporal_items(
         faction_role_pool,
@@ -389,6 +427,7 @@ def _build_zone_mention_pool(
         _iter_evidence_items(
             parent_zone_evidence_rows,
             {"history_digest", "at_a_glance_input", "currently_input", "instances_or_dungeons"},
+            claim_route=INSTANCE_OVERVIEW_ROUTE,
         ),
         {PRE_ENTRY_HISTORY, ENTRY_STATE},
     )
@@ -404,9 +443,15 @@ def _build_instance_evidence_pools(
     instance_name: str = "",
     parent_zone_evidence_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    history_pool = filter_history_items(_iter_evidence_items(evidence_rows, {"history_digest"}))
+    history_pool = filter_history_items(
+        _iter_evidence_items(evidence_rows, {"history_digest"}, claim_route=HISTORY_ROUTE)
+    )
     at_a_glance_pool = filter_temporal_items(
-        _iter_evidence_items(evidence_rows, {"at_a_glance_input"}),
+        _iter_evidence_items(
+            evidence_rows,
+            {"at_a_glance_input"},
+            claim_route=AT_A_GLANCE_ROUTE,
+        ),
         {PRE_ENTRY_HISTORY, ENTRY_STATE},
     )
     boss_pool = filter_temporal_items(
@@ -414,15 +459,27 @@ def _build_instance_evidence_pools(
         {PRE_ENTRY_HISTORY, ENTRY_STATE},
     )
     instance_lore_pool = filter_temporal_items(
-        _iter_evidence_items(evidence_rows, {"instance_lore_pool"}),
+        _iter_evidence_items(
+            evidence_rows,
+            {"instance_lore_pool"},
+            claim_route=INSTANCE_OVERVIEW_ROUTE,
+        ),
         {PRE_ENTRY_HISTORY, ENTRY_STATE},
     )
     parent_lore_pool = filter_temporal_items(
-        _iter_evidence_items(evidence_rows, {"parent_lore_pool"}),
+        _iter_evidence_items(
+            evidence_rows,
+            {"parent_lore_pool"},
+            claim_route=INSTANCE_OVERVIEW_ROUTE,
+        ),
         {PRE_ENTRY_HISTORY, ENTRY_STATE},
     )
     related_lore_pool = filter_temporal_items(
-        _iter_evidence_items(evidence_rows, {"related_lore_pool"}),
+        _iter_evidence_items(
+            evidence_rows,
+            {"related_lore_pool"},
+            claim_route=INSTANCE_OVERVIEW_ROUTE,
+        ),
         {PRE_ENTRY_HISTORY, ENTRY_STATE},
     )
     # Slice I4: the instance's own narrative is primary. Cross-page (parent-complex /
@@ -440,12 +497,13 @@ def _build_instance_evidence_pools(
         overview_pool = instance_own_overview
     zone_mention_pool = _build_zone_mention_pool(instance_name, parent_zone_evidence_rows or [])
     faction_pool = filter_temporal_items(
-        _iter_evidence_items(evidence_rows, {"faction_pool"}),
+        _iter_evidence_items(evidence_rows, {"faction_pool"}, claim_route=FACTION_CONTEXT_ROUTE),
         {PRE_ENTRY_HISTORY, ENTRY_STATE},
     )
     faction_role_pool = _iter_evidence_items(
         evidence_rows,
         {"history_digest", "instance_lore_pool", "at_a_glance_input", "boss_pool"},
+        claim_route=FACTION_CONTEXT_ROUTE,
     )
     faction_role_pool = filter_temporal_items(
         faction_role_pool,
