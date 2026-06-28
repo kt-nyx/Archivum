@@ -15,7 +15,7 @@ import hashlib
 import json
 import os
 from dataclasses import dataclass, field, replace
-from typing import Any
+from typing import Any, cast
 
 from pipeline.ai.config import load_ai_settings
 from pipeline.common.wiki_category_registry import CategorySignal, classify_page_categories
@@ -37,6 +37,16 @@ HISTORY_EXCLUDED_POST_ACTIVE = "history_excluded_post_active"
 HISTORY_NOT_APPLICABLE = "history_not_applicable"
 
 HISTORY_ELIGIBLE = frozenset({HISTORY_BACKGROUND, HISTORY_SETUP_BRIDGE})
+
+SAFE_BACKGROUND = "safe_background"
+SAFE_ENTRY_CONTEXT = "safe_entry_context"
+SAFE_SETUP_HOOK = "safe_setup_hook"
+ENCOUNTER_SETUP = "encounter_setup"
+ACTIVE_MECHANICS_STATE = "active_mechanics_state"
+ACTIVE_OUTCOME = "active_outcome"
+POST_ACTIVE_REFERENCE = "post_active_reference"
+UNSAFE_COMPLETION_DETAIL = "unsafe_completion_detail"
+UNKNOWN_SPOILER_SAFETY = "unknown_spoiler_safety"
 
 TEMPORAL_SCOPES = frozenset(
     {
@@ -66,6 +76,17 @@ _HISTORY_ELIGIBILITY_VALUES = (
     HISTORY_EXCLUDED_OUTCOME,
     HISTORY_EXCLUDED_POST_ACTIVE,
     HISTORY_NOT_APPLICABLE,
+)
+_SPOILER_SAFETY_VALUES = (
+    SAFE_BACKGROUND,
+    SAFE_ENTRY_CONTEXT,
+    SAFE_SETUP_HOOK,
+    ENCOUNTER_SETUP,
+    ACTIVE_MECHANICS_STATE,
+    ACTIVE_OUTCOME,
+    POST_ACTIVE_REFERENCE,
+    UNSAFE_COMPLETION_DETAIL,
+    UNKNOWN_SPOILER_SAFETY,
 )
 
 _ENTRY_ROLE_MARKERS = (
@@ -173,6 +194,19 @@ class TemporalClassification:
     fallback_mode: str = "deterministic"
     history_eligibility: str = HISTORY_NOT_APPLICABLE
     history_reason: str = ""
+
+
+@dataclass(frozen=True)
+class ClaimTemporalClassification:
+    temporal_scope: str
+    history_eligibility: str
+    spoiler_safety: str
+    confidence: float
+    rationale: str
+    history_rationale: str = ""
+    event_label: str = ""
+    fallback_mode: str = "deterministic"
+    structural_hints: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -333,6 +367,7 @@ def enrich_evidence_temporal_metadata(
     return_boundary_decisions: bool = False,
     return_canonical_decisions: bool = False,
     return_claim_decisions: bool = False,
+    return_claim_temporal_decisions: bool = False,
 ) -> tuple[Any, ...]:
     """Return evidence rows plus temporal and content-boundary decision rows."""
     snapshot_categories = _snapshot_categories_by_source(source_snapshots or [])
@@ -381,8 +416,15 @@ def enrich_evidence_temporal_metadata(
     decisions: list[dict[str, Any]] = []
     canonical_decisions: list[dict[str, Any]] = []
     claim_decisions: list[dict[str, Any]] = []
-    if return_claim_decisions:
+    claim_temporal_decisions: list[dict[str, Any]] = []
+    if return_claim_decisions or return_claim_temporal_decisions:
         claim_decisions = extract_canonical_claim_decision_rows(canonical_records, run_id=run_id)
+    if return_claim_temporal_decisions:
+        claim_temporal_decisions = classify_claims_temporal(
+            claim_decisions,
+            canonical_records,
+            run_id=run_id,
+        )
     scopes_by_row: dict[int, list[str]] = {}
     build_meta_by_row: dict[int, dict[str, Any]] = {}
     boundary_by_row: dict[int, dict[str, Any]] = {}
@@ -444,6 +486,8 @@ def enrich_evidence_temporal_metadata(
         outputs.append(canonical_decisions)
     if return_claim_decisions:
         outputs.append(claim_decisions)
+    if return_claim_temporal_decisions:
+        outputs.append(claim_temporal_decisions)
     return tuple(outputs)
 
 
@@ -1019,6 +1063,675 @@ def _canonical_decision_row(
     }
 
 
+def classify_claims_temporal(
+    claim_decisions: list[dict[str, Any]],
+    canonical_records: list[CanonicalEvidenceRecord],
+    *,
+    run_id: str,
+) -> list[dict[str, Any]]:
+    """Classify extracted source claims relative to the entry-state boundary.
+
+    This produces an internal sidecar only. Existing routed paragraph evidence remains untouched
+    until claim-level routing lands in a later slice.
+    """
+    record_by_id = {record.canonical_evidence_id: record for record in canonical_records}
+    entries: list[dict[str, Any]] = []
+    for decision in claim_decisions:
+        canonical_id = str(decision.get("canonical_evidence_id", "")).strip()
+        record = record_by_id.get(canonical_id)
+        if record is None:
+            continue
+        claims = decision.get("claims")
+        if not isinstance(claims, list):
+            continue
+        for claim in claims:
+            if not isinstance(claim, dict):
+                continue
+            classification = _classify_claim_temporal_deterministic(
+                claim=claim,
+                claim_decision=decision,
+                record=record,
+            )
+            entries.append(
+                {
+                    "decision": decision,
+                    "record": record,
+                    "claim": claim,
+                    "classification": classification,
+                }
+            )
+
+    llm_entries = [
+        entry
+        for entry in entries
+        if entry["classification"].fallback_mode == "needs_llm"
+    ]
+    if llm_entries and not _llm_temporal_adjudication_disabled():
+        overrides = adjudicate_claim_temporal_classifications_llm(llm_entries)
+        for entry in entries:
+            override = overrides.get(str(entry["claim"].get("claim_id", "")).strip())
+            if override is not None:
+                entry["classification"] = override
+
+    entries_by_canonical: dict[str, list[dict[str, Any]]] = {}
+    for entry in entries:
+        canonical_id = str(entry["decision"].get("canonical_evidence_id", "")).strip()
+        entries_by_canonical.setdefault(canonical_id, []).append(entry)
+
+    rows: list[dict[str, Any]] = []
+    for decision in claim_decisions:
+        canonical_id = str(decision.get("canonical_evidence_id", "")).strip()
+        record = record_by_id.get(canonical_id)
+        if record is None:
+            continue
+        claim_entries = entries_by_canonical.get(canonical_id, [])
+        claim_rows = [
+            _claim_temporal_decision_row(entry["claim"], entry["classification"])
+            for entry in claim_entries
+        ]
+        rows.append(
+            {
+                "canonical_evidence_id": canonical_id,
+                "subject_id": str(decision.get("subject_id", record.subject_id)),
+                "subject_type": str(decision.get("subject_type", record.subject_type)),
+                "run_id": run_id or str(decision.get("run_id", "unknown")) or "unknown",
+                "source_id": str(decision.get("source_id", record.source_id)),
+                "source_title": str(decision.get("source_title", record.source_title)),
+                "source_excerpt": str(decision.get("source_excerpt", record.snippet)),
+                "appearance_count": decision.get("appearance_count", len(record.appearances)),
+                "appearances": decision.get("appearances", record.appearances),
+                "extraction_mode": str(decision.get("extraction_mode", "")),
+                "claim_count": len(claim_rows),
+                "paragraph_aggregate": _paragraph_aggregate_from_claims(
+                    claim_rows,
+                    fallback_classification=record.classification,
+                ),
+                "claims": claim_rows,
+            }
+        )
+    return rows
+
+
+def _classify_claim_temporal_deterministic(
+    *,
+    claim: dict[str, Any],
+    claim_decision: dict[str, Any],
+    record: CanonicalEvidenceRecord,
+) -> ClaimTemporalClassification:
+    paragraph = record.classification
+    boundary_id = str(record.boundary.get("boundary_id", "")).strip()
+    claim_type = str(claim.get("claim_type", "")).strip()
+    appearances = claim_decision.get("appearances")
+    if not isinstance(appearances, list):
+        appearances = record.appearances
+    field_names = {
+        str(appearance.get("field_name", "")).strip()
+        for appearance in appearances
+        if isinstance(appearance, dict)
+    }
+    structural_hints = _claim_structural_hints(
+        claim=claim,
+        record=record,
+        appearances=appearances,
+    )
+
+    if paragraph is not None:
+        if paragraph.scope == EXCLUDED_NONCANON:
+            return ClaimTemporalClassification(
+                EXCLUDED_NONCANON,
+                HISTORY_EXCLUDED_POST_ACTIVE,
+                UNKNOWN_SPOILER_SAFETY,
+                0.94,
+                "claim inherits non-canon/source exclusion from canonical paragraph",
+                "excluded source evidence is never history-eligible",
+                paragraph.event_label,
+                "deterministic",
+                structural_hints,
+            )
+        if paragraph.scope == POST_ACTIVE_LORE:
+            return ClaimTemporalClassification(
+                POST_ACTIVE_LORE,
+                HISTORY_EXCLUDED_POST_ACTIVE,
+                POST_ACTIVE_REFERENCE,
+                0.9,
+                "claim inherits later/off-screen lore label from canonical paragraph",
+                "post-active references are excluded from entry-history prose",
+                paragraph.event_label,
+                "deterministic",
+                structural_hints,
+            )
+        if paragraph.scope == PRE_ENTRY_HISTORY:
+            return ClaimTemporalClassification(
+                PRE_ENTRY_HISTORY,
+                HISTORY_BACKGROUND,
+                SAFE_BACKGROUND,
+                0.86,
+                "claim inherits pre-entry history label from canonical paragraph",
+                "pre-entry background is history-eligible",
+                paragraph.event_label,
+                "deterministic",
+                structural_hints,
+            )
+        if paragraph.scope == ACTIVE_STORYLINE_OUTCOME and _claim_needs_mixed_llm(
+            claim_decision=claim_decision,
+            record=record,
+        ):
+            return ClaimTemporalClassification(
+                AMBIGUOUS_TEMPORAL,
+                HISTORY_EXCLUDED_OUTCOME,
+                UNKNOWN_SPOILER_SAFETY,
+                0.44,
+                "claim in mixed/outcome paragraph requires claim-level boundary classification",
+                "mixed paragraph claims are not history-eligible until classified",
+                paragraph.event_label,
+                "needs_llm",
+                structural_hints + ["mixed_outcome_paragraph"],
+            )
+        if paragraph.scope == ACTIVE_STORYLINE_OUTCOME:
+            return ClaimTemporalClassification(
+                ACTIVE_STORYLINE_OUTCOME,
+                HISTORY_EXCLUDED_OUTCOME,
+                ACTIVE_OUTCOME,
+                0.9,
+                "claim inherits active storyline outcome label from canonical paragraph",
+                "active outcomes are excluded from pre-entry history",
+                paragraph.event_label,
+                "deterministic",
+                structural_hints,
+            )
+        if paragraph.scope == ENTRY_STATE:
+            safety = _entry_state_claim_spoiler_safety(claim_type, field_names)
+            history_eligibility = paragraph.history_eligibility or HISTORY_NOT_APPLICABLE
+            if history_eligibility not in _HISTORY_ELIGIBILITY_VALUES:
+                history_eligibility = HISTORY_NOT_APPLICABLE
+            return ClaimTemporalClassification(
+                ENTRY_STATE,
+                history_eligibility,
+                safety,
+                0.82,
+                "claim inherits entry-state label from canonical paragraph",
+                paragraph.history_reason or "entry-state claim history eligibility inherited",
+                paragraph.event_label,
+                "deterministic",
+                structural_hints,
+            )
+        if paragraph.scope == ACTIVE_STORYLINE:
+            return ClaimTemporalClassification(
+                ACTIVE_STORYLINE,
+                HISTORY_NOT_APPLICABLE,
+                SAFE_SETUP_HOOK,
+                0.78,
+                "claim inherits active storyline setup label from canonical paragraph",
+                "active storyline setup is not background history",
+                paragraph.event_label,
+                "deterministic",
+                structural_hints,
+            )
+
+    if claim_type == "encounter_state" or "boss_pool" in field_names:
+        return ClaimTemporalClassification(
+            ENTRY_STATE,
+            HISTORY_NOT_APPLICABLE,
+            ACTIVE_MECHANICS_STATE,
+            0.72,
+            "encounter/roster claim is current instance evidence",
+            "encounter mechanics are not background history",
+            "",
+            "deterministic",
+            structural_hints + ["encounter_or_boss_pool"],
+        )
+
+    relation = _claim_contract_relation(claim, record.boundary)
+    if relation.get("matched"):
+        return ClaimTemporalClassification(
+            ENTRY_STATE,
+            HISTORY_SETUP_BRIDGE if _canonical_has_field(record, "history_digest") else HISTORY_NOT_APPLICABLE,
+            SAFE_ENTRY_CONTEXT,
+            0.68,
+            "claim matches entry-state contract terms",
+            "contract-matched setup can bridge into current context",
+            "",
+            "deterministic",
+            structural_hints + ["claim_contract_match"],
+        )
+
+    return ClaimTemporalClassification(
+        AMBIGUOUS_TEMPORAL,
+        HISTORY_EXCLUDED_POST_ACTIVE,
+        UNKNOWN_SPOILER_SAFETY,
+        0.42,
+        "claim requires boundary-relative temporal classification",
+        "ambiguous claim is excluded until classified",
+        "",
+        "needs_llm",
+        structural_hints + [f"boundary_id:{boundary_id}" if boundary_id else "no_boundary_id"],
+    )
+
+
+def adjudicate_claim_temporal_classifications_llm(
+    entries: list[dict[str, Any]],
+) -> dict[str, ClaimTemporalClassification]:
+    overrides: dict[str, ClaimTemporalClassification] = {}
+    for group in _claim_temporal_llm_groups(entries):
+        result: dict[str, Any]
+        try:
+            result = llm_json_with_retry(
+                required_keys=("classifications",),
+                response_json_schema=_claim_temporal_schema(),
+                system_prompt=_claim_temporal_system_prompt(),
+                user_prompt=_claim_temporal_prompt(group),
+                response_schema_name="wiki_first_claim_temporal_classification",
+                substep="wiki_first_claim_temporal_classification",
+                max_attempts=2,
+            )
+        except Exception as exc:  # pragma: no cover - provider failures keep fallback labels
+            for entry in group:
+                prior = entry["classification"]
+                claim_id = str(entry["claim"].get("claim_id", "")).strip()
+                if claim_id:
+                    overrides[claim_id] = ClaimTemporalClassification(
+                        prior.temporal_scope,
+                        prior.history_eligibility,
+                        prior.spoiler_safety,
+                        prior.confidence,
+                        f"{prior.rationale}; llm_claim_temporal_failed={exc.__class__.__name__}",
+                        prior.history_rationale,
+                        prior.event_label,
+                        "llm_failed",
+                        prior.structural_hints,
+                    )
+            continue
+        rows = result.get("classifications")
+        if not isinstance(rows, list):
+            continue
+        entry_by_claim_id = {
+            str(entry["claim"].get("claim_id", "")).strip(): entry for entry in group
+        }
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            claim_id = str(row.get("claim_id", "")).strip()
+            matched_entry = entry_by_claim_id.get(claim_id)
+            if matched_entry is None:
+                continue
+            scope = str(row.get("temporal_scope", "")).strip()
+            history_eligibility = str(row.get("history_eligibility", "")).strip()
+            spoiler_safety = str(row.get("spoiler_safety", "")).strip()
+            if scope not in TEMPORAL_SCOPES:
+                continue
+            if history_eligibility not in _HISTORY_ELIGIBILITY_VALUES:
+                history_eligibility = HISTORY_NOT_APPLICABLE
+            history_eligibility, history_reason = _sanitize_history_eligibility(
+                "history_digest"
+                if _canonical_has_field(matched_entry["record"], "history_digest")
+                else "",
+                scope,
+                history_eligibility,
+                str(row.get("history_rationale", "")).strip(),
+            )
+            if spoiler_safety not in _SPOILER_SAFETY_VALUES:
+                spoiler_safety = _default_spoiler_safety(scope)
+            confidence_value = row.get("confidence", 0.7)
+            confidence = float(confidence_value) if isinstance(confidence_value, (int, float)) else 0.7
+            overrides[claim_id] = ClaimTemporalClassification(
+                scope,
+                history_eligibility,
+                _sanitize_spoiler_safety(scope, spoiler_safety),
+                max(0.0, min(1.0, confidence)),
+                str(row.get("rationale", "")).strip() or "llm claim temporal classification",
+                history_reason,
+                str(row.get("event_label", "")).strip(),
+                "llm_claim_boundary",
+                matched_entry["classification"].structural_hints,
+            )
+    return overrides
+
+
+def _claim_temporal_decision_row(
+    claim: dict[str, Any],
+    classification: ClaimTemporalClassification,
+) -> dict[str, Any]:
+    return {
+        "claim_id": str(claim.get("claim_id", "")).strip(),
+        "canonical_evidence_id": str(claim.get("canonical_evidence_id", "")).strip(),
+        "claim_text": str(claim.get("claim_text", "")).strip(),
+        "claim_type": str(claim.get("claim_type", "")).strip(),
+        "source_sentence_indexes": claim.get("source_sentence_indexes", []),
+        "source_excerpt": str(claim.get("source_excerpt", "")).strip(),
+        "entities": claim.get("entities", []),
+        "temporal_scope": classification.temporal_scope,
+        "history_eligibility": classification.history_eligibility,
+        "spoiler_safety": classification.spoiler_safety,
+        "confidence": classification.confidence,
+        "rationale": classification.rationale,
+        "history_rationale": classification.history_rationale,
+        "event_label": classification.event_label,
+        "fallback_mode": classification.fallback_mode,
+        "structural_hints": classification.structural_hints,
+    }
+
+
+def _paragraph_aggregate_from_claims(
+    claim_rows: list[dict[str, Any]],
+    *,
+    fallback_classification: TemporalClassification | None,
+) -> dict[str, Any]:
+    scopes = [str(row.get("temporal_scope", "")).strip() for row in claim_rows]
+    spoiler_values = [str(row.get("spoiler_safety", "")).strip() for row in claim_rows]
+    scope = _dominant_scope(scopes)
+    if not scope and fallback_classification is not None:
+        scope = fallback_classification.scope
+    history_eligibility = _aggregate_history_eligibility(claim_rows, scope)
+    return {
+        "temporal_scope": scope,
+        "history_eligibility": history_eligibility,
+        "spoiler_safety": _aggregate_spoiler_safety(spoiler_values),
+        "claim_count_by_scope": {
+            value: scopes.count(value) for value in sorted(set(scopes)) if value
+        },
+        "claim_count": len(claim_rows),
+        "compatibility_source": "claim_labels",
+    }
+
+
+def _claim_structural_hints(
+    *,
+    claim: dict[str, Any],
+    record: CanonicalEvidenceRecord,
+    appearances: list[Any],
+) -> list[str]:
+    hints: list[str] = []
+    claim_type = str(claim.get("claim_type", "")).strip()
+    if claim_type:
+        hints.append(f"claim_type:{claim_type}")
+    for appearance in appearances:
+        if not isinstance(appearance, dict):
+            continue
+        field_name = str(appearance.get("field_name", "")).strip()
+        if field_name:
+            hints.append(f"field:{field_name}")
+        source_kind = str(appearance.get("source_kind", "")).strip()
+        if source_kind:
+            hints.append(f"source_kind:{source_kind}")
+        for role_key in ("raw_section_role", "section_role", "content_role", "auxiliary_role"):
+            role = str(appearance.get(role_key, "")).strip()
+            if role:
+                hints.append(f"{role_key}:{role}")
+        cluster_id = str(appearance.get("cluster_id", "")).strip()
+        if cluster_id:
+            hints.append("quest_cluster_linked")
+        quest_node_id = str(appearance.get("quest_node_id", "")).strip()
+        if quest_node_id:
+            hints.append("quest_node_linked")
+        if field_name == "boss_pool":
+            hints.append("boss_pool")
+    paragraph = record.classification
+    if paragraph is not None:
+        hints.append(f"paragraph_scope:{paragraph.scope}")
+        if paragraph.history_eligibility:
+            hints.append(f"paragraph_history:{paragraph.history_eligibility}")
+        if paragraph.structural_hint:
+            hints.append(f"paragraph_structural_hint:{paragraph.structural_hint}")
+        if paragraph.reason:
+            hints.append(f"paragraph_reason:{paragraph.reason[:120]}")
+    for structural in record.structural_classifications:
+        if structural.structural_hint:
+            hints.append(f"appearance_structural_hint:{structural.structural_hint}")
+        if structural.reason:
+            hints.append(f"appearance_reason:{structural.reason[:120]}")
+    category_signal = strict_generation_category_signal(record.source_categories)
+    hints.append(f"category_disposition:{category_signal.disposition}")
+    if category_signal.bucket:
+        hints.append(f"category_bucket:{category_signal.bucket}")
+    for reason in category_signal.reasons:
+        hints.append(f"category_reason:{reason}")
+    relation = _claim_contract_relation(claim, record.boundary)
+    if relation.get("matched"):
+        hints.append("entry_contract_match")
+        for field in relation.get("matched_fields", []):
+            hints.append(f"entry_contract_field:{field}")
+    return list(dict.fromkeys(hints))
+
+
+def _claim_needs_mixed_llm(
+    *,
+    claim_decision: dict[str, Any],
+    record: CanonicalEvidenceRecord,
+) -> bool:
+    claims = claim_decision.get("claims")
+    if isinstance(claims, list) and len(claims) > 1:
+        return True
+    return False
+
+
+def _entry_state_claim_spoiler_safety(claim_type: str, field_names: set[str]) -> str:
+    if claim_type == "encounter_state" or "boss_pool" in field_names:
+        return ACTIVE_MECHANICS_STATE
+    if claim_type == "objective" or field_names.intersection(_ACTIVE_FIELD_NAMES):
+        return SAFE_SETUP_HOOK
+    return SAFE_ENTRY_CONTEXT
+
+
+def _default_spoiler_safety(scope: str) -> str:
+    if scope == PRE_ENTRY_HISTORY:
+        return SAFE_BACKGROUND
+    if scope == ENTRY_STATE:
+        return SAFE_ENTRY_CONTEXT
+    if scope == ACTIVE_STORYLINE:
+        return SAFE_SETUP_HOOK
+    if scope == ACTIVE_STORYLINE_OUTCOME:
+        return ACTIVE_OUTCOME
+    if scope == POST_ACTIVE_LORE:
+        return POST_ACTIVE_REFERENCE
+    return UNKNOWN_SPOILER_SAFETY
+
+
+def _sanitize_spoiler_safety(scope: str, spoiler_safety: str) -> str:
+    if scope == ACTIVE_STORYLINE_OUTCOME and spoiler_safety not in {
+        ACTIVE_OUTCOME,
+        UNSAFE_COMPLETION_DETAIL,
+    }:
+        return ACTIVE_OUTCOME
+    if scope == POST_ACTIVE_LORE and spoiler_safety != POST_ACTIVE_REFERENCE:
+        return POST_ACTIVE_REFERENCE
+    if scope == EXCLUDED_NONCANON:
+        return UNKNOWN_SPOILER_SAFETY
+    return spoiler_safety
+
+
+def _claim_contract_relation(claim: dict[str, Any], boundary: dict[str, Any]) -> dict[str, Any]:
+    contract = boundary.get("entry_state_contract")
+    if not isinstance(contract, dict):
+        return {"matched": False, "matched_fields": [], "matched_labels": []}
+    candidate_terms = _claim_candidate_terms(claim)
+    matched_fields: set[str] = set()
+    matched_labels: set[str] = set()
+    for contract_field in _CONTRACT_MATCH_FIELDS:
+        values = contract.get(contract_field)
+        if not isinstance(values, list):
+            continue
+        for entry in values:
+            if not isinstance(entry, dict):
+                continue
+            terms = {
+                _normalize_contract_term(entry.get("label")),
+                *(
+                    _normalize_contract_term(entry.get(id_key))
+                    for id_key in _CONTRACT_ID_KEYS
+                ),
+            }
+            terms.discard("")
+            if candidate_terms.intersection(terms):
+                matched_fields.add(contract_field)
+                label = str(entry.get("label", "")).strip()
+                if label:
+                    matched_labels.add(label)
+    return {
+        "matched": bool(matched_fields),
+        "matched_fields": sorted(matched_fields),
+        "matched_labels": sorted(matched_labels),
+    }
+
+
+def _claim_candidate_terms(claim: dict[str, Any]) -> set[str]:
+    terms: set[str] = set()
+    _add_normalized_contract_term(terms, claim.get("claim_text"))
+    entities = claim.get("entities")
+    if isinstance(entities, list):
+        for entity in entities:
+            if not isinstance(entity, dict):
+                continue
+            _add_normalized_contract_term(terms, entity.get("entity_id"))
+            _add_normalized_contract_term(terms, entity.get("name"))
+    return terms
+
+
+def _aggregate_history_eligibility(claim_rows: list[dict[str, Any]], scope: str) -> str:
+    values = [str(row.get("history_eligibility", "")).strip() for row in claim_rows]
+    if HISTORY_EXCLUDED_OUTCOME in values or scope == ACTIVE_STORYLINE_OUTCOME:
+        return HISTORY_EXCLUDED_OUTCOME
+    if HISTORY_EXCLUDED_POST_ACTIVE in values or scope in {
+        POST_ACTIVE_LORE,
+        EXCLUDED_NONCANON,
+        AMBIGUOUS_TEMPORAL,
+    }:
+        return HISTORY_EXCLUDED_POST_ACTIVE
+    if HISTORY_SETUP_BRIDGE in values:
+        return HISTORY_SETUP_BRIDGE
+    if HISTORY_BACKGROUND in values:
+        return HISTORY_BACKGROUND
+    return HISTORY_NOT_APPLICABLE
+
+
+def _aggregate_spoiler_safety(values: list[str]) -> str:
+    priority = (
+        UNSAFE_COMPLETION_DETAIL,
+        ACTIVE_OUTCOME,
+        POST_ACTIVE_REFERENCE,
+        UNKNOWN_SPOILER_SAFETY,
+        ACTIVE_MECHANICS_STATE,
+        ENCOUNTER_SETUP,
+        SAFE_SETUP_HOOK,
+        SAFE_ENTRY_CONTEXT,
+        SAFE_BACKGROUND,
+    )
+    for value in priority:
+        if value in values:
+            return value
+    return ""
+
+
+def _claim_temporal_llm_groups(entries: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for entry in entries:
+        record: CanonicalEvidenceRecord = entry["record"]
+        key = (
+            str(record.subject_id),
+            str(record.boundary.get("boundary_id", "")),
+        )
+        grouped.setdefault(key, []).append(entry)
+    return [group for _key, group in sorted(grouped.items())]
+
+
+def _claim_temporal_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["classifications"],
+        "properties": {
+            "classifications": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": [
+                        "claim_id",
+                        "temporal_scope",
+                        "history_eligibility",
+                        "spoiler_safety",
+                        "confidence",
+                        "rationale",
+                        "history_rationale",
+                        "event_label",
+                    ],
+                    "properties": {
+                        "claim_id": {"type": "string", "minLength": 1},
+                        "temporal_scope": {
+                            "type": "string",
+                            "enum": list(_TEMPORAL_SCOPE_VALUES),
+                        },
+                        "history_eligibility": {
+                            "type": "string",
+                            "enum": list(_HISTORY_ELIGIBILITY_VALUES),
+                        },
+                        "spoiler_safety": {
+                            "type": "string",
+                            "enum": list(_SPOILER_SAFETY_VALUES),
+                        },
+                        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                        "rationale": {"type": "string", "minLength": 1, "maxLength": 260},
+                        "history_rationale": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 260,
+                        },
+                        "event_label": {"type": "string", "maxLength": 120},
+                    },
+                },
+            }
+        },
+    }
+
+
+def _claim_temporal_system_prompt() -> str:
+    return (
+        "Classify each source-side claim relative to what a player is walking into. "
+        "Do not order by expansion names or wiki recency. Use the entry-state contract, source "
+        "role, paragraph appearances, and outcome hints. Active outcomes and completion details "
+        "are unsafe for a pre-entry player. Current roster or encounter mechanics are current "
+        "evidence, but mechanics-state claims are not safe for general character-summary prose."
+    )
+
+
+def _claim_temporal_prompt(entries: list[dict[str, Any]]) -> str:
+    first_record: CanonicalEvidenceRecord = entries[0]["record"]
+    payload = {
+        "active_content_boundary": _boundary_prompt_payload(first_record.boundary),
+        "items": [
+            {
+                "claim_id": str(entry["claim"].get("claim_id", "")),
+                "claim_text": str(entry["claim"].get("claim_text", "")),
+                "claim_type": str(entry["claim"].get("claim_type", "")),
+                "entities": entry["claim"].get("entities", []),
+                "source_sentence_indexes": entry["claim"].get("source_sentence_indexes", []),
+                "source_excerpt": str(entry["claim"].get("source_excerpt", "")),
+                "canonical_evidence_id": str(entry["claim"].get("canonical_evidence_id", "")),
+                "paragraph_scope": getattr(entry["record"].classification, "scope", ""),
+                "paragraph_history_eligibility": getattr(
+                    entry["record"].classification,
+                    "history_eligibility",
+                    "",
+                ),
+                "source_roles": _canonical_source_roles(entry["record"]),
+                "appearances": entry["decision"].get("appearances", []),
+                "deterministic_hints": entry["classification"].structural_hints,
+                "fallback_rationale": entry["classification"].rationale,
+            }
+            for entry in entries
+        ],
+        "rubric": {
+            "pre_entry_history": "background before the player's current entry state",
+            "history_setup_bridge": "entry-state setup that explains why current content exists",
+            "entry_state": "what is true as the player enters",
+            "active_storyline": "setup or ongoing action the player may engage",
+            "active_storyline_outcome": "resolution/completion/aftermath of active content",
+            "post_active_lore": "later off-screen lore after this playable state",
+            "excluded_noncanon": "non-retail/non-canon/removed source evidence",
+        },
+    }
+    return json.dumps(payload, ensure_ascii=True, indent=2)
+
+
 def _with_history_defaults(
     classification: TemporalClassification,
     *,
@@ -1416,10 +2129,10 @@ def adjudicate_canonical_temporal_classifications_llm(
             if not isinstance(row_result, dict):
                 continue
             canonical_id = str(row_result.get("canonical_evidence_id", "")).strip()
-            record = record_by_id.get(canonical_id)
-            if record is None or record.classification is None:
+            matched_record = record_by_id.get(canonical_id)
+            if matched_record is None or matched_record.classification is None:
                 continue
-            prior = record.classification
+            prior = matched_record.classification
             scope = str(row_result.get("temporal_scope", "")).strip()
             if scope not in TEMPORAL_SCOPES:
                 continue
@@ -1755,8 +2468,12 @@ def _build_instance_entry_state_contract(
 ) -> EntryStateContract:
     name = str(fact_pack.get("name") or fact_pack.get("entity_id") or entity_id)
     primary = _primary_snapshot(snapshots)
-    infobox = primary.get("infobox") if isinstance(primary.get("infobox"), dict) else {}
-    structured_links = primary.get("structured_links") if isinstance(primary.get("structured_links"), list) else []
+    raw_infobox = primary.get("infobox")
+    infobox = cast(dict[str, Any], raw_infobox) if isinstance(raw_infobox, dict) else {}
+    raw_structured_links = primary.get("structured_links")
+    structured_links = (
+        cast(list[Any], raw_structured_links) if isinstance(raw_structured_links, list) else []
+    )
     roster_labels: list[str] = []
     for key in ("Bosses", "End boss", "bosses", "end boss", "End Boss"):
         value = infobox.get(key) if isinstance(infobox, dict) else None

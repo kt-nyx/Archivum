@@ -813,7 +813,7 @@ Review notes:
 
 ## Slice 5 - Claim-Level Temporal And Spoiler Classification
 
-Status: Not started
+Status: Verified
 
 Goal: classify claims, not paragraphs, against the entry-state contract.
 
@@ -882,6 +882,26 @@ Acceptance:
 
 - Sidecar has claim-level labels and paragraph aggregate labels.
 - Paragraph-level tests still pass through compatibility layer.
+
+Implementation notes:
+
+- Implemented `classify_claims_temporal(...)` in `pipeline/generate/draft/temporal.py`.
+- Added controlled `spoiler_safety` labels and claim-level history eligibility output.
+- The classifier inherits clear canonical paragraph labels deterministically, flags multi-claim
+  outcome paragraphs for claim-level LLM adjudication, and keeps paragraph aggregates restrictive
+  for compatibility.
+- Draft writer now persists `data/decisions/claim_temporal_decisions.json`.
+- No changes were required in `claims.py` or `entry_state.py`; Slice 5 consumes the existing
+  canonical claims and entry-state contract produced by earlier slices.
+- Added `tests/test_claim_temporal_classifier.py` covering pre-entry history, setup bridges,
+  active outcomes, post-active lore, mechanics-state safety, and mixed paragraph claim splitting.
+- Verification run: `uv run pytest tests/test_claim_extraction.py tests/test_temporal_evidence_classifier.py tests/test_temporal_run_artifacts.py tests/test_draft_baseline.py tests/test_claim_temporal_classifier.py -q`.
+- Verification run: `uv run ruff check pipeline/generate/draft/temporal.py pipeline/generate/draft_writer.py tests/test_claim_temporal_classifier.py`.
+- Review cycle found and fixed missing deterministic-hint coverage: claim-level LLM prompt items
+  now receive source-role hints, quest-position/late-outcome structural hints, category-policy
+  hints, paragraph structural hints, and contract-match fields.
+- Review cycle added regression assertions for late quest relation hints and LLM prompt hint
+  coverage, then reran full pytest, repo-wide ruff, targeted mypy, and diff whitespace checks.
 
 Risks:
 

@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from temporal_run_artifact_helpers import summarize_temporal_run_artifacts
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pipeline.ai.config import load_ai_settings
 from pipeline.ai.openai_client import chat_json_completion
@@ -237,6 +237,7 @@ def run_draft_writer(
     content_boundary_decisions: list[dict[str, Any]] = []
     canonical_temporal_decisions: list[dict[str, Any]] = []
     canonical_claim_decisions: list[dict[str, Any]] = []
+    claim_temporal_decisions: list[dict[str, Any]] = []
     if evidence_rows:
         (
             evidence_rows,
@@ -245,6 +246,7 @@ def run_draft_writer(
             content_boundary_decisions,
             canonical_temporal_decisions,
             canonical_claim_decisions,
+            claim_temporal_decisions,
         ) = enrich_evidence_temporal_metadata(
             evidence_rows,
             fact_packs_by_entity=fact_packs_by_entity,
@@ -256,6 +258,7 @@ def run_draft_writer(
             return_boundary_decisions=True,
             return_canonical_decisions=True,
             return_claim_decisions=True,
+            return_claim_temporal_decisions=True,
         )
 
     # Carry each traversed location page's own MediaWiki categories onto its candidate row so the
@@ -392,7 +395,7 @@ def run_draft_writer(
             entity_dir.mkdir(parents=True, exist_ok=True)
             out_path = entity_dir / f"{entity_id}.json"
             overflow = draft.pop("draft_overflow_decisions", None)
-            draft = normalize_display_payload(draft)
+            draft = cast(dict[str, Any], normalize_display_payload(draft))
             write_json(out_path, draft)
             decision: dict[str, object] = {
                 "entity_id": entity_id,
@@ -438,7 +441,7 @@ def run_draft_writer(
         entity_dir = stage_dir / entity_type
         entity_dir.mkdir(parents=True, exist_ok=True)
         out_path = entity_dir / f"{llm_draft['id']}.json"
-        llm_draft = normalize_display_payload(llm_draft)
+        llm_draft = cast(dict[str, Any], normalize_display_payload(llm_draft))
         write_json(out_path, llm_draft)
         decision = {
             "entity_id": str(llm_draft["id"]),
@@ -543,6 +546,7 @@ def run_draft_writer(
         (decisions_dir / "canonical_claim_extraction_decisions.json"),
         canonical_claim_decisions,
     )
+    write_json((decisions_dir / "claim_temporal_decisions.json"), claim_temporal_decisions)
     write_json(
         (decisions_dir / "instance_key_character_decisions.json"), instance_key_character_decisions
     )

@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-
 HISTORY_ELIGIBLE = frozenset({"history_background", "history_setup_bridge"})
 RESTRICTED_TEMPORAL_SCOPES = frozenset(
     {"active_storyline_outcome", "post_active_lore", "excluded_noncanon"}
