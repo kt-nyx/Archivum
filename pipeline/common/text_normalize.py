@@ -29,6 +29,56 @@ _SOURCE_ATTRIBUTION_RE = re.compile(
     re.IGNORECASE,
 )
 
+_DISPLAY_PUNCT_TRANSLATION = str.maketrans(
+    {
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201a": "'",
+        "\u201b": "'",
+        "\u2032": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\u201e": '"',
+        "\u201f": '"',
+        "\u2033": '"',
+        "\u2013": "-",
+        "\u2014": "-",
+        "\u2212": "-",
+        "\u00a0": " ",
+        "\u202f": " ",
+        "\u2026": "...",
+    }
+)
+
+_NON_DISPLAY_STRING_KEYS = frozenset(
+    {
+        "id",
+        "zone_id",
+        "instance_id",
+        "parent_zone_id",
+        "term_id",
+        "source_id",
+        "source_ids",
+        "revision_id",
+        "revision_ids",
+        "excerpt_hash",
+        "url",
+        "wiki_url",
+        "wiki_ref",
+        "wiki_refs",
+        "source_url",
+        "source_urls",
+        "source_ref",
+        "source_refs",
+        "locator",
+        "thumbnail_asset_id",
+        "chain_refs",
+        "source_link",
+    }
+)
+
+_NON_DISPLAY_CONTAINER_KEYS = frozenset({"provenance", "sources"})
+
 
 def clean_wiki_snippet(text: str) -> str:
     """Strip footnote markers, HTML entities, collapse whitespace, and fix link artifacts."""
@@ -43,3 +93,34 @@ def clean_wiki_snippet(text: str) -> str:
     decoded = _SPACE_BEFORE_PUNCT_RE.sub(r"\1", decoded)
     decoded = _SPACE_BEFORE_POSSESSIVE_RE.sub(r"'\1", decoded)
     return decoded.strip()
+
+
+def normalize_display_punctuation(text: str) -> str:
+    """Normalize generated display punctuation to ordinary typed ASCII forms."""
+    if not text:
+        return ""
+    return text.translate(_DISPLAY_PUNCT_TRANSLATION)
+
+
+def normalize_display_payload(value: object, *, key: str = "") -> object:
+    """Recursively normalize only public display strings in a draft/build payload.
+
+    IDs, URLs, hashes, revision/source metadata, and provenance/source manifests are left untouched
+    so normalization never mutates references or raw evidence identifiers.
+    """
+    if isinstance(value, str):
+        return value if key in _NON_DISPLAY_STRING_KEYS else normalize_display_punctuation(value)
+    if isinstance(value, list):
+        if key in _NON_DISPLAY_STRING_KEYS:
+            return value
+        return [normalize_display_payload(item) for item in value]
+    if isinstance(value, dict):
+        out: dict[object, object] = {}
+        for child_key, child_value in value.items():
+            child_key_str = str(child_key)
+            if child_key_str in _NON_DISPLAY_CONTAINER_KEYS:
+                out[child_key] = child_value
+            else:
+                out[child_key] = normalize_display_payload(child_value, key=child_key_str)
+        return out
+    return value

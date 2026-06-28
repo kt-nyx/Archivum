@@ -7,6 +7,7 @@ import re
 from pipeline.generate.draft.prose_lint import (
     has_currently_meta,
     has_historical_framing,
+    lint_adp_date_style,
     trim_words,
     word_count,
 )
@@ -25,7 +26,8 @@ _PRESENT_ROLE_RE = re.compile(
     r"\b("
     r"is|are|remains|remain|continues|continue|holds|hold|operates|operate|controls|control|"
     r"maintains|maintain|coordinates|coordinate|patrols|patrol|guards|guard|"
-    r"pushes|push|sends|send|defends|defend|occupies|occupy"
+    r"pushes|push|sends|send|defends|defend|occupies|occupy|uses|use|serves|serve|"
+    r"trains|train|raises|raise"
     r")\b",
     re.IGNORECASE,
 )
@@ -93,6 +95,7 @@ def lint_faction_summary(
         issues.append("faction summary reads like bare zone-description filler")
     if words >= MIN_FACTION_SUMMARY_WORDS and not has_zone_role_framing(cleaned):
         issues.append("faction summary lacks zone role framing")
+    issues.extend(lint_adp_date_style(cleaned))
     tokens = subregion_tokens or []
     if (
         zone_name

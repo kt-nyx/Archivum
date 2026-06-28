@@ -12,6 +12,7 @@ from pipeline.generate.draft.prose_gate import detect_list_shape
 from pipeline.generate.draft.prose_lint import (
     has_currently_meta,
     has_historical_framing,
+    lint_adp_date_style,
     split_sentences,
     trim_words,
     word_count,
@@ -98,6 +99,7 @@ def lint_at_a_glance(text: str, *, instance_name: str = "") -> list[str]:
         issues.append("at_a_glance contains player/meta framing")
     if instance_name and instance_name.lower() not in cleaned.lower():
         issues.append("at_a_glance lacks instance anchor")
+    issues.extend(lint_adp_date_style(cleaned))
     return issues
 
 
@@ -120,6 +122,7 @@ def lint_overview(text: str, *, instance_name: str = "") -> list[str]:
         issues.append("overview lacks instance anchor")
     if has_historical_framing(cleaned) and words < MIN_OVERVIEW_WORDS // 2:
         issues.append("overview reads like thin historical fragment")
+    issues.extend(lint_adp_date_style(cleaned))
     return issues
 
 
@@ -148,6 +151,7 @@ def lint_key_character_summary(
         and words < MIN_KEY_CHARACTER_WORDS
     ):
         issues.append("key enemy summary lacks instance context")
+    issues.extend(lint_adp_date_style(cleaned))
     return issues
 
 
@@ -336,8 +340,8 @@ def fallback_key_character_summary(
 ) -> tuple[str, list[str]]:
     generic = trim_key_character_summary(
         (
-            f"{boss_name} serves as a major encounter within {instance_name}, shaping the "
-            f"instance's narrative stakes and the power struggles that unfold inside its halls."
+            f"{boss_name} is a major presence within {instance_name}, tied to the hostile powers "
+            "and local ambitions that define the halls before outsiders intervene."
         ),
         max_words=max_words,
     )
@@ -360,8 +364,8 @@ def fallback_key_character_summary(
         # splice) so it clears the word floor while staying grammatical.
         text = trim_key_character_summary(
             (
-                f"{boss_name} stands among the defining threats of {instance_name}, commanding "
-                f"hostile forces and anchoring the instance's narrative conflict. {sentence}"
+                f"{boss_name} is one of {instance_name}'s defining threats, bound to the hostile "
+                f"forces and dark work already underway there. {sentence}"
             ),
             max_words=max_words,
         )

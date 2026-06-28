@@ -191,11 +191,11 @@ def test_sidecar_rows_include_merge_rank() -> None:
     assert {item["name"] for item in emitted} == {"Floor Boss"}
 
 
-def test_finalize_overrides_enemy_role_from_ally_summary(monkeypatch) -> None:
+def test_finalize_keeps_structural_role_when_summary_mentions_ally(monkeypatch) -> None:
     monkeypatch.setattr(
         key_character_page,
         "synthesize_key_character_summary",
-        lambda pool, boss_name, instance_name: (
+        lambda pool, boss_name, instance_name, structural_role="": (
             "Lilian Voss is a brief, tragic ally who helps adventurers in Test Keep.",
             ["src-lilian"],
         ),
@@ -226,5 +226,5 @@ def test_finalize_overrides_enemy_role_from_ally_summary(monkeypatch) -> None:
     )
 
     assert cards
-    assert cards[0]["role"] == "ally"
-    assert "role:ally:summary_ally_descriptor" in cards[0]["decision_reason_codes"]
+    assert cards[0]["role"] == "enemy"
+    assert "role:ally:summary_ally_descriptor" not in cards[0]["decision_reason_codes"]

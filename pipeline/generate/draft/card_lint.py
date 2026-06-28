@@ -8,7 +8,7 @@ from pipeline.generate.draft.prose_gate import (
     detect_dangling_terminal,
     detect_midsentence_gap,
 )
-from pipeline.generate.draft.prose_lint import split_sentences, word_count
+from pipeline.generate.draft.prose_lint import lint_adp_date_style, split_sentences, word_count
 
 MAX_CTA_HOOK_WORDS = 36
 _TRAILING_FRAGMENT_RE = re.compile(
@@ -34,6 +34,7 @@ def lint_cta_hook(text: str) -> list[str]:
         issues.append("cta_hook looks truncated")
     if detect_midsentence_gap(cleaned):
         issues.append("cta_hook has a mid-sentence gap (dangling preposition/article)")
+    issues.extend(lint_adp_date_style(cleaned))
     return issues
 
 

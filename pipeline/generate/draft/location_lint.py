@@ -6,6 +6,7 @@ import re
 
 from pipeline.generate.draft.prose_lint import (
     has_currently_meta,
+    lint_adp_date_style,
     trim_words,
     word_count,
 )
@@ -96,6 +97,7 @@ def lint_location_summary(
         issues.append("location summary contains reputation/achievement/player meta")
     if _DATING_CONVENTION_RE.search(cleaned):
         issues.append("location summary contains dating-convention framing")
+    issues.extend(lint_adp_date_style(cleaned))
     if reads_like_faction_or_npc_lede(cleaned):
         issues.append("location summary reads like faction or NPC lede")
     if (

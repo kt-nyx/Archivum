@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -42,19 +41,6 @@ from pipeline.generate.draft.prose_synthesis import (
 )
 
 _POOL_SELECTION_CONTEXT_MAX_CHARS = 800
-
-_ALLY_SUMMARY_RE = re.compile(
-    r"\b(ally|allied|aids|assists|helps|fights alongside|freed|guides|joins|rescued|supports)\b",
-    re.IGNORECASE,
-)
-_NEUTRAL_SUMMARY_RE = re.compile(
-    r"\b(merchant|neutral|non[- ]hostile|quest giver|questgiver|trainer|vendor)\b",
-    re.IGNORECASE,
-)
-_HOSTILE_SUMMARY_RE = re.compile(
-    r"\b(enemy|must be defeated|must be slain|servant of|minion of|final boss)\b",
-    re.IGNORECASE,
-)
 
 
 @dataclass
@@ -221,21 +207,6 @@ def build_instance_key_character_roster(
     ).cast
 
 
-def _role_override_from_summary(summary: str) -> tuple[str, str] | None:
-    if not summary.strip():
-        return None
-    ally = bool(_ALLY_SUMMARY_RE.search(summary))
-    neutral = bool(_NEUTRAL_SUMMARY_RE.search(summary))
-    hostile = bool(_HOSTILE_SUMMARY_RE.search(summary))
-    if hostile:
-        return None
-    if ally:
-        return "ally", "summary_ally_descriptor"
-    if neutral:
-        return "neutral", "summary_neutral_descriptor"
-    return None
-
-
 def _finalize_key_characters(
     *,
     instance_name: str,
@@ -261,11 +232,13 @@ def _finalize_key_characters(
 
         card: dict[str, Any] | None = None
         card_pointers: list[dict[str, str]] = []
+        structural_role = candidate.role or "uncertain"
         for pool in pools_to_try:
             summary, used = synthesize_key_character_summary(
                 pool,
                 boss_name=candidate.name,
                 instance_name=instance_name,
+                structural_role=structural_role,
             )
             if (
                 lint_key_character_summary(
@@ -327,9 +300,6 @@ def _finalize_key_characters(
                 )
                 if role != "uncertain":
                     role_reason = "llm_tiebreaker"
-            summary_role = _role_override_from_summary(summary)
-            if summary_role is not None and role in {"enemy", "uncertain", "neutral"}:
-                role, role_reason = summary_role
             # WS-4 confidence gate: stop padding the roster to the cap with narrative-only
             # mentions. A non-floor candidate must carry a real in-instance structural
             # signal; a pure narrative fallback (no boss/denizen section, no adventure-guide

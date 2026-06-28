@@ -15,7 +15,6 @@ from pipeline.generate.draft.pages.assembly import (
     _cap_card_pointers,
     _ensure_pointer_count,
     _history_pointers_from_sections,
-    _iter_evidence_items,
     _pointer_count_for_words,
     _pointers_for_source_ids,
     _sanitize_cluster_title,
@@ -98,9 +97,7 @@ def _finalize_at_a_glance(
         if _rejected(text):
             text, used = "", []
     if not text:
-        rescue_pool = at_pool or select_at_a_glance_pool(
-            _iter_evidence_items(evidence_rows, {"at_a_glance_input", "history_digest"})
-        )
+        rescue_pool = at_pool
         text, used = fallback_at_a_glance(rescue_pool)
         if _rejected(text):
             text, used = "", []
@@ -181,6 +178,8 @@ def build_zone_page(
     faction_profile_targets: list[dict[str, Any]] | None = None,
     location_profile_targets: list[dict[str, Any]] | None = None,
     snapshots: list[dict[str, Any]] | None = None,
+    quest_descriptions_by_node: dict[str, str] | None = None,
+    instance_summary_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     zone_id = str(fact_pack.get("entity_id", "zone-unknown"))
     name = str(fact_pack.get("name", zone_id))
@@ -382,6 +381,7 @@ def build_zone_page(
             start_anchor=start_anchor,
             faction=faction,
             chain_refs=chain_refs,
+            quest_descriptions=quest_descriptions_by_node,
             max_words=35,
         )
         if not cta or prose_gate_rejects(cta):
@@ -495,12 +495,23 @@ def build_zone_page(
     instance_provenance_map: dict[str, list[dict[str, str]]] = {}
     for candidate in _instance_link_candidates(zone_id, instance_rows):
         instance_name = str(candidate.get("name", "")).strip()
+        instance_id = str(candidate.get("id", "")).strip()
         scoped = [
             item
             for item in pools["instance_pool"]
             if instance_name.lower() in str(item.get("snippet", "")).lower()
         ] or pools["instance_pool"]
-        summary, used_ids = synthesize_card_summary(scoped, subject=instance_name, max_words=35)
+        summary = ""
+        used_ids: list[str] = []
+        if instance_summary_map and instance_id in instance_summary_map:
+            summary = trim_instance_link_summary(str(instance_summary_map[instance_id]))
+            used_ids = [
+                str(item.get("source_id", "")).strip()
+                for item in scoped
+                if str(item.get("source_id", "")).strip()
+            ]
+        if not summary:
+            summary, used_ids = synthesize_card_summary(scoped, subject=instance_name, max_words=35)
         if not summary:
             summary = _best_snippet_for_term(scoped, instance_name, min_words=10)
             if summary:

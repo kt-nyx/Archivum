@@ -334,7 +334,9 @@ def synthesize_history_sections(
         "'Coming of the Argent Dawn', 'Battle for Andorhal'). Never use bare expansion or "
         "era labels as headings (no 'History', 'World of Warcraft', 'Cataclysm', 'Legion', "
         "'Exploring Azeroth'). "
-        "Do not list locations. Cover through the latest era in evidence."
+        "Do not list locations. Cover only background that happened before the player enters "
+        "the current content; do not narrate the current storyline's events, outcomes, or later "
+        "off-screen reports."
     )
 
     def _call(reinforce: str) -> dict[str, Any]:
@@ -588,15 +590,16 @@ def synthesize_faction_summary(
             task_lines=(
                 f"Write a faction-role summary for faction '{faction_name}' in instance "
                 f"'{instance_name}' using ONLY evidence. Maximum {max_words} words. "
-                "Use present tense for active roles; past tense for defunct leadership when "
-                "evidence is historical."
+                "Write from the entry-state perspective: present tense for active roles, past "
+                "tense only for older identity context, and no current-storyline outcomes."
             ),
         )
     else:
         system_prompt = (
             f"Write a zone-role summary for faction '{faction_name}' in zone '{zone_name}' using ONLY evidence. "
             f"Maximum {max_words} words. Describe what this faction does in this zone only. "
-            "Use present tense for active roles; past tense for defunct leadership when evidence is historical. "
+            "Write from the entry-state perspective: present tense for active roles, past tense "
+            "only for older identity context, and no current-storyline outcomes. "
             "Do not copy generic faction wiki ledes, geography lists, reputation/achievement meta, or out-of-zone plot."
         )
     result = llm_json_with_retry(
@@ -771,9 +774,7 @@ def synthesize_location_significance(
 
 
 def _early_chain_ref_limit(chain_refs: list[str], *, arc_title: str) -> int:
-    if "andorhal" in arc_title.lower():
-        return 6
-    return 4 if len(chain_refs) <= 8 else 6
+    return min(2, len(chain_refs)) if chain_refs else 0
 
 
 def filter_early_chain_evidence_pool(
@@ -785,6 +786,8 @@ def filter_early_chain_evidence_pool(
     if not items:
         return []
     limit = _early_chain_ref_limit(chain_refs, arc_title=arc_title)
+    if limit <= 0:
+        return items[:2]
     early_ids = set(chain_refs[:limit])
     scoped = [item for item in items if str(item.get("quest_node_id", "")).strip() in early_ids]
     if scoped:
@@ -809,9 +812,16 @@ def synthesize_questline_cta_hook(
         for node_id in refs[:limit]:
             description = clean_wiki_snippet(str(quest_descriptions.get(node_id, "")))
             if description and word_count(description) >= 6:
-                hook = finalize_cta_hook(trim_words(description, max_words), max_words=max_words)
-                if hook and hook.lower() != arc_title.strip().lower():
-                    return hook, [node_id]
+                early_pool.insert(
+                    0,
+                    {
+                        "source_id": node_id,
+                        "quest_node_id": node_id,
+                        "snippet": description,
+                        "section_role": "quest_start_description",
+                        "raw_section_role": "quest_start_description",
+                    },
+                )
     if not early_pool:
         return "", []
     faction_addendum = ""
@@ -849,9 +859,10 @@ def synthesize_questline_cta_hook(
         system_prompt=(
             f"{COMPENDIUM_VOICE_CORE} {QUESTLINE_CTA_VOICE}"
             f" Write a questline card hook for arc '{arc_title}' starting at '{start_anchor}'."
-            f" Max {max_words} words.{faction_addendum}"
+            f" Max {max_words} words. Write as an in-universe call for help at the questline's "
+            f"opening situation. Do not describe late-chain events or outcomes.{faction_addendum}"
         ),
-        user_prompt=f"Evidence:\n{_format_evidence_block(early_pool, max_items=6)}",
+        user_prompt=f"Evidence:\n{_format_evidence_block(early_pool, max_items=2)}",
         response_schema_name="wiki_first_questline_cta_hook",
         substep="wiki_first_questline_cta_hook",
     )
@@ -1004,6 +1015,7 @@ def synthesize_key_character_summary(
     *,
     boss_name: str,
     instance_name: str,
+    structural_role: str = "",
     max_words: int = 50,
 ) -> tuple[str, list[str]]:
     if not items:
@@ -1041,7 +1053,9 @@ def synthesize_key_character_summary(
             task_lines=(
                 f"Write a key-character card summary for '{boss_name}' in instance "
                 f"'{instance_name}' using ONLY evidence. Maximum {max_words} words. "
-                "No generic stubs."
+                f"Align with the precomputed structural role '{structural_role or 'uncertain'}' "
+                "without using meta labels as prose. Describe why the character is present here "
+                "at entry state. No generic stubs, no current-storyline outcomes."
             ),
         ),
         user_prompt=f"Evidence:\n{_format_evidence_block(items)}",

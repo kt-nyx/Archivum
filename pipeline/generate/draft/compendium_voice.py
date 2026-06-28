@@ -7,6 +7,7 @@ COMPENDIUM_VOICE_CORE = (
     "Treat the world as real. Moderate drama — clear stakes, readable prose, not walkthrough or wiki manual tone. "
     "Always reframe evidence into this voice; never copy source phrasing or adopt source tone. "
     "Named expansion eras (Cataclysm, Fourth War, etc.) are acceptable historical labels. "
+    "Prefer era or event references over exact ADP/BDP year dates unless two close events in the same era need distinction. "
     "No player meta, reputation/achievement language, or quest walkthrough steps."
 )
 
@@ -22,13 +23,13 @@ COMPLETE_CLAUSE_MANDATE = (
 )
 
 AT_A_GLANCE_VOICE = (
-    "Zone flavor caption. Past tense only. 1–2 sentences tracing historical identity through the latest era in evidence. "
+    "Zone flavor caption. Past tense only. 1–2 sentences tracing historical identity before the player enters the current content. "
     "Do not describe present retail state — that belongs in currently. "
     'Example shape: "Once the breadbasket of Lordaeron, these lands were consumed by the Scourge..."'
 )
 
 CURRENTLY_VOICE = (
-    "Zone flavor summary. Present tense only. Active conflict, recovery, or faction dynamics at the latest era. "
+    "Zone flavor summary. Present tense only. Active conflict, recovery, or faction dynamics at the player's entry state. "
     "Do not restate the historical identity arc from at_a_glance. Name factions explicitly when describing conflict. "
     'Example shape: "The Argent Crusade and Cenarion Circle work to heal the blighted soil while Horde and Alliance forces contest..."'
 )
@@ -70,9 +71,9 @@ INSTANCE_OVERVIEW_VOICE = (
 )
 
 KEY_CHARACTER_VOICE = (
-    "Key-character card. State who this figure is and their role within the instance's story — "
-    "whether they oppose, aid, or stand neutral toward those who enter, and why they matter. "
-    "Characterize motive and significance, not combat tactics or abilities." + COMPLETE_CLAUSE_MANDATE
+    "Key-character card. State who this figure is in-universe, why they are present in this setting, "
+    "and their entry-state relationship to those who enter. Do not explain gameplay or narrative function. "
+    "Characterize background, motive, and local role, not combat tactics or abilities." + COMPLETE_CLAUSE_MANDATE
 )
 
 INSTANCE_FACTION_VOICE = (

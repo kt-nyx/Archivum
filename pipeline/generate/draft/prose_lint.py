@@ -24,6 +24,7 @@ _CURRENTLY_META_RE = re.compile(
     r"\breputation with\b|\bachievement\b|\bplayers can\b|\bbreadcrumb\b",
     re.IGNORECASE,
 )
+_ADP_DATE_RE = re.compile(r"\b(?:year\s+)?\d{1,3}\s+(?:A|B)DP\b", re.IGNORECASE)
 
 _PAST_TENSE_RE = re.compile(
     r"\b(was|were|had been|became|fell|destroyed|invaded|established|founded|consumed|overran|collapsed|remained)\b",
@@ -65,6 +66,16 @@ def split_sentences(text: str) -> list[str]:
 
 def word_count(text: str) -> int:
     return len(re.findall(r"\b[\w']+\b", text))
+
+
+def has_adp_date(text: str) -> bool:
+    return bool(_ADP_DATE_RE.search(text))
+
+
+def lint_adp_date_style(text: str) -> list[str]:
+    if has_adp_date(text):
+        return ["prose uses exact ADP/BDP dating instead of era/event framing"]
+    return []
 
 
 def _hard_trim_words(text: str, max_words: int) -> str:
@@ -181,6 +192,7 @@ def lint_at_a_glance(text: str, *, zone_name: str = "") -> list[str]:
     if not _PAST_TENSE_RE.search(text) and not has_historical_framing(text):
         if words >= _SHORT_TEXT_PRESENT_CARVEOUT_WORDS:
             issues.append("at_a_glance lacks past-tense or historical framing")
+    issues.extend(lint_adp_date_style(text))
     return issues
 
 
@@ -199,6 +211,7 @@ def lint_currently(text: str, *, zone_name: str = "", at_a_glance: str = "") -> 
         issues.append("currently lacks present-tense active-state framing")
     elif has_historical_framing(text) and not _PRESENT_TENSE_RE.search(text):
         issues.append("currently uses historical-era framing without present tense")
+    issues.extend(lint_adp_date_style(text))
     return issues
 
 
@@ -222,6 +235,8 @@ def lint_history_sections(
             issues.append(f"history_sections[{index}] lacks past-tense historical framing")
         elif has_dominant_present_tense(body, short_text_word_limit=0):
             issues.append(f"history_sections[{index}] uses dominant present tense")
+        for adp_issue in lint_adp_date_style(body):
+            issues.append(f"history_sections[{index}] {adp_issue}")
     return issues
 
 

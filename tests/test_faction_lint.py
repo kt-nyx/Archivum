@@ -27,6 +27,18 @@ def test_lint_faction_summary_accepts_zone_role_prose() -> None:
     assert not lint_faction_summary(summary, zone_name="Example Zone")
 
 
+def test_lint_faction_summary_accepts_uses_and_serves_role_prose() -> None:
+    summary = (
+        "The Cult of the Damned uses Scholomance as a hidden necromantic school, "
+        "serving the Scourge through its instructors and acolytes beneath Caer Darrow."
+    )
+    assert not lint_faction_summary(
+        summary,
+        zone_name="Scholomance",
+        subregion_tokens=["Caer Darrow"],
+    )
+
+
 def test_lint_faction_summary_rejects_generic_filler() -> None:
     issues = lint_faction_summary("The Argent Crusade appears in this zone's active conflicts.")
     assert any("generic filler" in issue for issue in issues)
