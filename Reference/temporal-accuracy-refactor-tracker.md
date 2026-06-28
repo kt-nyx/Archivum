@@ -1022,7 +1022,7 @@ Risks:
 
 ## Slice 7 - Coverage-Aware History Synthesis
 
-Status: Not started
+Status: Landed
 
 Goal: prevent eligible background/setup evidence from silently disappearing from final history.
 
@@ -1087,6 +1087,53 @@ Risks:
 
 - Overforcing coverage can produce bloated history. Mitigate by allowing merged coverage units and
   concise bridge cards.
+
+Implementation notes:
+
+- Added `pipeline/generate/draft/coverage.py`:
+  - `plan_history_coverage(...)` groups a claim-level history pool into source-ordered coverage
+    units. A unit is `required` when any of its claims is `history_setup_bridge` (clarification
+    question 3). It is intentionally claim-level only — a paragraph-only pool (no claim sidecar)
+    yields no units, so the legacy history path is unchanged.
+  - `covered_coverage_ids(...)` validates coverage at source-paragraph granularity (a unit is
+    covered when its source produced a used section), matching the existing history provenance
+    model instead of inventing a fuzzier text-match coverage truth.
+  - `missing_required_units(...)`, `required_event_texts(...)`, `setup_bridge_body(...)`, and
+    `build_section_coverage_decisions(...)` support the validator, the LLM retry hint, the
+    deterministic bridge body, and the sidecar rows.
+- `pages/cards.py` `_finalize_history_sections` now runs `_apply_history_coverage` after synthesis:
+  - in a live run, one retry of `synthesize_history_sections` against the pre-cap coverage pool with
+    explicit required-event hints (so the dropped setup-bridge source is actually in evidence); the
+    retry is accepted only if it passes lint + the source-aware prose gate and covers every required
+    unit;
+  - if still missing (or offline, where the retry is skipped because `passthrough_corpus` is
+    inactive), `_append_setup_bridge_cards` appends a concise deterministic bridge card from the
+    safe claim text. The cap never justifies dropping a required bridge: at the hard
+    `MAX_HISTORY_SECTIONS` ceiling the bridge folds into the last section instead.
+- Provenance stays source/paragraph based: each coverage unit retains a representative claim view,
+  and a `coverage_pointer_builder` (wired from `zone.py`/`instance.py` via `_pointer_for_item` +
+  `revision_map`) gives the appended bridge card an explicit `source_refs` pointer, so the
+  positional ref attachment downstream cannot mis-credit it.
+- `synthesize_history_sections(..., required_event_texts=...)` adds a coverage-retry directive to
+  the history task. Deviation from the slice sketch: the deterministic source-level validator is the
+  source of truth rather than a model-reported `covered_coverage_ids`, which is more robust than
+  trusting the model's self-report; no response-schema change was needed.
+- `draft_writer.py` collects per-subject `section_coverage_decisions` (popped from the page draft
+  like `draft_overflow_decisions`) and writes `data/decisions/section_coverage_decisions.json`.
+- Un-skipped the future-sidecar artifact test (now `test_claim_and_coverage_sidecars_present_when_
+  written`) since all four claim/coverage sidecars now exist.
+- Added `tests/test_history_coverage.py` covering unit planning, the required/covered/missing
+  helpers, the deterministic bridge append, explicit bridge provenance, the already-covered
+  no-append case, the paragraph-only no-op, and the sidecar shape.
+
+Validation:
+
+- `.venv/Scripts/python.exe -m pytest tests/test_history_coverage.py tests/test_history_finalize.py
+  tests/test_claim_routing.py tests/test_temporal_run_artifacts.py tests/test_zone_prose_draft.py
+  tests/test_instance_page_draft.py tests/test_draft_baseline.py -q`
+- `.venv/Scripts/python.exe -m pytest -q` — 868 passed, 5 skipped, 1 xfailed.
+- `.venv/Scripts/python.exe -m ruff check` (changed files) and targeted `mypy` clean;
+  `git diff --check` clean.
 
 ## Slice 8 - Current, At-A-Glance, And Faction Routing From Claims
 
@@ -1406,7 +1453,7 @@ Global:
 - [ ] Entry-state contract sidecar exists.
 - [ ] Claim extraction sidecar exists.
 - [ ] Claim temporal sidecar exists.
-- [ ] Section coverage sidecar exists.
+- [x] Section coverage sidecar exists.
 - [ ] Paragraph-level compatibility sidecars still exist during rollout.
 - [ ] Full suite passes with `uv run pytest -q`.
 
@@ -1444,3 +1491,6 @@ Add dated entries here as slices move.
 - 2026-06-27: Tracker created after review of `test-run-wpl-3` temporal artifacts.
 - 2026-06-28: Slice 6 reviewed and verified (full suite 859 passed / 6 skipped / 1 xfailed, ruff +
   mypy clean); committed claim-level routed evidence views.
+- 2026-06-28: Slice 7 landed coverage-aware history synthesis (`coverage.py`, deterministic
+  setup-bridge guarantee with live LLM retry, `section_coverage_decisions.json`). Full suite 868
+  passed / 5 skipped / 1 xfailed; ruff + mypy clean.

@@ -402,6 +402,7 @@ def run_draft_writer(
             entity_dir.mkdir(parents=True, exist_ok=True)
             out_path = entity_dir / f"{entity_id}.json"
             overflow = draft.pop("draft_overflow_decisions", None)
+            coverage = draft.pop("section_coverage_decisions", None)
             draft = cast(dict[str, Any], normalize_display_payload(draft))
             write_json(out_path, draft)
             decision: dict[str, object] = {
@@ -413,6 +414,8 @@ def run_draft_writer(
             }
             if isinstance(overflow, list):
                 decision["questline_overflow"] = overflow
+            if isinstance(coverage, list):
+                decision["section_coverage"] = coverage
             if prose_finalize_records:
                 decision["prose_finalize"] = prose_finalize_records
             if instance_key_character_decisions is not None:
@@ -467,6 +470,7 @@ def run_draft_writer(
     decisions: list[dict[str, object]] = []
     instance_key_character_decisions: list[dict[str, Any]] = []
     prose_finalize_decisions: list[dict[str, Any]] = []
+    section_coverage_decisions: list[dict[str, Any]] = []
     instance_summary_map: dict[str, str] = {}
 
     def _record_result(output_path: Path | None, decision: dict[str, object] | None) -> None:
@@ -479,6 +483,9 @@ def run_draft_writer(
             prose_records = decision.pop("prose_finalize", None)
             if isinstance(prose_records, list):
                 prose_finalize_decisions.extend(prose_records)
+            coverage_records = decision.pop("section_coverage", None)
+            if isinstance(coverage_records, list):
+                section_coverage_decisions.extend(coverage_records)
             overflow = decision.pop("questline_overflow", None)
             decisions.append(decision)
             if isinstance(overflow, list):
@@ -559,4 +566,5 @@ def run_draft_writer(
         (decisions_dir / "instance_key_character_decisions.json"), instance_key_character_decisions
     )
     write_json((decisions_dir / "prose_finalize_decisions.json"), prose_finalize_decisions)
+    write_json((decisions_dir / "section_coverage_decisions.json"), section_coverage_decisions)
     return outputs

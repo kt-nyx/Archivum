@@ -302,7 +302,10 @@ def synthesize_currently(
 
 
 def synthesize_history_sections(
-    items: list[dict[str, Any]], *, max_sections: int = MAX_HISTORY_SECTIONS
+    items: list[dict[str, Any]],
+    *,
+    max_sections: int = MAX_HISTORY_SECTIONS,
+    required_event_texts: list[str] | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     if not items:
         return [], []
@@ -338,6 +341,16 @@ def synthesize_history_sections(
         "the current content; do not narrate the current storyline's events, outcomes, or later "
         "off-screen reports."
     )
+    if required_event_texts:
+        # Coverage retry (Slice 7): an eligible setup-bridge claim was dropped on the first pass.
+        # Require the model to represent each listed setup fact in some section so the entry-state
+        # bridge is not silently omitted.
+        bridge_lines = "; ".join(text for text in required_event_texts if text)
+        if bridge_lines:
+            history_task += (
+                " You must represent each of the following setup facts in at least one section, "
+                f"combining them with adjacent context where natural: {bridge_lines}."
+            )
 
     def _call(reinforce: str) -> dict[str, Any]:
         return llm_json_with_retry(

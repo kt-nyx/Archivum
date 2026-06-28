@@ -257,9 +257,16 @@ def test_mixed_setup_and_outcome_paragraph_requires_future_claim_split(tmp_path:
     assert not summary.history_eligible_missing_from_final
 
 
-@pytest.mark.skip(reason="Future claim and coverage sidecars are introduced in later slices.")
-def test_future_temporal_sidecars_exist_when_claim_routing_lands(tmp_path: Path) -> None:
+def test_claim_and_coverage_sidecars_present_when_written(tmp_path: Path) -> None:
     run_dir = _write_run(tmp_path, boundaries=[], canonical_rows=[])
+    decisions_dir = run_dir / "data" / "decisions"
+    for sidecar in (
+        "canonical_claim_extraction_decisions.json",
+        "claim_temporal_decisions.json",
+        "claim_view_routing_decisions.json",
+        "section_coverage_decisions.json",
+    ):
+        _write_json(decisions_dir / sidecar, [])
     summary = summarize_temporal_run_artifacts(run_dir)
 
     assert "canonical_claim_extraction_decisions.json" in summary.sidecars_present

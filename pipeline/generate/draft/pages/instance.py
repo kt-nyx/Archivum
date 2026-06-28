@@ -27,6 +27,7 @@ from pipeline.generate.draft.pages.assembly import (
     _ensure_pointer_count,
     _history_pointers_from_sections,
     _pointer_count_for_words,
+    _pointer_for_item,
     _pointers_for_source_ids,
     _source_entries,
     _word_count,
@@ -320,10 +321,17 @@ def build_instance_page(
     draft_history_pool, instance_history_cap = _draft_history_pool(history_pool)
     if instance_history_cap <= 0:
         instance_history_cap = MAX_HISTORY_SECTIONS
+    section_coverage_decisions: list[dict[str, Any]] = []
     history_sections, history_used = _finalize_history_sections(
         history_pool=draft_history_pool or history_pool,
         evidence_rows=evidence_rows,
         max_history=instance_history_cap,
+        coverage_pool=history_pool,
+        subject_id=instance_id,
+        coverage_sink=section_coverage_decisions,
+        coverage_pointer_builder=lambda item, ordinal: _pointer_for_item(
+            item, revision_map, ordinal
+        ),
     )
     history_sections = _attach_history_source_refs(
         history_sections,
@@ -429,4 +437,6 @@ def build_instance_page(
     # the returned dict so the page stays JSON-serializable for every other caller.
     if selection_sink is not None:
         selection_sink.append(key_character_selection)
+    if section_coverage_decisions:
+        page_entity["section_coverage_decisions"] = section_coverage_decisions
     return page_entity

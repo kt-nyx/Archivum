@@ -16,6 +16,7 @@ from pipeline.generate.draft.pages.assembly import (
     _ensure_pointer_count,
     _history_pointers_from_sections,
     _pointer_count_for_words,
+    _pointer_for_item,
     _pointers_for_source_ids,
     _sanitize_cluster_title,
     _source_entries,
@@ -234,10 +235,17 @@ def build_zone_page(
     for pointer in at_a_glance_pointers + currently_pointers:
         used_source_ids.add(pointer["source_id"])
 
+    section_coverage_decisions: list[dict[str, Any]] = []
     history_sections, history_used = _finalize_history_sections(
         history_pool=draft_history_pool,
         evidence_rows=evidence_rows,
         max_history=max_history,
+        coverage_pool=history_pool,
+        subject_id=zone_id,
+        coverage_sink=section_coverage_decisions,
+        coverage_pointer_builder=lambda item, ordinal: _pointer_for_item(
+            item, revision_map, ordinal
+        ),
     )
     history_sections = _attach_history_source_refs(
         history_sections,
@@ -579,4 +587,6 @@ def build_zone_page(
     page_entity["sources"] = sources or _source_entries(fact_pack)
     if questline_overflow_decisions:
         page_entity["draft_overflow_decisions"] = questline_overflow_decisions
+    if section_coverage_decisions:
+        page_entity["section_coverage_decisions"] = section_coverage_decisions
     return page_entity

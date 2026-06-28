@@ -2,10 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from pipeline.common.wiki_evidence_filters import cap_history_pool
 from pipeline.generate.draft import finalize_trace
+from pipeline.generate.draft.coverage import (
+    build_section_coverage_decisions,
+    covered_coverage_ids,
+    missing_required_units,
+    plan_history_coverage,
+    required_event_texts,
+    setup_bridge_body,
+)
 from pipeline.generate.draft.faction_lint import ensure_sentence_terminator, lint_faction_summary
 from pipeline.generate.draft.faction_scoring import (
     MAX_FACTION_CARDS,
@@ -122,6 +131,10 @@ def _finalize_history_sections(
     history_pool: list[dict[str, Any]],
     evidence_rows: list[dict[str, Any]],
     max_history: int,
+    coverage_pool: list[dict[str, Any]] | None = None,
+    subject_id: str = "",
+    coverage_sink: list[dict[str, Any]] | None = None,
+    coverage_pointer_builder: Callable[[dict[str, Any], int], dict[str, str] | None] | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     section_cap = max_history or MIN_HISTORY_SECTIONS
     lint_cap = max_history or MAX_HISTORY_SECTIONS
@@ -207,7 +220,133 @@ def _finalize_history_sections(
     # titles. Runs whichever path produced the bodies, so wiki-fallback sections still get LLM
     # headings; offline this is a no-op (deterministic label is kept).
     sections = relabel_history_headings(sections)
+    sections, used = _apply_history_coverage(
+        sections,
+        used,
+        coverage_pool=coverage_pool if coverage_pool is not None else history_pool,
+        pool_snippets=pool_snippets,
+        section_cap=section_cap,
+        lint_cap=lint_cap,
+        subject_id=subject_id,
+        coverage_sink=coverage_sink,
+        pointer_builder=coverage_pointer_builder,
+    )
     return sections, used
+
+
+def _apply_history_coverage(
+    sections: list[dict[str, Any]],
+    used: list[str],
+    *,
+    coverage_pool: list[dict[str, Any]],
+    pool_snippets: list[str] | None,
+    section_cap: int,
+    lint_cap: int,
+    subject_id: str,
+    coverage_sink: list[dict[str, Any]] | None,
+    pointer_builder: Callable[[dict[str, Any], int], dict[str, str] | None] | None = None,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Guarantee eligible setup-bridge claims survive into final history (Slice 7).
+
+    Coverage planning is claim-level only: ``plan_history_coverage`` returns no units for a
+    paragraph-only pool, so the legacy path is untouched. When a required setup-bridge unit is
+    dropped, a live run first retries synthesis with explicit bridge hints; if that still omits the
+    unit (or offline, where the retry is a no-op), a concise deterministic bridge card is appended.
+    """
+    units = plan_history_coverage(coverage_pool)
+    if not units:
+        return sections, used
+    covered = covered_coverage_ids(units, used)
+    missing = missing_required_units(units, covered)
+    appended_ids: set[str] = set()
+    if missing and pool_snippets is not None:
+        # Retry from the pre-cap coverage pool so the dropped setup-bridge source is in evidence;
+        # the capped synthesis pool may not contain it at all.
+        retry_sections, retry_used = synthesize_history_sections(
+            coverage_pool,
+            max_sections=section_cap,
+            required_event_texts=required_event_texts(missing),
+        )
+        retry_sections = _apply_history_section_budget(
+            _merge_consecutive_history_headings(retry_sections)
+        )
+        retry_sections = relabel_history_headings(retry_sections)
+        if (
+            retry_sections
+            and not lint_history_sections(retry_sections, max_sections=lint_cap)
+            and not _sections_trip_gate(retry_sections, pool_snippets)
+        ):
+            retry_covered = covered_coverage_ids(units, retry_used)
+            if not missing_required_units(units, retry_covered):
+                sections, used = retry_sections, retry_used
+                covered = retry_covered
+                missing = []
+    if missing:
+        sections, used, appended_ids = _append_setup_bridge_cards(
+            sections, used, missing, pointer_builder=pointer_builder
+        )
+        covered = covered_coverage_ids(units, used)
+    if appended_ids:
+        finalize_trace.record(
+            "history.coverage",
+            subject_id=subject_id,
+            required=sum(1 for unit in units if unit["required"]),
+            appended=len(appended_ids),
+        )
+    if coverage_sink is not None:
+        coverage_sink.extend(
+            build_section_coverage_decisions(subject_id, units, covered, appended_ids)
+        )
+    return sections, used
+
+
+def _append_setup_bridge_cards(
+    sections: list[dict[str, Any]],
+    used: list[str],
+    missing: list[dict[str, Any]],
+    *,
+    pointer_builder: Callable[[dict[str, Any], int], dict[str, str] | None] | None = None,
+) -> tuple[list[dict[str, Any]], list[str], set[str]]:
+    """Append concise setup-bridge cards for required units missing from synthesis.
+
+    The cap may merge a bridge into the previous section (``_apply_history_section_budget`` absorbs
+    a sub-floor card), but the cap never justifies dropping a required setup bridge: the hard
+    ``MAX_HISTORY_SECTIONS`` ceiling is only exceeded long enough for the budget pass to fold the
+    card into adjacent context. Provenance stays on the source paragraph: ``used`` carries the
+    source id, and (when a ``pointer_builder`` is supplied) the bridge card gets an explicit
+    ``source_refs`` pointer so the positional ref attachment downstream does not mis-credit it.
+    """
+    appended_ids: set[str] = set()
+    sections = list(sections)
+    used = list(used)
+    for unit in missing:
+        body = setup_bridge_body(unit)
+        if not body:
+            continue
+        pointer = None
+        representative = unit.get("representative_item")
+        if pointer_builder is not None and isinstance(representative, dict):
+            pointer = pointer_builder(representative, len(sections) + 1)
+        if len(sections) < MAX_HISTORY_SECTIONS or not sections:
+            sections.append(
+                {
+                    "heading": unit["suggested_heading"],
+                    "body": body,
+                    "source_refs": [pointer] if pointer else [],
+                }
+            )
+        else:
+            # At the hard ceiling: fold the bridge into the last section rather than dropping it.
+            last = sections[-1]
+            last_body = str(last.get("body", "")).strip()
+            last["body"] = " ".join(part for part in (last_body, body) if part)
+        if unit["source_id"]:
+            used.append(unit["source_id"])
+        appended_ids.add(unit["coverage_id"])
+    if not appended_ids:
+        return sections, used, appended_ids
+    sections = _apply_history_section_budget(_merge_consecutive_history_headings(sections))
+    return sections, used, appended_ids
 
 
 def _source_ref_key(ref: dict[str, Any]) -> tuple[str, str, str]:
