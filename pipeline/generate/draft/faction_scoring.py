@@ -9,9 +9,15 @@ from typing import Any
 from pipeline.common.discovery_vocab import faction_title_tokens, lore_faction_tokens
 from pipeline.common.draft_vocab import era_section_role_tokens
 from pipeline.common.text_ids import slugify
-from pipeline.generate.draft.faction_lint import trim_faction_summary
+from pipeline.generate.draft.faction_lint import MIN_FACTION_SUMMARY_WORDS, trim_faction_summary
 from pipeline.generate.draft.prose_gate import detect_list_shape
 from pipeline.generate.draft.prose_lint import has_currently_meta, word_count
+from pipeline.generate.draft.temporal import (
+    AMBIGUOUS_TEMPORAL,
+    EXCLUDED_NONCANON,
+    HISTORY_ELIGIBLE,
+    POST_ACTIVE_LORE,
+)
 
 MIN_FACTION_CARDS = 2
 MAX_FACTION_CARDS = 6
@@ -26,6 +32,7 @@ _ERA_TOKENS = era_section_role_tokens()
 
 _HIGH_WEIGHT_ROLES = frozenset({"quests_edit", "quests", "quests_or_storyline"})
 _LEDE_ROLES = frozenset({"lead", "introduction"})
+_EXCLUDED_TEMPORAL_SCOPES = frozenset({AMBIGUOUS_TEMPORAL, EXCLUDED_NONCANON, POST_ACTIVE_LORE})
 
 _BINDING_BY_FACTION_ID: dict[str, frozenset[str]] = {
     "faction-alliance": frozenset({"alliance"}),
@@ -128,6 +135,20 @@ def _phrase_is_faction(phrase: str, single: frozenset[str], multi: frozenset[str
 
 
 _LEADING_QUALIFIER_RE = re.compile(r"^[A-Z][A-Za-z']+\s+of\s+(?:the\s+)?([A-Z][A-Za-z'].*)$")
+_ROLE_ALIAS_RE = re.compile(r"^([A-Z][A-Za-z']+)\s+of\s+(?:the\s+)?([A-Z][A-Za-z']+)$")
+_GENERIC_ROLE_ALIAS_HEADS = frozenset(
+    {
+        "acolytes",
+        "agents",
+        "armies",
+        "followers",
+        "forces",
+        "members",
+        "servants",
+        "soldiers",
+        "troops",
+    }
+)
 
 
 def _canonicalize_faction_phrase(
@@ -150,11 +171,21 @@ def _canonicalize_faction_phrase(
     return current
 
 
+def _is_generic_role_alias_phrase(phrase: str) -> bool:
+    match = _ROLE_ALIAS_RE.match(phrase.strip())
+    if not match:
+        return False
+    head = match.group(1).casefold()
+    tail = match.group(2).casefold()
+    return head in _GENERIC_ROLE_ALIAS_HEADS and tail not in _STANDALONE_FACTION_NAMES
+
+
 def harvest_instance_faction_targets(
     *,
     instance_id: str,
     instance_name: str,
     evidence_rows: list[dict[str, Any]],
+    snapshots: list[dict[str, Any]] | None = None,
     field_names: frozenset[str] | None = None,
     min_mentions: int = 3,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -171,6 +202,8 @@ def harvest_instance_faction_targets(
     single, multi = _faction_token_set()
     role_pool: list[dict[str, Any]] = []
     counts: dict[str, int] = {}
+    history_support_counts: dict[str, int] = {}
+    structured_support_counts: dict[str, int] = {}
     display: dict[str, str] = {}
     instance_low = instance_name.strip().lower()
     for row in evidence_rows:
@@ -187,6 +220,8 @@ def harvest_instance_faction_targets(
         for item in row.get("evidence_items", []) or []:
             if not isinstance(item, dict):
                 continue
+            if _item_temporally_excluded(item, row=row):
+                continue
             snippet = str(item.get("snippet", ""))
             if not snippet:
                 continue
@@ -199,6 +234,9 @@ def harvest_instance_faction_targets(
                     "content_role": str(item.get("content_role", "")),
                     "field_name": str(row.get("field_name", "")),
                     "source_title": str(item.get("source_title", "")),
+                    "history_eligibility": str(
+                        item.get("history_eligibility", build_meta.get("history_eligibility", ""))
+                    ),
                 }
             )
             for match in _FACTION_NAME_RE.finditer(snippet):
@@ -206,16 +244,38 @@ def harvest_instance_faction_targets(
                 if not phrase or not _phrase_is_faction(phrase, single, multi):
                     continue
                 phrase = _canonicalize_faction_phrase(phrase, single, multi)
+                if _is_generic_role_alias_phrase(phrase):
+                    continue
                 if phrase.lower() == instance_low:
                     continue
                 key = phrase.lower()
                 counts[key] = counts.get(key, 0) + 1
+                if _item_history_eligible(item, row=row):
+                    history_support_counts[key] = history_support_counts.get(key, 0) + 1
                 display.setdefault(key, phrase)
+    _add_structured_instance_faction_mentions(
+        snapshots=snapshots or [],
+        evidence_rows=evidence_rows,
+        instance_name=instance_name,
+        single=single,
+        multi=multi,
+        role_pool=role_pool,
+        counts=counts,
+        history_support_counts=history_support_counts,
+        structured_support_counts=structured_support_counts,
+        display=display,
+    )
     targets: list[dict[str, Any]] = []
     for key, count in counts.items():
-        if count < min_mentions:
-            continue
         name = display[key]
+        required_mentions = _instance_faction_required_mentions(
+            name,
+            min_mentions=min_mentions,
+            history_support_count=history_support_counts.get(key, 0),
+            structured_support_count=structured_support_counts.get(key, 0),
+        )
+        if count < required_mentions:
+            continue
         targets.append(
             {
                 "zone_id": instance_id,
@@ -226,6 +286,167 @@ def harvest_instance_faction_targets(
         )
     targets.sort(key=lambda row: (-counts[str(row["name"]).lower()], str(row["name"]).lower()))
     return targets, role_pool
+
+
+def _add_structured_instance_faction_mentions(
+    *,
+    snapshots: list[dict[str, Any]],
+    evidence_rows: list[dict[str, Any]],
+    instance_name: str,
+    single: frozenset[str],
+    multi: frozenset[str],
+    role_pool: list[dict[str, Any]],
+    counts: dict[str, int],
+    history_support_counts: dict[str, int],
+    structured_support_counts: dict[str, int],
+    display: dict[str, str],
+) -> None:
+    snippets_by_source_role = _eligible_structured_link_contexts(evidence_rows)
+    if not snippets_by_source_role:
+        return
+    instance_low = instance_name.strip().lower()
+    seen: set[tuple[str, str, str, str]] = set()
+    for snapshot in snapshots:
+        if not isinstance(snapshot, dict):
+            continue
+        source_id = str(snapshot.get("source_id", "")).strip()
+        if not source_id:
+            continue
+        structured_links = snapshot.get("structured_links")
+        if not isinstance(structured_links, list):
+            continue
+        source_title = str(
+            snapshot.get("title") or snapshot.get("page_title") or snapshot.get("entity_id") or ""
+        )
+        for link in structured_links:
+            if not isinstance(link, dict):
+                continue
+            phrase = str(link.get("label", "")).strip()
+            if not phrase or not _phrase_is_faction(phrase, single, multi):
+                continue
+            phrase = _canonicalize_faction_phrase(phrase, single, multi)
+            if phrase.lower() == instance_low:
+                continue
+            section_role = str(link.get("section_role", "")).strip()
+            link_roles = [section_role] if section_role else [str(link.get("parent_section_role", "")).strip()]
+            contexts: list[dict[str, Any]] = []
+            for role in link_roles:
+                if not role:
+                    continue
+                contexts.extend(snippets_by_source_role.get((source_id, _normalize_role(role)), []))
+            if not contexts:
+                continue
+            context = _best_structured_link_context(phrase, contexts)
+            if context is None:
+                continue
+            base_snippet = str(context.get("snippet", "")).strip()
+            if not base_snippet:
+                continue
+            normalized_role = _normalize_role(str(context.get("raw_section_role") or context.get("section_role") or ""))
+            dedupe_key = (source_id, normalized_role, phrase.lower(), base_snippet[:120])
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            key = phrase.lower()
+            counts[key] = counts.get(key, 0) + 1
+            structured_support_counts[key] = structured_support_counts.get(key, 0) + 1
+            if _item_history_eligible(context):
+                history_support_counts[key] = history_support_counts.get(key, 0) + 1
+            display.setdefault(key, phrase)
+            role_pool.append(
+                {
+                    "source_id": source_id,
+                    "snippet": f"{phrase}: {base_snippet}",
+                    "section_role": str(context.get("section_role", "")),
+                    "raw_section_role": str(context.get("raw_section_role", "")),
+                    "content_role": str(context.get("content_role", "")),
+                    "field_name": str(context.get("field_name", "")),
+                    "source_title": source_title,
+                    "history_eligibility": str(context.get("history_eligibility", "")),
+                }
+            )
+
+
+def _eligible_structured_link_contexts(
+    evidence_rows: list[dict[str, Any]],
+) -> dict[tuple[str, str], list[dict[str, Any]]]:
+    contexts: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in evidence_rows:
+        if not isinstance(row, dict):
+            continue
+        build_meta = row.get("build_meta") or {}
+        if not isinstance(build_meta, dict):
+            build_meta = {}
+        source_id = str(build_meta.get("source_id", "")).strip()
+        if not source_id:
+            continue
+        field_name = str(row.get("field_name", "")).strip()
+        if field_name not in {
+            "history_digest",
+            "at_a_glance_input",
+            "boss_pool",
+            "instance_lore_pool",
+        }:
+            continue
+        for item in row.get("evidence_items", []) or []:
+            if not isinstance(item, dict):
+                continue
+            if _item_temporally_excluded(item, row=row):
+                continue
+            scope = str(item.get("temporal_scope", build_meta.get("temporal_scope", ""))).strip()
+            if field_name == "history_digest" and not _item_history_eligible(item, row=row):
+                continue
+            if field_name != "history_digest" and scope not in {"pre_entry_history", "entry_state"}:
+                continue
+            context = {
+                "source_id": source_id,
+                "snippet": str(item.get("snippet", "")),
+                "section_role": str(item.get("section_role", row.get("section_role", ""))),
+                "raw_section_role": str(
+                    item.get("raw_section_role", build_meta.get("raw_section_role", ""))
+                ),
+                "content_role": str(item.get("content_role", build_meta.get("content_role", ""))),
+                "field_name": field_name,
+                "history_eligibility": str(
+                    item.get("history_eligibility", build_meta.get("history_eligibility", ""))
+                ),
+            }
+            for role in (
+                context["raw_section_role"],
+                context["section_role"],
+                context["content_role"],
+            ):
+                role_key = _normalize_role(role)
+                if role_key:
+                    contexts.setdefault((source_id, role_key), []).append(context)
+    return contexts
+
+
+def _best_structured_link_context(
+    phrase: str,
+    contexts: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    phrase_low = phrase.casefold()
+    token_stop = {"the", "of", "and", "a", "an", "in", "to", "for", "from"}
+    tokens = [
+        token.casefold()
+        for token in re.findall(r"[A-Za-z']+", phrase)
+        if token.casefold() not in token_stop and len(token) > 2
+    ]
+    best: tuple[int, dict[str, Any]] | None = None
+    for context in contexts:
+        snippet_low = str(context.get("snippet", "")).casefold()
+        if not snippet_low:
+            continue
+        score = 0
+        if phrase_low in snippet_low:
+            score += 10
+        score += sum(1 for token in tokens if re.search(rf"\b{re.escape(token)}\b", snippet_low))
+        if score <= 0:
+            continue
+        if best is None or score > best[0]:
+            best = (score, context)
+    return best[1] if best else None
 
 
 def harvest_instance_anchor_tokens(
@@ -249,6 +470,8 @@ def harvest_instance_anchor_tokens(
             continue
         for item in row.get("evidence_items", []) or []:
             if not isinstance(item, dict):
+                continue
+            if _item_temporally_excluded(item, row=row):
                 continue
             for match in _FACTION_NAME_RE.finditer(str(item.get("snippet", ""))):
                 phrase = re.sub(
@@ -291,6 +514,8 @@ def _candidates_from_evidence(
     for row in evidence_rows:
         if str(row.get("field_name", "")) != "faction_pool":
             continue
+        if not _row_has_temporally_allowed_item(row):
+            continue
         build_meta = row.get("build_meta") or {}
         subject_zone = str(build_meta.get("subject_zone_id", row.get("subject_id", ""))).strip()
         if subject_zone and subject_zone != zone_id:
@@ -310,6 +535,57 @@ def _candidates_from_evidence(
     return discovered
 
 
+def _item_temporally_excluded(item: dict[str, Any], *, row: dict[str, Any] | None = None) -> bool:
+    build_meta = (row or {}).get("build_meta") if isinstance(row, dict) else {}
+    if not isinstance(build_meta, dict):
+        build_meta = {}
+    scope = str(item.get("temporal_scope", build_meta.get("temporal_scope", ""))).strip()
+    return scope in _EXCLUDED_TEMPORAL_SCOPES
+
+
+def _item_history_eligible(item: dict[str, Any], *, row: dict[str, Any] | None = None) -> bool:
+    build_meta = (row or {}).get("build_meta") if isinstance(row, dict) else {}
+    if not isinstance(build_meta, dict):
+        build_meta = {}
+    eligibility = str(
+        item.get("history_eligibility", build_meta.get("history_eligibility", ""))
+    ).strip()
+    return eligibility in HISTORY_ELIGIBLE
+
+
+def _instance_faction_required_mentions(
+    name: str,
+    *,
+    min_mentions: int,
+    history_support_count: int,
+    structured_support_count: int = 0,
+) -> int:
+    if (
+        min_mentions > 1
+        and structured_support_count > 0
+        and history_support_count > 0
+        and " " in name.strip()
+    ):
+        return 1
+    if min_mentions > 2 and history_support_count > 0 and " " in name.strip():
+        return 2
+    return min_mentions
+
+
+def _row_has_temporally_allowed_item(row: dict[str, Any]) -> bool:
+    items = row.get("evidence_items")
+    if not isinstance(items, list):
+        return True
+    saw_item = False
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        saw_item = True
+        if not _item_temporally_excluded(item, row=row):
+            return True
+    return not saw_item
+
+
 def _candidates_from_high_weight_seed_mentions(
     faction_role_pool: list[dict[str, Any]],
 ) -> dict[str, dict[str, str]]:
@@ -326,6 +602,8 @@ def _candidates_from_high_weight_seed_mentions(
             if not phrase or not _phrase_is_faction(phrase, single, multi):
                 continue
             name = _canonicalize_faction_phrase(phrase, single, multi)
+            if _is_generic_role_alias_phrase(name):
+                continue
             faction_id = f"faction-{slugify(name)}"
             if faction_id:
                 discovered.setdefault(
@@ -660,7 +938,13 @@ def fallback_faction_summary(
         snippet = str(item.get("snippet", "")).strip()
         if has_currently_meta(snippet) or detect_list_shape(snippet):
             return ""
-        summary = trim_faction_summary(snippet, max_words)
+        source = _faction_focused_excerpt(
+            snippet,
+            faction_name=faction_name,
+            zone_name=zone_name,
+            subregion_tokens=tokens,
+        )
+        summary = trim_faction_summary(source or snippet, max_words)
         return summary if summary and not detect_list_shape(summary) else ""
 
     # First pass: prefer a snippet whose summary actually clears BOTH the faction lint (zone anchor +
@@ -684,3 +968,38 @@ def fallback_faction_summary(
             source_id = str(item.get("source_id", "")).strip()
             return summary, [source_id] if source_id else []
     return "", []
+
+
+def _faction_focused_excerpt(
+    snippet: str,
+    *,
+    faction_name: str,
+    zone_name: str,
+    subregion_tokens: list[str],
+) -> str:
+    if not faction_name or not _name_in_text(faction_name, snippet):
+        return snippet
+    sentences = [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+", snippet.strip())
+        if sentence.strip()
+    ]
+    if len(sentences) <= 1:
+        return snippet
+    faction_index = next(
+        (index for index, sentence in enumerate(sentences) if _name_in_text(faction_name, sentence)),
+        -1,
+    )
+    if faction_index < 0:
+        return snippet
+    selected = [sentences[faction_index]]
+    anchor_terms = [zone_name, *subregion_tokens]
+
+    def _has_anchor(text: str) -> bool:
+        return any(term and _name_in_text(term, text) for term in anchor_terms)
+
+    if not _has_anchor(" ".join(selected)) and faction_index + 1 < len(sentences):
+        selected.append(sentences[faction_index + 1])
+    if word_count(" ".join(selected)) < MIN_FACTION_SUMMARY_WORDS and faction_index > 0:
+        selected.insert(0, sentences[faction_index - 1])
+    return " ".join(selected)

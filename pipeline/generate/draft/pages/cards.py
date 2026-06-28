@@ -45,7 +45,6 @@ from pipeline.generate.draft.pages.assembly import (
 from pipeline.generate.draft.prose_election import (
     fallback_history_sections,
     history_section_cap,
-    select_history_pool,
 )
 from pipeline.generate.draft.prose_gate import prose_gate_rejects, prose_gate_violations
 from pipeline.generate.draft.prose_lint import (
@@ -60,7 +59,6 @@ from pipeline.generate.draft.prose_synthesis import (
     relabel_history_headings,
     synthesize_faction_summary,
     synthesize_history_sections,
-    synthesize_location_significance,
     synthesize_location_summary,
 )
 
@@ -103,9 +101,7 @@ def _history_sections_from_pool(
     *,
     evidence_rows: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    pool = history_pool or select_history_pool(
-        _iter_evidence_items(evidence_rows, {"history_digest"})
-    )
+    pool = history_pool
     cap = history_section_cap(pool) or MIN_HISTORY_SECTIONS
     draft_pool = cap_history_pool(pool, cap)
     sections, used = fallback_history_sections(draft_pool, max_sections=cap)
@@ -552,21 +548,14 @@ def _build_location_card_body(
     location_type = location_type_from_signals(
         candidate.name, evidence_text, candidate.categories
     )
-    # Grounded one-sentence significance; never the routing enum (schema requires non-empty).
-    significance, _ = synthesize_location_significance(
-        pool,
-        location_name=candidate.name,
-        zone_name=zone_name,
-        location_type=location_type,
-    )
-    significance = ensure_location_sentence_terminator(significance)
+    significance_tag = candidate.significance_tag or "major_location"
     return {
         "id": candidate.location_id,
         "name": candidate.name,
         "summary": summary,
         "wiki_url": candidate.wiki_url,
         "location_type": location_type,
-        "significance": significance,
+        "significance_tag": significance_tag,
         "decision_reason_codes": reason_codes,
     }
 

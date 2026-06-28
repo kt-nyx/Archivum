@@ -11,6 +11,7 @@ from pipeline.ai.config import load_ai_settings
 from pipeline.ai.openai_client import chat_json_completion
 from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext
+from pipeline.common.text_normalize import normalize_display_payload
 from pipeline.discovery.instance_bosses import classify_character_role
 from pipeline.discovery.questline_card_polish import load_questline_card_metadata
 from pipeline.discovery.questline_significance import load_included_cluster_ids_by_zone
@@ -22,6 +23,7 @@ from pipeline.generate.draft.pages import (
     build_instance_page,
     build_zone_page,
 )
+from pipeline.generate.draft.temporal import enrich_evidence_temporal_metadata
 from pipeline.generate.draft.trace import DraftTraceContext
 
 # Re-export for tests that patch chat_json_completion on this module.
@@ -181,6 +183,27 @@ def run_draft_writer(
     card_metadata_by_cluster = load_questline_card_metadata(
         context.data_dir / "discovery" / "zone_questline_card_metadata.json"
     )
+    quest_descriptions_by_node: dict[str, str] = {}
+    quest_records_by_node: dict[str, dict[str, Any]] = {}
+    quest_records_path = context.data_dir / "discovery" / "quest_records.jsonl"
+    if quest_records_path.exists():
+        for line in quest_records_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if not isinstance(row, dict):
+                continue
+            node_id = str(row.get("node_id", "")).strip()
+            if node_id:
+                quest_records_by_node[node_id] = row
+            description = str(
+                row.get("description")
+                or row.get("quest_description")
+                or row.get("objectives_text")
+                or ""
+            ).strip()
+            if node_id and description:
+                quest_descriptions_by_node[node_id] = description
     faction_profile_targets: list[dict[str, Any]] = []
     faction_targets_path = context.data_dir / "discovery" / "faction_profile_targets.json"
     if faction_targets_path.exists():
@@ -200,6 +223,38 @@ def run_draft_writer(
         if isinstance(snapshots_blob, list):
             source_snapshots = [row for row in snapshots_blob if isinstance(row, dict)]
 
+    fact_packs_by_entity: dict[str, dict[str, Any]] = {}
+    for fact_path in fact_pack_paths:
+        if not fact_path.exists():
+            continue
+        fact_pack = json.loads(fact_path.read_text(encoding="utf-8"))
+        if isinstance(fact_pack, dict):
+            entity_id = str(fact_pack.get("entity_id", fact_path.stem)).strip()
+            if entity_id:
+                fact_packs_by_entity[entity_id] = fact_pack
+    temporal_decisions: list[dict[str, Any]] = []
+    entry_state_contract_decisions: list[dict[str, Any]] = []
+    content_boundary_decisions: list[dict[str, Any]] = []
+    canonical_temporal_decisions: list[dict[str, Any]] = []
+    if evidence_rows:
+        (
+            evidence_rows,
+            temporal_decisions,
+            entry_state_contract_decisions,
+            content_boundary_decisions,
+            canonical_temporal_decisions,
+        ) = enrich_evidence_temporal_metadata(
+            evidence_rows,
+            fact_packs_by_entity=fact_packs_by_entity,
+            source_snapshots=source_snapshots,
+            questline_card_metadata=card_metadata_by_cluster,
+            quest_records_by_node=quest_records_by_node,
+            run_id=context.run_id,
+            return_entry_state_contract_decisions=True,
+            return_boundary_decisions=True,
+            return_canonical_decisions=True,
+        )
+
     # Carry each traversed location page's own MediaWiki categories onto its candidate row so the
     # draft can type the card from the authoritative wiki signal (e.g. Andorhal -> "Destroyed
     # settlements" -> ruins; Hearthglen -> "Towns" -> town) instead of fragile evidence-text words.
@@ -211,8 +266,14 @@ def run_draft_writer(
         if location_id and categories and location_id in location_candidate_map:
             location_candidate_map[location_id]["categories"] = list(categories)
 
-    def _write(path: Path) -> tuple[Path | None, dict[str, object] | None]:
-        fact_pack = json.loads(path.read_text(encoding="utf-8"))
+    def _write(
+        path: Path,
+        *,
+        instance_summary_map: dict[str, str] | None = None,
+    ) -> tuple[Path | None, dict[str, object] | None]:
+        fact_pack = fact_packs_by_entity.get(path.stem)
+        if fact_pack is None:
+            fact_pack = json.loads(path.read_text(encoding="utf-8"))
         entity_type = str(fact_pack.get("entity_type", ""))
         entity_id = str(fact_pack.get("entity_id", path.stem))
         if entity_type in {"zone", "instance"} and evidence_rows:
@@ -257,6 +318,8 @@ def run_draft_writer(
                         if str(row.get("zone_id", "")).strip() == entity_id
                     ],
                     snapshots=source_snapshots,
+                    quest_descriptions_by_node=quest_descriptions_by_node,
+                    instance_summary_map=instance_summary_map,
                 )
             else:
                 lore_source = next(
@@ -326,6 +389,7 @@ def run_draft_writer(
             entity_dir.mkdir(parents=True, exist_ok=True)
             out_path = entity_dir / f"{entity_id}.json"
             overflow = draft.pop("draft_overflow_decisions", None)
+            draft = normalize_display_payload(draft)
             write_json(out_path, draft)
             decision: dict[str, object] = {
                 "entity_id": entity_id,
@@ -371,6 +435,7 @@ def run_draft_writer(
         entity_dir = stage_dir / entity_type
         entity_dir.mkdir(parents=True, exist_ok=True)
         out_path = entity_dir / f"{llm_draft['id']}.json"
+        llm_draft = normalize_display_payload(llm_draft)
         write_json(out_path, llm_draft)
         decision = {
             "entity_id": str(llm_draft["id"]),
@@ -389,38 +454,88 @@ def run_draft_writer(
     decisions: list[dict[str, object]] = []
     instance_key_character_decisions: list[dict[str, Any]] = []
     prose_finalize_decisions: list[dict[str, Any]] = []
-    with ThreadPoolExecutor(max_workers=max_entity_concurrency) as executor:
-        futures = [executor.submit(_write, path) for path in fact_pack_paths]
-        for future in futures:
-            output_path, decision = future.result()
-            if output_path is not None:
-                outputs.append(output_path)
-            if decision is not None:
-                kc_decision = decision.pop("instance_key_character_decisions", None)
-                if isinstance(kc_decision, dict):
-                    instance_key_character_decisions.append(kc_decision)
-                prose_records = decision.pop("prose_finalize", None)
-                if isinstance(prose_records, list):
-                    prose_finalize_decisions.extend(prose_records)
-                decisions.append(decision)
-                overflow = decision.pop("questline_overflow", None)
-                if isinstance(overflow, list):
-                    for row in overflow:
-                        if isinstance(row, dict):
-                            decisions.append(
-                                {
-                                    "entity_id": str(
-                                        row.get("entity_id", decision.get("entity_id", ""))
-                                    ),
-                                    "entity_type": str(row.get("entity_type", "questline_cluster")),
-                                    "generation_mode": "deterministic_evidence_pack",
-                                    "reason": str(row.get("reason", "questline_overflow")),
-                                    "cluster_id": str(row.get("cluster_id", "")),
-                                }
-                            )
+    instance_summary_map: dict[str, str] = {}
+
+    def _record_result(output_path: Path | None, decision: dict[str, object] | None) -> None:
+        if output_path is not None:
+            outputs.append(output_path)
+        if decision is not None:
+            kc_decision = decision.pop("instance_key_character_decisions", None)
+            if isinstance(kc_decision, dict):
+                instance_key_character_decisions.append(kc_decision)
+            prose_records = decision.pop("prose_finalize", None)
+            if isinstance(prose_records, list):
+                prose_finalize_decisions.extend(prose_records)
+            overflow = decision.pop("questline_overflow", None)
+            decisions.append(decision)
+            if isinstance(overflow, list):
+                for row in overflow:
+                    if isinstance(row, dict):
+                        decisions.append(
+                            {
+                                "entity_id": str(
+                                    row.get("entity_id", decision.get("entity_id", ""))
+                                ),
+                                "entity_type": str(row.get("entity_type", "questline_cluster")),
+                                "generation_mode": "deterministic_evidence_pack",
+                                "reason": str(row.get("reason", "questline_overflow")),
+                                "cluster_id": str(row.get("cluster_id", "")),
+                            }
+                        )
+
+    def _run_paths(
+        paths: list[Path],
+        *,
+        summary_map: dict[str, str] | None = None,
+    ) -> list[Path]:
+        written: list[Path] = []
+        if not paths:
+            return written
+        with ThreadPoolExecutor(max_workers=max_entity_concurrency) as executor:
+            futures = [
+                executor.submit(_write, path, instance_summary_map=summary_map) for path in paths
+            ]
+            for future in futures:
+                output_path, decision = future.result()
+                if output_path is not None:
+                    written.append(output_path)
+                _record_result(output_path, decision)
+        return written
+
+    def _entity_type_for_path(path: Path) -> str:
+        fact_pack = fact_packs_by_entity.get(path.stem)
+        if not fact_pack:
+            fact_pack = json.loads(path.read_text(encoding="utf-8"))
+        return str(fact_pack.get("entity_type", ""))
+
+    instance_paths = [path for path in fact_pack_paths if _entity_type_for_path(path) == "instance"]
+    zone_paths = [path for path in fact_pack_paths if _entity_type_for_path(path) == "zone"]
+    other_paths = [
+        path for path in fact_pack_paths if _entity_type_for_path(path) not in {"instance", "zone"}
+    ]
+
+    for output_path in _run_paths(instance_paths):
+        payload = json.loads(output_path.read_text(encoding="utf-8"))
+        if isinstance(payload, dict):
+            instance_id = str(payload.get("instance_id", "")).strip()
+            at_a_glance = str(payload.get("at_a_glance", "")).strip()
+            if instance_id and at_a_glance:
+                instance_summary_map[instance_id] = at_a_glance
+    _run_paths(zone_paths, summary_map=instance_summary_map)
+    _run_paths(other_paths)
     write_json((stage_dir / "draft_decisions.json"), decisions)
     decisions_dir = context.data_dir / "decisions"
     decisions_dir.mkdir(parents=True, exist_ok=True)
+    write_json((decisions_dir / "temporal_evidence_decisions.json"), temporal_decisions)
+    write_json(
+        (decisions_dir / "entry_state_contract_decisions.json"),
+        entry_state_contract_decisions,
+    )
+    write_json((decisions_dir / "content_boundary_decisions.json"), content_boundary_decisions)
+    write_json(
+        (decisions_dir / "canonical_temporal_evidence_decisions.json"),
+        canonical_temporal_decisions,
+    )
     write_json(
         (decisions_dir / "instance_key_character_decisions.json"), instance_key_character_decisions
     )

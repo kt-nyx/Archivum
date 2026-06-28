@@ -66,18 +66,6 @@
           "excerpt_hash": "handcrafted-placeholder"
         }
       ]
-    },
-    {
-      "heading": "Battle for Andorhal",
-      "body": "The region’s recovery remained incomplete, however. Control of Andorhal became the focus of a bitter struggle between Alliance forces and the Forsaken, each seeking to secure the strategic ruins. The Forsaken ultimately prevailed, claiming the city and extinguishing the last significant Scourge presence in the Western Plaguelands. During the Fourth War, the region once again served as a staging ground in the wider conflict between the Alliance and Horde, with Forsaken and Alliance forces bitterly contesting Andorhal itself.",
-      "source_refs": [
-        {
-          "source_id": "src-handcrafted-placeholder",
-          "locator": "handcrafted-placeholder",
-          "revision_id": "handcrafted-placeholder",
-          "excerpt_hash": "handcrafted-placeholder"
-        }
-      ]
     }
   ],
   "major_factions": [
@@ -254,7 +242,7 @@
       "zone_id": "zone-western-plaguelands",
       "wiki_url": "https://warcraft.wiki.gg/wiki/Andorhal",
       "summary": "Once northern Lordaeron’s grain hub, Andorhal became one of the plague’s first great vectors. Its ruins are now contested by the Alliance and the Forsaken.",
-      "significance": "The plague’s first great vector—contaminated grain shipped from Andorhal carried the Plague of Undeath across northern Lordaeron—and now the central prize in the Alliance–Forsaken struggle for the zone.",
+      "significance_tag": "battlefield",
       "decision_reason_codes": [
         "pilot_gold"
       ],
@@ -270,7 +258,7 @@
       "zone_id": "zone-western-plaguelands",
       "wiki_url": "https://warcraft.wiki.gg/wiki/Hearthglen",
       "summary": "Formerly a seat of Lordaeron’s regional authority, Hearthglen passed from the Fordrings to the Scarlet Crusade before being reclaimed as the Argent Crusade’s main stronghold in Lordaeron.",
-      "significance": "The zone’s seat of power across every era: Fordring family holding, Scarlet Crusade bastion, and today the Argent Crusade’s principal stronghold in Lordaeron.",
+      "significance_tag": "faction_stronghold",
       "decision_reason_codes": [
         "pilot_gold"
       ],
@@ -286,7 +274,7 @@
       "zone_id": "zone-western-plaguelands",
       "wiki_url": "https://warcraft.wiki.gg/wiki/Caer_Darrow",
       "summary": "Caer Darrow is the ruined island fortress above Scholomance, where the Barovs’ seat became one of the Scourge’s most infamous schools of necromancy.",
-      "significance": "The ruined Barov keep on Darrowmere Lake whose catacombs became Scholomance, the Scourge’s most infamous school of necromancy in the Plaguelands.",
+      "significance_tag": "instance_anchor",
       "decision_reason_codes": [
         "pilot_gold"
       ],
@@ -302,7 +290,7 @@
       "zone_id": "zone-western-plaguelands",
       "wiki_url": "https://warcraft.wiki.gg/wiki/Uther%27s_Tomb",
       "summary": "Uther’s Tomb is a sacred monument to Uther the Lightbringer at Sorrow Hill, standing as one of the last bright symbols of fallen Lordaeron.",
-      "significance": "The resting place of Uther the Lightbringer at Sorrow Hill—one of the last sacred symbols of fallen Lordaeron and a pilgrimage site for the faithful of the Light.",
+      "significance_tag": "sacred_landmark",
       "decision_reason_codes": [
         "pilot_gold"
       ],

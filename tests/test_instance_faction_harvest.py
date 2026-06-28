@@ -44,6 +44,7 @@ def test_harvest_keeps_standalone_faction_drops_generic_single_word() -> None:
         _row("The Scourge remains."),
         # "Cult" appearing alone (no qualifier) is too generic to be a faction on its own.
         _row("A small Cult gathered.", "Another Cult met.", "A third Cult formed."),
+        _row("Acolytes of the Cult learned in the school."),
     ]
     targets, _ = harvest_instance_faction_targets(
         instance_id="instance-scholomance",
@@ -53,6 +54,7 @@ def test_harvest_keeps_standalone_faction_drops_generic_single_word() -> None:
     names = {t["name"] for t in targets}
     assert "Scourge" in names
     assert "Cult" not in names
+    assert "Acolytes of the Cult" not in names
 
 
 def test_harvest_does_not_merge_two_factions_joined_by_and() -> None:
@@ -145,6 +147,116 @@ def test_harvest_reads_source_id_from_pack_build_meta() -> None:
     assert all(item["source_id"] == "src-scholomance-overview" for item in pool)
     # The role/content fields ride along so pointer locators stay accurate.
     assert pool[0]["content_role"] == "lore_history"
+
+
+def test_harvest_skips_temporally_excluded_instance_evidence() -> None:
+    rows = [
+        _row(
+            "The Shadow Council bargained with the Cult of the Damned.",
+            "The Shadow Council sought a book from the Cult of the Damned.",
+            "The Shadow Council made common cause with the Cult of the Damned.",
+        )
+    ]
+    for item in rows[0]["evidence_items"]:
+        item["temporal_scope"] = "post_active_lore"
+
+    targets, pool = harvest_instance_faction_targets(
+        instance_id="instance-scholomance",
+        instance_name="Scholomance",
+        evidence_rows=rows,
+    )
+
+    assert targets == []
+    assert pool == []
+
+
+def test_harvest_allows_multiword_faction_with_eligible_history_support() -> None:
+    rows = [
+        _row(
+            "The Cult of the Damned founded the school beneath the island.",
+            "The Cult of the Damned still trains necromancers in the current holdout.",
+        ),
+        _row(
+            "The Shadow Council later entered the school.",
+            "The Shadow Council later searched the school.",
+            "The Shadow Council later departed the school.",
+        ),
+    ]
+    for item in rows[0]["evidence_items"]:
+        item["temporal_scope"] = "entry_state"
+        item["history_eligibility"] = "history_setup_bridge"
+    for item in rows[1]["evidence_items"]:
+        item["temporal_scope"] = "post_active_lore"
+        item["history_eligibility"] = "history_excluded_post_active"
+
+    targets, pool = harvest_instance_faction_targets(
+        instance_id="instance-scholomance",
+        instance_name="Scholomance",
+        evidence_rows=rows,
+    )
+
+    names = {t["name"] for t in targets}
+    assert "Cult of the Damned" in names
+    assert "Shadow Council" not in names
+    assert len(pool) == 2
+
+
+def test_harvest_uses_eligible_structured_links_as_canonical_faction_support() -> None:
+    rows = [
+        {
+            "field_name": "history_digest",
+            "section_role": "history",
+            "build_meta": {"source_id": "src-instance", "raw_section_role": "background_edit"},
+            "evidence_items": [
+                {
+                    "snippet": "Acolytes of the Cult learned their craft beneath the island.",
+                    "section_role": "background_edit",
+                    "raw_section_role": "background_edit",
+                    "temporal_scope": "pre_entry_history",
+                    "history_eligibility": "history_background",
+                }
+            ],
+        },
+        {
+            "field_name": "history_digest",
+            "section_role": "history",
+            "build_meta": {"source_id": "src-instance", "raw_section_role": "later_edit"},
+            "evidence_items": [
+                {
+                    "snippet": "A later cabal asked the Cult for a forbidden book.",
+                    "section_role": "later_edit",
+                    "raw_section_role": "later_edit",
+                    "temporal_scope": "post_active_lore",
+                    "history_eligibility": "history_excluded_post_active",
+                }
+            ],
+        },
+    ]
+    snapshots = [
+        {
+            "source_id": "src-instance",
+            "structured_links": [
+                {"label": "Cult of the Damned", "section_role": "background_edit"},
+                {
+                    "label": "Shadow Council",
+                    "section_role": "later_edit",
+                    "parent_section_role": "background_edit",
+                },
+            ],
+        }
+    ]
+
+    targets, pool = harvest_instance_faction_targets(
+        instance_id="instance-scholomance",
+        instance_name="Scholomance",
+        evidence_rows=rows,
+        snapshots=snapshots,
+    )
+
+    names = {t["name"] for t in targets}
+    assert "Cult of the Damned" in names
+    assert "Shadow Council" not in names
+    assert any("Cult of the Damned: Acolytes of the Cult" in item["snippet"] for item in pool)
 
 
 def test_anchor_tokens_harvest_frequent_places_excluding_instance() -> None:

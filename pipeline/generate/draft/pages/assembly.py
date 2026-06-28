@@ -16,6 +16,13 @@ from pipeline.generate.draft.lore_selection import (
     filter_relevant_lore_items,
     is_instance_lore_sparse,
 )
+from pipeline.generate.draft.temporal import (
+    ACTIVE_STORYLINE,
+    ENTRY_STATE,
+    PRE_ENTRY_HISTORY,
+    filter_history_items,
+    filter_temporal_items,
+)
 
 
 def _clean_snippet(text: str) -> str:
@@ -98,6 +105,30 @@ def _iter_evidence_items(
                     "location_name": str(build_meta.get("location_name", "")),
                     "lore_scope": str(build_meta.get("lore_scope", "")),
                     "lore_source_title": str(build_meta.get("lore_source_title", "")),
+                    "canonical_evidence_id": str(
+                        item.get(
+                            "canonical_evidence_id",
+                            build_meta.get("canonical_evidence_id", ""),
+                        )
+                    ),
+                    "temporal_scope": str(
+                        item.get("temporal_scope", build_meta.get("temporal_scope", ""))
+                    ),
+                    "temporal_confidence": item.get(
+                        "temporal_confidence", build_meta.get("temporal_confidence")
+                    ),
+                    "temporal_reason": str(
+                        item.get("temporal_reason", build_meta.get("temporal_reason", ""))
+                    ),
+                    "temporal_event_label": str(
+                        item.get("temporal_event_label", build_meta.get("temporal_event_label", ""))
+                    ),
+                    "history_eligibility": str(
+                        item.get("history_eligibility", build_meta.get("history_eligibility", ""))
+                    ),
+                    "history_reason": str(
+                        item.get("history_reason", build_meta.get("history_reason", ""))
+                    ),
                 }
             )
     return items
@@ -288,25 +319,48 @@ def _is_geography_seed_item(item: dict[str, Any]) -> bool:
 
 def _build_location_seed_pool(evidence_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
-    for item in _iter_evidence_items(evidence_rows, {"history_digest", "at_a_glance_input"}):
+    seed_items = filter_temporal_items(
+        _iter_evidence_items(evidence_rows, {"history_digest", "at_a_glance_input"}),
+        {PRE_ENTRY_HISTORY, ENTRY_STATE, ACTIVE_STORYLINE},
+    )
+    for item in seed_items:
         if _is_geography_seed_item(item):
             items.append(item)
     return items
 
 
 def _build_evidence_pools(evidence_rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    history_pool = _iter_evidence_items(evidence_rows, {"history_digest"})
-    at_a_glance_pool = _iter_evidence_items(evidence_rows, {"at_a_glance_input"})
-    currently_pool = _iter_evidence_items(evidence_rows, {"currently_input"})
+    history_pool = filter_history_items(_iter_evidence_items(evidence_rows, {"history_digest"}))
+    at_a_glance_pool = filter_temporal_items(
+        _iter_evidence_items(evidence_rows, {"at_a_glance_input"}),
+        {PRE_ENTRY_HISTORY, ENTRY_STATE},
+    )
+    currently_pool = filter_temporal_items(
+        _iter_evidence_items(evidence_rows, {"currently_input"}),
+        {ENTRY_STATE, PRE_ENTRY_HISTORY},
+    )
     questline_pool = _iter_evidence_items(evidence_rows, {"questline_pool"})
     quest_cluster_lore_pool = _iter_evidence_items(evidence_rows, {"quest_cluster_lore"})
     quest_lore_pool = _iter_evidence_items(evidence_rows, {"quest_lore"})
-    faction_pool = _iter_evidence_items(evidence_rows, {"faction_pool"})
-    location_pool = _iter_evidence_items(evidence_rows, {"location_pool"})
+    faction_pool = filter_temporal_items(
+        _iter_evidence_items(evidence_rows, {"faction_pool"}),
+        {PRE_ENTRY_HISTORY, ENTRY_STATE},
+    )
+    location_pool = filter_temporal_items(
+        _iter_evidence_items(evidence_rows, {"location_pool"}),
+        {PRE_ENTRY_HISTORY, ENTRY_STATE, ACTIVE_STORYLINE},
+    )
     location_seed_pool = _build_location_seed_pool(evidence_rows)
-    instance_pool = _iter_evidence_items(evidence_rows, {"instances_or_dungeons", "history_digest"})
+    instance_pool = filter_temporal_items(
+        _iter_evidence_items(evidence_rows, {"instances_or_dungeons", "history_digest"}),
+        {PRE_ENTRY_HISTORY, ENTRY_STATE},
+    )
     faction_role_pool = _iter_evidence_items(
         evidence_rows, {"history_digest", "currently_input", "questline_pool", "at_a_glance_input"}
+    )
+    faction_role_pool = filter_temporal_items(
+        faction_role_pool,
+        {PRE_ENTRY_HISTORY, ENTRY_STATE},
     )
     return {
         "at_a_glance_pool": at_a_glance_pool,
@@ -331,10 +385,14 @@ def _build_zone_mention_pool(
         return []
     pattern = re.compile(rf"\b{re.escape(instance_name.strip())}\b", re.IGNORECASE)
     items: list[dict[str, Any]] = []
-    for item in _iter_evidence_items(
-        parent_zone_evidence_rows,
-        {"history_digest", "at_a_glance_input", "currently_input", "instances_or_dungeons"},
-    ):
+    parent_items = filter_temporal_items(
+        _iter_evidence_items(
+            parent_zone_evidence_rows,
+            {"history_digest", "at_a_glance_input", "currently_input", "instances_or_dungeons"},
+        ),
+        {PRE_ENTRY_HISTORY, ENTRY_STATE},
+    )
+    for item in parent_items:
         if pattern.search(str(item.get("snippet", ""))):
             items.append(item)
     return items
@@ -346,12 +404,27 @@ def _build_instance_evidence_pools(
     instance_name: str = "",
     parent_zone_evidence_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    history_pool = _iter_evidence_items(evidence_rows, {"history_digest"})
-    at_a_glance_pool = _iter_evidence_items(evidence_rows, {"at_a_glance_input"})
-    boss_pool = _iter_evidence_items(evidence_rows, {"boss_pool"})
-    instance_lore_pool = _iter_evidence_items(evidence_rows, {"instance_lore_pool"})
-    parent_lore_pool = _iter_evidence_items(evidence_rows, {"parent_lore_pool"})
-    related_lore_pool = _iter_evidence_items(evidence_rows, {"related_lore_pool"})
+    history_pool = filter_history_items(_iter_evidence_items(evidence_rows, {"history_digest"}))
+    at_a_glance_pool = filter_temporal_items(
+        _iter_evidence_items(evidence_rows, {"at_a_glance_input"}),
+        {PRE_ENTRY_HISTORY, ENTRY_STATE},
+    )
+    boss_pool = filter_temporal_items(
+        _iter_evidence_items(evidence_rows, {"boss_pool"}),
+        {PRE_ENTRY_HISTORY, ENTRY_STATE},
+    )
+    instance_lore_pool = filter_temporal_items(
+        _iter_evidence_items(evidence_rows, {"instance_lore_pool"}),
+        {PRE_ENTRY_HISTORY, ENTRY_STATE},
+    )
+    parent_lore_pool = filter_temporal_items(
+        _iter_evidence_items(evidence_rows, {"parent_lore_pool"}),
+        {PRE_ENTRY_HISTORY, ENTRY_STATE},
+    )
+    related_lore_pool = filter_temporal_items(
+        _iter_evidence_items(evidence_rows, {"related_lore_pool"}),
+        {PRE_ENTRY_HISTORY, ENTRY_STATE},
+    )
     # Slice I4: the instance's own narrative is primary. Cross-page (parent-complex /
     # related) lore only augments the overview when the instance page is sparse, and
     # only snippets that explicitly name the instance are fused (attribution guard).
@@ -366,10 +439,17 @@ def _build_instance_evidence_pools(
     else:
         overview_pool = instance_own_overview
     zone_mention_pool = _build_zone_mention_pool(instance_name, parent_zone_evidence_rows or [])
-    faction_pool = _iter_evidence_items(evidence_rows, {"faction_pool"})
+    faction_pool = filter_temporal_items(
+        _iter_evidence_items(evidence_rows, {"faction_pool"}),
+        {PRE_ENTRY_HISTORY, ENTRY_STATE},
+    )
     faction_role_pool = _iter_evidence_items(
         evidence_rows,
         {"history_digest", "instance_lore_pool", "at_a_glance_input", "boss_pool"},
+    )
+    faction_role_pool = filter_temporal_items(
+        faction_role_pool,
+        {PRE_ENTRY_HISTORY, ENTRY_STATE},
     )
     return {
         "at_a_glance_pool": at_a_glance_pool,

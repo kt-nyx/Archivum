@@ -14,6 +14,18 @@
           "default": null,
           "title": "Block Index"
         },
+        "canonical_evidence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Canonical Evidence Id"
+        },
         "confidence": {
           "maximum": 1,
           "minimum": 0,
@@ -31,6 +43,30 @@
           ],
           "default": null,
           "title": "Content Role"
+        },
+        "history_eligibility": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "History Eligibility"
+        },
+        "history_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "History Reason"
         },
         "raw_section_role": {
           "anyOf": [
@@ -63,6 +99,56 @@
           "minLength": 1,
           "title": "Source Url",
           "type": "string"
+        },
+        "temporal_confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temporal Confidence"
+        },
+        "temporal_event_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temporal Event Label"
+        },
+        "temporal_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temporal Reason"
+        },
+        "temporal_scope": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temporal Scope"
         }
       },
       "required": [

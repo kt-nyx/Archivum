@@ -8,6 +8,7 @@ from typing import Any
 
 from pipeline.contracts.models import LocationType
 from pipeline.discovery.entity_typing import normalize_title, should_reject_location_title
+from pipeline.generate.draft.temporal import strict_generation_category_signal
 
 MIN_LOCATION_CARDS = 3
 MAX_LOCATION_CARDS = 8
@@ -87,6 +88,20 @@ _CATEGORY_TYPE_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
 # Category buckets that name a *current settlement*; trusted over contextual ruin words in the
 # surrounding prose (a town described next to plagued ruins is still a town).
 _CURRENT_SETTLEMENT_TYPES = frozenset({LocationType.CITY.value, LocationType.TOWN.value})
+SIGNIFICANCE_TAGS = frozenset(
+    {
+        "active_quest_hub",
+        "faction_stronghold",
+        "historical_turning_point",
+        "instance_anchor",
+        "sacred_landmark",
+        "battlefield",
+        "settlement_hub",
+        "villain_base",
+        "restoration_site",
+        "major_location",
+    }
+)
 
 
 def _category_type(categories: list[str] | None) -> str:
@@ -162,6 +177,7 @@ class LocationCandidate:
     # The location page's own MediaWiki categories (authoritative type signal); empty when the page
     # was not traversed/snapshotted. Populated from the snapshot map in draft_writer.
     categories: list[str] = field(default_factory=list)
+    significance_tag: str = "major_location"
 
 
 def _normalize_role(section_role: str) -> str:
@@ -224,6 +240,35 @@ def location_zone_relevant(
         if _name_in_text(token, cleaned):
             return True
     return False
+
+
+def _category_text(categories: list[str] | None) -> str:
+    return " ".join(str(category).replace("_", " ").casefold() for category in categories or [])
+
+
+def location_significance_tag(candidate: LocationCandidate, evidence_text: str = "") -> str:
+    """Controlled reason a location is significant enough for a card."""
+    role = _normalize_role(candidate.source_section_role)
+    combined = f"{_category_text(candidate.categories)} {role.replace('_', ' ')} {evidence_text}".casefold()
+    if "instance" in combined or "dungeon" in combined or "raid" in combined:
+        return "instance_anchor"
+    if role in {"quests", "quests_edit", "quests_or_storyline"} or "quest hub" in combined:
+        return "active_quest_hub"
+    if any(token in combined for token in ("battle", "war", "battlefield", "battleground")):
+        return "battlefield"
+    if any(token in combined for token in ("tomb", "grave", "shrine", "memorial", "sacred")):
+        return "sacred_landmark"
+    if any(token in combined for token in ("fort", "fortress", "keep", "stronghold", "bastion", "citadel")):
+        return "faction_stronghold"
+    if any(token in combined for token in ("cult", "scourge", "demon", "legion", "necromanc", "villain")):
+        return "villain_base"
+    if any(token in combined for token in ("restore", "restoration", "reclaimed", "healed", "recovery")):
+        return "restoration_site"
+    if any(token in combined for token in ("city", "town", "village", "settlement", "capital")):
+        return "settlement_hub"
+    if candidate.lore_significant or role.startswith("history"):
+        return "historical_turning_point"
+    return "major_location"
 
 
 def _profile_items_for_location(
@@ -378,6 +423,14 @@ def collect_location_candidates(
             str(item.get("snippet", ""))
             for item in candidate.profile_items + candidate.seed_mentions
         )
+        category_signal = strict_generation_category_signal(candidate.categories)
+        if category_signal.disposition in {"strong_drop", "soft_drop"}:
+            candidate.rejected = True
+            candidate.reject_reasons = list(category_signal.reasons) or [
+                "strict_generation_category_exclusion"
+            ]
+            continue
+        candidate.significance_tag = location_significance_tag(candidate, evidence_text)
         candidate.zone_relevant = location_zone_relevant(
             evidence_text,
             zone_name=zone_name,
@@ -521,6 +574,8 @@ def _is_contained_location(child: LocationCandidate, parent: LocationCandidate) 
     if not parent.lore_significant:
         return False
     if not _name_in_text(parent.name, _candidate_evidence_text(child)):
+        return False
+    if child.significance_tag in {"active_quest_hub", "instance_anchor"}:
         return False
     role = _normalize_role(child.source_section_role)
     return role in _HIGH_WEIGHT_ROLES or _name_has_token(

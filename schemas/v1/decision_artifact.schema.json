@@ -91,6 +91,18 @@
       "default": null,
       "title": "Score"
     },
+    "significance_tag": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Significance Tag"
+    },
     "subject_id": {
       "minLength": 1,
       "title": "Subject Id",
@@ -100,6 +112,30 @@
       "minLength": 1,
       "title": "Subject Type",
       "type": "string"
+    },
+    "temporal_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Temporal Reason"
+    },
+    "temporal_scope": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Temporal Scope"
     },
     "thresholds": {
       "additionalProperties": {

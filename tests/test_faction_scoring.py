@@ -62,6 +62,25 @@ def test_fallback_faction_summary_prefers_subject_mentioning_snippet() -> None:
     assert sources == ["src-on"]
 
 
+def test_fallback_faction_summary_uses_faction_centered_sentence_window() -> None:
+    snippet = (
+        "Following the Second War in 6 ADP, the fortress at Caer Darrow was restored. "
+        "After decades of rule, the Barovs made a deal with Kel'Thuzad, leader of the Cult of the Damned. "
+        "The once opulent keep of Caer Darrow secretly became the horrific Scholomance, a school of necromancy."
+    )
+    summary, sources = fallback_faction_summary(
+        [{"snippet": snippet, "source_id": "src-cult"}],
+        zone_name="Scholomance",
+        subregion_tokens=["Caer Darrow"],
+        faction_name="Cult of the Damned",
+    )
+
+    assert "Cult of the Damned" in summary
+    assert "Scholomance" in summary
+    assert "6 ADP" not in summary
+    assert sources == ["src-cult"]
+
+
 def test_fallback_faction_summary_prefers_lint_and_gate_passing_snippet() -> None:
     from pipeline.generate.draft.faction_lint import lint_faction_summary
     from pipeline.generate.draft.prose_gate import prose_gate_rejects

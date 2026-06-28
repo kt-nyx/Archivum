@@ -87,6 +87,30 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
+    monkeypatch.setattr(
+        "pipeline.generate.draft.temporal._llm_temporal_adjudication_disabled",
+        lambda: False,
+    )
+
+    def fake_temporal_llm(**kwargs):
+        return {
+            "classifications": [
+                {
+                    "canonical_evidence_id": item.get("canonical_evidence_id", ""),
+                    "temporal_scope": "pre_entry_history",
+                    "history_eligibility": "history_background",
+                    "rationale": "Synthetic baseline history is explicit background evidence.",
+                    "history_rationale": "Synthetic baseline history is history-eligible.",
+                    "event_label": "",
+                }
+                for item in json.loads(kwargs["user_prompt"]).get("items", [])
+            ]
+        }
+
+    monkeypatch.setattr(
+        "pipeline.generate.draft.temporal.llm_json_with_retry",
+        fake_temporal_llm,
+    )
     context = ensure_run_context(
         "run-test-wiki-first-draft-writer",
         artifacts_root=tmp_path / "runs",

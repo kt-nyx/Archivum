@@ -77,9 +77,9 @@
       "title": "Provenance",
       "type": "array"
     },
-    "significance": {
+    "significance_tag": {
       "minLength": 1,
-      "title": "Significance",
+      "title": "Significance Tag",
       "type": "string"
     },
     "summary": {
@@ -112,7 +112,7 @@
     "zone_id",
     "wiki_url",
     "summary",
-    "significance"
+    "significance_tag"
   ],
   "title": "LocationCard",
   "type": "object"

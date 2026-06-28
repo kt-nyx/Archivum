@@ -26,6 +26,13 @@ from pipeline.common.io import read_json
 from pipeline.common.retail import is_non_retail_title
 from pipeline.common.run_context import RunContext
 from pipeline.common.text_ids import slugify
+from pipeline.common.text_normalize import normalize_display_punctuation
+from pipeline.generate.draft.temporal import (
+    AMBIGUOUS_TEMPORAL,
+    EXCLUDED_NONCANON,
+    POST_ACTIVE_LORE,
+    strict_generation_category_signal,
+)
 
 WIKI_BASE = "https://warcraft.wiki.gg/wiki"
 _LINK_CATEGORY_CACHE_NAME = "link_category_cache.json"
@@ -280,9 +287,11 @@ def _card_wiki_url(card: dict[str, Any], card_id: str, ingest_urls: dict[str, st
 
 
 class _TermAccumulator:
-    def __init__(self) -> None:
+    def __init__(self, *, display_text: str = "") -> None:
         self._by_label: dict[str, dict[str, Any]] = {}
         self._term_ids: set[str] = set()
+        normalized_display = normalize_display_punctuation(display_text).casefold().strip()
+        self._display_text = f" {normalized_display} " if normalized_display else ""
 
     def add(
         self,
@@ -296,6 +305,11 @@ class _TermAccumulator:
     ) -> None:
         cleaned = label.strip()
         if not cleaned or len(cleaned) < 2:
+            return
+        display_aliases = [cleaned, *(extra_aliases or [])]
+        if self._display_text and not any(
+            _label_in_display_text(alias, self._display_text) for alias in display_aliases
+        ):
             return
         # Key (and slug) on the article-stripped form so "The Battle for Andorhal"
         # dedups against "Battle for Andorhal"; both surface forms stay as aliases so
@@ -449,15 +463,25 @@ def _collect_from_draft(
 def _collect_from_snapshots(
     snapshots: list[dict[str, Any]],
     acc: _TermAccumulator,
+    *,
+    excluded_source_ids: set[str] | None = None,
 ) -> None:
     """Add a term per fetched page, classified by category and aliased by infobox."""
+    excluded = excluded_source_ids or set()
     for snapshot in snapshots:
+        if str(snapshot.get("source_id", "")).strip() in excluded:
+            continue
         name = str(snapshot.get("name", "")).strip()
         if not name:
             continue
         entity_type = str(snapshot.get("entity_type", "")).strip().lower()
         categories = snapshot.get("categories")
         category_list = categories if isinstance(categories, list) else []
+        if strict_generation_category_signal([str(category) for category in category_list]).disposition in {
+            "strong_drop",
+            "soft_drop",
+        }:
+            continue
         infobox = snapshot.get("infobox")
         infobox_map = infobox if isinstance(infobox, dict) else {}
         acc.add(
@@ -587,14 +611,41 @@ def _collect_from_canonical_map(
         )
 
 
-def build_run_terms(context: RunContext) -> Path:
-    """Generate data/glossary/run_terms.jsonl from drafts and discovery artifacts."""
-    acc = _TermAccumulator()
-    snapshots = _load_snapshots(context)
-    link_category_cache = _load_link_category_cache(context)
-    ingest_urls = _ingest_url_by_entity(snapshots)
-    draft_root = context.data_dir / "drafts"
+def _label_in_display_text(label: str, display_text: str) -> bool:
+    normalized = normalize_display_punctuation(label).casefold().strip()
+    if not normalized:
+        return False
+    pattern = rf"(?<![\w']){re.escape(normalized)}(?![\w'])"
+    return bool(re.search(pattern, display_text))
 
+
+def _draft_display_text(value: Any, *, key: str = "") -> str:
+    if isinstance(value, str):
+        if key in {
+            "id",
+            "zone_id",
+            "instance_id",
+            "parent_zone_id",
+            "wiki_url",
+            "wiki_ref",
+            "source_id",
+            "revision_id",
+            "excerpt_hash",
+            "term_id",
+        }:
+            return ""
+        return value
+    if isinstance(value, list):
+        return " ".join(_draft_display_text(item) for item in value)
+    if isinstance(value, dict):
+        if key in {"provenance", "sources"}:
+            return ""
+        return " ".join(_draft_display_text(child, key=str(child_key)) for child_key, child in value.items())
+    return ""
+
+
+def _load_drafts_for_terms(draft_root: Path) -> list[tuple[str, dict[str, Any]]]:
+    drafts: list[tuple[str, dict[str, Any]]] = []
     for draft_dir_name in ("zone_page", "instance_page"):
         draft_dir = draft_root / draft_dir_name
         if not draft_dir.exists():
@@ -602,11 +653,51 @@ def build_run_terms(context: RunContext) -> Path:
         for draft_path in sorted(draft_dir.glob("*.json")):
             draft = _load_json(draft_path)
             if isinstance(draft, dict):
-                _collect_from_draft(
-                    draft, draft_kind=draft_dir_name, ingest_urls=ingest_urls, acc=acc
-                )
+                drafts.append((draft_dir_name, draft))
+    return drafts
 
-    _collect_from_snapshots(snapshots, acc)
+
+def _excluded_temporal_source_ids(context: RunContext) -> set[str]:
+    path = context.data_dir / "decisions" / "temporal_evidence_decisions.json"
+    if not path.exists():
+        return set()
+    blob = _load_json(path)
+    if not isinstance(blob, list):
+        return set()
+    scopes_by_source: dict[str, set[str]] = {}
+    for row in blob:
+        if not isinstance(row, dict):
+            continue
+        source_id = str(row.get("source_id", "")).strip()
+        scope = str(row.get("temporal_scope", "")).strip()
+        if source_id and scope:
+            scopes_by_source.setdefault(source_id, set()).add(scope)
+    excluded_scopes = {EXCLUDED_NONCANON, POST_ACTIVE_LORE, AMBIGUOUS_TEMPORAL}
+    return {
+        source_id
+        for source_id, scopes in scopes_by_source.items()
+        if scopes and scopes.issubset(excluded_scopes)
+    }
+
+
+def build_run_terms(context: RunContext) -> Path:
+    """Generate data/glossary/run_terms.jsonl from drafts and discovery artifacts."""
+    snapshots = _load_snapshots(context)
+    link_category_cache = _load_link_category_cache(context)
+    ingest_urls = _ingest_url_by_entity(snapshots)
+    draft_root = context.data_dir / "drafts"
+    drafts = _load_drafts_for_terms(draft_root)
+    display_text = " ".join(_draft_display_text(draft) for _kind, draft in drafts)
+    acc = _TermAccumulator(display_text=display_text)
+
+    for draft_dir_name, draft in drafts:
+        _collect_from_draft(draft, draft_kind=draft_dir_name, ingest_urls=ingest_urls, acc=acc)
+
+    _collect_from_snapshots(
+        snapshots,
+        acc,
+        excluded_source_ids=_excluded_temporal_source_ids(context),
+    )
     _collect_from_seed_links(snapshots, acc, link_category_cache=link_category_cache)
 
     canonical_path = context.data_dir / "discovery" / "canonical_entity_map.jsonl"

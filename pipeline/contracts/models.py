@@ -138,7 +138,7 @@ class LocationCard(BaseModel):
     zone_id: str = Field(pattern=ID_PATTERN)
     wiki_url: str = Field(min_length=1)
     summary: str = Field(min_length=1)
-    significance: str = Field(min_length=1)
+    significance_tag: str = Field(min_length=1)
     decision_reason_codes: list[str] = Field(default_factory=list)
     ui_hints: dict[str, str] = Field(default_factory=dict)
     provenance: list[SourcePointer] = Field(default_factory=list)
@@ -171,6 +171,9 @@ class DecisionArtifact(BaseModel):
     borderline_adjudication: dict[str, str] | None = None
     final_decision: IncludeDecision
     reason_codes: list[str] = Field(default_factory=list)
+    significance_tag: str | None = None
+    temporal_scope: str | None = None
+    temporal_reason: str | None = None
 
 
 class EvidenceItem(BaseModel):
@@ -185,6 +188,13 @@ class EvidenceItem(BaseModel):
     # discovery routing `section_role`. See pipeline/common/content_role.py.
     content_role: str | None = None
     block_index: int | None = None
+    canonical_evidence_id: str | None = None
+    temporal_scope: str | None = None
+    temporal_confidence: float | None = Field(default=None, ge=0, le=1)
+    temporal_reason: str | None = None
+    temporal_event_label: str | None = None
+    history_eligibility: str | None = None
+    history_reason: str | None = None
 
 
 class EvidencePack(BaseModel):

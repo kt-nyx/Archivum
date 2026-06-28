@@ -26,7 +26,6 @@ from pipeline.generate.draft.pages.assembly import (
     _cap_card_pointers,
     _ensure_pointer_count,
     _history_pointers_from_sections,
-    _iter_evidence_items,
     _pointer_count_for_words,
     _pointers_for_source_ids,
     _source_entries,
@@ -89,9 +88,7 @@ def _finalize_instance_at_a_glance(
         if _rejected(text):
             text, used = "", []
     if not text:
-        rescue_pool = at_pool or select_at_a_glance_pool(
-            _iter_evidence_items(evidence_rows, {"at_a_glance_input", "history_digest"})
-        )
+        rescue_pool = at_pool
         producing_pool = rescue_pool
         text, used = fallback_at_a_glance(rescue_pool)
         if _rejected(text):
@@ -167,6 +164,7 @@ def build_instance_major_factions(
     revision_map: dict[str, str],
     faction_profile_targets: list[dict[str, Any]] | None = None,
     parent_zone_evidence_rows: list[dict[str, Any]] | None = None,
+    snapshots: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, str]]]]:
     # WS-8: harvest faction candidates from the instance's *own* evidence first. Scholomance et al.
     # carry no faction_pool evidence, so the parent-zone-scoped path returns nothing despite the page
@@ -175,6 +173,7 @@ def build_instance_major_factions(
         instance_id=instance_id,
         instance_name=instance_name,
         evidence_rows=evidence_rows,
+        snapshots=snapshots or [],
     )
     if native_targets:
         role_pool = native_role_pool or pools.get("faction_role_pool", [])
@@ -334,7 +333,6 @@ def build_instance_page(
     history_pointer_pool = (
         draft_history_pool
         or history_pool
-        or select_history_pool(_iter_evidence_items(evidence_rows, {"history_digest"}))
     )
     history_pointers = _pointers_for_source_ids(history_pointer_pool, history_used, revision_map)
     if not history_pointers:
@@ -385,6 +383,7 @@ def build_instance_page(
         revision_map=revision_map,
         faction_profile_targets=faction_profile_targets,
         parent_zone_evidence_rows=parent_zone_evidence_rows,
+        snapshots=snapshots,
     )
     for pointers in faction_provenance.values():
         for pointer in pointers:

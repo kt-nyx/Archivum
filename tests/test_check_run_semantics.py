@@ -213,7 +213,7 @@ def _schema_valid_zone_page_draft() -> dict[str, object]:
                     "Example Landmark is a fortified outpost in Example Zone where patrols coordinate "
                     "supply lines, defensive operations, and regional scouting missions across the frontier."
                 ),
-                "significance": "Primary patrol hub for the region.",
+                "significance_tag": "faction_stronghold",
                 "decision_reason_codes": ["include"],
             }
         ],
