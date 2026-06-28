@@ -1157,7 +1157,7 @@ Review cycle (2026-06-28):
 
 ## Slice 8 - Current, At-A-Glance, And Faction Routing From Claims
 
-Status: Landed (faction inclusion support deferred — see notes)
+Status: Verified (faction inclusion support deferred — see notes)
 
 Goal: use claim labels and entry-state contract to improve current summaries and faction cards.
 
@@ -1252,6 +1252,25 @@ Validation:
   `git diff --check` clean.
 - Added tests: `prefer_entry_state_first` ordering / tiebreak / paragraph no-op; and the currently +
   at-a-glance selectors promoting entry-state claims.
+
+Review cycle (2026-06-28, faction inclusion deferral confirmed):
+
+- Confirmed the preference is applied uniformly across every consumer of the two selectors: zone
+  `currently` + `at_a_glance` and instance `at_a_glance` all flow through
+  `select_currently_pool` / `select_at_a_glance_pool`. The instance `overview` is intentionally not
+  touched — it is the instance's setting narrative, not a "current" field (tasks 1-2).
+- Documented the deliberate design point that, in a live mixed pool (claim views + paragraph items),
+  only claim views are ranked by temporal scope; paragraph items hold a neutral mid rank rather than
+  being ordered by their coarse paragraph-level label. This keeps the trustworthy claim signal in
+  charge and avoids re-litigating order from compatibility-grade paragraph labels. The early return
+  already guarantees the offline no-op (offline pools carry no claim views).
+- Added a mixed-pool regression test pinning that behavior (entry-state claim first, paragraph
+  neutral-middle, pre-entry-history claim last), since the prior tests only covered all-claim and
+  all-paragraph pools.
+- Re-confirmed temporal safety is unchanged: the reorder only ranks an already-safe (routed) pool,
+  so it can improve entry-state anchoring but can never introduce an outcome/post-active item.
+- Full suite green: 879 passed, 5 skipped, 1 xfailed. `ruff check` and targeted `mypy` clean;
+  `git diff --check` clean.
 
 ## Slice 9 - Key Character Spoiler-Safe Evidence
 
@@ -1623,3 +1642,6 @@ Add dated entries here as slices move.
   (`prefer_entry_state_first`); confirmed Slice 6 already routes these fields and faction prose is
   outcome-safe; deferred contract-driven faction inclusion (editorial). Full suite 878 passed /
   5 skipped / 1 xfailed; ruff + mypy clean.
+- 2026-06-28: Slice 8 reviewed and verified (faction inclusion deferral confirmed with the user).
+  Documented the mixed-pool ranking design, added a mixed-pool regression test, confirmed uniform
+  selector coverage. Full suite 879 passed / 5 skipped / 1 xfailed.

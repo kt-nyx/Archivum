@@ -197,10 +197,19 @@ _CURRENT_SCOPE_PREFERENCE = {
 def prefer_entry_state_first(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Stable-sort a claim-routed pool so entry-state / active claims precede older background.
 
-    A no-op when the pool contains no claim views, so offline paragraph-fallback pools stay
-    byte-identical (and their gold output is unchanged). Within a claim pool the sort is stable:
-    claims of equal temporal preference keep their incoming order, and ``safe_entry_context`` is
+    Returns the input unchanged (same object) when the pool contains no claim views, so offline
+    paragraph-fallback pools stay byte-identical and their gold output is unchanged. The sort is
+    stable: items of equal preference keep their incoming order, and ``safe_entry_context`` is
     preferred over other safe labels at the same scope (Slice 8 task 1).
+
+    A live routed pool is a *mix* of claim views (paragraphs that produced claims) and paragraph
+    items (those that did not). Only claim views are ranked by their temporal scope; paragraph items
+    get a neutral mid rank and are deliberately **not** ordered by their coarse paragraph-level
+    ``temporal_scope``. The refactor's premise is that the claim label is the trustworthy fine
+    signal and the paragraph label is compatibility-grade, so this promotes the high-confidence
+    entry-state claims without re-litigating order from the weaker paragraph labels. (The early
+    return already guarantees the offline no-op regardless, since offline pools carry no claim
+    views.)
     """
     if not any(isinstance(item, dict) and item.get("is_claim_view") for item in items):
         return items

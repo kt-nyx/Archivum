@@ -251,3 +251,28 @@ def test_prefer_entry_state_first_is_noop_without_claim_views() -> None:
 
     # Identity preserved (same object) so offline paragraph pools are byte-identical.
     assert prefer_entry_state_first(paragraph_pool) is paragraph_pool
+
+
+def test_prefer_entry_state_first_mixed_pool_keeps_paragraphs_neutral() -> None:
+    """A live routed pool mixes claim views and paragraphs; paragraphs hold a neutral mid rank.
+
+    Entry-state claims are promoted ahead of paragraphs, pre-entry-history claims fall behind them,
+    and the paragraph item is NOT reordered by its coarse paragraph-level temporal_scope.
+    """
+    from pipeline.generate.draft.claim_routing import prefer_entry_state_first
+
+    pool = [
+        {"snippet": "old origin claim", "temporal_scope": "pre_entry_history", "is_claim_view": True},
+        # Paragraph item carries a paragraph-level entry_state label, but no claim view.
+        {"snippet": "paragraph", "temporal_scope": "entry_state"},
+        {"snippet": "entry claim", "temporal_scope": "entry_state", "is_claim_view": True},
+    ]
+
+    ordered = prefer_entry_state_first(pool)
+
+    # entry-state claim first; paragraph stays neutral (mid); old-origin claim last.
+    assert [item["snippet"] for item in ordered] == [
+        "entry claim",
+        "paragraph",
+        "old origin claim",
+    ]
