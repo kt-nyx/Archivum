@@ -144,6 +144,23 @@ def _write_snapshots(context, snapshots: list[dict]) -> None:
     )
 
 
+def _write_decisions(context, filename: str, rows: list[dict]) -> None:
+    decisions_dir = context.data_dir / "decisions"
+    decisions_dir.mkdir(parents=True, exist_ok=True)
+    (decisions_dir / filename).write_text(json.dumps(rows, indent=2), encoding="utf-8")
+
+
+def _claim_decision(source_id: str, scopes: list[str]) -> dict:
+    return {
+        "source_id": source_id,
+        "canonical_evidence_id": f"canonical-{source_id}",
+        "claims": [
+            {"claim_id": f"claim-{source_id}-{i}", "temporal_scope": scope}
+            for i, scope in enumerate(scopes)
+        ],
+    }
+
+
 def _write_link_category_cache(context, entries: dict[str, dict]) -> None:
     ingest_dir = context.data_dir / "ingest"
     ingest_dir.mkdir(parents=True, exist_ok=True)
@@ -628,3 +645,95 @@ def test_build_bundle_logs_static_dictionary_fallback_when_no_run_terms(tmp_path
     ]
     assert fallback_events, "expected a degraded trace event for the static-dictionary fallback"
     assert fallback_events[0]["status"] == "degraded"
+
+
+def _term_ids(output_path: Path) -> set[str]:
+    return {
+        json.loads(line)["term_id"]
+        for line in output_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    }
+
+
+def test_build_run_terms_excludes_source_whose_claims_are_all_post_active(tmp_path: Path) -> None:
+    """Slice 10 task 3: a term whose only provenance is post-active/noncanon claims is dropped."""
+    context = ensure_run_context("run-test-glossary-claim-excl", artifacts_root=tmp_path / "runs")
+    _write_snapshots(
+        context,
+        [
+            {
+                "entity_id": "location-strahnbrad",
+                "source_id": "src-strahnbrad",
+                "entity_type": "location",
+                "name": "Strahnbrad",
+                "url": "https://warcraft.wiki.gg/wiki/Strahnbrad",
+                "categories": ["Locations"],
+            }
+        ],
+    )
+    _write_decisions(
+        context,
+        "claim_temporal_decisions.json",
+        [_claim_decision("src-strahnbrad", ["post_active_lore", "excluded_noncanon"])],
+    )
+
+    output_path = build_run_terms(context)
+
+    assert "term-strahnbrad" not in _term_ids(output_path)
+
+
+def test_build_run_terms_keeps_source_with_a_safe_claim(tmp_path: Path) -> None:
+    """Claim-level rescue: a source with at least one safe claim is not 'only excluded claims'."""
+    context = ensure_run_context("run-test-glossary-claim-keep", artifacts_root=tmp_path / "runs")
+    _write_snapshots(
+        context,
+        [
+            {
+                "entity_id": "location-hearthglen",
+                "source_id": "src-hearthglen",
+                "entity_type": "location",
+                "name": "Hearthglen",
+                "url": "https://warcraft.wiki.gg/wiki/Hearthglen",
+                "categories": ["Towns"],
+            }
+        ],
+    )
+    # Same source carries a post-active claim AND an entry-state claim -> kept.
+    _write_decisions(
+        context,
+        "claim_temporal_decisions.json",
+        [_claim_decision("src-hearthglen", ["post_active_lore", "entry_state"])],
+    )
+
+    output_path = build_run_terms(context)
+
+    assert "term-hearthglen" in _term_ids(output_path)
+
+
+def test_build_run_terms_falls_back_to_paragraph_exclusion_without_claim_sidecar(
+    tmp_path: Path,
+) -> None:
+    """No claim sidecar: the legacy paragraph-level temporal exclusion still applies."""
+    context = ensure_run_context("run-test-glossary-para-excl", artifacts_root=tmp_path / "runs")
+    _write_snapshots(
+        context,
+        [
+            {
+                "entity_id": "location-strahnbrad",
+                "source_id": "src-strahnbrad",
+                "entity_type": "location",
+                "name": "Strahnbrad",
+                "url": "https://warcraft.wiki.gg/wiki/Strahnbrad",
+                "categories": ["Locations"],
+            }
+        ],
+    )
+    _write_decisions(
+        context,
+        "temporal_evidence_decisions.json",
+        [{"source_id": "src-strahnbrad", "temporal_scope": "post_active_lore"}],
+    )
+
+    output_path = build_run_terms(context)
+
+    assert "term-strahnbrad" not in _term_ids(output_path)

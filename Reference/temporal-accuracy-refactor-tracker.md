@@ -1392,7 +1392,7 @@ Review cycle (2026-06-28):
 
 ## Slice 10 - Claim-Aware Location And Glossary Filtering
 
-Status: Not started
+Status: Landed
 
 Goal: prevent post-active or unsafe claims from supporting location/glossary inclusion, while also
 using safe setup claims more accurately.
@@ -1442,6 +1442,41 @@ Risks:
 
 - Location inclusion has non-temporal quality issues too. This slice should only handle temporal
   evidence support and spoiler drift.
+
+Implementation notes:
+
+- Locations (task 1): already covered by Slice 6 routing. `location_pool` and `location_seed_pool`
+  are built with `claim_route=LOCATION_CONTEXT_ROUTE`, so post-active / outcome / noncanon claims are
+  stripped before `location_scoring` ever sees them; `collect_location_candidates` derives each
+  candidate's `profile_items` / `seed_mentions` (and thus its significance-tag `evidence_text`) from
+  those routed pools. So a location supported only by post-active claims has no routed mention and is
+  not collected, and significance tags are not derived from post-active context (task 2 transitively
+  — the controlled-vocab tagger reads only the routed safe evidence). Added a regression test pinning
+  that `LOCATION_CONTEXT_ROUTE` excludes a Fourth-War-style post-active claim from `location_pool`.
+- Glossary (task 3): the display-text gate (a term is dropped unless it appears in the final
+  normalized draft text) and the paragraph-level snapshot temporal exclusion already existed. New in
+  this slice: `_excluded_glossary_source_ids` makes that exclusion claim-aware. When
+  `claim_temporal_decisions.json` exists, a source is excluded only when *every* one of its claims is
+  excluded/post-active/noncanon — so a source that also carries a safe claim is rescued from the
+  coarser paragraph aggregate (its provenance is then not "only excluded claims"). Sources the claim
+  sidecar never classified keep the paragraph-level verdict, and runs without a claim sidecar keep
+  the legacy behavior. The Scholomance-Shadow-Council case ("absent from final display text") is the
+  pre-existing display gate.
+- Not implemented (task 4 — claim-ID provenance in the location decision rationale / glossary
+  sidecar rows): this is audit metadata ("can include"), not temporal correctness. The exclusion is
+  already explainable through the claim sidecar (now the source of the glossary verdict, keyed by
+  `source_id`). Left for the later schema/provenance pass rather than expanding row shapes here.
+
+Validation:
+
+- `.venv/Scripts/python.exe -m pytest tests/test_glossary_run_terms.py tests/test_claim_routing.py
+  tests/test_zone_location_draft.py -q`
+- `.venv/Scripts/python.exe -m pytest -q` — 883 passed, 5 skipped, 1 xfailed.
+- `.venv/Scripts/python.exe -m ruff check` (changed files) and targeted `mypy` clean;
+  `git diff --check` clean.
+- Added tests: claim-aware glossary exclusion (all-post-active source dropped; safe-claim source
+  rescued; paragraph-level fallback without a claim sidecar) and the location post-active route
+  exclusion.
 
 ## Slice 11 - Backward Compatibility And Migration
 
@@ -1645,3 +1680,7 @@ Add dated entries here as slices move.
 - 2026-06-28: Slice 8 reviewed and verified (faction inclusion deferral confirmed with the user).
   Documented the mixed-pool ranking design, added a mixed-pool regression test, confirmed uniform
   selector coverage. Full suite 879 passed / 5 skipped / 1 xfailed.
+- 2026-06-28: Slice 10 landed claim-aware location/glossary filtering. Confirmed locations are
+  already covered by Slice 6 routing; added claim-aware glossary source exclusion
+  (`_excluded_glossary_source_ids`) with safe-claim rescue. Full suite 883 passed / 5 skipped /
+  1 xfailed; ruff + mypy clean.

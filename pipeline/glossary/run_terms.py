@@ -657,6 +657,9 @@ def _load_drafts_for_terms(draft_root: Path) -> list[tuple[str, dict[str, Any]]]
     return drafts
 
 
+_GLOSSARY_EXCLUDED_SCOPES = {EXCLUDED_NONCANON, POST_ACTIVE_LORE, AMBIGUOUS_TEMPORAL}
+
+
 def _excluded_temporal_source_ids(context: RunContext) -> set[str]:
     path = context.data_dir / "decisions" / "temporal_evidence_decisions.json"
     if not path.exists():
@@ -672,12 +675,64 @@ def _excluded_temporal_source_ids(context: RunContext) -> set[str]:
         scope = str(row.get("temporal_scope", "")).strip()
         if source_id and scope:
             scopes_by_source.setdefault(source_id, set()).add(scope)
-    excluded_scopes = {EXCLUDED_NONCANON, POST_ACTIVE_LORE, AMBIGUOUS_TEMPORAL}
     return {
         source_id
         for source_id, scopes in scopes_by_source.items()
-        if scopes and scopes.issubset(excluded_scopes)
+        if scopes and scopes.issubset(_GLOSSARY_EXCLUDED_SCOPES)
     }
+
+
+def _claim_scopes_by_source(context: RunContext) -> dict[str, set[str]]:
+    """Per-source set of claim temporal scopes from the claim-level sidecar.
+
+    Empty when the claim sidecar is absent (older runs), so callers fall back to the
+    paragraph-level decision.
+    """
+    path = context.data_dir / "decisions" / "claim_temporal_decisions.json"
+    if not path.exists():
+        return {}
+    blob = _load_json(path)
+    if not isinstance(blob, list):
+        return {}
+    scopes_by_source: dict[str, set[str]] = {}
+    for row in blob:
+        if not isinstance(row, dict):
+            continue
+        source_id = str(row.get("source_id", "")).strip()
+        claims = row.get("claims")
+        if not source_id or not isinstance(claims, list):
+            continue
+        for claim in claims:
+            if not isinstance(claim, dict):
+                continue
+            scope = str(claim.get("temporal_scope", "")).strip()
+            if scope:
+                scopes_by_source.setdefault(source_id, set()).add(scope)
+    return scopes_by_source
+
+
+def _excluded_glossary_source_ids(context: RunContext) -> set[str]:
+    """Sources whose terms should be dropped because all their evidence is excluded/post-active.
+
+    Slice 10 task 3: provenance is judged at the claim level when the claim sidecar exists. A source
+    is excluded only when *every* one of its claims is excluded/post-active/noncanon — so a source
+    that also carries a safe claim is kept even if its coarse paragraph aggregate reads restrictive
+    (the term's provenance is then not "only excluded claims"). Sources with no extracted claims fall
+    back to the paragraph-level decision, and runs without a claim sidecar keep the legacy behavior.
+    """
+    paragraph_excluded = _excluded_temporal_source_ids(context)
+    claim_scopes = _claim_scopes_by_source(context)
+    if not claim_scopes:
+        return paragraph_excluded
+    excluded: set[str] = set()
+    for source_id, scopes in claim_scopes.items():
+        if scopes and scopes.issubset(_GLOSSARY_EXCLUDED_SCOPES):
+            excluded.add(source_id)
+    # Sources the claim sidecar never classified keep the paragraph-level verdict.
+    for source_id in paragraph_excluded:
+        if source_id not in claim_scopes:
+            excluded.add(source_id)
+    return excluded
 
 
 def build_run_terms(context: RunContext) -> Path:
@@ -696,7 +751,7 @@ def build_run_terms(context: RunContext) -> Path:
     _collect_from_snapshots(
         snapshots,
         acc,
-        excluded_source_ids=_excluded_temporal_source_ids(context),
+        excluded_source_ids=_excluded_glossary_source_ids(context),
     )
     _collect_from_seed_links(snapshots, acc, link_category_cache=link_category_cache)
 

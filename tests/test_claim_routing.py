@@ -22,6 +22,7 @@ from pipeline.generate.draft.temporal import (
     HISTORY_EXCLUDED_OUTCOME,
     HISTORY_NOT_APPLICABLE,
     HISTORY_SETUP_BRIDGE,
+    POST_ACTIVE_LORE,
 )
 
 
@@ -117,6 +118,47 @@ def test_safe_claim_from_mixed_paragraph_routes_without_outcome_sibling() -> Non
     assert "claim_id" not in pointer
     expected_hash = hashlib.sha256(source_excerpt.encode("utf-8")).hexdigest()[:16]
     assert pointer["excerpt_hash"] == f"sha256:{expected_hash}"
+
+
+def test_location_route_excludes_post_active_claim() -> None:
+    """Slice 10 task 1: a location's post-active claim is stripped from the routed location pool."""
+    source_excerpt = (
+        "Strahnbrad lies to the north, and the Fourth War later swept through the ruined town."
+    )
+    rows = [_row("location_pool", "canonical-loc", source_excerpt)]
+    routed_rows = apply_claim_views_to_evidence_rows(
+        rows,
+        [
+            _claim_decision(
+                "canonical-loc",
+                source_excerpt,
+                [
+                    {
+                        "claim_id": "loc-safe",
+                        "claim_text": "Strahnbrad lies to the north.",
+                        "claim_type": "location_status",
+                        "temporal_scope": ENTRY_STATE,
+                        "history_eligibility": HISTORY_NOT_APPLICABLE,
+                        "spoiler_safety": SAFE_ENTRY_CONTEXT,
+                    },
+                    {
+                        "claim_id": "loc-post",
+                        "claim_text": "The Fourth War later swept through Strahnbrad.",
+                        "claim_type": "event",
+                        "temporal_scope": POST_ACTIVE_LORE,
+                        "history_eligibility": HISTORY_EXCLUDED_OUTCOME,
+                        "spoiler_safety": "post_active_reference",
+                    },
+                ],
+            )
+        ],
+    )
+
+    pools = _build_evidence_pools(routed_rows)
+    snippets = [item["snippet"] for item in pools["location_pool"]]
+
+    assert "Strahnbrad lies to the north." in snippets
+    assert all("Fourth War" not in snippet for snippet in snippets)
 
 
 def test_paragraph_pool_fallback_remains_when_claim_views_are_absent() -> None:
