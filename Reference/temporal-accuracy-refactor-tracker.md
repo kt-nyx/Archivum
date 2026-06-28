@@ -719,7 +719,7 @@ Review notes:
 
 ## Slice 4 - LLM Claim Extraction For Mixed Paragraphs
 
-Status: Not started
+Status: Verified
 
 Goal: split canonical paragraphs into semantic claims/events when sentence-level splitting is too
 coarse.
@@ -784,6 +784,32 @@ Risks:
 
 - LLM extraction may over-split. Prefer too many small claims over one mixed claim because routing
   can cluster later.
+
+Implementation notes:
+
+- Extended `pipeline/generate/draft/claims.py` with an LLM semantic extraction path for likely
+  mixed canonical paragraphs.
+- Candidate detection stays structural/general:
+  - paragraph appears in both history and current drafting views;
+  - canonical record has multiple structural temporal signals;
+  - paragraph is long;
+  - sentence-level fallback has semicolon-heavy or very long sentences;
+  - paragraph overlaps both entry-state setup context and outcome-hint context.
+- LLM output remains sidecar-only and does not change section routing or public draft JSON.
+- Unsupported LLM claims are filtered by source-overlap checks; provider failures or disabled LLM
+  produce `extraction_mode=sentence_fallback`.
+- Claim rows now include `source_passthrough_risk` and `source_passthrough_reason` for the
+  claim-level copyright/passthrough audit.
+
+Review notes:
+
+- First review pass tightened source-support filtering so short invented claims with only one
+  shared token are rejected, and fixed overlong LLM claims so `claim_id` is derived from the
+  emitted/truncated claim text.
+- Second review pass added sentence-level backfill for source sentences not covered by valid LLM
+  claims, preventing semantic extraction from silently dropping evidence.
+- Added regression tests for invalid sentence indexes, partial-overlap inventions, passthrough risk,
+  setup/outcome candidate detection, overlong claim ID stability, and LLM sentence backfill.
 
 ## Slice 5 - Claim-Level Temporal And Spoiler Classification
 
