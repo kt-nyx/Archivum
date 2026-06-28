@@ -224,6 +224,45 @@ def test_finalize_bridge_card_carries_explicit_provenance(monkeypatch) -> None:
     assert refs and refs[0]["source_id"] == "src-hearthglen"
 
 
+def test_finalize_llm_retry_covers_bridge_without_deterministic_append(monkeypatch) -> None:
+    """In a live run, a coverage retry that represents the bridge avoids the deterministic card."""
+    # Force the live-run signal so the retry branch is reachable offline.
+    monkeypatch.setattr(cards, "passthrough_corpus", lambda pool: ["corpus-sentinel"])
+
+    calls: dict[str, int] = {"n": 0}
+
+    def _synth(pool, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            # First pass drops the setup bridge (only the first three sources used).
+            return list(_LLM_SECTIONS), ["src-scourging", "src-cauldron", "src-cenarion"]
+        # Retry must have received the required-event hint and now covers the bridge source.
+        assert kw.get("required_event_texts")
+        return list(_LLM_SECTIONS), ["src-scourging", "src-hearthglen", "src-cenarion"]
+
+    monkeypatch.setattr(cards, "synthesize_history_sections", _synth)
+
+    sink: list[dict[str, Any]] = []
+    sections, used = cards._finalize_history_sections(
+        history_pool=[{"snippet": "x", "source_id": "src-scourging"}],
+        evidence_rows=[],
+        max_history=3,
+        coverage_pool=_wpl_coverage_pool(),
+        subject_id="zone-western-plaguelands",
+        coverage_sink=sink,
+    )
+
+    assert calls["n"] == 2  # retry happened
+    assert len(sections) == 3  # no deterministic bridge appended
+    assert "src-hearthglen" in used
+    assert sink[0]["deterministic_bridge_count"] == 0
+    bridge_row = next(
+        row for row in sink[0]["coverage_units"] if row["source_id"] == "src-hearthglen"
+    )
+    assert bridge_row["covered"] is True
+    assert bridge_row["deterministic_bridge_appended"] is False
+
+
 def test_finalize_no_append_when_setup_bridge_already_covered(monkeypatch) -> None:
     """An eligible setup bridge that synthesis already used needs no deterministic bridge card."""
     monkeypatch.setattr(
@@ -274,6 +313,33 @@ def test_finalize_paragraph_pool_records_no_coverage(monkeypatch) -> None:
     )
 
     assert sink == []
+
+
+def test_append_setup_bridge_folds_into_last_section_at_ceiling() -> None:
+    """At the hard section ceiling the bridge merges into the last section, keeping its pointer."""
+    from pipeline.generate.draft.prose_lint import MAX_HISTORY_SECTIONS
+
+    filler = (
+        "The defenders held the line for many long years while the plague pressed in from every "
+        "ruined village, and the survivors rebuilt what little they could before the next assault "
+        "fell upon the weary and battered settlements that still remained standing in the valley."
+    )
+    full = [_section(f"Era {i}", filler) for i in range(MAX_HISTORY_SECTIONS)]
+    units = plan_history_coverage(_wpl_coverage_pool())
+    missing = [unit for unit in units if unit["source_id"] == "src-hearthglen"]
+
+    def _pointer_builder(item: dict[str, Any], ordinal: int) -> dict[str, str]:
+        return {"source_id": str(item.get("source_id", "")), "locator": f"mw:{ordinal}"}
+
+    sections, used, appended = cards._append_setup_bridge_cards(
+        full, ["e"] * MAX_HISTORY_SECTIONS, missing, pointer_builder=_pointer_builder
+    )
+
+    assert len(sections) == MAX_HISTORY_SECTIONS  # ceiling not exceeded
+    assert "src-hearthglen" in used
+    assert appended == {missing[0]["coverage_id"]}
+    last_refs = sections[-1]["source_refs"]
+    assert any(ref.get("source_id") == "src-hearthglen" for ref in last_refs)
 
 
 def test_build_section_coverage_decisions_shape() -> None:

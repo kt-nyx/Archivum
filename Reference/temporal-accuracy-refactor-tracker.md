@@ -1022,7 +1022,7 @@ Risks:
 
 ## Slice 7 - Coverage-Aware History Synthesis
 
-Status: Landed
+Status: Verified
 
 Goal: prevent eligible background/setup evidence from silently disappearing from final history.
 
@@ -1133,6 +1133,26 @@ Validation:
   tests/test_instance_page_draft.py tests/test_draft_baseline.py -q`
 - `.venv/Scripts/python.exe -m pytest -q` — 868 passed, 5 skipped, 1 xfailed.
 - `.venv/Scripts/python.exe -m ruff check` (changed files) and targeted `mypy` clean;
+  `git diff --check` clean.
+
+Review cycle (2026-06-28):
+
+- Verified the live-LLM-only paths that offline tests cannot exercise. Confirmed
+  `_format_evidence_block` labels evidence `[source_id]` and the model returns `used_evidence_ids`,
+  so the source-level coverage validator works on the live retry path, not just offline.
+- Fixed an anti-verbatim gap: the coverage retry synthesizes from the pre-cap `coverage_pool`, but
+  the finalize-level passthrough gate was using the capped-pool corpus. A retry body copying a
+  pre-cap-only paragraph could have slipped past the gate. The retry now gates against
+  `passthrough_corpus(coverage_pool)`.
+- Hardened the hard-ceiling fold: when a required bridge merges into the last section at
+  `MAX_HISTORY_SECTIONS`, its provenance pointer is now carried onto that section (previously only
+  `used` recorded the source) and the merge no longer mutates the shared synthesis dict in place.
+- Added regression tests for the live retry-success branch (no deterministic card when the retry
+  covers the bridge) and the ceiling-fold provenance path.
+- Confirmed coverage is strictly additive: `plan_history_coverage` returns no units for
+  paragraph-only pools, so legacy history is unchanged; offline NO_LLM runs produce no claim views
+  and therefore no coverage units.
+- Full suite green: 870 passed, 5 skipped, 1 xfailed. `ruff check` and targeted `mypy` clean.
   `git diff --check` clean.
 
 ## Slice 8 - Current, At-A-Glance, And Faction Routing From Claims
@@ -1494,3 +1514,6 @@ Add dated entries here as slices move.
 - 2026-06-28: Slice 7 landed coverage-aware history synthesis (`coverage.py`, deterministic
   setup-bridge guarantee with live LLM retry, `section_coverage_decisions.json`). Full suite 868
   passed / 5 skipped / 1 xfailed; ruff + mypy clean.
+- 2026-06-28: Slice 7 reviewed and verified. Fixed retry anti-verbatim gate corpus (pre-cap pool)
+  and hardened hard-ceiling bridge provenance; added live-retry and ceiling-fold regression tests.
+  Full suite 870 passed / 5 skipped / 1 xfailed; ruff + mypy clean.

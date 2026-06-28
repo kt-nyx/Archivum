@@ -261,7 +261,10 @@ def _apply_history_coverage(
     appended_ids: set[str] = set()
     if missing and pool_snippets is not None:
         # Retry from the pre-cap coverage pool so the dropped setup-bridge source is in evidence;
-        # the capped synthesis pool may not contain it at all.
+        # the capped synthesis pool may not contain it at all. The anti-verbatim gate corpus must
+        # come from that same pre-cap pool, or a retry body copying a pre-cap-only paragraph would
+        # slip past the gate (a licensing exposure pool_snippets cannot see).
+        coverage_snippets = passthrough_corpus(coverage_pool)
         retry_sections, retry_used = synthesize_history_sections(
             coverage_pool,
             max_sections=section_cap,
@@ -274,7 +277,7 @@ def _apply_history_coverage(
         if (
             retry_sections
             and not lint_history_sections(retry_sections, max_sections=lint_cap)
-            and not _sections_trip_gate(retry_sections, pool_snippets)
+            and not _sections_trip_gate(retry_sections, coverage_snippets)
         ):
             retry_covered = covered_coverage_ids(units, retry_used)
             if not missing_required_units(units, retry_covered):
@@ -336,10 +339,17 @@ def _append_setup_bridge_cards(
                 }
             )
         else:
-            # At the hard ceiling: fold the bridge into the last section rather than dropping it.
-            last = sections[-1]
+            # At the hard ceiling: fold the bridge into the last section rather than dropping it,
+            # carrying its provenance pointer onto that section so the source is still credited.
+            last = dict(sections[-1])
             last_body = str(last.get("body", "")).strip()
             last["body"] = " ".join(part for part in (last_body, body) if part)
+            if pointer:
+                last_refs = list(last.get("source_refs") or [])
+                if pointer not in last_refs:
+                    last_refs.append(pointer)
+                last["source_refs"] = last_refs
+            sections[-1] = last
         if unit["source_id"]:
             used.append(unit["source_id"])
         appended_ids.add(unit["coverage_id"])
