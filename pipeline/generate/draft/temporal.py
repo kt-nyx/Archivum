@@ -139,6 +139,26 @@ _MIXED_VALID_CATEGORY_TOKENS = (
 _DIRECT_NONCANON_TOKENS = ("non-canon", "non canon")
 _DIRECT_EXCLUSION_TOKENS = (*_DIRECT_NONCANON_TOKENS, "removed")
 _DEFER_CATEGORY_TOKENS = ("rpg", "roleplaying", "speculation", "potentially out-of-date")
+_CONTRACT_MATCH_FIELDS = (
+    "current_locations",
+    "current_factions",
+    "current_threats",
+    "active_conflicts",
+    "current_objectives",
+    "active_storylines",
+    "current_inhabitants",
+    "current_controller",
+    "active_encounters",
+)
+_CONTRACT_ID_KEYS = (
+    "location_id",
+    "faction_id",
+    "character_id",
+    "npc_id",
+    "entity_id",
+    "cluster_id",
+    "quest_ref",
+)
 
 
 @dataclass(frozen=True)
@@ -582,6 +602,191 @@ def _canonical_appearance(
     }
 
 
+def _contract_relation_for_item(
+    row: dict[str, Any],
+    item: dict[str, Any],
+    boundary: dict[str, Any],
+) -> dict[str, Any]:
+    """Return structural relation between an evidence item and the entry-state contract.
+
+    This deliberately uses exact entity labels/IDs already carried by metadata or the contract,
+    not lore keywords or substring scans over prose.
+    """
+    contract = boundary.get("entry_state_contract")
+    if not isinstance(contract, dict):
+        contract = {}
+    field_name = str(row.get("field_name", "")).strip()
+    build_meta = row.get("build_meta") or {}
+    source_id = _canonical_source_id(row, item)
+    candidate_labels, candidate_ids = _contract_candidate_terms(row, item)
+    matches: list[dict[str, Any]] = []
+    for contract_field in _CONTRACT_MATCH_FIELDS:
+        values = contract.get(contract_field)
+        if not isinstance(values, list):
+            continue
+        for entry in values:
+            if not isinstance(entry, dict):
+                continue
+            matched_on: list[str] = []
+            label = str(entry.get("label", "")).strip()
+            if label and _normalize_contract_term(label) in candidate_labels:
+                matched_on.append("label")
+            for id_key in _CONTRACT_ID_KEYS:
+                identifier = str(entry.get(id_key, "")).strip()
+                if identifier and _normalize_contract_term(identifier) in candidate_ids:
+                    matched_on.append(id_key)
+            entry_source_id = str(entry.get("source_id", "")).strip()
+            if entry_source_id and entry_source_id == source_id:
+                matched_on.append("source_id")
+            if not matched_on:
+                continue
+            matches.append(
+                {
+                    "contract_field": contract_field,
+                    "label": label,
+                    "source": str(entry.get("source", "")).strip(),
+                    "source_id": entry_source_id,
+                    "matched_on": sorted(set(matched_on)),
+                    "independent": _contract_match_is_independent(
+                        entry,
+                        field_name=field_name,
+                        source_id=source_id,
+                    ),
+                }
+            )
+    matched_labels = sorted(
+        {
+            str(match.get("label", "")).strip()
+            for match in matches
+            if str(match.get("label", "")).strip()
+        }
+    )
+    matched_fields = sorted(
+        {
+            str(match.get("contract_field", "")).strip()
+            for match in matches
+            if str(match.get("contract_field", "")).strip()
+        }
+    )
+    independent_matches = [match for match in matches if match.get("independent")]
+    return {
+        "matched": bool(matches),
+        "independent_match": bool(independent_matches),
+        "matched_fields": matched_fields,
+        "matched_labels": matched_labels[:8],
+        "match_count": len(matches),
+        "independent_match_count": len(independent_matches),
+        "candidate_labels": sorted(candidate_labels)[:8],
+        "candidate_ids": sorted(candidate_ids)[:8],
+        "matches": matches[:8],
+        "field_name": field_name,
+        "source_id": source_id,
+        "source_kind": str(build_meta.get("source_kind", "")).strip(),
+    }
+
+
+def _canonical_contract_relation(record: CanonicalEvidenceRecord) -> dict[str, Any]:
+    relations = [
+        _contract_relation_for_item(ref["row"], ref["item"], record.boundary)
+        for ref in record.refs
+    ]
+    matched_fields = sorted(
+        {
+            field
+            for relation in relations
+            for field in relation.get("matched_fields", [])
+            if str(field).strip()
+        }
+    )
+    matched_labels = sorted(
+        {
+            label
+            for relation in relations
+            for label in relation.get("matched_labels", [])
+            if str(label).strip()
+        }
+    )
+    return {
+        "matched": any(relation.get("matched") for relation in relations),
+        "independent_match": any(relation.get("independent_match") for relation in relations),
+        "matched_fields": matched_fields[:12],
+        "matched_labels": matched_labels[:12],
+        "appearance_relations": relations[:12],
+    }
+
+
+def _canonical_source_roles(record: CanonicalEvidenceRecord) -> list[str]:
+    roles: set[str] = set()
+    for appearance in record.appearances:
+        for key in ("raw_section_role", "section_role", "content_role", "auxiliary_role"):
+            role = str(appearance.get(key, "")).strip()
+            if role:
+                roles.add(role)
+    return sorted(roles)
+
+
+def _contract_relation_hint(relation: dict[str, Any], *, prefix: str) -> str:
+    fields = ",".join(str(field) for field in relation.get("matched_fields", [])[:4])
+    independent = "independent" if relation.get("independent_match") else "not_independent"
+    if fields:
+        return f"{prefix}:{independent}:{fields}"
+    return f"{prefix}:{independent}"
+
+
+def _contract_candidate_terms(row: dict[str, Any], item: dict[str, Any]) -> tuple[set[str], set[str]]:
+    build_meta = row.get("build_meta") or {}
+    labels: set[str] = set()
+    identifiers: set[str] = set()
+    for key in (
+        "faction_name",
+        "location_name",
+        "character_name",
+        "npc_name",
+        "entity_name",
+        "instance_name",
+    ):
+        _add_normalized_contract_term(labels, build_meta.get(key))
+    for key in ("source_title", "title", "label", "name"):
+        _add_normalized_contract_term(labels, item.get(key))
+    for key in (
+        "faction_id",
+        "location_id",
+        "character_id",
+        "npc_id",
+        "entity_id",
+        "cluster_id",
+        "quest_node_id",
+    ):
+        _add_normalized_contract_term(identifiers, build_meta.get(key))
+    return labels, identifiers
+
+
+def _add_normalized_contract_term(target: set[str], value: object) -> None:
+    text = _normalize_contract_term(value)
+    if text:
+        target.add(text)
+
+
+def _normalize_contract_term(value: object) -> str:
+    return " ".join(str(value or "").replace("_", " ").casefold().split())
+
+
+def _contract_match_is_independent(
+    entry: dict[str, Any],
+    *,
+    field_name: str,
+    source_id: str,
+) -> bool:
+    source = str(entry.get("source", "")).strip()
+    entry_source_id = str(entry.get("source_id", "")).strip()
+    if field_name in _PROFILE_CONTEXT_FIELD_NAMES:
+        if source in {"entry_profile_context", "llm_contract_distillation"}:
+            return False
+        if entry_source_id and entry_source_id == source_id:
+            return False
+    return True
+
+
 def classify_canonical_evidence_record(
     record: CanonicalEvidenceRecord,
     *,
@@ -778,13 +983,16 @@ def _canonical_decision_row(
         "run_id": run_id or "unknown",
         "source_id": record.source_id,
         "source_title": record.source_title,
+        "source_roles": _canonical_source_roles(record),
         "snippet_hash": hashlib.sha256(record.snippet.encode("utf-8")).hexdigest()[:20],
         "snippet": record.snippet[:_PROMPT_SNIPPET_LIMIT],
         "appearance_count": len(record.appearances),
         "appearances": record.appearances,
+        "contract_relation": _canonical_contract_relation(record),
         "deterministic_hints": [
             {
                 "temporal_scope": classification_row.scope,
+                "history_eligibility": classification_row.history_eligibility,
                 "confidence": classification_row.confidence,
                 "reason": classification_row.reason,
                 "structural_hint": classification_row.structural_hint,
@@ -1019,15 +1227,6 @@ def classify_evidence_item(
             quest_card_index=quest_card_index,
         )
 
-    if _is_entry_role(raw_role) or field_name == "boss_pool":
-        return TemporalClassification(
-            ENTRY_STATE,
-            0.86,
-            "entry_structural_role",
-            boundary_id,
-            "entry_section_or_roster",
-        )
-
     if _is_post_lore_role(raw_role):
         return TemporalClassification(
             POST_ACTIVE_LORE,
@@ -1035,6 +1234,44 @@ def classify_evidence_item(
             "later_report_or_book_section",
             boundary_id,
             "post_lore_source_role",
+        )
+
+    if field_name in _PROFILE_CONTEXT_FIELD_NAMES:
+        relation = _contract_relation_for_item(row, item, boundary)
+        if relation.get("independent_match"):
+            hint = _contract_relation_hint(relation, prefix="profile_context_contract_match")
+            if _is_entry_role(raw_role):
+                return TemporalClassification(
+                    ENTRY_STATE,
+                    0.68,
+                    "profile_context_tied_to_entry_state_contract",
+                    boundary_id,
+                    hint,
+                )
+            return TemporalClassification(
+                AMBIGUOUS_TEMPORAL,
+                0.52,
+                "profile_context_contract_match_requires_boundary_classification",
+                boundary_id,
+                hint,
+                fallback_mode="needs_llm",
+            )
+        return TemporalClassification(
+            AMBIGUOUS_TEMPORAL,
+            0.42,
+            "profile_context_identity_context_needs_independent_entry_contract",
+            boundary_id,
+            _contract_relation_hint(relation, prefix="profile_context_no_independent_contract_match"),
+            fallback_mode="needs_llm",
+        )
+
+    if _is_entry_role(raw_role) or field_name == "boss_pool":
+        return TemporalClassification(
+            ENTRY_STATE,
+            0.86,
+            "entry_structural_role",
+            boundary_id,
+            "entry_section_or_roster",
         )
 
     if field_name in _CURRENT_FIELD_NAMES:
@@ -1053,15 +1290,6 @@ def classify_evidence_item(
             "current_field_boundary_context",
             boundary_id,
             "current_field",
-        )
-
-    if field_name in _PROFILE_CONTEXT_FIELD_NAMES:
-        return TemporalClassification(
-            ENTRY_STATE,
-            0.62,
-            "profile_context_after_temporal_filtering",
-            boundary_id,
-            "profile_context",
         )
 
     if field_name == "history_digest":
@@ -1248,6 +1476,7 @@ def _canonical_prompt_item(record: CanonicalEvidenceRecord) -> dict[str, Any]:
         "candidate_history_eligibility": classification.history_eligibility,
         "candidate_reason": classification.reason,
         "source_title": record.source_title,
+        "source_roles": _canonical_source_roles(record),
         "snippet": record.snippet[:_PROMPT_SNIPPET_LIMIT],
         "appearances": record.appearances[:12],
         "appearance_field_names": sorted(
@@ -1257,6 +1486,7 @@ def _canonical_prompt_item(record: CanonicalEvidenceRecord) -> dict[str, Any]:
                 if str(appearance.get("field_name", "")).strip()
             }
         ),
+        "contract_relation": _canonical_contract_relation(record),
         "deterministic_labels": [
             {
                 "temporal_scope": classification_row.scope,
@@ -1285,6 +1515,12 @@ def _temporal_adjudication_system_prompt(*, canonical: bool = False) -> str:
         "expansion chronology or named-era keywords. Use the structured entry-state "
         "contract inside the active-content boundary as the primary current-state context; "
         "then use source structure, quest/roster linkage, and the paragraph text.\n\n"
+        "The key question is not 'which expansion or named era is later?' It is whether the "
+        "paragraph is before, part of, an outcome of, or after/outside the playable entry "
+        "state described by the contract. A paragraph can happen long after an origin story, "
+        "fall, founding, or first invasion and still be pre_entry_history if it is background "
+        "for the contract's current state. Paragraphs mentioning heroes, adventurers, orders, "
+        "campaigns, or wars are not post_active_lore by that fact alone.\n\n"
         "Labels:\n"
         "- pre_entry_history: background that happened before the player enters this content.\n"
         "- entry_state: the current setup visible or true as the player arrives.\n"
@@ -1299,6 +1535,14 @@ def _temporal_adjudication_system_prompt(*, canonical: bool = False) -> str:
         "current entry state.\n"
         "- excluded_noncanon: RPG-only, removed, speculative, or non-retail/non-canon material.\n"
         "- ambiguous_temporal: still unclear relative to the entry boundary.\n\n"
+        "Profile/context pages need extra caution. Faction, character, location, parent, "
+        "related-lore, and instance-lore profile paragraphs are identity context unless "
+        "the contract_relation shows an independent entry-state match or local source "
+        "structure ties them to this page's current setup. Do not classify generic profile "
+        "history as entry_state just because the profile page itself was fetched. If a "
+        "contract-tied profile paragraph describes older background for why that current "
+        "entity matters, prefer pre_entry_history or history_setup_bridge over a forced "
+        "entry_state label.\n\n"
         "History eligibility labels:\n"
         "- history_background: origin, fall, or background that belongs in a history card.\n"
         "- history_setup_bridge: a transition/setup paragraph that explains the current "

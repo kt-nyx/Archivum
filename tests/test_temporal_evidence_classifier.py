@@ -178,7 +178,7 @@ def test_mixed_valid_rpg_categories_do_not_drop_current_retail_source(monkeypatc
     )
 
     assert _scope(enriched[0]) == ENTRY_STATE
-    assert _scope(enriched[1]) == ENTRY_STATE
+    assert _scope(enriched[1]) == AMBIGUOUS_TEMPORAL
     assert _scope(enriched[2]) == EXCLUDED_NONCANON
 
 
@@ -281,6 +281,170 @@ def test_boundary_llm_classifies_unregistered_war_names(monkeypatch) -> None:
     assert decisions[0]["temporal_fallback_mode"] == "llm_boundary"
     assert decisions[1]["history_eligibility"] == HISTORY_SETUP_BRIDGE
     assert decisions[1]["temporal_event_label"] == "war against the Lich King"
+
+
+def test_contract_aware_llm_keeps_background_campaign_pre_entry(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "pipeline.generate.draft.temporal._llm_temporal_adjudication_disabled",
+        lambda: False,
+    )
+
+    def fake_llm_json_with_retry(**kwargs):
+        assert "The key question is not" in kwargs["system_prompt"]
+        assert "generic profile history" in kwargs["system_prompt"]
+        payload = json.loads(kwargs["user_prompt"])
+        contract = payload["active_content_boundary"]["entry_state_contract"]
+        assert contract["active_storylines"][0]["label"] == "Battle for the Town"
+        assert contract["current_factions"][0]["label"] == "Argent Crusade"
+        items = payload["items"]
+        assert items[0]["contract_relation"]["matched"] is False
+        assert "source_roles" in items[0]
+        return {
+            "classifications": [
+                _classification_for_prompt_item(
+                    items[0],
+                    temporal_scope=PRE_ENTRY_HISTORY,
+                    history_eligibility=HISTORY_BACKGROUND,
+                    rationale="The campaign is background before the contract's current conflict.",
+                    history_rationale="It explains the zone before the entry-state storyline.",
+                    event_label="earlier cauldron campaign",
+                )
+            ]
+        }
+
+    monkeypatch.setattr("pipeline.generate.draft.temporal.llm_json_with_retry", fake_llm_json_with_retry)
+    rows = [
+        _row(
+            "history_digest",
+            "The Argent Dawn once led a campaign against plague cauldrons across the farms.",
+            "history",
+        ),
+    ]
+
+    enriched, decisions, _boundary, canonical = enrich_evidence_temporal_metadata(
+        rows,
+        fact_packs_by_entity={
+            "zone-example": {
+                "entity_id": "zone-example",
+                "entity_type": "zone",
+                "name": "Example Zone",
+            }
+        },
+        questline_card_metadata={
+            "cluster-1": {
+                "zone_id": "zone-example",
+                "display_title": "Battle for the Town",
+                "faction": "Argent Crusade",
+                "registry_chain_refs": ["q1", "q2", "q3"],
+            }
+        },
+        quest_records_by_node={
+            "q1": {"node_id": "q1", "description": "The order stages at its reclaimed base."},
+            "q2": {"node_id": "q2", "description": "A commander asks for help at the front."},
+            "q3": {"node_id": "q3", "description": "A late report describes the result."},
+        },
+        run_id="test",
+        return_boundary_decisions=True,
+        return_canonical_decisions=True,
+    )
+
+    assert _scope(enriched[0]) == PRE_ENTRY_HISTORY
+    assert _history_eligibility(enriched[0]) == HISTORY_BACKGROUND
+    assert decisions[0]["temporal_event_label"] == "earlier cauldron campaign"
+    assert canonical[0]["contract_relation"]["matched"] is False
+
+
+def test_profile_context_without_independent_contract_match_is_ambiguous(monkeypatch) -> None:
+    monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
+    row = _row(
+        "location_pool",
+        "Hearthglen is a fortified town with a long history.",
+        "lead",
+        build_meta={
+            "source_id": "src-hearthglen-profile",
+            "location_id": "location-hearthglen",
+            "location_name": "Hearthglen",
+        },
+    )
+
+    enriched, decisions, _boundary, canonical = enrich_evidence_temporal_metadata(
+        [row],
+        fact_packs_by_entity={
+            "zone-example": {
+                "entity_id": "zone-example",
+                "entity_type": "zone",
+                "name": "Example Zone",
+            }
+        },
+        run_id="test",
+        return_boundary_decisions=True,
+        return_canonical_decisions=True,
+    )
+
+    assert _scope(enriched[0]) == AMBIGUOUS_TEMPORAL
+    assert "needs_independent_entry_contract" in decisions[0]["temporal_reason"]
+    assert canonical[0]["contract_relation"]["matched"] is True
+    assert canonical[0]["contract_relation"]["independent_match"] is False
+
+
+def test_profile_context_with_independent_contract_match_can_be_entry_state(monkeypatch) -> None:
+    monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
+    rows = [
+        _row(
+            "questline_pool",
+            "The order asks adventurers to secure the road.",
+            "quest",
+            build_meta={"cluster_id": "cluster-1", "quest_node_id": "q1"},
+        ),
+        _row(
+            "faction_pool",
+            "The Argent Crusade is an order dedicated to cleansing undead threats.",
+            "lead",
+            build_meta={
+                "source_id": "src-argent-profile",
+                "faction_id": "faction-argent-crusade",
+                "faction_name": "Argent Crusade",
+            },
+        ),
+    ]
+
+    enriched, decisions, _boundary, canonical = enrich_evidence_temporal_metadata(
+        rows,
+        fact_packs_by_entity={
+            "zone-example": {
+                "entity_id": "zone-example",
+                "entity_type": "zone",
+                "name": "Example Zone",
+            }
+        },
+        questline_card_metadata={
+            "cluster-1": {
+                "zone_id": "zone-example",
+                "display_title": "Road Defense",
+                "faction": "Argent Crusade",
+                "registry_chain_refs": ["q1", "q2"],
+            }
+        },
+        quest_records_by_node={
+            "q1": {"node_id": "q1", "description": "The order asks for help on the road."},
+            "q2": {"node_id": "q2", "description": "A later report describes the result."},
+        },
+        run_id="test",
+        return_boundary_decisions=True,
+        return_canonical_decisions=True,
+    )
+
+    assert _scope(enriched[0]) == ENTRY_STATE
+    assert _scope(enriched[1]) == ENTRY_STATE
+    assert "tied_to_entry_state_contract" in decisions[1]["temporal_reason"]
+    profile_decision = next(
+        row
+        for row in canonical
+        if row["canonical_evidence_id"]
+        == enriched[1]["evidence_items"][0]["canonical_evidence_id"]
+    )
+    assert profile_decision["contract_relation"]["independent_match"] is True
+    assert "current_factions" in profile_decision["contract_relation"]["matched_fields"]
 
 
 def test_current_field_from_history_section_requires_boundary_llm(monkeypatch) -> None:

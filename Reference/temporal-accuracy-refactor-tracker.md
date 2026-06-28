@@ -325,7 +325,7 @@ Eventually:
 
 ## Slice 0 - Baseline Audit And Instrumentation
 
-Status: Not started
+Status: Verified
 
 Goal: make the current failure modes mechanically visible before changing behavior.
 
@@ -370,6 +370,35 @@ Acceptance:
 - Full suite still passes.
 - New tests fail or xfail only where they intentionally describe not-yet-implemented behavior.
 - There is a reusable helper for comparing labels to final draft omissions.
+
+Implementation notes:
+
+- Added `tests/temporal_run_artifact_helpers.py` with `summarize_temporal_run_artifacts(...)`.
+- The helper reads fixture-like run directories and summarizes:
+  - boundary anchors by subject;
+  - canonical paragraph labels by subject and appearance fields;
+  - history-eligible canonical snippets absent from final history text;
+  - restricted outcome/post-active/noncanon snippets appearing in final history/current/faction/
+    character text;
+  - present/missing temporal decision sidecars.
+- Review-cycle refinement: presence/leak checks now match exact normalized sentence/clause
+  fragments as well as whole snippets, so copied subparts of a source paragraph are mechanically
+  visible without adding semantic matching.
+- Added `tests/test_temporal_run_artifacts.py` with distilled artifact fixtures instead of live
+  `artifacts/runs/test-run-wpl-3` dependencies.
+- Tests now distinguish:
+  - classifier-level labels, such as Shadow Council `post_active_lore` and Lilian completion
+    `active_storyline_outcome`;
+  - downstream synthesis/coverage omissions, such as an eligible Hearthglen setup bridge missing
+    from final history;
+  - restricted-label leaks into spoiler-sensitive final fields.
+- Added an intentional `xfail` for mixed setup/outcome paragraphs until claim extraction lands.
+- Added a skipped future-sidecar existence check for claim and coverage sidecars.
+
+Validation:
+
+- `uv run pytest tests/test_temporal_run_artifacts.py tests/test_temporal_evidence_classifier.py tests/test_entry_state_contract.py -q`
+- `uv run pytest -q`
 
 Risks:
 
@@ -496,7 +525,7 @@ Risks:
 
 ## Slice 2 - Contract-Aware Paragraph Classification
 
-Status: Not started
+Status: Verified
 
 Goal: improve current paragraph-level classification before claim extraction lands.
 
@@ -563,6 +592,31 @@ Acceptance:
 - `test-run-wpl` equivalent run should show improved WPL history eligibility before changing
   claim extraction.
 - Existing Scholomance pass should not regress.
+
+Implementation notes:
+
+- Moved profile/context field handling ahead of generic entry-role handling in
+  `pipeline/generate/draft/temporal.py`.
+- Profile/context evidence now becomes deterministic `entry_state` only when it has an independent
+  match against the entry-state contract. Self-generated `entry_profile_context` contract entries
+  and same-source profile snippets do not count as independent ties.
+- Profile/context evidence without an independent contract tie becomes `ambiguous_temporal` with
+  `needs_llm`, preserving it for boundary adjudication without forcing it into current summaries.
+- Later report/book/source-role evidence still receives deterministic `post_active_lore`.
+- Added exact-label/ID contract relation metadata to canonical decision rows and LLM prompt items:
+  `contract_relation`, `source_roles`, and richer deterministic hints.
+- Revised the LLM rubric to classify relative to the entry-state contract rather than named eras,
+  explicitly noting that events later than an origin/fall can still be `pre_entry_history`.
+- Added tests for:
+  - contract-aware LLM classification of an earlier cauldron-style campaign as
+    `pre_entry_history`;
+  - profile evidence not self-promoting into `entry_state`;
+  - independently contract-tied profile evidence remaining usable as `entry_state`.
+
+Validation:
+
+- `uv run pytest tests/test_temporal_evidence_classifier.py tests/test_entry_state_contract.py -q`
+- `uv run pytest -q`
 
 Risks:
 
