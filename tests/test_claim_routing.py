@@ -202,3 +202,52 @@ def test_route_claim_views_for_pool_returns_paragraphs_without_sidecar() -> None
     paragraph_pool = [{"snippet": "A paragraph-only evidence item."}]
 
     assert route_claim_views_for_pool(paragraph_pool, "history") == paragraph_pool
+
+
+def test_prefer_entry_state_first_promotes_entry_state_claims() -> None:
+    from pipeline.generate.draft.claim_routing import prefer_entry_state_first
+
+    pool = [
+        {"snippet": "old origin", "temporal_scope": "pre_entry_history", "is_claim_view": True},
+        {"snippet": "current state", "temporal_scope": "entry_state", "is_claim_view": True},
+        {"snippet": "active fight", "temporal_scope": "active_storyline", "is_claim_view": True},
+    ]
+
+    ordered = prefer_entry_state_first(pool)
+
+    assert [item["snippet"] for item in ordered] == ["current state", "active fight", "old origin"]
+
+
+def test_prefer_entry_state_first_tiebreaks_on_safe_entry_context() -> None:
+    from pipeline.generate.draft.claim_routing import prefer_entry_state_first
+
+    pool = [
+        {
+            "snippet": "background identity",
+            "temporal_scope": "entry_state",
+            "spoiler_safety": "safe_background",
+            "is_claim_view": True,
+        },
+        {
+            "snippet": "entry context",
+            "temporal_scope": "entry_state",
+            "spoiler_safety": "safe_entry_context",
+            "is_claim_view": True,
+        },
+    ]
+
+    ordered = prefer_entry_state_first(pool)
+
+    assert [item["snippet"] for item in ordered] == ["entry context", "background identity"]
+
+
+def test_prefer_entry_state_first_is_noop_without_claim_views() -> None:
+    from pipeline.generate.draft.claim_routing import prefer_entry_state_first
+
+    paragraph_pool = [
+        {"snippet": "first paragraph", "temporal_scope": "pre_entry_history"},
+        {"snippet": "second paragraph", "temporal_scope": "entry_state"},
+    ]
+
+    # Identity preserved (same object) so offline paragraph pools are byte-identical.
+    assert prefer_entry_state_first(paragraph_pool) is paragraph_pool

@@ -30,6 +30,47 @@ def _item(
     }
 
 
+def _claim_item(snippet: str, *, temporal_scope: str, source_id: str = "src-zone") -> dict:
+    return {
+        "snippet": snippet,
+        "section_role": "lead",
+        "raw_section_role": "lead",
+        "source_id": source_id,
+        "block_index": 0,
+        "temporal_scope": temporal_scope,
+        "spoiler_safety": "safe_entry_context",
+        "is_claim_view": True,
+    }
+
+
+def test_at_a_glance_prefers_entry_state_claims_over_old_origin() -> None:
+    """Slice 8 task 2: with claim views, entry-state identity outranks older origin claims."""
+    pool = [
+        _claim_item("The order was founded in a distant age.", temporal_scope="pre_entry_history"),
+        _claim_item("The order now garrisons the keep and holds the road.", temporal_scope="entry_state"),
+    ]
+
+    selected = select_at_a_glance_pool(pool)
+
+    assert selected[0]["snippet"] == "The order now garrisons the keep and holds the road."
+
+
+def test_currently_prefers_entry_state_claims() -> None:
+    """Slice 8 task 1: the current pool anchors on entry-state before older background."""
+    pool = {
+        "currently_pool": [
+            _claim_item("The order keeps a long lineage of scholars.", temporal_scope="pre_entry_history"),
+            _claim_item("The valley is contested by rival forces.", temporal_scope="entry_state"),
+        ]
+    }
+
+    selected = select_currently_pool(pool)
+
+    assert selected[0]["snippet"] == "The valley is contested by rival forces."
+    # Both safe claims survive; the reorder (not exclusion) is what promotes the entry-state one.
+    assert len(selected) == 2
+
+
 def test_history_heading_prefers_distinct_subsection_text() -> None:
     """#8: distinct history subsections get distinct headings, not a single constant.
 

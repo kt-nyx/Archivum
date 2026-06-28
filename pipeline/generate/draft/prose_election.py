@@ -7,6 +7,7 @@ from typing import Any
 
 from pipeline.common.draft_vocab import era_section_role_tokens
 from pipeline.common.wiki_evidence_filters import should_exclude_from_history
+from pipeline.generate.draft.claim_routing import prefer_entry_state_first
 from pipeline.generate.draft.prose_lint import (
     MAX_AT_A_GLANCE_WORDS,
     MAX_HISTORY_SECTIONS,
@@ -101,6 +102,9 @@ def select_at_a_glance_pool(items: list[dict[str, Any]]) -> list[dict[str, Any]]
             -word_count(str(row.get("snippet", ""))),
         ),
     )
+    # Slice 8 task 2: prefer entry-state identity claims over older origin claims when both are
+    # present. Claim-only and stable, so paragraph-fallback pools are unchanged.
+    ranked = prefer_entry_state_first(ranked)
     return _dedupe_items(ranked, max_items=_AT_A_GLANCE_MAX_ITEMS)
 
 
@@ -221,13 +225,15 @@ def select_currently_pool(
     ):
         selected = tier()
         if selected:
-            return _dedupe_items(selected, max_items=12)
+            # Slice 8 task 1: prefer entry-state / safe-entry-context claims before older background
+            # so the current summary anchors on the present. Claim-only and stable (no-op offline).
+            return _dedupe_items(prefer_entry_state_first(selected), max_items=12)
     fallback = [
         item
         for item in currently_items
         if not _is_excluded_currently_snippet(str(item.get("snippet", "")), zone_name=zone_name)
     ]
-    return _dedupe_items(fallback, max_items=12)
+    return _dedupe_items(prefer_entry_state_first(fallback), max_items=12)
 
 
 def _history_sort_key(row: dict[str, Any]) -> tuple[int, str]:

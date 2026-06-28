@@ -1157,7 +1157,7 @@ Review cycle (2026-06-28):
 
 ## Slice 8 - Current, At-A-Glance, And Faction Routing From Claims
 
-Status: Not started
+Status: Landed (faction inclusion support deferred — see notes)
 
 Goal: use claim labels and entry-state contract to improve current summaries and faction cards.
 
@@ -1215,6 +1215,43 @@ Risks:
 
 - Faction selection policy still has editorial ambiguity. This slice should focus on temporal
   routing and evidence quality; final inclusion policy may need separate review.
+
+Implementation notes:
+
+- Much of this slice's temporal routing was already delivered by Slice 6, which wired
+  `currently_pool` -> `CURRENTLY_ROUTE`, `at_a_glance_pool` -> `AT_A_GLANCE_ROUTE`, and
+  `faction_pool` / `faction_role_pool` -> `FACTION_CONTEXT_ROUTE`. Those routes already hard-block
+  outcome / post-active scopes and unsafe spoiler labels (tasks 1 "exclude outcome/post-active" and
+  4 "avoid past-tense active outcomes"). `test_claim_routing` already pins that a mixed paragraph's
+  Andorhal outcome is excluded from currently/at-a-glance/history.
+- Faction prose is already outcome-safe without extra work: `collect_faction_candidates` builds each
+  candidate's `profile_items` / `seed_mentions` from the routed `faction_pool` / `faction_role_pool`,
+  and `_iter_evidence_items` with a `claim_route` emits only the safe routed claim views (it does not
+  fall through to the source paragraph), so the synthesizer never receives an outcome claim to
+  repeat. An avoid-hint would be redundant here, unlike key characters where the boss pool keeps its
+  paragraph form.
+- New in this slice (tasks 1-2): `claim_routing.prefer_entry_state_first(...)` stable-sorts a routed
+  pool so `entry_state` / `active_storyline` claims precede older `pre_entry_history` background, with
+  `safe_entry_context` preferred over other safe labels at the same scope. It is a no-op when the
+  pool has no claim views, so offline paragraph-fallback pools (and their gold output) are
+  byte-identical. Applied in `prose_election.select_currently_pool` and `select_at_a_glance_pool`.
+- Deferred (tasks 3 and 5 — faction candidate support from the entry-state contract / claim entities,
+  and instance contract-driven faction inclusion): faction inclusion is editorial, not structural
+  (see the project memory "Faction set is editorial, not structural" and `test_faction_scoring`,
+  which pins elected sets by score). Changing candidate scoring would risk those curated sets for no
+  temporal-correctness gain, and this slice's own risk note says inclusion policy needs separate
+  review. The temporal-safety guarantee (no outcome/post-active in faction prose) is already met by
+  routing; contract-driven inclusion support is left for a dedicated editorial pass.
+
+Validation:
+
+- `.venv/Scripts/python.exe -m pytest tests/test_claim_routing.py tests/test_prose_election.py
+  tests/test_zone_prose_draft.py tests/test_zone_faction_draft.py tests/test_faction_scoring.py -q`
+- `.venv/Scripts/python.exe -m pytest -q` — 878 passed, 5 skipped, 1 xfailed.
+- `.venv/Scripts/python.exe -m ruff check` (changed files) and targeted `mypy` clean;
+  `git diff --check` clean.
+- Added tests: `prefer_entry_state_first` ordering / tiebreak / paragraph no-op; and the currently +
+  at-a-glance selectors promoting entry-state claims.
 
 ## Slice 9 - Key Character Spoiler-Safe Evidence
 
@@ -1582,3 +1619,7 @@ Add dated entries here as slices move.
 - 2026-06-28: Slice 9 reviewed and verified. Confirmed boss-pool claim-view carry and the safe
   rename; fixed a misleading paragraph-fallback audit code (now `paragraph_fallback`); logged a
   residual roster-paragraph gap for Slice 12. Full suite 873 passed / 5 skipped / 1 xfailed.
+- 2026-06-28: Slice 8 landed entry-state preference ordering for currently/at-a-glance
+  (`prefer_entry_state_first`); confirmed Slice 6 already routes these fields and faction prose is
+  outcome-safe; deferred contract-driven faction inclusion (editorial). Full suite 878 passed /
+  5 skipped / 1 xfailed; ruff + mypy clean.

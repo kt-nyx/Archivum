@@ -185,6 +185,37 @@ def item_has_claim_views(item: dict[str, Any]) -> bool:
     return isinstance(views, list) and bool(views)
 
 
+# Current/at-a-glance prefer entry-state identity over older background within the safe pool
+# (Slice 8 tasks 1-2). Lower rank sorts first.
+_CURRENT_SCOPE_PREFERENCE = {
+    ENTRY_STATE: 0,
+    ACTIVE_STORYLINE: 1,
+    PRE_ENTRY_HISTORY: 2,
+}
+
+
+def prefer_entry_state_first(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Stable-sort a claim-routed pool so entry-state / active claims precede older background.
+
+    A no-op when the pool contains no claim views, so offline paragraph-fallback pools stay
+    byte-identical (and their gold output is unchanged). Within a claim pool the sort is stable:
+    claims of equal temporal preference keep their incoming order, and ``safe_entry_context`` is
+    preferred over other safe labels at the same scope (Slice 8 task 1).
+    """
+    if not any(isinstance(item, dict) and item.get("is_claim_view") for item in items):
+        return items
+
+    def _rank(item: dict[str, Any]) -> tuple[int, int]:
+        if not (isinstance(item, dict) and item.get("is_claim_view")):
+            return (1, 1)
+        scope = str(item.get("temporal_scope", "")).strip()
+        scope_rank = _CURRENT_SCOPE_PREFERENCE.get(scope, 1)
+        spoiler_rank = 0 if str(item.get("spoiler_safety", "")).strip() == SAFE_ENTRY_CONTEXT else 1
+        return (scope_rank, spoiler_rank)
+
+    return sorted(items, key=_rank)
+
+
 def key_character_unsafe_claim_views(
     items: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
