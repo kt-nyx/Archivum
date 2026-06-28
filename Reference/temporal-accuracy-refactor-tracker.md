@@ -1218,7 +1218,7 @@ Risks:
 
 ## Slice 9 - Key Character Spoiler-Safe Evidence
 
-Status: Not started
+Status: Landed
 
 Goal: stop key-character summaries from using unsafe encounter outcomes or mechanics-state snippets
 as general pre-entry lore.
@@ -1274,6 +1274,44 @@ Risks:
 
 - Some characters only have encounter/mechanics evidence. Structural fallback must be acceptable
   and conservative.
+
+Implementation notes:
+
+- Builds directly on Slice 6's `KEY_CHARACTER_ROUTE`, which already drops outcome/mechanics claim
+  views from character prose. Slice 9 adds the remaining clarification-1 pieces: exclusion hints,
+  a robust structural fallback path, and a safe/unsafe evidence audit trail.
+- `claim_routing.key_character_unsafe_claim_views(...)` returns the encounter-mechanics / outcome /
+  completion claim views in a pool (`spoiler_safety in {active_mechanics_state, active_outcome,
+  unsafe_completion_detail}`). They are used only as exclusion hints, never as content. A pool with
+  no claim views yields an empty list, so the paragraph-fallback path is untouched.
+- `synthesize_key_character_summary(..., avoid_hints=...)` appends a "do not state/imply these
+  in-encounter mechanics or outcomes" directive (live path only). The offline deterministic
+  fallback ignores it.
+- `pages/key_characters._finalize_key_characters`:
+  - routes the safe summary pool via `KEY_CHARACTER_ROUTE`; if it is empty (claims present but all
+    spoiler-unsafe), falls back to the restrained `_structural_presence_summary_pool` rather than
+    letting spoiler text write the card;
+  - passes `avoid_hints` to the synthesizer only when unsafe claims exist (so monkeypatched test
+    stubs without `**kwargs` and the offline path are unaffected);
+  - records `summary_evidence:safe={n}:unsafe={m}` and, when the structural fallback was used,
+    `summary_source:structural_presence` in each card's `decision_reason_codes` (the per-character
+    decision record that ships in the draft).
+- Scope decision: the paragraph-fallback path (no claim sidecar, e.g. offline NO_LLM runs) is left
+  unchanged. The cited leaks (`Lilian Voss defeated`, `Course: Reeducation`) are claim-level signals
+  that exist in live OpenAI runs, where `KEY_CHARACTER_ROUTE` now blocks them; disallowing unlabeled
+  boss-paragraph prose offline would regress deterministic instance tests that legitimately build
+  summaries from roster paragraphs.
+
+Validation:
+
+- `.venv/Scripts/python.exe -m pytest tests/test_build_instance_key_character_selection.py
+  tests/test_instance_page_draft.py tests/test_instance_pilot_gold_standard.py
+  tests/test_claim_routing.py -q`
+- `.venv/Scripts/python.exe -m pytest -q` — 873 passed, 5 skipped, 1 xfailed.
+- `.venv/Scripts/python.exe -m ruff check` (changed files) and targeted `mypy` clean;
+  `git diff --check` clean.
+- Added three tests: unsafe-claim exclusion + avoid-hints + safe/unsafe counts; structural fallback
+  when only unsafe claims exist; paragraph-fallback path unchanged when no claim views are present.
 
 ## Slice 10 - Claim-Aware Location And Glossary Filtering
 
@@ -1517,3 +1555,6 @@ Add dated entries here as slices move.
 - 2026-06-28: Slice 7 reviewed and verified. Fixed retry anti-verbatim gate corpus (pre-cap pool)
   and hardened hard-ceiling bridge provenance; added live-retry and ceiling-fold regression tests.
   Full suite 870 passed / 5 skipped / 1 xfailed; ruff + mypy clean.
+- 2026-06-28: Slice 9 landed key-character spoiler-safe evidence (unsafe-claim exclusion hints,
+  structural fallback, safe/unsafe sidecar reason codes). Full suite 873 passed / 5 skipped /
+  1 xfailed; ruff + mypy clean.

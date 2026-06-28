@@ -1030,6 +1030,7 @@ def synthesize_key_character_summary(
     instance_name: str,
     structural_role: str = "",
     max_words: int = 50,
+    avoid_hints: list[str] | None = None,
 ) -> tuple[str, list[str]]:
     if not items:
         return "", []
@@ -1050,6 +1051,22 @@ def synthesize_key_character_summary(
             instance_name=instance_name,
             max_words=max_words,
         )
+    task_lines = (
+        f"Write a key-character card summary for '{boss_name}' in instance "
+        f"'{instance_name}' using ONLY evidence. Maximum {max_words} words. "
+        f"Align with the precomputed structural role '{structural_role or 'uncertain'}' "
+        "without using meta labels as prose. Describe why the character is present here "
+        "at entry state. No generic stubs, no current-storyline outcomes."
+    )
+    if avoid_hints:
+        # Spoiler exclusion hints (Slice 9): encounter mechanics / outcome claims a newly arriving
+        # player has not yet seen. Pass them as things to avoid, never as usable content.
+        joined = "; ".join(hint for hint in avoid_hints if hint)
+        if joined:
+            task_lines += (
+                " Do not state, imply, or hint at these in-encounter mechanics or outcomes: "
+                f"{joined}."
+            )
     result = llm_json_with_retry(
         required_keys=("summary", "used_evidence_ids"),
         response_json_schema={
@@ -1063,13 +1080,7 @@ def synthesize_key_character_summary(
         },
         system_prompt=instance_system_prompt(
             field_voice=KEY_CHARACTER_VOICE,
-            task_lines=(
-                f"Write a key-character card summary for '{boss_name}' in instance "
-                f"'{instance_name}' using ONLY evidence. Maximum {max_words} words. "
-                f"Align with the precomputed structural role '{structural_role or 'uncertain'}' "
-                "without using meta labels as prose. Describe why the character is present here "
-                "at entry state. No generic stubs, no current-storyline outcomes."
-            ),
+            task_lines=task_lines,
         ),
         user_prompt=f"Evidence:\n{_format_evidence_block(items)}",
         response_schema_name="wiki_first_key_character_summary",

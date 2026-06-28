@@ -54,6 +54,10 @@ CLAIM_ROUTES = frozenset(
     }
 )
 
+_KEY_CHARACTER_UNSAFE_SPOILER = frozenset(
+    {ACTIVE_MECHANICS_STATE, ACTIVE_OUTCOME, UNSAFE_COMPLETION_DETAIL}
+)
+
 _HISTORY_ELIGIBLE = frozenset({HISTORY_BACKGROUND, HISTORY_SETUP_BRIDGE})
 _SAFE_CONTEXT = frozenset({SAFE_BACKGROUND, SAFE_ENTRY_CONTEXT, SAFE_SETUP_HOOK, ENCOUNTER_SETUP})
 _UNSAFE_CONTEXT = frozenset(
@@ -179,6 +183,39 @@ def build_claim_view_routing_decisions(
 def item_has_claim_views(item: dict[str, Any]) -> bool:
     views = item.get(CLAIM_VIEW_KEY)
     return isinstance(views, list) and bool(views)
+
+
+def key_character_unsafe_claim_views(
+    items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Claim views barred from key-character prose by spoiler safety (clarification question 1).
+
+    These are encounter-mechanics / outcome / completion claims (e.g. ``Lilian Voss defeated``,
+    ``Course: Reeducation``). They are returned only so the synthesizer can be told what NOT to say;
+    they are never usable summary content. A pool with no claim views yields an empty list, so the
+    paragraph-fallback path is unaffected.
+    """
+    unsafe: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        views = item.get(CLAIM_VIEW_KEY)
+        if not isinstance(views, list):
+            continue
+        for view in views:
+            if not isinstance(view, dict):
+                continue
+            if str(view.get("spoiler_safety", "")).strip() in _KEY_CHARACTER_UNSAFE_SPOILER:
+                key = (
+                    str(view.get("claim_id", "")).strip(),
+                    str(view.get("claim_text", "")).strip(),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                unsafe.append(view)
+    return unsafe
 
 
 def route_claim_views_for_item(item: dict[str, Any], route: str) -> list[dict[str, Any]]:

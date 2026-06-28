@@ -228,3 +228,172 @@ def test_finalize_keeps_structural_role_when_summary_mentions_ally(monkeypatch) 
     assert cards
     assert cards[0]["role"] == "enemy"
     assert "role:ally:summary_ally_descriptor" not in cards[0]["decision_reason_codes"]
+
+
+def _claim_view(
+    *,
+    snippet: str,
+    source_id: str,
+    claim_id: str,
+    spoiler_safety: str,
+    temporal_scope: str = "entry_state",
+) -> dict:
+    return {
+        "snippet": snippet,
+        "claim_text": snippet,
+        "source_excerpt": snippet,
+        "source_id": source_id,
+        "claim_id": claim_id,
+        "canonical_evidence_id": f"canonical-{claim_id}",
+        "field_name": "boss_pool",
+        "temporal_scope": temporal_scope,
+        "spoiler_safety": spoiler_safety,
+        "is_claim_view": True,
+    }
+
+
+def _boss_pool_item_with_claims(views: list[dict]) -> dict:
+    return {
+        "source_id": "src-roster",
+        "snippet": "Roster paragraph naming the academy faculty.",
+        "section_role": "dungeon_journal",
+        "_claim_views": views,
+    }
+
+
+def _gandling_candidate(pool: list[dict]) -> BossCandidate:
+    return BossCandidate(
+        boss_id="character-darkmaster-gandling",
+        name="Darkmaster Gandling",
+        wiki_url="https://warcraft.wiki.gg/wiki/Darkmaster_Gandling",
+        source_section_role="dungeon_journal",
+        profile_pool=pool,
+        role="enemy",
+        role_reason="enemy_section",
+    )
+
+
+def test_finalize_excludes_unsafe_claims_and_passes_avoid_hints(monkeypatch) -> None:
+    """Slice 9: mechanics/outcome claims never reach prose, only the avoid-hints (clarification 1)."""
+    captured: dict = {}
+
+    def _synth(pool, *, boss_name, instance_name, structural_role="", **kwargs):
+        captured["pool_snippets"] = [row.get("snippet") for row in pool]
+        captured["avoid_hints"] = kwargs.get("avoid_hints")
+        return (
+            "Darkmaster Gandling is the stern headmaster who commands Scholomance's hostile faculty.",
+            ["src-roster"],
+        )
+
+    monkeypatch.setattr(key_character_page, "synthesize_key_character_summary", _synth)
+
+    pool = [
+        _boss_pool_item_with_claims(
+            [
+                _claim_view(
+                    snippet="Darkmaster Gandling commands the academy faculty.",
+                    source_id="src-roster",
+                    claim_id="claim-safe",
+                    spoiler_safety="safe_entry_context",
+                ),
+                _claim_view(
+                    snippet="Lilian Voss is defeated in the upper study.",
+                    source_id="src-roster",
+                    claim_id="claim-unsafe",
+                    spoiler_safety="active_mechanics_state",
+                ),
+            ]
+        )
+    ]
+    cards, _prov, _used = key_character_page._finalize_key_characters(
+        instance_name="Scholomance",
+        boss_candidates=[_gandling_candidate(pool)],
+        boss_pool=pool,
+        revision_map={"src-roster": "mw:1"},
+        selection_reasons={"Darkmaster Gandling": "must_include_floor"},
+    )
+
+    assert cards
+    # Only the safe claim text reached the summary pool; the mechanics claim was excluded.
+    assert captured["pool_snippets"] == ["Darkmaster Gandling commands the academy faculty."]
+    # The mechanics claim is surfaced solely as an avoid-hint.
+    assert captured["avoid_hints"] == ["Lilian Voss is defeated in the upper study."]
+    codes = cards[0]["decision_reason_codes"]
+    assert "summary_evidence:safe=1:unsafe=1" in codes
+    assert "summary_source:structural_presence" not in codes
+
+
+def test_finalize_uses_structural_fallback_when_only_unsafe_claims(monkeypatch) -> None:
+    """Slice 9: with only spoiler-unsafe evidence, fall back to a restrained structural summary."""
+    captured: dict = {}
+
+    def _synth(pool, *, boss_name, instance_name, structural_role="", **kwargs):
+        captured["pool_snippets"] = [row.get("snippet") for row in pool]
+        return (
+            "Darkmaster Gandling presides over Scholomance as one of its central adversaries.",
+            ["src-roster"],
+        )
+
+    monkeypatch.setattr(key_character_page, "synthesize_key_character_summary", _synth)
+
+    pool = [
+        _boss_pool_item_with_claims(
+            [
+                _claim_view(
+                    snippet="Lilian Voss is defeated in the upper study.",
+                    source_id="src-roster",
+                    claim_id="claim-unsafe",
+                    spoiler_safety="active_mechanics_state",
+                )
+            ]
+        )
+    ]
+    cards, _prov, _used = key_character_page._finalize_key_characters(
+        instance_name="Scholomance",
+        boss_candidates=[_gandling_candidate(pool)],
+        boss_pool=pool,
+        revision_map={"src-roster": "mw:1"},
+        selection_reasons={"Darkmaster Gandling": "must_include_floor"},
+    )
+
+    assert cards
+    # The unsafe mechanics snippet never seeded the summary; a neutral structural snippet did.
+    assert "defeated" not in " ".join(captured["pool_snippets"]).lower()
+    codes = cards[0]["decision_reason_codes"]
+    assert "summary_source:structural_presence" in codes
+    assert "summary_evidence:safe=0:unsafe=1" in codes
+
+
+def test_finalize_paragraph_fallback_unchanged_without_claim_views(monkeypatch) -> None:
+    """No claim views (offline/paragraph path): no avoid-hints, no structural fallback, unsafe=0."""
+    captured: dict = {}
+
+    def _synth(pool, *, boss_name, instance_name, structural_role="", **kwargs):
+        captured["avoid_hints"] = kwargs.get("avoid_hints")
+        return (
+            "Darkmaster Gandling is the stern headmaster who commands Scholomance's hostile faculty.",
+            ["src-roster"],
+        )
+
+    monkeypatch.setattr(key_character_page, "synthesize_key_character_summary", _synth)
+
+    pool = [
+        {
+            "source_id": "src-roster",
+            "snippet": "Darkmaster Gandling rules the academy and its faculty of necromancers.",
+            "section_role": "dungeon_journal",
+        }
+    ]
+    cards, _prov, _used = key_character_page._finalize_key_characters(
+        instance_name="Scholomance",
+        boss_candidates=[_gandling_candidate(pool)],
+        boss_pool=pool,
+        revision_map={"src-roster": "mw:1"},
+        selection_reasons={"Darkmaster Gandling": "must_include_floor"},
+    )
+
+    assert cards
+    assert captured["avoid_hints"] is None  # not passed when there are no unsafe claims
+    codes = cards[0]["decision_reason_codes"]
+    assert "summary_evidence:safe=1:unsafe=0" in codes
+    assert "summary_source:structural_presence" not in codes

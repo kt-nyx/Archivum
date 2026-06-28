@@ -19,7 +19,11 @@ from pipeline.discovery.instance_bosses import (
     must_include_key_character_names,
     prefilter_character_pool,
 )
-from pipeline.generate.draft.claim_routing import KEY_CHARACTER_ROUTE, route_claim_views_for_pool
+from pipeline.generate.draft.claim_routing import (
+    KEY_CHARACTER_ROUTE,
+    key_character_unsafe_claim_views,
+    route_claim_views_for_pool,
+)
 from pipeline.generate.draft.instance_lint import (
     fallback_key_character_summary,
     lint_key_character_summary,
@@ -261,20 +265,39 @@ def _finalize_key_characters(
         structural_role = candidate.role or "uncertain"
         for pool in pools_to_try:
             source_pool = pool
-            pool = _key_character_summary_pool(source_pool)
-            if not pool:
-                pool = _structural_presence_summary_pool(
+            # Slice 9: encounter-mechanics / outcome claims (e.g. "Lilian Voss defeated",
+            # "Course: Reeducation") are barred from character prose (clarification question 1).
+            # The route already drops them from the safe summary pool; collect them here only to
+            # tell the synthesizer what to avoid, and to record safe/unsafe counts in the sidecar.
+            unsafe_views = key_character_unsafe_claim_views(source_pool)
+            avoid_hints = [
+                text
+                for view in unsafe_views
+                if (text := str(view.get("claim_text", "")).strip())
+            ]
+            summary_pool = _key_character_summary_pool(source_pool)
+            safe_evidence_count = len(summary_pool)
+            used_structural_fallback = False
+            if not summary_pool:
+                # Only unsafe / unlabeled encounter evidence remains: fall back to a restrained
+                # structural-presence summary rather than letting spoiler text write the card.
+                summary_pool = _structural_presence_summary_pool(
                     candidate=candidate,
                     instance_name=instance_name,
                     source_pool=source_pool,
                 )
-            if not pool:
+                used_structural_fallback = bool(summary_pool)
+            if not summary_pool:
                 continue
+            summary_kwargs: dict[str, Any] = {}
+            if avoid_hints:
+                summary_kwargs["avoid_hints"] = avoid_hints
             summary, used = synthesize_key_character_summary(
-                pool,
+                summary_pool,
                 boss_name=candidate.name,
                 instance_name=instance_name,
                 structural_role=structural_role,
+                **summary_kwargs,
             )
             if (
                 lint_key_character_summary(
@@ -286,11 +309,11 @@ def _finalize_key_characters(
                 # sentence, so it is gated text-only (no source comparison).
                 or prose_gate_rejects(
                     summary,
-                    source_snippets=[str(row.get("snippet", "")) for row in pool],
+                    source_snippets=[str(row.get("snippet", "")) for row in summary_pool],
                 )
             ):
                 summary, used = fallback_key_character_summary(
-                    pool,
+                    summary_pool,
                     boss_name=candidate.name,
                     instance_name=instance_name,
                 )
@@ -303,16 +326,16 @@ def _finalize_key_characters(
             ):
                 continue
             pointers = _cap_card_pointers(
-                _pointers_for_source_ids(pool, used, revision_map),
+                _pointers_for_source_ids(summary_pool, used, revision_map),
                 max_count=3,
             )
-            if not pointers and boss_pool is not pool:
+            if not pointers and boss_pool is not summary_pool:
                 pointers = _cap_card_pointers(
                     _pointers_for_source_ids(boss_pool, used, revision_map),
                     max_count=3,
                 )
             if not pointers:
-                best_pool = pool if pool else boss_pool
+                best_pool = summary_pool if summary_pool else boss_pool
                 pointers = _cap_card_pointers(
                     _ensure_pointer_count(
                         [],
@@ -329,7 +352,7 @@ def _finalize_key_characters(
             # Hybrid: only spend an LLM call when deterministic signals were inconclusive.
             if role == "uncertain":
                 role = classify_key_character_role_llm(
-                    pool,
+                    summary_pool,
                     character_name=candidate.name,
                     instance_name=instance_name,
                     fallback_role="uncertain",
@@ -354,6 +377,13 @@ def _finalize_key_characters(
                 reason_codes.append(candidate.source_section_role)
             if role_reason:
                 reason_codes.append(f"role:{role}:{role_reason}")
+            # Slice 9 spoiler-safety audit: how much safe vs unsafe evidence backed this summary,
+            # and whether spoiler-unsafe evidence forced the restrained structural fallback.
+            reason_codes.append(
+                f"summary_evidence:safe={safe_evidence_count}:unsafe={len(unsafe_views)}"
+            )
+            if used_structural_fallback:
+                reason_codes.append("summary_source:structural_presence")
             card = {
                 "id": candidate.boss_id,
                 "name": candidate.name,
