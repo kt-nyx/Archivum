@@ -236,6 +236,7 @@ def run_draft_writer(
     entry_state_contract_decisions: list[dict[str, Any]] = []
     content_boundary_decisions: list[dict[str, Any]] = []
     canonical_temporal_decisions: list[dict[str, Any]] = []
+    canonical_claim_decisions: list[dict[str, Any]] = []
     if evidence_rows:
         (
             evidence_rows,
@@ -243,6 +244,7 @@ def run_draft_writer(
             entry_state_contract_decisions,
             content_boundary_decisions,
             canonical_temporal_decisions,
+            canonical_claim_decisions,
         ) = enrich_evidence_temporal_metadata(
             evidence_rows,
             fact_packs_by_entity=fact_packs_by_entity,
@@ -253,6 +255,7 @@ def run_draft_writer(
             return_entry_state_contract_decisions=True,
             return_boundary_decisions=True,
             return_canonical_decisions=True,
+            return_claim_decisions=True,
         )
 
     # Carry each traversed location page's own MediaWiki categories onto its candidate row so the
@@ -535,6 +538,10 @@ def run_draft_writer(
     write_json(
         (decisions_dir / "canonical_temporal_evidence_decisions.json"),
         canonical_temporal_decisions,
+    )
+    write_json(
+        (decisions_dir / "canonical_claim_extraction_decisions.json"),
+        canonical_claim_decisions,
     )
     write_json(
         (decisions_dir / "instance_key_character_decisions.json"), instance_key_character_decisions

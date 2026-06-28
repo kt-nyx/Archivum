@@ -19,6 +19,7 @@ from typing import Any
 
 from pipeline.ai.config import load_ai_settings
 from pipeline.common.wiki_category_registry import CategorySignal, classify_page_categories
+from pipeline.generate.draft.claims import extract_canonical_claim_decision_rows
 from pipeline.generate.draft.llm import llm_json_with_retry
 
 PRE_ENTRY_HISTORY = "pre_entry_history"
@@ -331,6 +332,7 @@ def enrich_evidence_temporal_metadata(
     return_entry_state_contract_decisions: bool = False,
     return_boundary_decisions: bool = False,
     return_canonical_decisions: bool = False,
+    return_claim_decisions: bool = False,
 ) -> tuple[Any, ...]:
     """Return evidence rows plus temporal and content-boundary decision rows."""
     snapshot_categories = _snapshot_categories_by_source(source_snapshots or [])
@@ -378,6 +380,9 @@ def enrich_evidence_temporal_metadata(
 
     decisions: list[dict[str, Any]] = []
     canonical_decisions: list[dict[str, Any]] = []
+    claim_decisions: list[dict[str, Any]] = []
+    if return_claim_decisions:
+        claim_decisions = extract_canonical_claim_decision_rows(canonical_records, run_id=run_id)
     scopes_by_row: dict[int, list[str]] = {}
     build_meta_by_row: dict[int, dict[str, Any]] = {}
     boundary_by_row: dict[int, dict[str, Any]] = {}
@@ -437,6 +442,8 @@ def enrich_evidence_temporal_metadata(
         outputs.append(boundary_decisions)
     if return_canonical_decisions:
         outputs.append(canonical_decisions)
+    if return_claim_decisions:
+        outputs.append(claim_decisions)
     return tuple(outputs)
 
 

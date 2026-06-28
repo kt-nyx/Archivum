@@ -625,7 +625,7 @@ Risks:
 
 ## Slice 3 - Atomic Claim Model And Sidecar
 
-Status: Not started
+Status: Verified
 
 Goal: introduce claim records without changing routing behavior yet.
 
@@ -693,6 +693,29 @@ Risks:
 
 - Sentence splitting is not enough for all mixed paragraphs, but it creates the model and sidecar
   needed for LLM claim extraction.
+
+Implementation notes:
+
+- Added `pipeline/generate/draft/claims.py` with a source-side `EvidenceClaim` model. This is
+  deliberately separate from coalesce/entity fact claims and post-draft validation claims.
+- Extraction is deterministic sentence-level only:
+  - one claim per sentence;
+  - stable `claim_id` from `canonical_evidence_id`, normalized claim text, and sentence indexes;
+  - no semantic clause splitting or routing changes yet.
+- `enrich_evidence_temporal_metadata(..., return_claim_decisions=True)` now returns
+  `canonical_claim_extraction_decisions` for callers that opt in.
+- `run_draft_writer` writes `data/decisions/canonical_claim_extraction_decisions.json`.
+- Public draft JSON remains unchanged.
+
+Review notes:
+
+- First review pass fixed claim extraction so it is runtime opt-in unless a caller requests
+  `return_claim_decisions=True`; this keeps ordinary temporal enrichment from doing unnecessary
+  sidecar work.
+- Second review pass made `claim_type` conservative when one canonical paragraph has conflicting
+  routed appearances, returning `other` instead of biasing toward one downstream field.
+- Added tests that pin no semantic splitting inside semicolon-heavy sentences, no claim metadata in
+  public draft JSON, and no extraction call when claim decisions are not requested.
 
 ## Slice 4 - LLM Claim Extraction For Mixed Paragraphs
 

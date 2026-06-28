@@ -469,3 +469,12 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(
     assert len(str(instance_draft.get("overview", "")).split()) >= MIN_OVERVIEW_WORDS
     enemy_names = {row["name"] for row in instance_draft["key_characters"]}
     assert "Darkmaster Gandling" in enemy_names
+    assert "claim_id" not in json.dumps(zone_draft)
+    assert "claim_id" not in json.dumps(instance_draft)
+    claim_sidecar = json.loads(
+        (
+            context.data_dir / "decisions" / "canonical_claim_extraction_decisions.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert claim_sidecar
+    assert all("claims" in row for row in claim_sidecar)
