@@ -1218,7 +1218,7 @@ Risks:
 
 ## Slice 9 - Key Character Spoiler-Safe Evidence
 
-Status: Landed
+Status: Verified
 
 Goal: stop key-character summaries from using unsafe encounter outcomes or mechanics-state snippets
 as general pre-entry lore.
@@ -1312,6 +1312,27 @@ Validation:
   `git diff --check` clean.
 - Added three tests: unsafe-claim exclusion + avoid-hints + safe/unsafe counts; structural fallback
   when only unsafe claims exist; paragraph-fallback path unchanged when no claim views are present.
+
+Review cycle (2026-06-28):
+
+- Audited the `pool` -> `summary_pool` rename in `_finalize_key_characters` (AST walk for bare
+  `pool` tokens): the only executable uses are the loop binding and `source_pool = pool`; no stray
+  reference silently points at the unfiltered pool.
+- Confirmed the load-bearing assumption that `boss_pool` items carry `_claim_views` in live runs:
+  `_iter_evidence_items` copies `_claim_views` onto paragraph out-items even without a `claim_route`
+  (assembly.py), so `KEY_CHARACTER_ROUTE` engages on the boss pool and the safe filter is real, not
+  a no-op.
+- Fixed a misleading audit signal: in paragraph-fallback mode (no claim views) the reason code was
+  reporting `summary_evidence:safe=N:unsafe=0`, implying N spoiler-vetted claims when no claim-level
+  safety was assessed. It now records `summary_evidence:paragraph_fallback` instead, so the sidecar
+  only claims a safe/unsafe count when claim views actually drove the routing. Updated the
+  paragraph-path test accordingly.
+- Residual gap (deferred to Slice 12 pilot rebaseline, not a code change here): a live boss with no
+  profile page whose roster paragraph never received claim extraction would fall to paragraph prose
+  unfiltered. The principled fix is ensuring such paragraphs get claims (Slice 3/4 coverage), not a
+  keyword denylist here (non-negotiable). The pilot run will surface any such paragraph.
+- Full suite green: 873 passed, 5 skipped, 1 xfailed. `ruff check` and targeted `mypy` clean;
+  `git diff --check` clean.
 
 ## Slice 10 - Claim-Aware Location And Glossary Filtering
 
@@ -1558,3 +1579,6 @@ Add dated entries here as slices move.
 - 2026-06-28: Slice 9 landed key-character spoiler-safe evidence (unsafe-claim exclusion hints,
   structural fallback, safe/unsafe sidecar reason codes). Full suite 873 passed / 5 skipped /
   1 xfailed; ruff + mypy clean.
+- 2026-06-28: Slice 9 reviewed and verified. Confirmed boss-pool claim-view carry and the safe
+  rename; fixed a misleading paragraph-fallback audit code (now `paragraph_fallback`); logged a
+  residual roster-paragraph gap for Slice 12. Full suite 873 passed / 5 skipped / 1 xfailed.

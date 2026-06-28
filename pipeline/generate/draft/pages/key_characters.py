@@ -21,6 +21,7 @@ from pipeline.discovery.instance_bosses import (
 )
 from pipeline.generate.draft.claim_routing import (
     KEY_CHARACTER_ROUTE,
+    item_has_claim_views,
     key_character_unsafe_claim_views,
     route_claim_views_for_pool,
 )
@@ -269,6 +270,7 @@ def _finalize_key_characters(
             # "Course: Reeducation") are barred from character prose (clarification question 1).
             # The route already drops them from the safe summary pool; collect them here only to
             # tell the synthesizer what to avoid, and to record safe/unsafe counts in the sidecar.
+            has_claim_views = any(item_has_claim_views(item) for item in source_pool)
             unsafe_views = key_character_unsafe_claim_views(source_pool)
             avoid_hints = [
                 text
@@ -377,13 +379,18 @@ def _finalize_key_characters(
                 reason_codes.append(candidate.source_section_role)
             if role_reason:
                 reason_codes.append(f"role:{role}:{role_reason}")
-            # Slice 9 spoiler-safety audit: how much safe vs unsafe evidence backed this summary,
-            # and whether spoiler-unsafe evidence forced the restrained structural fallback.
-            reason_codes.append(
-                f"summary_evidence:safe={safe_evidence_count}:unsafe={len(unsafe_views)}"
-            )
-            if used_structural_fallback:
-                reason_codes.append("summary_source:structural_presence")
+            # Slice 9 spoiler-safety audit. With claim views, record how much safe vs unsafe
+            # evidence backed the summary and whether spoiler-unsafe evidence forced the restrained
+            # structural fallback. Without claim views (paragraph fallback), no claim-level safety
+            # was assessed, so say so honestly rather than reporting an unvetted "safe" count.
+            if has_claim_views:
+                reason_codes.append(
+                    f"summary_evidence:safe={safe_evidence_count}:unsafe={len(unsafe_views)}"
+                )
+                if used_structural_fallback:
+                    reason_codes.append("summary_source:structural_presence")
+            else:
+                reason_codes.append("summary_evidence:paragraph_fallback")
             card = {
                 "id": candidate.boss_id,
                 "name": candidate.name,

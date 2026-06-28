@@ -395,5 +395,7 @@ def test_finalize_paragraph_fallback_unchanged_without_claim_views(monkeypatch) 
     assert cards
     assert captured["avoid_hints"] is None  # not passed when there are no unsafe claims
     codes = cards[0]["decision_reason_codes"]
-    assert "summary_evidence:safe=1:unsafe=0" in codes
+    # Honest audit: no claim-level safety was assessed on the paragraph path.
+    assert "summary_evidence:paragraph_fallback" in codes
+    assert not any(code.startswith("summary_evidence:safe=") for code in codes)
     assert "summary_source:structural_presence" not in codes
