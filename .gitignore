@@ -1,6 +1,17 @@
 .cursor/
+.agents/
+.claude/
+.codex/
+.github/
 Reference/
+
+# Cache folders
 __pycache__/
+.cache/
+cache/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
 *.py[cod]
 .venv/
 .vscode
