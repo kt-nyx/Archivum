@@ -1392,7 +1392,7 @@ Review cycle (2026-06-28):
 
 ## Slice 10 - Claim-Aware Location And Glossary Filtering
 
-Status: Landed
+Status: Verified
 
 Goal: prevent post-active or unsafe claims from supporting location/glossary inclusion, while also
 using safe setup claims more accurately.
@@ -1477,6 +1477,26 @@ Validation:
 - Added tests: claim-aware glossary exclusion (all-post-active source dropped; safe-claim source
   rescued; paragraph-level fallback without a claim sidecar) and the location post-active route
   exclusion.
+
+Review cycle (2026-06-28):
+
+- Walked the `_excluded_glossary_source_ids` truth table: all-excluded claims -> excluded; mixed
+  (a safe claim present) -> rescued; source absent from the claim sidecar -> paragraph-level verdict;
+  no claim sidecar -> legacy behavior; offline (empty sidecar) -> fallback, no regression. Confirmed
+  the change can only (a) drop a term whose every claim is excluded (intended) or (b) keep a term
+  with a safe claim that still must clear the display-text gate — no spoiler-leak path.
+- Confirmed source-id spaces line up: the claim sidecar's `source_id` and the snapshot `source_id`
+  are the same ingest source key the legacy paragraph exclusion already matched against.
+- Found and closed a test gap: the original "keeps source with a safe claim" test wrote only the
+  claim sidecar (paragraph decision absent), so it never exercised the headline *rescue* — a source
+  the paragraph aggregate excludes being kept by a safe claim. Added
+  `test_claim_safe_signal_rescues_paragraph_excluded_source` writing both sidecars in conflict and
+  asserting the term survives.
+- Confirmed spoiler-safety is intentionally out of this axis: task 3's "unsafe spoiler claims not
+  linked in pre-entry prose" is handled transitively by the display-text gate (the final draft text
+  is already routed/safe), so the glossary source exclusion keys on temporal scope only.
+- Full suite green: 884 passed, 5 skipped, 1 xfailed. `ruff check` and targeted `mypy` clean;
+  `git diff --check` clean.
 
 ## Slice 11 - Backward Compatibility And Migration
 
@@ -1684,3 +1704,6 @@ Add dated entries here as slices move.
   already covered by Slice 6 routing; added claim-aware glossary source exclusion
   (`_excluded_glossary_source_ids`) with safe-claim rescue. Full suite 883 passed / 5 skipped /
   1 xfailed; ruff + mypy clean.
+- 2026-06-28: Slice 10 reviewed and verified. Walked the exclusion truth table; closed a test gap by
+  adding a direct paragraph-excludes-but-claim-rescues test. Full suite 884 passed / 5 skipped /
+  1 xfailed.

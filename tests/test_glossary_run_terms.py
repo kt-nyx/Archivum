@@ -710,6 +710,44 @@ def test_build_run_terms_keeps_source_with_a_safe_claim(tmp_path: Path) -> None:
     assert "term-hearthglen" in _term_ids(output_path)
 
 
+def test_claim_safe_signal_rescues_paragraph_excluded_source(tmp_path: Path) -> None:
+    """The headline rescue: the coarse paragraph aggregate excludes, but a safe claim keeps it.
+
+    The paragraph-level decision reads the whole source as post-active, yet one of its claims is
+    entry-state, so the term's provenance is not "only excluded claims" and it survives.
+    """
+    context = ensure_run_context("run-test-glossary-rescue", artifacts_root=tmp_path / "runs")
+    _write_snapshots(
+        context,
+        [
+            {
+                "entity_id": "location-hearthglen",
+                "source_id": "src-hearthglen",
+                "entity_type": "location",
+                "name": "Hearthglen",
+                "url": "https://warcraft.wiki.gg/wiki/Hearthglen",
+                "categories": ["Towns"],
+            }
+        ],
+    )
+    # Paragraph aggregate would exclude the whole source...
+    _write_decisions(
+        context,
+        "temporal_evidence_decisions.json",
+        [{"source_id": "src-hearthglen", "temporal_scope": "post_active_lore"}],
+    )
+    # ...but the claim sidecar shows a safe entry-state claim, so it is rescued.
+    _write_decisions(
+        context,
+        "claim_temporal_decisions.json",
+        [_claim_decision("src-hearthglen", ["post_active_lore", "entry_state"])],
+    )
+
+    output_path = build_run_terms(context)
+
+    assert "term-hearthglen" in _term_ids(output_path)
+
+
 def test_build_run_terms_falls_back_to_paragraph_exclusion_without_claim_sidecar(
     tmp_path: Path,
 ) -> None:
