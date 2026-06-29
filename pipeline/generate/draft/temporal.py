@@ -19,7 +19,10 @@ from typing import Any, cast
 
 from pipeline.ai.config import load_ai_settings
 from pipeline.common.wiki_category_registry import CategorySignal, classify_page_categories
-from pipeline.generate.draft.claims import extract_canonical_claim_decision_rows
+from pipeline.generate.draft.claims import (
+    CLAIM_ELIGIBLE_FIELDS,
+    extract_canonical_claim_decision_rows,
+)
 from pipeline.generate.draft.llm import llm_json_with_retry
 
 PRE_ENTRY_HISTORY = "pre_entry_history"
@@ -397,11 +400,16 @@ def enrich_evidence_temporal_metadata(
             appearances=record.appearances,
         )
 
+    # Cost scoping: only spend canonical LLM adjudication on fields whose claim views are rendered
+    # (CLAIM_ELIGIBLE_FIELDS). Bulk descriptive pools (faction_pool, location_pool, quest_lore) keep
+    # their deterministic classification and route at paragraph level — this is the dominant cost
+    # lever (see memory: claim-extraction-live-cost-explosion).
     llm_candidates = [
         record
         for record in canonical_records
         if record.classification is not None
         and _needs_canonical_llm_adjudication(record.classification, record)
+        and _record_in_claim_eligible_field(record)
     ]
     if llm_candidates and not _llm_temporal_adjudication_disabled():
         overrides = adjudicate_canonical_temporal_classifications_llm(llm_candidates)
@@ -1021,6 +1029,18 @@ def _needs_canonical_llm_adjudication(
     return bool(record.snippet.strip()) and classification.scope == AMBIGUOUS_TEMPORAL
 
 
+def _record_in_claim_eligible_field(record: CanonicalEvidenceRecord) -> bool:
+    """True if the record appears in a field whose claim views are rendered (see CLAIM_ELIGIBLE_FIELDS).
+
+    Bulk descriptive pools (faction_pool, location_pool, quest_lore) route at paragraph level, so
+    spending an LLM call to disambiguate their ``ambiguous_temporal`` paragraphs is wasted — they
+    stay ambiguous (deterministically filtered) like any other paragraph-level evidence. This keeps
+    canonical adjudication scoped to the same small set as claim extraction.
+    """
+    field_names = {str(ref.get("field_name", "")).strip() for ref in record.refs}
+    return bool(field_names & CLAIM_ELIGIBLE_FIELDS)
+
+
 def _canonical_decision_row(
     record: CanonicalEvidenceRecord,
     classification: TemporalClassification,
@@ -1101,10 +1121,13 @@ def classify_claims_temporal(
                 }
             )
 
+    # Cost scoping: only spend LLM claim-temporal adjudication on fields whose claim views are
+    # rendered. Bulk-pool claims that want LLM keep their deterministic classification instead.
     llm_entries = [
         entry
         for entry in entries
         if entry["classification"].fallback_mode == "needs_llm"
+        and _record_in_claim_eligible_field(entry["record"])
     ]
     if llm_entries and not _llm_temporal_adjudication_disabled():
         overrides = adjudicate_claim_temporal_classifications_llm(llm_entries)

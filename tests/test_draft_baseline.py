@@ -206,6 +206,27 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(
             "build_meta": {"run_id": context.run_id, "source_id": "src-zone"},
         },
         {
+            # Geography seed for Hearthglen in an eligible field: this is how location cards survive
+            # now that bulk location_pool paragraphs route at paragraph level (no LLM rescue).
+            "subject_id": "zone-western-plaguelands",
+            "subject_type": "zone",
+            "field_name": "history_digest",
+            "evidence_items": [
+                {
+                    "source_url": "https://warcraft.wiki.gg/wiki/Western_Plaguelands",
+                    "source_title": "Western Plaguelands",
+                    "snippet": (
+                        "Hearthglen, a fortified town in the northern reaches of the Western "
+                        "Plaguelands, anchored the region's defenses through the long blight."
+                    ),
+                    "section_role": "maps_subregions",
+                    "confidence": 1.0,
+                }
+            ],
+            "constraints": {"max_tokens": 1200, "forbidden_extrapolation": True},
+            "build_meta": {"run_id": context.run_id, "source_id": "src-zone"},
+        },
+        {
             "subject_id": "zone-western-plaguelands",
             "subject_type": "zone",
             "field_name": "currently_input",

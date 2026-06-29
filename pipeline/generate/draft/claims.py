@@ -12,6 +12,7 @@ import json
 import math
 import os
 import re
+import sys
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from typing import Any
@@ -28,6 +29,38 @@ CLAIM_EXTRACTOR_VERSION = _CLAIM_EXTRACTOR_VERSION
 LLM_CLAIM_EXTRACTOR_VERSION = _LLM_CLAIM_EXTRACTOR_VERSION
 _LONG_PARAGRAPH_WORD_THRESHOLD = 70
 _LONG_SENTENCE_WORD_THRESHOLD = 32
+# Claim-level LLM work (semantic extraction + needs-LLM temporal adjudication) is scoped to the
+# evidence fields whose claim views are actually consumed by a claim_route during page assembly
+# (see pipeline/generate/draft/pages/assembly.py and pages/key_characters.py). The bulk descriptive
+# candidate pools — faction_pool, location_pool, quest_lore — are intentionally NOT eligible: they
+# dominate evidence volume (thousands of paragraphs) but route at paragraph level, so per-paragraph
+# claim extraction over them was a pure cost sink with no rendered benefit. Excluded paragraphs fall
+# back to paragraph-level temporal routing. See memory: claim-extraction-live-cost-explosion.
+CLAIM_ELIGIBLE_FIELDS = frozenset(
+    {
+        "history_digest",
+        "at_a_glance_input",
+        "currently_input",
+        "boss_pool",
+        "questline_pool",
+        "instances_or_dungeons",
+        "instance_lore_pool",
+        "parent_lore_pool",
+        "related_lore_pool",
+    }
+)
+
+
+def _claim_llm_call_budget() -> int:
+    """Hard ceiling on per-paragraph claim-extraction LLM calls in a single draft pass.
+
+    A safety valve so future evidence-set growth cannot silently re-explode draft cost/runtime.
+    Override with ``WOW_LORE_CLAIM_LLM_CALL_BUDGET`` (set 0 to disable LLM claim extraction).
+    """
+    raw = os.environ.get("WOW_LORE_CLAIM_LLM_CALL_BUDGET")
+    if raw is None or not raw.strip():
+        return 250
+    return max(0, int(raw.strip()))
 _MIN_SUPPORT_OVERLAP_RATIO = 0.34
 _PROMPT_SNIPPET_LIMIT = 2400
 _CLAIM_TEXT_LIMIT = 240
@@ -115,6 +148,9 @@ def extract_canonical_claim_decision_rows(
 ) -> list[dict[str, Any]]:
     """Build deterministic claim-extraction sidecar rows for canonical evidence records."""
     rows: list[dict[str, Any]] = []
+    budget = _claim_llm_call_budget()
+    llm_calls = 0
+    budget_exhausted_logged = False
     for record in canonical_records:
         canonical_evidence_id = str(getattr(record, "canonical_evidence_id", "")).strip()
         snippet = str(getattr(record, "snippet", "")).strip()
@@ -133,16 +169,38 @@ def extract_canonical_claim_decision_rows(
             appearances=appearances,
         )
         candidate_reasons = _llm_candidate_reasons(record, sentence_claims)
+        # Cost scoping: every field keeps cheap deterministic sentence claims (load-bearing for
+        # paragraph-level routing of bulk pools), but an LLM call is only spent for fields whose
+        # claim views are actually rendered (CLAIM_ELIGIBLE_FIELDS). Bulk descriptive pools
+        # (faction_pool, location_pool, quest_lore) never trigger semantic-split LLM calls.
+        field_names = {str(row.get("field_name", "")).strip() for row in appearances}
+        claim_llm_eligible = bool(field_names & CLAIM_ELIGIBLE_FIELDS)
         extraction_mode = "deterministic_sentence"
         extraction_reason = "sentence_level_claims_sufficient"
         llm_error = ""
         sentence_backfill_count = 0
         claims_source = sentence_claims
         if candidate_reasons:
-            if _llm_claim_extraction_disabled():
+            if not claim_llm_eligible:
+                extraction_mode = "sentence_fallback"
+                extraction_reason = "field_not_claim_llm_eligible"
+            elif _llm_claim_extraction_disabled():
                 extraction_mode = "sentence_fallback"
                 extraction_reason = "llm_unavailable_or_disabled"
+            elif llm_calls >= budget:
+                extraction_mode = "sentence_fallback"
+                extraction_reason = "claim_llm_budget_exhausted"
+                if not budget_exhausted_logged:
+                    print(
+                        f"WARN: claim-extraction LLM call budget ({budget}) exhausted; "
+                        "remaining candidate paragraphs use deterministic sentence claims. "
+                        "Override with WOW_LORE_CLAIM_LLM_CALL_BUDGET.",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    budget_exhausted_logged = True
             else:
+                llm_calls += 1
                 try:
                     llm_claims = _extract_claims_llm(
                         canonical_evidence_id=canonical_evidence_id,
@@ -415,7 +473,14 @@ def _llm_candidate_reasons(record: Any, sentence_claims: list[EvidenceClaim]) ->
         reasons.append("sentence_level_claim_may_contain_multiple_events")
     if _matches_setup_and_outcome_context(record):
         reasons.append("matches_setup_and_outcome_boundary_context")
-    return list(dict.fromkeys(reasons))
+    deduped = list(dict.fromkeys(reasons))
+    # Length alone is a weak signal: a long but temporally-simple paragraph is covered fine by
+    # deterministic sentence claims and does not need an LLM semantic split. Only spend an LLM call
+    # when length co-occurs with a temporal-mix signal (multiple structural scopes, shared
+    # history/current paragraph, multi-event sentence, or setup+outcome overlap).
+    if deduped == ["long_paragraph"]:
+        return []
+    return deduped
 
 
 def _distinct_structural_temporal_scopes(record: Any) -> int:

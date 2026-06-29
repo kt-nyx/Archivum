@@ -169,20 +169,60 @@ def test_claim_decision_rows_are_json_serializable(monkeypatch) -> None:
     _enriched, claim_decisions = _enrich_with_claims(
         [
             _row(
-                "location_pool",
-                "Hearthglen serves as a fortified settlement.",
-                source_id="src-location",
-                build_meta={
-                    "location_id": "location-hearthglen",
-                    "location_name": "Hearthglen",
-                },
+                "history_digest",
+                "Hearthglen served as a fortified settlement that endured the plague.",
+                source_id="src-history",
             )
         ]
     )
 
     encoded = json.dumps(claim_decisions)
-    assert "location_status" in encoded
-    assert "location-hearthglen" in encoded
+    assert claim_decisions  # eligible field produces claim rows
+    assert "Hearthglen" in encoded
+
+
+def test_bulk_pools_keep_deterministic_claims_but_never_call_llm(monkeypatch) -> None:
+    """Cost-scoping guard: faction/location/quest_lore route at paragraph level. They keep cheap
+    deterministic sentence claims (load-bearing for card survival) but never spend an LLM call,
+    even when the LLM is otherwise enabled."""
+    monkeypatch.delenv("WOW_LORE_WIKI_FIRST_NO_LLM", raising=False)
+    monkeypatch.setattr(
+        "pipeline.generate.draft.claims._llm_claim_extraction_disabled", lambda: False
+    )
+
+    def _boom(**_kwargs):
+        raise AssertionError("bulk-pool field must not trigger an LLM extraction call")
+
+    monkeypatch.setattr("pipeline.generate.draft.claims._extract_claims_llm", _boom)
+
+    long_mixed = (
+        "The Cenarion Circle begins healing the fields after the war; the campaign later ends "
+        "with one faction claiming Andorhal and fortifying the broken keeps across the frontier."
+    )
+    for field in ("location_pool", "faction_pool", "quest_lore"):
+        _enriched, claim_decisions = _enrich_with_claims(
+            [_row(field, long_mixed, source_id=f"src-{field}")]
+        )
+        assert claim_decisions, f"{field!r} should still emit deterministic claim rows"
+        row = claim_decisions[0]
+        assert row["claims"], f"{field!r} should keep deterministic sentence claims"
+        assert row["extraction_mode"] != "llm_semantic"
+        if row["candidate_reasons"]:
+            assert row["extraction_reason"] == "field_not_claim_llm_eligible"
+
+
+def test_eligible_field_shared_with_bulk_pool_still_extracts(monkeypatch) -> None:
+    """A paragraph appearing in BOTH an eligible field and a bulk pool stays in scope (the
+    eligible appearance wins), so shared history/faction text keeps claim-level treatment."""
+    monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
+    snippet = "The keep fell during the war and later anchored the faction's frontier."
+    _enriched, claim_decisions = _enrich_with_claims(
+        [
+            _row("history_digest", snippet, source_id="src-shared"),
+            _row("faction_pool", snippet, source_id="src-shared"),
+        ]
+    )
+    assert claim_decisions and claim_decisions[0]["claims"]
 
 
 def test_llm_claim_extraction_splits_mixed_wpl_like_paragraph(monkeypatch) -> None:
