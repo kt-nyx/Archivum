@@ -23,10 +23,10 @@ from pipeline.generate.draft.pages.assembly import (
     _word_count,
 )
 from pipeline.generate.draft.pages.cards import (
-    _draft_history_pool,
     _finalize_history_sections,
     build_location_cards,
     build_major_factions,
+    prepare_history_synthesis_pool,
 )
 from pipeline.generate.draft.pages.questlines import (
     _MAX_CHAIN_REFS,
@@ -44,7 +44,6 @@ from pipeline.generate.draft.prose_election import (
     fallback_currently,
     select_at_a_glance_pool,
     select_currently_pool,
-    select_history_pool,
 )
 from pipeline.generate.draft.prose_gate import prose_gate_rejects
 from pipeline.generate.draft.prose_lint import (
@@ -191,8 +190,10 @@ def build_zone_page(
 
     at_pool = select_at_a_glance_pool(pools["at_a_glance_pool"])
     currently_pool = select_currently_pool(pools, zone_name=name)
-    history_pool = select_history_pool(pools["history_pool"])
-    draft_history_pool, max_history = _draft_history_pool(history_pool)
+    # Raw routed history pool stays the coverage pool (claim-level setup-bridge planning); the
+    # synthesis pool is consolidated to paragraphs before select_history_pool's word-count gate.
+    history_pool = pools["history_pool"]
+    draft_history_pool, max_history = prepare_history_synthesis_pool(history_pool)
 
     at_a_glance, at_glance_used = _finalize_at_a_glance(
         zone_name=name,

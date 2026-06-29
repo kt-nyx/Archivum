@@ -33,9 +33,9 @@ from pipeline.generate.draft.pages.assembly import (
     _word_count,
 )
 from pipeline.generate.draft.pages.cards import (
-    _draft_history_pool,
     _finalize_history_sections,
     build_major_factions,
+    prepare_history_synthesis_pool,
 )
 from pipeline.generate.draft.pages.key_characters import (
     InstanceKeyCharacterSelection,
@@ -45,7 +45,6 @@ from pipeline.generate.draft.pages.key_characters import (
 from pipeline.generate.draft.prose_election import (
     fallback_at_a_glance,
     select_at_a_glance_pool,
-    select_history_pool,
 )
 from pipeline.generate.draft.prose_gate import prose_gate_rejects, prose_gate_violations
 from pipeline.generate.draft.prose_lint import (
@@ -317,8 +316,10 @@ def build_instance_page(
         pointer["source_id"] in cross_page_source_ids for pointer in overview_pointers
     )
 
-    history_pool = select_history_pool(pools["history_pool"])
-    draft_history_pool, instance_history_cap = _draft_history_pool(history_pool)
+    # Raw routed history pool stays the coverage pool (claim-level setup-bridge planning); the
+    # synthesis pool is consolidated to paragraphs before select_history_pool's word-count gate.
+    history_pool = pools["history_pool"]
+    draft_history_pool, instance_history_cap = prepare_history_synthesis_pool(history_pool)
     if instance_history_cap <= 0:
         instance_history_cap = MAX_HISTORY_SECTIONS
     section_coverage_decisions: list[dict[str, Any]] = []

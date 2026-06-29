@@ -292,18 +292,24 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(
                     "snippet": (
                         "Scholomance was founded as a school for battle-mages who studied forbidden necromancy "
                         "after Lordaeron fell to plague and civil war. Its founders claimed they could control "
-                        "death itself, training students in rituals that bound spirits to stone halls and shadowed "
-                        "lecture chambers beneath the Western Plaguelands. Over decades the institution became a "
-                        "stronghold for hostile instructors, rival cabals, and experiments that threatened every "
-                        "nearby settlement. Crusader patrols, adventurers, and local militias repeatedly assaulted "
-                        "the academy yet its inner vaults endured, guarded by fanatical wardens and archivists who "
-                        "preserved grim curricula. Each campaign left deeper scars across the region while survivors "
-                        "warned that the institution's leaders still coordinate recruitment, battlefield reinforcement, "
-                        "and ritual escalation beyond its crumbling gates."
+                        "death itself, training students in rituals that bound spirits to stone halls and "
+                        "shadowed lecture chambers beneath the Western Plaguelands frontier."
                     ),
                     "section_role": "history",
                     "confidence": 1.0,
-                }
+                },
+                {
+                    "source_url": "https://warcraft.wiki.gg/wiki/Scholomance",
+                    "source_title": "Scholomance",
+                    "snippet": (
+                        "Over the following decades the academy became a stronghold for hostile instructors and "
+                        "rival cabals whose experiments threatened every nearby settlement. Crusader patrols and "
+                        "local militias repeatedly assaulted its halls, yet the inner vaults endured, guarded by "
+                        "fanatical wardens who preserved the grim curricula."
+                    ),
+                    "section_role": "history_third_war",
+                    "confidence": 1.0,
+                },
             ],
             "constraints": {"max_tokens": 1200, "forbidden_extrapolation": True},
             "build_meta": {

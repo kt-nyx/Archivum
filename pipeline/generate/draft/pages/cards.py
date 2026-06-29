@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.common.wiki_evidence_filters import cap_history_pool
 from pipeline.generate.draft import finalize_trace
 from pipeline.generate.draft.coverage import (
@@ -54,6 +55,7 @@ from pipeline.generate.draft.pages.assembly import (
 from pipeline.generate.draft.prose_election import (
     fallback_history_sections,
     history_section_cap,
+    select_history_pool,
 )
 from pipeline.generate.draft.prose_gate import prose_gate_rejects, prose_gate_violations
 from pipeline.generate.draft.prose_lint import (
@@ -70,6 +72,7 @@ from pipeline.generate.draft.prose_synthesis import (
     synthesize_history_sections,
     synthesize_location_summary,
 )
+from pipeline.generate.draft.temporal import HISTORY_SETUP_BRIDGE
 
 # Per-section history word budget enforced by validate (budget.py: 40 <= words <= 110).
 # The draft keeps merged/deterministic sections inside it so a run can't hard-fail on
@@ -119,11 +122,94 @@ def _history_sections_from_pool(
     return [], []
 
 
+def _consolidate_history_views(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse routed history claim views into one paragraph-sized unit per source paragraph.
+
+    Claim-level routing keeps history spoiler/temporal-safe by filtering individual claims, but it
+    leaves the synthesis pool as atomic claim fragments. Multi-section history synthesis needs
+    coherent, paragraph-sized material — fed fragments it collapses to empty/sparse output (a
+    live-only failure: offline ``NO_LLM`` runs have no claim views and already synthesize from whole
+    paragraphs). We group the already-filtered history claim views by ``canonical_evidence_id`` and
+    join their claim texts in source order, so the synthesizer sees paragraph-sized, still-filtered
+    units WITHOUT re-introducing the outcome/post-active claims routing dropped. Items that are not
+    claim views (offline paragraph fallback) pass through unchanged. ``plan_history_coverage`` still
+    runs on the raw claim-view pool, so per-claim setup-bridge detection is unaffected.
+    """
+    result: list[dict[str, Any]] = []
+    slot_by_canonical: dict[str, dict[str, Any]] = {}
+    for item in items:
+        canonical_id = str(item.get("canonical_evidence_id", "")).strip()
+        claim_text = clean_wiki_snippet(str(item.get("claim_text", "")))
+        is_view = bool(item.get("is_claim_view") or item.get("claim_id") or claim_text)
+        if not is_view or not canonical_id:
+            result.append(item)
+            continue
+        slot = slot_by_canonical.get(canonical_id)
+        if slot is None:
+            # Drop claim-only metadata so the consolidated paragraph carries no internal claim
+            # identifiers (``source_refs`` nests a ``claim_id``). Paragraph-level provenance is
+            # rebuilt downstream from ``source_id``/``canonical_evidence_id``/``source_url``.
+            slot = {
+                key: value
+                for key, value in item.items()
+                if key
+                not in {
+                    "claim_id",
+                    "claim_text",
+                    "is_claim_view",
+                    "_claim_views",
+                    "source_refs",
+                    "source_sentence_indexes",
+                    "claim_type",
+                    "entities",
+                }
+            }
+            slot["_history_texts"] = []
+            slot["_history_seen"] = set()
+            slot["_history_setup_bridge"] = False
+            slot_by_canonical[canonical_id] = slot
+            result.append(slot)
+        if claim_text and claim_text not in slot["_history_seen"]:
+            slot["_history_seen"].add(claim_text)
+            sentences = item.get("source_sentence_indexes") or []
+            first = (
+                sentences[0]
+                if isinstance(sentences, list) and sentences and isinstance(sentences[0], int)
+                else len(slot["_history_texts"])
+            )
+            slot["_history_texts"].append((first, claim_text))
+        if str(item.get("history_eligibility", "")).strip() == HISTORY_SETUP_BRIDGE:
+            slot["_history_setup_bridge"] = True
+    for slot in slot_by_canonical.values():
+        joined = " ".join(text for _, text in sorted(slot["_history_texts"], key=lambda pair: pair[0]))
+        slot["snippet"] = joined or clean_wiki_snippet(str(slot.get("source_excerpt", "")))
+        if slot.pop("_history_setup_bridge", False):
+            slot["history_eligibility"] = HISTORY_SETUP_BRIDGE
+        del slot["_history_texts"]
+        del slot["_history_seen"]
+    return result
+
+
 def _draft_history_pool(history_pool: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
     max_history = history_section_cap(history_pool)
     if max_history <= 0:
         return [], 0
     return cap_history_pool(history_pool, max_history), max_history
+
+
+def prepare_history_synthesis_pool(
+    raw_history_pool: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    """Build the capped history *synthesis* pool from the raw routed history pool.
+
+    Claim views are consolidated to paragraph-sized units BEFORE ``select_history_pool`` — whose
+    per-item word-count minimum is sized for paragraphs and would otherwise drop every short atomic
+    claim view, leaving history empty (a live-only, length-dependent failure that offline NO_LLM
+    runs never hit because they synthesize from whole paragraphs). Callers keep the raw claim-view
+    pool separately as the coverage pool so claim-level setup-bridge planning still works.
+    """
+    selected = select_history_pool(_consolidate_history_views(raw_history_pool))
+    return _draft_history_pool(selected)
 
 
 def _finalize_history_sections(
@@ -261,12 +347,14 @@ def _apply_history_coverage(
     appended_ids: set[str] = set()
     if missing and pool_snippets is not None:
         # Retry from the pre-cap coverage pool so the dropped setup-bridge source is in evidence;
-        # the capped synthesis pool may not contain it at all. The anti-verbatim gate corpus must
-        # come from that same pre-cap pool, or a retry body copying a pre-cap-only paragraph would
-        # slip past the gate (a licensing exposure pool_snippets cannot see).
-        coverage_snippets = passthrough_corpus(coverage_pool)
+        # the capped synthesis pool may not contain it at all. Consolidate its claim views to
+        # paragraph-sized units first (same reason as the primary synthesis pool), then build the
+        # anti-verbatim gate corpus from that same consolidated pool, or a retry body copying a
+        # pre-cap-only paragraph would slip past the gate (a licensing exposure).
+        coverage_synth_pool = _consolidate_history_views(coverage_pool)
+        coverage_snippets = passthrough_corpus(coverage_synth_pool)
         retry_sections, retry_used = synthesize_history_sections(
-            coverage_pool,
+            coverage_synth_pool,
             max_sections=section_cap,
             required_event_texts=required_event_texts(missing),
         )

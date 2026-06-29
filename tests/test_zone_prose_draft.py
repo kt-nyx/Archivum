@@ -177,7 +177,13 @@ def test_zone_draft_excludes_internal_claim_metadata(monkeypatch) -> None:
 
     draft = build_zone_page(_fact_pack(zone_id), routed, [], [], [], {}, {}, None)
 
-    serialized = json.dumps(draft)
+    # ``section_coverage_decisions`` is an internal sidecar: draft_writer pops it out of the page
+    # and writes it to data/decisions/ before the public draft is serialized (it intentionally
+    # carries claim-level ``claim_ids``). Mirror that extraction so this guard checks the actual
+    # public draft shape, not the pre-extraction page entity.
+    public_draft = {k: v for k, v in draft.items() if k != "section_coverage_decisions"}
+
+    serialized = json.dumps(public_draft)
     assert "_claim_views" not in serialized
     assert "is_claim_view" not in serialized
     assert "claim_id" not in serialized
