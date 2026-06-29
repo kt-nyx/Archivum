@@ -50,7 +50,7 @@ _MAX_STORYLINE = 1
 # Slice A removes the per-zone quest cap (D4: fetch all roster quests with
 # throttling). A very high ceiling stays as a runaway guard, overridable via env.
 _MAX_QUEST = int(os.environ.get("WOWLORE_MAX_QUESTS_PER_ZONE", "100000"))
-_MAX_FACTION = 6
+_MAX_FACTION = 7
 _MAX_LOCATION = 8
 _MAX_PARENT_LORE = 1
 _MAX_RELATED_LORE = 3

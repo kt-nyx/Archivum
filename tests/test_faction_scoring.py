@@ -282,6 +282,58 @@ def test_alliance_included_with_quest_bindings() -> None:
     assert any(row.faction_id == "faction-alliance" for row in elected)
 
 
+def test_active_combatant_outranks_history_only_faction() -> None:
+    # Slice A reweight: a faction bound to its own side's current quest campaign (an active
+    # belligerent) must outrank a faction whose relevance is purely historical/profile, even when the
+    # latter has zone-hit seed mentions. Generic factions no longer borrow score from the shared/
+    # neutral quest bindings that every faction in the zone matches.
+    zone_id = "zone-example"
+    v3_rows = [
+        {"zone_id": zone_id, "node_type": "quest", "faction_binding": "alliance"} for _ in range(6)
+    ] + [{"zone_id": zone_id, "node_type": "quest", "faction_binding": "shared"} for _ in range(8)]
+    pools = {
+        "faction_pool": [
+            _profile_item(
+                "faction-old-order",
+                "The Old Order once held fortresses across Example Zone during the war.",
+                section_role="history",
+            ),
+        ],
+        "faction_role_pool": [
+            {
+                "source_id": "src-zone",
+                "snippet": (
+                    "The Old Order is remembered across Example Zone for its historic campaigns "
+                    "against the Scourge along the frontier."
+                ),
+                "section_role": "history",
+                "field_name": "history_digest",
+            },
+        ],
+    }
+    targets = [
+        _target("faction-alliance", "Alliance"),
+        _target("faction-old-order", "Old Order"),
+    ]
+    candidates = collect_faction_candidates(
+        zone_id=zone_id,
+        evidence_rows=[],
+        pools=pools,
+        faction_profile_targets=targets,
+        v3_rows=v3_rows,
+    )
+    alliance = next(row for row in candidates if row.faction_id == "faction-alliance")
+    old = next(row for row in candidates if row.faction_id == "faction-old-order")
+    # the lore faction gets no quest credit from the 8 shared quests; the belligerent owns its 6
+    assert old.specific_quest_binding_count == 0
+    assert alliance.specific_quest_binding_count == 6
+    scored_alliance = score_faction_candidate(alliance, zone_name="Example Zone")
+    scored_old = score_faction_candidate(old, zone_name="Example Zone")
+    assert scored_alliance.score > scored_old.score
+    elected_ids = [row.faction_id for row in select_major_factions(candidates, zone_name="Example Zone")]
+    assert "faction-alliance" in elected_ids
+
+
 def test_generic_horde_suppressed_when_forsaken_elected() -> None:
     # Forsaken (a Horde sub-faction with strong zone presence) makes the generic "Horde" umbrella
     # redundant; the card list should name the concrete actor and drop "Horde", which also frees a
