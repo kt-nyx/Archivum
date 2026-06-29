@@ -25,6 +25,50 @@ def _aux_snapshot(aux_role: str, source_id: str) -> dict[str, object]:
     }
 
 
+def _location_profile_snapshot(
+    location_id: str, location_name: str, categories: list[str]
+) -> dict[str, object]:
+    return {
+        "entity_id": "zone-western-plaguelands",
+        "entity_type": "zone",
+        "source_id": f"src-western-plaguelands-location_profile-{location_id}",
+        "url": f"https://warcraft.wiki.gg/wiki/{location_name.replace(' ', '_')}",
+        "name": location_name,
+        "page_title": location_name,
+        "auxiliary_role": "location_profile",
+        "auxiliary_target_id": location_id,
+        "categories": categories,
+        "section_blocks": [
+            {"section_role": "lead", "text": f"{location_name} is a ruined settlement of note."},
+        ],
+    }
+
+
+def test_offzone_location_profile_evidence_is_dropped() -> None:
+    # A location page tagged to a different zone's subzone category (Strahnbrad -> Hillsbrad
+    # Foothills) was linked from WPL's prose; its evidence must not become WPL location_pool.
+    packs = _build_evidence_packs(
+        [
+            _location_profile_snapshot(
+                "location-andorhal", "Andorhal", ["Western Plaguelands subzones", "Cities"]
+            ),
+            _location_profile_snapshot(
+                "location-strahnbrad",
+                "Strahnbrad",
+                ["Hillsbrad Foothills subzones", "Destroyed settlements"],
+            ),
+        ],
+        run_id="run-test",
+    )
+    location_ids = {
+        str(pack["build_meta"].get("location_id", ""))
+        for pack in packs
+        if str(pack.get("field_name", "")) == "location_pool"
+    }
+    assert "location-andorhal" in location_ids
+    assert "location-strahnbrad" not in location_ids
+
+
 def test_parent_and_related_lore_route_to_scoped_pools() -> None:
     packs = _build_evidence_packs(
         [

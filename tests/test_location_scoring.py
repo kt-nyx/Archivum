@@ -122,6 +122,80 @@ def test_collect_and_select_include_only_locations() -> None:
     assert selected[0].score >= MIN_SCORE
 
 
+def test_location_is_offzone_helper() -> None:
+    from pipeline.discovery.entity_typing import location_is_offzone, location_subzone_zone_slugs
+
+    # in-zone: subzone category matches the subject zone
+    assert not location_is_offzone(["Western Plaguelands subzones", "Cities"], "zone-western-plaguelands")
+    # off-zone: only a different zone's subzone category (Strahnbrad's real case)
+    assert location_is_offzone(
+        ["Hillsbrad Foothills subzones", "Destroyed settlements", "Villages"],
+        "zone-western-plaguelands",
+    )
+    # no subzone category at all -> no signal, never over-reject
+    assert not location_is_offzone(["Temples", "Burial sites"], "zone-western-plaguelands")
+    assert not location_is_offzone(None, "zone-western-plaguelands")
+    assert location_subzone_zone_slugs(["Hillsbrad Foothills subzones"]) == {"hillsbrad-foothills"}
+
+
+def test_offzone_location_rejected_by_subzone_category() -> None:
+    # An in-zone landmark and an off-zone place (a different zone's subzone, merely linked from this
+    # zone's prose) both look electable on score; only the in-zone one should survive.
+    zone_id = "zone-example"
+    zone_name = "Example Zone"
+    in_id, off_id = "location-keep-hold", "location-far-village"
+    in_snippet = (
+        "Keep Hold is a fortified outpost in Example Zone where patrols coordinate supply lines "
+        "and defensive operations across the contested frontier."
+    )
+    off_snippet = (
+        "Far Village is a ruined settlement that Example Zone's history recalls, though it lies "
+        "within the neighboring region beyond the frontier."
+    )
+    candidates = collect_location_candidates(
+        zone_id=zone_id,
+        zone_name=zone_name,
+        location_rows=[
+            _location_row(in_id, "Keep Hold", zone_id),
+            _location_row(off_id, "Far Village", zone_id),
+        ],
+        location_candidate_map={
+            in_id: {
+                "location_id": in_id,
+                "name": "Keep Hold",
+                "source_link": "/wiki/Keep_Hold",
+                "categories": ["Example subzones", "Keeps"],
+            },
+            off_id: {
+                "location_id": off_id,
+                "name": "Far Village",
+                "source_link": "/wiki/Far_Village",
+                "categories": ["Neighboring Region subzones", "Destroyed settlements"],
+            },
+        },
+        location_decision_map={
+            in_id: _decision(in_id, "include"),
+            off_id: _decision(off_id, "include"),
+        },
+        pools={
+            "location_pool": [
+                _profile_item(in_id, in_snippet, location_name="Keep Hold"),
+                _profile_item(off_id, off_snippet, location_name="Far Village"),
+            ],
+            "location_seed_pool": [
+                _seed_item("Keep Hold and Far Village both appear in Example Zone's gazetteer."),
+            ],
+        },
+    )
+    by_id = {candidate.location_id: candidate for candidate in candidates}
+    assert by_id[off_id].rejected
+    assert "offzone_subzone_category" in by_id[off_id].reject_reasons
+    assert not by_id[in_id].rejected
+    selected_ids = {candidate.location_id for candidate in select_location_cards(candidates)}
+    assert in_id in selected_ids
+    assert off_id not in selected_ids
+
+
 def test_defer_candidates_are_not_elected() -> None:
     zone_id = "zone-example"
     candidate = score_location_candidate(

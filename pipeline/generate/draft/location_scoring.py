@@ -7,7 +7,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from pipeline.contracts.models import LocationType
-from pipeline.discovery.entity_typing import normalize_title, should_reject_location_title
+from pipeline.discovery.entity_typing import (
+    location_is_offzone,
+    normalize_title,
+    should_reject_location_title,
+)
 from pipeline.generate.draft.temporal import strict_generation_category_signal
 
 MIN_LOCATION_CARDS = 3
@@ -414,6 +418,15 @@ def collect_location_candidates(
         if reject:
             candidate.rejected = True
             candidate.reject_reasons = reasons
+            continue
+        # Zone-of-record gate: a place linked from this zone's prose but tagged to a *different*
+        # zone's subzone category (e.g. Strahnbrad -> Hillsbrad Foothills) is an off-zone mention,
+        # not one of this zone's locations. The location page's own categories are only known
+        # post-fetch (joined onto the candidate in draft_writer), so this is the first stage that can
+        # see them.
+        if location_is_offzone(candidate.categories, zone_id):
+            candidate.rejected = True
+            candidate.reject_reasons = ["offzone_subzone_category"]
             continue
         candidate.profile_items = _profile_items_for_location(
             location_pool, location_id, candidate.name

@@ -18,6 +18,7 @@ from pipeline.contracts.models import (
     QuestlineClusterSummary,
     QuestRecord,
 )
+from pipeline.discovery.entity_typing import location_is_offzone
 from pipeline.discovery.instance_bosses import is_boss_section_role
 from pipeline.discovery.location_discovery import (
     build_location_decision_row,
@@ -222,6 +223,15 @@ def _build_evidence_packs(
         section_blocks = snapshot.get("section_blocks", [])
         if not isinstance(section_blocks, list):
             section_blocks = []
+
+        # Zone-of-record gate: a location page tagged to a *different* zone's subzone category was
+        # linked from this zone's prose but belongs elsewhere (e.g. Strahnbrad -> Hillsbrad Foothills,
+        # named in Western Plaguelands' history). Drop its evidence entirely so it never becomes a
+        # location card, glossary term, or planned claim for this zone.
+        if aux_role == "location_profile" and location_is_offzone(
+            snapshot.get("categories"), subject_zone_id
+        ):
+            continue
 
         if aux_role == "quest":
             lore_blocks = snapshot.get("quest_lore_blocks", [])

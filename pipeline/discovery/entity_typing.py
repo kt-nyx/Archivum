@@ -14,7 +14,40 @@ from pipeline.common.discovery_vocab import (
     meta_page_denylist,
     race_species_denylist,
 )
+from pipeline.common.text_ids import slugify
 from pipeline.discovery.world_registry import entry_kinds, registry_index
+
+_SUBZONE_CATEGORY_SUFFIX = " subzones"
+
+
+def location_subzone_zone_slugs(categories: list[str] | None) -> set[str]:
+    """Zone-of-record slugs from a location page's ``"<Zone> subzones"`` MediaWiki categories.
+
+    Warcraft wiki tags every place with a ``"<Zone> subzones"`` category naming the zone it actually
+    belongs to (e.g. ``"Western Plaguelands subzones"`` -> ``western-plaguelands``,
+    ``"Hillsbrad Foothills subzones"`` -> ``hillsbrad-foothills``). This is the authoritative
+    zone-of-record, independent of which zone's prose happened to link the place.
+    """
+    slugs: set[str] = set()
+    for category in categories or []:
+        text = str(category).strip()
+        if text.lower().endswith(_SUBZONE_CATEGORY_SUFFIX):
+            zone_part = text[: -len(_SUBZONE_CATEGORY_SUFFIX)].strip()
+            if zone_part:
+                slugs.add(slugify(zone_part))
+    return slugs
+
+
+def location_is_offzone(categories: list[str] | None, zone_id: str) -> bool:
+    """True when a location's own zone-of-record categories name zones, none of which is the subject
+    zone — i.e. the place is merely *mentioned* in this zone's prose but belongs elsewhere (e.g.
+    Strahnbrad, a Hillsbrad Foothills subzone, named in Western Plaguelands' history). Returns False
+    when the page declares no ``"<Zone> subzones"`` category (no signal — never over-reject) or when
+    one of them matches the subject zone."""
+    subzone_slugs = location_subzone_zone_slugs(categories)
+    if not subzone_slugs:
+        return False
+    return zone_id.strip().removeprefix("zone-") not in subzone_slugs
 
 TraverseRole = Literal[
     "storyline",
