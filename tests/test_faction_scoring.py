@@ -481,6 +481,41 @@ def test_lede_only_profile_excluded_without_seed_or_bindings() -> None:
     assert all(row.faction_id != "faction-minor-order" for row in elected)
 
 
+def test_lede_only_with_shared_bindings_only_is_still_excluded() -> None:
+    # Review fix (slice A): shared/neutral quest bindings — which every faction in the zone matches —
+    # are not real involvement. A lede-only profile lacking its own seed mentions and side-specific
+    # bindings must still be zeroed, even in a zone full of shared quests (where the old
+    # quest_binding_count was nonzero and wrongly spared it).
+    zone_id = "zone-example"
+    v3_rows = [
+        {"zone_id": zone_id, "node_type": "quest", "faction_binding": "shared"} for _ in range(8)
+    ]
+    pools = {
+        "faction_pool": [
+            _profile_item(
+                "faction-minor-order",
+                "The Minor Order is a small faction in Azeroth.",
+                section_role="lead",
+            )
+        ],
+        "faction_role_pool": [],
+    }
+    candidates = collect_faction_candidates(
+        zone_id=zone_id,
+        evidence_rows=[],
+        pools=pools,
+        faction_profile_targets=[_target("faction-minor-order", "Minor Order")],
+        v3_rows=v3_rows,
+    )
+    scored = score_faction_candidate(candidates[0])
+    assert scored.quest_binding_count >= 8  # it does match the zone's shared quests
+    assert scored.specific_quest_binding_count == 0  # but owns none of its own side
+    assert scored.score == 0.0
+    assert all(
+        row.faction_id != "faction-minor-order" for row in select_major_factions(candidates)
+    )
+
+
 def test_seed_only_target_discovered_from_high_weight_mention() -> None:
     zone_id = "zone-example"
     pools = {

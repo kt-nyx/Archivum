@@ -822,7 +822,11 @@ def score_faction_candidate(
     candidate.has_high_weight_seed = has_high
     candidate.lede_only = _is_lede_only_profile(candidate)
 
-    if candidate.lede_only and not candidate.seed_mentions and candidate.quest_binding_count == 0:
+    if (
+        candidate.lede_only
+        and not candidate.seed_mentions
+        and candidate.specific_quest_binding_count == 0
+    ):
         lede_has_zone = any(
             _name_in_text(zone_name, str(item.get("snippet", "")))
             or any(_name_in_text(token, str(item.get("snippet", ""))) for token in tokens)
