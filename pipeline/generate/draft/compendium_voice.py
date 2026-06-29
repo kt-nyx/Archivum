@@ -79,9 +79,10 @@ INSTANCE_AT_A_GLANCE_VOICE = (
 INSTANCE_OVERVIEW_VOICE = (
     "Instance story-context overview. Convey what this place IS and, in broad strokes, how it came "
     "to be that way — its essential identity, significance, and the stakes for those who enter. Keep "
-    "it high-level: summarize the arc, do not chronicle it. Defer specific events and the detailed "
-    "sequence to the history sections (name that corruption befell a place, not each disaster in "
-    "turn). Readable in-universe prose, no walkthrough framing."
+    "it high-level: capture the overall arc rather than chronicling specific events in sequence "
+    "(name that corruption befell a place, not each disaster in turn); that granular history belongs "
+    "in the history sections. Still write a full, flowing paragraph — high-level means less granular, "
+    "not shorter. Readable in-universe prose, no walkthrough framing."
 )
 
 KEY_CHARACTER_VOICE = (
