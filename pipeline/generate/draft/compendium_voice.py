@@ -22,14 +22,25 @@ COMPLETE_CLAUSE_MANDATE = (
     "(avoid trailing fragments like '...can break.' or '...help keep.')."
 )
 
+# Tense discipline for the past-tense fields (at_a_glance, history). The model tends to default to
+# gratuitous past-perfect ("had been a scarred remnant", "had been spared"). Past-perfect should mark
+# anteriority between two past events, not serve as the baseline narrative tense.
+SIMPLE_PAST_DISCIPLINE = (
+    " Use simple past as the default (was, fell, became, rose); reserve past-perfect (had been, "
+    "had fallen) only to mark an event that precedes another past event you also state."
+)
+
 AT_A_GLANCE_VOICE = (
     "Zone flavor caption. Past tense only. 1–2 sentences tracing historical identity before the player enters the current content. "
     "Do not describe present retail state — that belongs in currently. "
     'Example shape: "Once the breadbasket of Lordaeron, these lands were consumed by the Scourge..."'
+    + SIMPLE_PAST_DISCIPLINE
 )
 
 CURRENTLY_VOICE = (
     "Zone flavor summary. Present tense only. Active conflict, recovery, or faction dynamics at the player's entry state. "
+    "Capture the zone's overall present state — the principal factions, recovery efforts, and conflicts that define it now — "
+    "rather than fixating on a single battle or questline. "
     "Do not restate the historical identity arc from at_a_glance. Name factions explicitly when describing conflict. "
     'Example shape: "The Argent Crusade and Cenarion Circle work to heal the blighted soil while Horde and Alliance forces contest..."'
 )
@@ -39,6 +50,7 @@ HISTORY_VOICE = (
     "Include factual name-checks (eras, key factions, places) and readable narrative flow. "
     'Example shape: "During the Third War, the Scourge under Arthas overran..., ending Lordaeron\'s hold..." '
     "Never use present-activity verbs (maintains, struggles, continues to hold) in historical bodies."
+    + SIMPLE_PAST_DISCIPLINE
 )
 
 
@@ -65,9 +77,11 @@ INSTANCE_AT_A_GLANCE_VOICE = (
 )
 
 INSTANCE_OVERVIEW_VOICE = (
-    "Instance story-context overview. Explain the narrative significance, stakes, and the "
-    "world-events that make this place matter. Trace why adventurers come here and what hangs "
-    "in the balance — not how to clear it. Readable in-universe prose, no walkthrough framing."
+    "Instance story-context overview. Convey what this place IS and, in broad strokes, how it came "
+    "to be that way — its essential identity, significance, and the stakes for those who enter. Keep "
+    "it high-level: summarize the arc, do not chronicle it. Defer specific events and the detailed "
+    "sequence to the history sections (name that corruption befell a place, not each disaster in "
+    "turn). Readable in-universe prose, no walkthrough framing."
 )
 
 KEY_CHARACTER_VOICE = (
