@@ -23,6 +23,9 @@ from pipeline.generate.draft.prose_lint import split_sentences, word_count
 
 _CLAIM_EXTRACTOR_VERSION = "evidence_claim_sentence_v1"
 _LLM_CLAIM_EXTRACTOR_VERSION = "evidence_claim_llm_v1"
+# Public aliases consumed by the data-model version manifest (Slice 11).
+CLAIM_EXTRACTOR_VERSION = _CLAIM_EXTRACTOR_VERSION
+LLM_CLAIM_EXTRACTOR_VERSION = _LLM_CLAIM_EXTRACTOR_VERSION
 _LONG_PARAGRAPH_WORD_THRESHOLD = 70
 _LONG_SENTENCE_WORD_THRESHOLD = 32
 _MIN_SUPPORT_OVERLAP_RATIO = 0.34

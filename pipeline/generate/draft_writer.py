@@ -22,6 +22,7 @@ from pipeline.generate.draft.claim_routing import (
 )
 from pipeline.generate.draft.llm import draft_chat_json_completion, set_draft_verbose
 from pipeline.generate.draft.mode import draft_pipeline_mode
+from pipeline.generate.draft.model_versions import build_temporal_model_manifest
 from pipeline.generate.draft.pages import (
     InstanceKeyCharacterSelection,
     build_instance_page,
@@ -567,4 +568,10 @@ def run_draft_writer(
     )
     write_json((decisions_dir / "prose_finalize_decisions.json"), prose_finalize_decisions)
     write_json((decisions_dir / "section_coverage_decisions.json"), section_coverage_decisions)
+    # Data-model version + internal-only schema record (Slice 11): lets a run's decision sidecars be
+    # traced to the model generation that wrote them, and pins the claim-metadata visibility contract.
+    write_json(
+        (decisions_dir / "temporal_model_manifest.json"),
+        build_temporal_model_manifest(run_id=context.run_id),
+    )
     return outputs

@@ -1500,7 +1500,7 @@ Review cycle (2026-06-28):
 
 ## Slice 11 - Backward Compatibility And Migration
 
-Status: Not started
+Status: Landed (scoped to posterity + schema decision; production migration intentionally skipped)
 
 Goal: keep existing pipeline functions usable while claim-level classification rolls out, and make
 an explicit schema/contract decision before exposing claim metadata publicly.
@@ -1559,6 +1559,48 @@ Acceptance:
 Risks:
 
 - Dual paths can hide bugs. Keep fallback path small and plan to delete it after enough runs.
+
+Scope decision (2026-06-28, with the user):
+
+- The project is pre-release, so there is no production data to migrate and no addon consumer to keep
+  compatible. The only reason to do this slice is posterity on the data model. So the production
+  migration machinery (feature flags, dual-path shims, EvidenceItem version stamping, "maintain old
+  sidecars during transition") was intentionally skipped. The capability detection tasks 1-4 already
+  exist organically and need no new code: every routed pool falls back to paragraph evidence when no
+  claim views are present, the old paragraph-level sidecars (`temporal_evidence_decisions.json`,
+  `content_boundary_decisions.json`, `canonical_temporal_evidence_decisions.json`) are still written,
+  and the public draft JSON carries no claim metadata.
+
+Implementation notes:
+
+- Added `pipeline/generate/draft/model_versions.py` as the single source of truth for the data-model
+  version stamps and the schema/contract decision:
+  - version constants: `ENTRY_STATE_CONTRACT_VERSION`, `TEMPORAL_CLASSIFIER_VERSION`,
+    `CLAIM_VIEW_ROUTING_VERSION`, `HISTORY_COVERAGE_VERSION`, plus the claim-extractor versions
+    re-exported from `claims.py` (`CLAIM_EXTRACTOR_VERSION`, `LLM_CLAIM_EXTRACTOR_VERSION`);
+  - `INTERNAL_DECISION_SIDECARS`: each internal sidecar with a one-line purpose;
+  - `build_temporal_model_manifest(run_id=...)`: the machine-readable record (task 5 version fields +
+    task 6 schema decision).
+- `draft_writer` writes `data/decisions/temporal_model_manifest.json` so a run's decision sidecars
+  can be traced to the model generation that produced them.
+- Schema/contract decision RECORD (task 6, confirming clarification question 5): all claim-level
+  metadata (atomic claims, claim temporal/spoiler labels, claim-view routing, history coverage) is
+  INTERNAL — it lives only under `data/decisions/` and is never copied into the public addon-facing
+  zone/instance draft JSON. The manifest pins this as `claim_metadata_visibility: internal` and
+  `public_draft_json_includes_claim_metadata: false`. Exposing a public subset later must be an
+  explicit, versioned, fixture-backed schema change.
+- Added public version aliases in `claims.py` so the manifest is the single version source.
+
+Validation:
+
+- `.venv/Scripts/python.exe -m pytest tests/test_model_versions.py tests/test_zone_prose_draft.py -q`
+- `.venv/Scripts/python.exe -m pytest -q` — 887 passed, 5 skipped, 1 xfailed.
+- `.venv/Scripts/python.exe -m ruff check` (changed files) and targeted `mypy` clean;
+  `git diff --check` clean.
+- Added tests: the manifest's version fields + internal-only schema decision; and a guard
+  (`test_zone_draft_excludes_internal_claim_metadata`) that builds a zone page from claim-view-bearing
+  evidence and asserts the serialized public draft has no `_claim_views` / `is_claim_view` /
+  `claim_id` — the "no accidental public schema changes" acceptance, now locked in.
 
 ## Slice 12 - End-To-End Pilot Rebaseline
 
@@ -1707,3 +1749,7 @@ Add dated entries here as slices move.
 - 2026-06-28: Slice 10 reviewed and verified. Walked the exclusion truth table; closed a test gap by
   adding a direct paragraph-excludes-but-claim-rescues test. Full suite 884 passed / 5 skipped /
   1 xfailed.
+- 2026-06-28: Slice 11 landed, scoped to posterity + the schema decision (production migration
+  skipped, pre-release). Added `model_versions.py` + `temporal_model_manifest.json`; recorded the
+  claim-metadata-is-internal contract; added a public-JSON guard test. Full suite 887 passed /
+  5 skipped / 1 xfailed; ruff + mypy clean.

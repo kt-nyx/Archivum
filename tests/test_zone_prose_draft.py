@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+
+from pipeline.generate.draft.claim_routing import apply_claim_views_to_evidence_rows
 from pipeline.generate.draft.pages import build_zone_page
 from pipeline.generate.draft.prose_lint import (
     MAX_AT_A_GLANCE_WORDS,
@@ -130,6 +133,54 @@ def test_build_zone_page_prose_passes_lint_without_llm(monkeypatch) -> None:
         at_a_glance=str(draft["at_a_glance"]),
     )
     assert not lint_history_sections(draft["history_sections"], max_sections=8)
+
+
+def test_zone_draft_excludes_internal_claim_metadata(monkeypatch) -> None:
+    """Slice 11 schema contract: claim-level metadata stays internal, never in public draft JSON.
+
+    Build a zone page from evidence that carries claim views, then assert the serialized draft has
+    no internal claim keys (``_claim_views``, ``is_claim_view``, ``claim_id``) anywhere.
+    """
+    monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
+    zone_id = "zone-example"
+    history_excerpt = (
+        "The region was devastated during the invasion and fell under undead control for decades "
+        "before military campaigns began restoring order across the frontier and broken keeps."
+    )
+    evidence = _prose_evidence(zone_id)
+    for row in evidence:
+        for item in row["evidence_items"]:
+            item["canonical_evidence_id"] = "canonical-hist"
+    claim_temporal_decisions = [
+        {
+            "canonical_evidence_id": "canonical-hist",
+            "source_id": "src-zone",
+            "source_title": "Example Zone",
+            "source_excerpt": history_excerpt,
+            "claims": [
+                {
+                    "canonical_evidence_id": "canonical-hist",
+                    "claim_id": "claim-restore",
+                    "claim_text": (
+                        "Military campaigns restored order across the frontier and broken keeps."
+                    ),
+                    "claim_type": "event",
+                    "temporal_scope": "pre_entry_history",
+                    "history_eligibility": "history_background",
+                    "spoiler_safety": "safe_background",
+                    "source_excerpt": history_excerpt,
+                }
+            ],
+        }
+    ]
+    routed = apply_claim_views_to_evidence_rows(evidence, claim_temporal_decisions)
+
+    draft = build_zone_page(_fact_pack(zone_id), routed, [], [], [], {}, {}, None)
+
+    serialized = json.dumps(draft)
+    assert "_claim_views" not in serialized
+    assert "is_claim_view" not in serialized
+    assert "claim_id" not in serialized
 
 
 def test_build_zone_page_prefers_past_snippet_for_at_a_glance(monkeypatch) -> None:
