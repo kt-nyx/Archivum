@@ -115,6 +115,8 @@ def _iter_evidence_items(
                 "faction_name": str(build_meta.get("faction_name", "")),
                 "location_id": str(build_meta.get("location_id", "")),
                 "location_name": str(build_meta.get("location_name", "")),
+                "character_id": str(build_meta.get("character_id", "")),
+                "character_name": str(build_meta.get("character_name", "")),
                 "lore_scope": str(build_meta.get("lore_scope", "")),
                 "lore_source_title": str(build_meta.get("lore_source_title", "")),
                 "canonical_evidence_id": str(
@@ -509,11 +511,20 @@ def _build_instance_evidence_pools(
         faction_role_pool,
         {PRE_ENTRY_HISTORY, ENTRY_STATE},
     )
+    # Slice D: per-character biography from the crawled character pages. Built raw like boss_pool
+    # (the key-character finalizer applies KEY_CHARACTER_ROUTE itself, dropping spoiler-unsafe
+    # views); bounded to pre-entry/entry-state here, then merged into each candidate's profile_pool
+    # so summaries carry real biographical substance instead of a structural-presence template.
+    character_pool = filter_temporal_items(
+        _iter_evidence_items(evidence_rows, {"character_pool"}),
+        {PRE_ENTRY_HISTORY, ENTRY_STATE},
+    )
     return {
         "at_a_glance_pool": at_a_glance_pool,
         "history_pool": history_pool,
         "overview_pool": overview_pool,
         "boss_pool": boss_pool,
+        "character_pool": character_pool,
         "instance_lore_pool": instance_lore_pool,
         "parent_lore_pool": parent_lore_pool,
         "related_lore_pool": related_lore_pool,

@@ -498,6 +498,7 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
     questline_decisions: list[dict[str, Any]] = []
     faction_profile_targets: list[dict[str, Any]] = []
     location_profile_targets: list[dict[str, Any]] = []
+    character_profile_targets: list[dict[str, Any]] = []
     storyline_traversal_targets: list[dict[str, Any]] = []
     instance_zone_profiles: list[dict[str, Any]] = []
 
@@ -676,12 +677,35 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
                         "source_section_role": inferred_role,
                     }
                 )
+            elif inferred_entity_type == "character":
+                # Slice D: a typed character link becomes a profile crawl target so the key-character
+                # summary path can draw on real biography instead of a structural-presence template.
+                character_profile_targets.append(
+                    {
+                        "zone_id": str(snapshot.get("entity_id", "")),
+                        "character_id": _to_entity_id("character", title),
+                        "name": title,
+                        "source_link": link,
+                        "source_section_role": inferred_role,
+                    }
+                )
             else:
                 if reject_location or _should_reject_location_candidate(
                     title, inferred_entity_type
                 ):
                     continue
                 if normalize_title(title) in notable_character_titles:
+                    # A "notable characters" roster link mistyped as a location: still a character,
+                    # so route it to the character crawl rather than dropping it entirely (Slice D).
+                    character_profile_targets.append(
+                        {
+                            "zone_id": str(snapshot.get("entity_id", "")),
+                            "character_id": _to_entity_id("character", title),
+                            "name": title,
+                            "source_link": link,
+                            "source_section_role": inferred_role,
+                        }
+                    )
                     continue
                 # WS-C: section-role-first typing now admits whole maps/subregions sections,
                 # which can include meta-placeholder pages ("Lore location", "Undisplayed
@@ -739,6 +763,18 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
             target["source_section_role"] = upgraded_role
         collapsed_profile_targets.append(target)
     location_profile_targets = collapsed_profile_targets
+
+    # Slice D: a character can be linked from several pages (instance roster + zone notables); keep
+    # one target per (zone_id, character_id), preferring the first/most-specific section role seen.
+    deduped_character_targets: list[dict[str, Any]] = []
+    seen_character_keys: set[tuple[str, str]] = set()
+    for target in character_profile_targets:
+        key = (str(target.get("zone_id", "")), str(target.get("character_id", "")))
+        if key in seen_character_keys:
+            continue
+        seen_character_keys.add(key)
+        deduped_character_targets.append(target)
+    character_profile_targets = deduped_character_targets
 
     zone_seed_text_by_id = {
         str(snapshot.get("entity_id", "")).strip(): build_zone_seed_text(
@@ -842,6 +878,7 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
         "zone_quest_graph_v3": discovery_dir / "zone_quest_graph_v3.json",
         "faction_profile_targets": discovery_dir / "faction_profile_targets.json",
         "location_profile_targets": discovery_dir / "location_profile_targets.json",
+        "character_profile_targets": discovery_dir / "character_profile_targets.json",
         "storyline_traversal_targets": discovery_dir / "storyline_traversal_targets.json",
         "lore_traversal_targets": discovery_dir / "lore_traversal_targets.json",
         "instance_zone_profiles": discovery_dir / "instance_zone_profiles.json",
@@ -861,6 +898,7 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
     write_json(outputs["zone_quest_graph_v3"], [])
     write_json(outputs["faction_profile_targets"], faction_profile_targets)
     write_json(outputs["location_profile_targets"], location_profile_targets)
+    write_json(outputs["character_profile_targets"], character_profile_targets)
     write_json(outputs["storyline_traversal_targets"], storyline_traversal_targets)
     write_json(outputs["lore_traversal_targets"], lore_traversal_targets)
     write_json(outputs["instance_zone_profiles"], instance_zone_profiles)

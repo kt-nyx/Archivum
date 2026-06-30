@@ -54,6 +54,7 @@ TraverseRole = Literal[
     "quest",
     "faction_profile",
     "location_profile",
+    "character_profile",
     "instance_lore",
 ]
 
@@ -82,6 +83,8 @@ _TRAVERSE_BLOCK_BY_ROLE: dict[str, frozenset[str]] = {
     "quest": frozenset({"zone", "continent", "capital", "region", "instance", "person", "place"}),
     "faction_profile": frozenset({"zone", "continent", "instance"}),
     "location_profile": frozenset({"zone", "continent", "instance"}),
+    # A character page is never a place: block it from resolving to a zone/continent/instance.
+    "character_profile": frozenset({"zone", "continent", "instance"}),
     "storyline": frozenset(),
     "instance_lore": frozenset({"zone", "continent", "capital", "region"}),
     # Parent-complex lore pages are themselves instance/zone-classified (e.g.

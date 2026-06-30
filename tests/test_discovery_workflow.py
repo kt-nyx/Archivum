@@ -592,3 +592,14 @@ def test_discovery_workflow_excludes_cast_named_in_history_and_characters(tmp_pa
     assert "Caer Darrow" in names  # a real maps-section landmark survives
     assert "Thassarian" not in names  # rostered cast member
     assert "Ner'zhul" not in names  # apostrophe-infix NPC
+
+    # Slice D: the rostered cast member is not dropped — it becomes a character profile crawl target.
+    character_targets = json.loads(
+        outputs["character_profile_targets"].read_text(encoding="utf-8")
+    )
+    character_names = {row["name"] for row in character_targets}
+    assert "Thassarian" in character_names
+    assert "Caer Darrow" not in character_names  # a place never becomes a character target
+    thassarian = next(row for row in character_targets if row["name"] == "Thassarian")
+    assert thassarian["character_id"] == "character-thassarian"
+    assert thassarian["source_link"]

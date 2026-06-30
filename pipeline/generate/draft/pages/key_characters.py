@@ -105,6 +105,40 @@ def _order_sidecar_pool_candidates(
     return ordered
 
 
+def _merge_character_profile_evidence(
+    cast: list[BossCandidate], character_pool: list[dict[str, Any]]
+) -> None:
+    """Slice D: attach crawled character-page biography to each cast member's profile_pool.
+
+    The biography is prepended so identity ("who this figure is") leads the synthesis evidence ahead
+    of the instance's structural-presence mentions. Spoiler bounding is unchanged — the finalizer
+    still routes the merged pool through KEY_CHARACTER_ROUTE, dropping unsafe claim views.
+    """
+    if not cast or not character_pool:
+        return
+    by_name: dict[str, list[dict[str, Any]]] = {}
+    for item in character_pool:
+        name = str(item.get("character_name") or item.get("source_title") or "").strip()
+        if not name:
+            continue
+        by_name.setdefault(normalize_title(name), []).append(item)
+    if not by_name:
+        return
+    for candidate in cast:
+        cand_key = normalize_title(candidate.name)
+        matched = by_name.get(cand_key)
+        if matched is None:
+            # Tolerate page-title vs roster-name drift (page "Gandling" vs cast "Darkmaster
+            # Gandling"): accept the first character whose name contains or is contained by the cast
+            # name, so a one-word page still binds to a titled roster entry.
+            for name_key, items in by_name.items():
+                if name_key and (name_key in cand_key or cand_key in name_key):
+                    matched = items
+                    break
+        if matched:
+            candidate.profile_pool = list(matched) + list(candidate.profile_pool or [])
+
+
 def build_instance_key_character_selection(
     *,
     instance_id: str,
@@ -179,6 +213,7 @@ def build_instance_key_character_selection(
         max_count=INSTANCE_MAX_KEY_CHARACTERS,
     )
     cast = merged_cast_candidates(pool, merged_names, instance_name=instance_name)
+    _merge_character_profile_evidence(cast, pools.get("character_pool", []))
     sidecar_pool = _order_sidecar_pool_candidates(
         pool,
         cast_names=merged_names,

@@ -344,6 +344,19 @@ def _build_evidence_packs(
                 field_names = ["faction_pool"]
             elif aux_role == "location_profile":
                 field_names = ["location_pool"]
+            elif aux_role == "character_profile":
+                # Slice D: a character page mixes biography with combat / ability / strategy /
+                # patch-note sections that are not in-universe biography. Use the same strict
+                # narrative allowlist as cross-page lore so only biographical prose becomes
+                # evidence; the Slice-9 spoiler route still bounds it at draft time.
+                lowered_raw = effective_section.lower()
+                is_narrative = lowered_raw in {"lead", "introduction"} or any(
+                    token in lowered_raw
+                    for token in ("history", "lore", "background", "story", "biography")
+                )
+                if lowered_raw.startswith("in_the_rpg") or not is_narrative:
+                    continue
+                field_names = ["character_pool"]
             elif aux_role == "instance_lore":
                 field_names = ["instance_lore_pool"]
             elif aux_role in {"parent_lore", "related_lore"}:
@@ -399,6 +412,11 @@ def _build_evidence_packs(
                 if aux_role == "location_profile":
                     build_meta["location_id"] = str(snapshot.get("auxiliary_target_id", "")).strip()
                     build_meta["location_name"] = page_title or entity_name
+                if aux_role == "character_profile":
+                    build_meta["character_id"] = str(
+                        snapshot.get("auxiliary_target_id", "")
+                    ).strip()
+                    build_meta["character_name"] = page_title or entity_name
                 if aux_role == "instance_lore":
                     build_meta["instance_id"] = str(
                         snapshot.get("auxiliary_target_id", subject_id)

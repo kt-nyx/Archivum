@@ -52,6 +52,9 @@ _MAX_STORYLINE = 1
 _MAX_QUEST = int(os.environ.get("WOWLORE_MAX_QUESTS_PER_ZONE", "100000"))
 _MAX_FACTION = 7
 _MAX_LOCATION = 8
+# Slice D: per-page character-profile crawl cap. Sized to the instance key-character roster
+# (INSTANCE_MAX_KEY_CHARACTERS) so every elected key character can pick up biographical evidence.
+_MAX_CHARACTER = 8
 _MAX_PARENT_LORE = 1
 _MAX_RELATED_LORE = 3
 # Politeness throttle between quest page fetches (seconds), env-overridable.
@@ -952,6 +955,7 @@ def run_traverse_seed(context: RunContext) -> dict[str, Path]:
     discovery_dir = context.data_dir / "discovery"
     faction_targets = _load_json(discovery_dir / "faction_profile_targets.json")
     location_targets = _load_json(discovery_dir / "location_profile_targets.json")
+    character_targets = _load_json(discovery_dir / "character_profile_targets.json")
     storyline_targets = _load_json(discovery_dir / "storyline_traversal_targets.json")
     location_decisions = _load_json(
         context.data_dir / "decisions" / "location_significance_decisions.json"
@@ -1103,6 +1107,44 @@ def run_traverse_seed(context: RunContext) -> dict[str, Path]:
             ):
                 seen_location.add(key)
                 _increment(zone_id, "location_profile")
+
+    if isinstance(character_targets, list):
+        seen_character: set[tuple[str, str]] = set()
+        for target in character_targets:
+            if not isinstance(target, dict):
+                continue
+            page_id = str(target.get("zone_id", "")).strip()
+            link = str(target.get("source_link", "")).strip()
+            character_id = str(target.get("character_id", "")).strip()
+            key = (page_id, character_id)
+            if not page_id or not link or character_id == "" or key in seen_character:
+                continue
+            if not _within_cap(page_id, "character_profile", _MAX_CHARACTER):
+                continue
+            # A character can be rostered on the zone page or an instance page; resolve whichever
+            # seed snapshot it was linked from so provenance attaches to the right origin page.
+            seed_snap = _zone_seed_snapshot(snapshots, page_id) or _instance_seed_snapshot(
+                snapshots, page_id
+            )
+            if seed_snap is None:
+                continue
+            if _fetch_and_append(
+                zone_snapshot=seed_snap,
+                link=link,
+                auxiliary_role="character_profile",
+                auxiliary_target_id=character_id,
+                traversal_origin="character_profile_targets",
+                page_title=str(target.get("name", "")),
+                snapshots=snapshots,
+                manifest_rows=manifest_rows,
+                existing_source_ids=existing_source_ids,
+                existing_urls=existing_urls,
+                captured_at=captured_at,
+                report_rows=report_rows,
+                allowed_instance_titles=allowed_instance_titles,
+            ):
+                seen_character.add(key)
+                _increment(page_id, "character_profile")
 
     instance_lore_map = _load_json(discovery_dir / "instance_lore_source_map.json")
     if isinstance(instance_lore_map, list):
