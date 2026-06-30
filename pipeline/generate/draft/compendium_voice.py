@@ -86,9 +86,11 @@ INSTANCE_OVERVIEW_VOICE = (
 )
 
 KEY_CHARACTER_VOICE = (
-    "Key-character card. State who this figure is in-universe, why they are present in this setting, "
-    "and their entry-state relationship to those who enter. Do not explain gameplay or narrative function. "
-    "Characterize background, motive, and local role, not combat tactics or abilities." + COMPLETE_CLAUSE_MANDATE
+    "Key-character card: a short 1-3 sentence biography of this figure. Lead by describing who they "
+    "are — their background, nature, and what defines them in the world — then let that flow "
+    "naturally into their in-universe role here and why they are present in this place or "
+    "organization. Treat the world as real; do not explain gameplay, narrative function, combat "
+    "tactics, or abilities." + COMPLETE_CLAUSE_MANDATE
 )
 
 INSTANCE_FACTION_VOICE = (

@@ -6,6 +6,7 @@ from pathlib import Path
 from pipeline.common.run_context import ensure_run_context
 from pipeline.discovery.workflow import (
     _collapse_location_variants,
+    _collect_instance_character_targets,
     _effective_section_slug,
     _section_role,
     run_discovery_workflow,
@@ -517,6 +518,51 @@ def test_discovery_workflow_extracts_marquee_landmarks_from_mixed_sections(tmp_p
     assert candidates["Sorrow Hill"]["lore_significant"] is False
 
 
+def test_collect_instance_character_targets_takes_roster_not_places() -> None:
+    # Slice D: instance character targets come from the boss-roster structured links, scoped to the
+    # instance. Places (Caer Darrow), denizen trash (Risen Guard), and meta props (Chamber of
+    # Summoning) are filtered; the curated boss roster survives.
+    snapshots = [
+        {
+            "entity_id": "instance-scholomance",
+            "entity_type": "instance",
+            "name": "Scholomance",
+            "structured_links": [
+                {"label": "Darkmaster Gandling", "href": "/wiki/Darkmaster_Gandling",
+                 "section_role": "scholomance_faculty_edit"},
+                {"label": "Lilian Voss", "href": "/wiki/Lilian_Voss",
+                 "section_role": "scholomance_faculty_edit"},
+                {"label": "Rattlegore", "href": "/wiki/Rattlegore",
+                 "section_role": "dungeon_scholomance_edit"},
+                # A place linked from the adventure-guide section is rejected.
+                {"label": "Caer Darrow", "href": "/wiki/Caer_Darrow",
+                 "section_role": "adventure_guide_edit"},
+                # Denizen-section trash is excluded wholesale.
+                {"label": "Risen Guard", "href": "/wiki/Risen_Guard",
+                 "section_role": "dungeon_denizens_edit"},
+                # A non-roster (loot) section is ignored.
+                {"label": "Spectral Necklace", "href": "/wiki/Spectral_Necklace",
+                 "section_role": "loot_edit"},
+            ],
+        },
+        # A zone seed contributes no character targets.
+        {
+            "entity_id": "zone-western-plaguelands",
+            "entity_type": "zone",
+            "name": "Western Plaguelands",
+            "structured_links": [
+                {"label": "Tirion Fordring", "href": "/wiki/Tirion_Fordring",
+                 "section_role": "notable_characters"},
+            ],
+        },
+    ]
+    targets = _collect_instance_character_targets(snapshots)
+    names = {t["name"] for t in targets}
+    assert names == {"Darkmaster Gandling", "Lilian Voss", "Rattlegore"}
+    assert all(t["zone_id"] == "instance-scholomance" for t in targets)
+    assert all(t["character_id"].startswith("character-") for t in targets)
+
+
 def test_discovery_workflow_excludes_cast_named_in_history_and_characters(tmp_path: Path) -> None:
     # A character linked in BOTH the history prose and the notable-characters roster had its
     # inferred section role resolve to "history", slipping past section-role typing into the
@@ -593,13 +639,9 @@ def test_discovery_workflow_excludes_cast_named_in_history_and_characters(tmp_pa
     assert "Thassarian" not in names  # rostered cast member
     assert "Ner'zhul" not in names  # apostrophe-infix NPC
 
-    # Slice D: the rostered cast member is not dropped — it becomes a character profile crawl target.
+    # Slice D: zone-page characters are NOT crawled — only instance rosters are (zones emit no
+    # key-character cards). So a zone notable like Thassarian produces no character profile target.
     character_targets = json.loads(
         outputs["character_profile_targets"].read_text(encoding="utf-8")
     )
-    character_names = {row["name"] for row in character_targets}
-    assert "Thassarian" in character_names
-    assert "Caer Darrow" not in character_names  # a place never becomes a character target
-    thassarian = next(row for row in character_targets if row["name"] == "Thassarian")
-    assert thassarian["character_id"] == "character-thassarian"
-    assert thassarian["source_link"]
+    assert character_targets == []

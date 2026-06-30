@@ -33,6 +33,7 @@ from pipeline.discovery.lore_sources import (
     build_instance_lore_candidates,
     compute_instance_lore_density,
 )
+from pipeline.discovery.world_registry import entry_kinds
 
 _CLASSIC_ONLY_MARKERS = ("classic", "classic-only", "vanilla")
 _NON_RETAIL_MARKERS = ("warcraft iii", "removed", "undisplayed", "lore location")
@@ -293,6 +294,89 @@ def _title_has_location_type_token(title: str) -> bool:
     return any(tokens & type_tokens for _type, type_tokens in location_type_title_rules())
 
 
+# Slice D: instance roster structured-link sections whose members are the instance's key characters
+# (faculty / adventure-guide / boss / encounter / per-dungeon boss table). Denizen/inhabitant rosters
+# are trash-heavy (random skeletons, props), so they are excluded; the cast is the curated roster.
+_INSTANCE_ROSTER_SECTION_TOKENS = (
+    "faculty",
+    "adventure_guide",
+    "boss",
+    "encounter",
+    "dungeon_journal",
+    "notable_character",
+)
+_INSTANCE_ROSTER_DENIZEN_TOKENS = ("denizen", "inhabitant")
+# entry_kinds that mark a roster link as a place / structure rather than a character.
+_NON_CHARACTER_ENTRY_KINDS = frozenset(
+    {"place", "zone", "continent", "capital", "region", "instance"}
+)
+
+
+def _is_instance_roster_section(section_role: str) -> bool:
+    lowered = re.sub(r"\s+", "_", section_role.strip().lower())
+    if any(token in lowered for token in _INSTANCE_ROSTER_DENIZEN_TOKENS):
+        return False
+    if any(token in lowered for token in _INSTANCE_ROSTER_SECTION_TOKENS):
+        return True
+    # Per-dungeon boss table, e.g. "dungeon_scholomance_edit" (denizens already excluded above).
+    return lowered.startswith("dungeon_")
+
+
+def _collect_instance_character_targets(
+    snapshots: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Emit character-profile crawl targets scoped to each instance's key-character roster.
+
+    Instance key-character cards are the only consumer of character biography, so targets are scoped
+    to the instance (not the parent zone) and sourced from its boss-roster structured links, with
+    places, structures, and meta pages filtered out. The draft only merges biography for an *elected*
+    cast member, so a stray non-character that slips through is crawled but never reaches a card.
+    """
+    targets: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for snapshot in snapshots:
+        if not isinstance(snapshot, dict):
+            continue
+        if str(snapshot.get("entity_type", "")) != "instance":
+            continue
+        if str(snapshot.get("auxiliary_role", "")).strip():
+            continue
+        instance_id = str(snapshot.get("entity_id", "")).strip()
+        if not instance_id:
+            continue
+        structured_links = snapshot.get("structured_links", [])
+        if not isinstance(structured_links, list):
+            continue
+        for link in structured_links:
+            if not isinstance(link, dict):
+                continue
+            if not _is_instance_roster_section(str(link.get("section_role", ""))):
+                continue
+            label = str(link.get("label", "")).strip()
+            href = str(link.get("href", "")).strip()
+            if not label or not href:
+                continue
+            if hard_reject_markers(label) or _title_has_location_type_token(label):
+                continue
+            if entry_kinds(label) & _NON_CHARACTER_ENTRY_KINDS:
+                continue
+            character_id = _to_entity_id("character", label)
+            key = (instance_id, character_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            targets.append(
+                {
+                    "zone_id": instance_id,
+                    "character_id": character_id,
+                    "name": label,
+                    "source_link": href,
+                    "source_section_role": str(link.get("section_role", "")),
+                }
+            )
+    return targets
+
+
 def _infer_entity_type_for_link(title: str, inferred_section_role: str) -> str:
     # WS-C: the link's section role (WS-A structural signal) is the primary
     # classifier. The title-token fallbacks below only run when the section role
@@ -498,7 +582,6 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
     questline_decisions: list[dict[str, Any]] = []
     faction_profile_targets: list[dict[str, Any]] = []
     location_profile_targets: list[dict[str, Any]] = []
-    character_profile_targets: list[dict[str, Any]] = []
     storyline_traversal_targets: list[dict[str, Any]] = []
     instance_zone_profiles: list[dict[str, Any]] = []
 
@@ -678,34 +761,16 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
                     }
                 )
             elif inferred_entity_type == "character":
-                # Slice D: a typed character link becomes a profile crawl target so the key-character
-                # summary path can draw on real biography instead of a structural-presence template.
-                character_profile_targets.append(
-                    {
-                        "zone_id": str(snapshot.get("entity_id", "")),
-                        "character_id": _to_entity_id("character", title),
-                        "name": title,
-                        "source_link": link,
-                        "source_section_role": inferred_role,
-                    }
-                )
+                # Zone-page characters are not crawled: zones emit no key-character cards, so a
+                # character profile here has no consumer. Instance key characters are targeted
+                # separately from the instance roster (see _collect_instance_character_targets).
+                continue
             else:
                 if reject_location or _should_reject_location_candidate(
                     title, inferred_entity_type
                 ):
                     continue
                 if normalize_title(title) in notable_character_titles:
-                    # A "notable characters" roster link mistyped as a location: still a character,
-                    # so route it to the character crawl rather than dropping it entirely (Slice D).
-                    character_profile_targets.append(
-                        {
-                            "zone_id": str(snapshot.get("entity_id", "")),
-                            "character_id": _to_entity_id("character", title),
-                            "name": title,
-                            "source_link": link,
-                            "source_section_role": inferred_role,
-                        }
-                    )
                     continue
                 # WS-C: section-role-first typing now admits whole maps/subregions sections,
                 # which can include meta-placeholder pages ("Lore location", "Undisplayed
@@ -764,17 +829,10 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
         collapsed_profile_targets.append(target)
     location_profile_targets = collapsed_profile_targets
 
-    # Slice D: a character can be linked from several pages (instance roster + zone notables); keep
-    # one target per (zone_id, character_id), preferring the first/most-specific section role seen.
-    deduped_character_targets: list[dict[str, Any]] = []
-    seen_character_keys: set[tuple[str, str]] = set()
-    for target in character_profile_targets:
-        key = (str(target.get("zone_id", "")), str(target.get("character_id", "")))
-        if key in seen_character_keys:
-            continue
-        seen_character_keys.add(key)
-        deduped_character_targets.append(target)
-    character_profile_targets = deduped_character_targets
+    # Slice D: character crawl targets come from each instance's key-character roster (the only
+    # consumer of character biography), scoped to the instance — not from the zone link loop above,
+    # whose character-typed links are noisy places/meta with no key-character consumer.
+    character_profile_targets = _collect_instance_character_targets(snapshots)
 
     zone_seed_text_by_id = {
         str(snapshot.get("entity_id", "")).strip(): build_zone_seed_text(
