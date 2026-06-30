@@ -240,7 +240,7 @@ def test_finalize_keeps_structural_role_when_summary_mentions_ally(monkeypatch) 
     monkeypatch.setattr(
         key_character_page,
         "synthesize_key_character_summary",
-        lambda pool, boss_name, instance_name, structural_role="": (
+        lambda pool, boss_name, instance_name, structural_role="", max_words=None, **kwargs: (
             "Lilian Voss is a brief, tragic ally who helps adventurers in Test Keep.",
             ["src-lilian"],
         ),

@@ -32,6 +32,7 @@ from pipeline.generate.draft.prose_election import (
 from pipeline.generate.draft.prose_gate import detect_source_passthrough
 from pipeline.generate.draft.prose_lint import (
     MAX_HISTORY_SECTIONS,
+    has_present_state_framing,
     lint_history_sections,
     past_marker_score,
     trim_words,
@@ -42,6 +43,20 @@ from pipeline.generate.draft.prose_lint import (
 def _snippet_rank_key(row: dict[str, Any]) -> tuple[int, int]:
     snippet = str(row.get("snippet", ""))
     return past_marker_score(snippet), word_count(snippet)
+
+
+def _present_state_rank_key(row: dict[str, Any]) -> tuple[int, int]:
+    """Rank key for the at_a_glance identity caption: prefer present-state framing, then length."""
+    snippet = str(row.get("snippet", ""))
+    return int(has_present_state_framing(snippet)), word_count(snippet)
+
+
+# A key-character card draws on a curated per-figure profile pool, so it gets a larger evidence
+# window than the default short fields. The default 8 starved rich figures (Lilian Voss routed 27
+# safe claim views): the cap fell before the motivation that explains the figure's presence, leaving
+# the model to pad with atmosphere. Pairs with the presence-first ordering in key_characters.py so
+# the kept window holds the claims that matter.
+KEY_CHARACTER_EVIDENCE_ITEM_LIMIT = 14
 
 
 def _format_evidence_block(items: list[dict[str, Any]], *, max_items: int = 8) -> str:
@@ -200,7 +215,7 @@ def synthesize_at_a_glance(
         "true",
         "yes",
     }:
-        best = max(prepared, key=_snippet_rank_key)
+        best = max(prepared, key=_present_state_rank_key)
         return trim_words(clean_wiki_snippet(str(best.get("snippet", ""))), max_words), [
             str(best.get("source_id", ""))
         ]
@@ -217,13 +232,13 @@ def synthesize_at_a_glance(
         system_prompt = zone_system_prompt(
             field_voice=AT_A_GLANCE_VOICE,
             task_lines=(
-                f"Write an evocative zone at-a-glance summary using ONLY the evidence snippets. "
-                f"Maximum {max_words} words. Lead with the zone's defining identity and fate in one "
-                "vivid sentence rather than a dry gazetteer line. Name the precise faction or actor "
-                "when the evidence specifies it (e.g. 'Forsaken', not the generic 'Horde'; "
-                "'the Scourge', not 'the undead'). "
-                "Do not list locations, characters, factions, or patch/reputation meta. "
-                "No extrapolation."
+                f"Write one vivid, atmospheric at-a-glance caption using ONLY the evidence snippets. "
+                f"Maximum {max_words} words. Evoke what the zone looks and feels like — its mood and "
+                "the state of the land — in a single sentence. Do NOT name factions, leaders, or "
+                "characters, do NOT say who holds or contests the zone, and do NOT list towns, keeps, "
+                "or landmarks; that detail belongs in other fields. You may reference the force whose "
+                "legacy haunts the land (e.g. 'the Scourge') only as atmosphere, never as an actor "
+                "acting now. No patch/reputation meta. No extrapolation."
             ),
         )
     result = llm_json_with_retry(
@@ -245,7 +260,7 @@ def synthesize_at_a_glance(
     summary = trim_words(clean_wiki_snippet(str(result.get("summary", ""))), max_words)
     used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
     if not summary:
-        best = max(prepared, key=_snippet_rank_key)
+        best = max(prepared, key=_present_state_rank_key)
         summary = trim_words(clean_wiki_snippet(str(best.get("snippet", ""))), max_words)
         used = [str(best.get("source_id", ""))]
     return summary, used
@@ -1031,6 +1046,7 @@ def synthesize_key_character_summary(
     structural_role: str = "",
     max_words: int = 50,
     avoid_hints: list[str] | None = None,
+    evidence_item_limit: int = KEY_CHARACTER_EVIDENCE_ITEM_LIMIT,
 ) -> tuple[str, list[str]]:
     if not items:
         return "", []
@@ -1055,8 +1071,10 @@ def synthesize_key_character_summary(
         f"Write a key-character card summary for '{boss_name}' in instance "
         f"'{instance_name}' using ONLY evidence. Maximum {max_words} words. "
         f"Align with the precomputed structural role '{structural_role or 'uncertain'}' "
-        "without using meta labels as prose. Describe why the character is present here "
-        "at entry state. No generic stubs, no current-storyline outcomes."
+        "without using meta labels as prose. Trace the chain from who this character is to why they "
+        f"are present in '{instance_name}' now — foreground the history and motivations that explain "
+        "their presence here, and leave out unrelated later-life roles or honors the evidence "
+        "mentions. No generic stubs, no current-storyline outcomes."
     )
     if avoid_hints:
         # Spoiler exclusion hints (Slice 9): encounter mechanics / outcome claims a newly arriving
@@ -1082,7 +1100,7 @@ def synthesize_key_character_summary(
             field_voice=KEY_CHARACTER_VOICE,
             task_lines=task_lines,
         ),
-        user_prompt=f"Evidence:\n{_format_evidence_block(items)}",
+        user_prompt=f"Evidence:\n{_format_evidence_block(items, max_items=evidence_item_limit)}",
         response_schema_name="wiki_first_key_character_summary",
         substep="wiki_first_key_character_summary",
     )

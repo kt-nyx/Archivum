@@ -220,11 +220,14 @@ def lint_at_a_glance(text: str, *, zone_name: str = "") -> list[str]:
         issues.append("at_a_glance reads like a location list dump")
     if zone_name and zone_name.lower() in text.lower() and words < 12:
         issues.append("at_a_glance reads like bare zone description filler")
-    if has_dominant_present_tense(text):
-        issues.append("at_a_glance uses dominant present tense")
-    if not _PAST_TENSE_RE.search(text) and not has_historical_framing(text):
-        if words >= _SHORT_TEXT_PRESENT_CARVEOUT_WORDS:
-            issues.append("at_a_glance lacks past-tense or historical framing")
+    # at_a_glance is an essence caption: it describes what the zone IS, carrying its history through
+    # scarring/legacy *adjectives* ("plague-scarred", "fallen", "ruined") rather than narrating past
+    # events. Reject a caption whose verb spine is dominantly past tense (it reads as a history blurb);
+    # a present/atemporal or nominal caption — including the all-participle gold shape — is fine. This
+    # gates on finite past-tense verbs only, so past-participle adjectives never trip it.
+    past, present = tense_marker_counts(text)
+    if words >= _SHORT_TEXT_PRESENT_CARVEOUT_WORDS and past > present:
+        issues.append("at_a_glance reads as past-tense narration")
     issues.extend(lint_adp_date_style(text))
     return issues
 

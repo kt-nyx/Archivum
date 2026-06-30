@@ -22,7 +22,7 @@ COMPLETE_CLAUSE_MANDATE = (
     "(avoid trailing fragments like '...can break.' or '...help keep.')."
 )
 
-# Tense discipline for the past-tense fields (at_a_glance, history). The model tends to default to
+# Tense discipline for the past-tense fields (history sections). The model tends to default to
 # gratuitous past-perfect ("had been a scarred remnant", "had been spared"). Past-perfect should mark
 # anteriority between two past events, not serve as the baseline narrative tense.
 SIMPLE_PAST_DISCIPLINE = (
@@ -31,10 +31,22 @@ SIMPLE_PAST_DISCIPLINE = (
 )
 
 AT_A_GLANCE_VOICE = (
-    "Zone flavor caption. Past tense only. 1–2 sentences tracing historical identity before the player enters the current content. "
-    "Do not describe present retail state — that belongs in currently. "
-    'Example shape: "Once the breadbasket of Lordaeron, these lands were consumed by the Scourge..."'
-    + SIMPLE_PAST_DISCIPLINE
+    "Zone essence caption: one evocative sentence (about 25–40 words) of almost pure atmosphere — what "
+    "this place LOOKS and FEELS like to someone standing in it. Capture the mood, the light, the state "
+    "of the land and air: the sensory and emotional impression, not the situation. This is NOT a "
+    "summary of what is happening here and NOT an establishing of who is involved. Do not name "
+    "factions, organizations, leaders, or characters; do not say who holds, contests, defends, or "
+    "recovers the zone (that belongs in 'currently'); do not enumerate towns, keeps, or landmarks "
+    "(those belong in the location cards). You may evoke the defining force whose legacy still hangs "
+    "over the land (e.g. the Scourge's blight) as part of the atmosphere, but only as mood and legacy, "
+    "never as an actor doing something now. "
+    "Carry history through scarring/legacy phrasing — past-participle adjectives ('plague-scarred', "
+    "'fallen', 'ruined', 'haunted', 'rotted') and 'bears the legacy of …' — rather than narrating "
+    "events. Do NOT narrate the past with finite past-tense verbs (avoid 'the Scourge invaded', 'the "
+    "farms fell', 'it was consumed'); reach for a past-tense verb only if nothing else can say what the "
+    "place is like. "
+    'Example shape: "The plague-scarred heartland of fallen Lordaeron, where ruined farms and haunted '
+    "towns bear the legacy of the Scourge, even as life slowly returns to the rotted land.\""
 )
 
 CURRENTLY_VOICE = (
@@ -86,11 +98,15 @@ INSTANCE_OVERVIEW_VOICE = (
 )
 
 KEY_CHARACTER_VOICE = (
-    "Key-character card: a short 1-3 sentence biography of this figure. Lead by describing who they "
-    "are — their background, nature, and what defines them in the world — then let that flow "
-    "naturally into their in-universe role here and why they are present in this place or "
-    "organization. Treat the world as real; do not explain gameplay, narrative function, combat "
-    "tactics, or abilities." + COMPLETE_CLAUSE_MANDATE
+    "Key-character card: a compact in-universe biography of this figure, 1–4 sentences. Lead by "
+    "describing who they are — their background, nature, and what defines them in the world — then "
+    "follow the through-line that explains why they are present here now: the history, motivations, "
+    "or allegiances that brought them to this place and define their role in it. Prioritize the "
+    "details that lead to their presence here (what they want, who wronged them, what they came to do) "
+    "over unrelated later-life events, honors, or offices they hold elsewhere. Spend more sentences on "
+    "a figure whose relevant history is rich and let a minor figure stay to one or two — never pad. "
+    "Treat the world as real; do not explain gameplay, narrative function, combat tactics, or "
+    "abilities." + COMPLETE_CLAUSE_MANDATE
 )
 
 INSTANCE_FACTION_VOICE = (

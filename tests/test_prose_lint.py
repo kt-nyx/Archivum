@@ -48,17 +48,32 @@ def test_trim_words_does_not_double_punctuate_sentence_run() -> None:
     assert not result.endswith("..")
 
 
-def test_at_a_glance_rejects_dominant_present() -> None:
+def test_at_a_glance_accepts_atmospheric_essence_gold_shape() -> None:
+    # The target register: an all-participle essence caption with no finite past-tense narration.
+    # Its history lives in adjectives ("plague-scarred", "fallen", "ruined", "haunted", "rotted").
     text = (
-        "Western Plaguelands is a blighted region where the Argent Crusade maintains outposts "
-        "and continues to heal the soil while factions clash over Andorhal."
+        "The plague-scarred heartland of fallen Lordaeron, where ruined farms and haunted towns bear "
+        "the legacy of the Scourge, even as life slowly returns to the rotted land."
     )
-    assert any("dominant present tense" in issue for issue in lint_at_a_glance(text))
+    assert not lint_at_a_glance(text)
 
 
-def test_at_a_glance_requires_past_or_historical_framing() -> None:
-    text = "Western Plaguelands remains a contested frontier between crusaders and undead forces."
-    assert any("lacks past-tense" in issue for issue in lint_at_a_glance(text))
+def test_at_a_glance_allows_present_dominant() -> None:
+    text = (
+        "The Western Plaguelands is a blighted but reclaimed frontier where the Argent Crusade holds "
+        "the line against the lingering Scourge."
+    )
+    assert not lint_at_a_glance(text)
+
+
+def test_at_a_glance_rejects_past_tense_narration() -> None:
+    # A caption whose verb spine narrates the past ("were consumed", "left blighted") reads as a
+    # history blurb, not an essence caption.
+    text = (
+        "Once the breadbasket of Lordaeron, these lands were consumed by the Scourge and left blighted "
+        "for years before recovery efforts began after the Cataclysm."
+    )
+    assert any("past-tense narration" in issue for issue in lint_at_a_glance(text))
 
 
 def test_at_a_glance_allows_short_present_without_past() -> None:
@@ -66,10 +81,11 @@ def test_at_a_glance_allows_short_present_without_past() -> None:
     assert not lint_at_a_glance(text)
 
 
-def test_at_a_glance_accepts_past_zone_flavor() -> None:
+def test_at_a_glance_accepts_present_identity_with_past_context() -> None:
+    # A light "once X, it is now Y" pivot is still fine — mixed tense (not past-dominant) passes.
     text = (
-        "Once the breadbasket of Lordaeron, these lands were consumed by the Scourge and left blighted "
-        "for years before recovery efforts began after the Cataclysm."
+        "Once a fertile heartland, the region is now a slowly healing frontier still marked by old "
+        "scars of war."
     )
     assert not lint_at_a_glance(text)
 

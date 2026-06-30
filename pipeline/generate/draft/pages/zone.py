@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from pipeline.discovery.geography import resolve_parent_continent
-from pipeline.generate.draft.instance_link_lint import trim_instance_link_summary
+from pipeline.generate.draft.instance_link_lint import (
+    MAX_INSTANCE_LINK_WORDS,
+    trim_instance_link_summary,
+)
 from pipeline.generate.draft.instance_lint import (
     lint_passthrough_fragment,
 )
@@ -102,7 +105,7 @@ def _finalize_at_a_glance(
         if _rejected(text):
             text, used = "", []
     if not text:
-        text = f"{zone_name} was a contested region shaped by war and later recovery efforts."
+        text = f"{zone_name} is a war-scarred region slowly recovering from the ruin left by past conflict."
         used = []
     return text, used
 
@@ -520,7 +523,9 @@ def build_zone_page(
                 if str(item.get("source_id", "")).strip()
             ]
         if not summary:
-            summary, used_ids = synthesize_card_summary(scoped, subject=instance_name, max_words=35)
+            summary, used_ids = synthesize_card_summary(
+                scoped, subject=instance_name, max_words=MAX_INSTANCE_LINK_WORDS
+            )
         if not summary:
             summary = _best_snippet_for_term(scoped, instance_name, min_words=10)
             if summary:

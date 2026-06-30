@@ -102,8 +102,8 @@ def _valid_draft() -> dict[str, object]:
             }
         ],
         "at_a_glance": (
-            "Once a fertile frontier of the kingdom, the region was devastated during the Third War "
-            "and remained blighted for decades before recovery efforts began."
+            "Once a fertile frontier of the kingdom, the region is now a blighted land slowly "
+            "recovering from the ruin of the Third War."
         ),
         "currently": (
             "Crusaders and druids continue to resist undead forces across the ruined frontier "
@@ -175,8 +175,8 @@ def _schema_valid_zone_page_draft() -> dict[str, object]:
         "parent_continent": "eastern-kingdoms",
         "expansion_context": "retail",
         "at_a_glance": (
-            "Once a fertile frontier of the kingdom, the region was devastated during the Third War "
-            "and remained blighted for decades before recovery efforts began."
+            "Once a fertile frontier of the kingdom, the region is now a blighted land slowly "
+            "recovering from the ruin of the Third War."
         ),
         "currently": (
             "Crusaders and druids continue to resist undead forces across the ruined frontier "

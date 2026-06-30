@@ -103,6 +103,54 @@ def test_parent_and_related_lore_route_to_scoped_pools() -> None:
     assert "strategy" not in snippets.lower()
 
 
+def _faction_profile_snapshot() -> dict[str, object]:
+    return {
+        "entity_id": "zone-western-plaguelands",
+        "entity_type": "zone",
+        "source_id": "src-western-plaguelands-faction_profile-faction-argent-dawn",
+        "url": "https://warcraft.wiki.gg/wiki/Argent_Dawn",
+        "name": "Argent Dawn",
+        "page_title": "Argent Dawn",
+        "auxiliary_role": "faction_profile",
+        "auxiliary_target_id": "faction-argent-dawn",
+        "section_blocks": [
+            {
+                "section_role": "lead",
+                "text": (
+                    "The Argent Dawn was an organization focused on protecting Azeroth from the "
+                    "Burning Legion and the Scourge."
+                ),
+            },
+            {
+                "section_role": "legends_the_journey_edit",
+                "text": (
+                    "Around the time of the invasion of Outland, a nobleman called Maddox decided to "
+                    "retake Andorhal from the Scourge for his own ambitions."
+                ),
+            },
+            {
+                "section_role": "ashbringer_edit",
+                "text": "This section concerns content related to the Warcraft manga or comics.",
+            },
+        ],
+    }
+
+
+def test_faction_profile_drops_comic_legends_sections() -> None:
+    # The faction identity summary must come from the lead/history, not a one-off comic/legends
+    # vignette ("Legends: The Journey" -> Maddox) that otherwise hijacked the Argent Dawn summary.
+    packs = _build_evidence_packs([_faction_profile_snapshot()], run_id="run-test")
+    snippets = " ".join(
+        str(item.get("snippet", ""))
+        for pack in packs
+        if str(pack.get("field_name", "")) == "faction_pool"
+        for item in pack["evidence_items"]
+    )
+    assert "protecting Azeroth" in snippets
+    assert "Maddox" not in snippets
+    assert "manga or comics" not in snippets
+
+
 def _instance_seed_snapshot() -> dict[str, object]:
     return {
         "entity_id": "instance-scholomance",

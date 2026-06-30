@@ -26,6 +26,7 @@ from pipeline.generate.draft.claim_routing import (
     route_claim_views_for_pool,
 )
 from pipeline.generate.draft.instance_lint import (
+    MAX_KEY_CHARACTER_WORDS,
     fallback_key_character_summary,
     lint_key_character_summary,
     lint_passthrough_fragment,
@@ -249,8 +250,68 @@ def build_instance_key_character_roster(
     ).cast
 
 
-def _key_character_summary_pool(pool: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return route_claim_views_for_pool(pool, KEY_CHARACTER_ROUTE)
+# Claim-type priority for surviving the key-character evidence cap. Presence-explaining claims —
+# what the figure means to do (objective), the condition driving them (state), and who they are bound
+# to (relationship) — must outrank generic identity facts and stray events, so a capped evidence
+# window keeps the motivation that explains why they are here over a flavor quote or later-life
+# trivia. Non-claim paragraph items (rollout fallback) carry no claim_type and keep original order.
+_KEY_CHARACTER_CLAIM_TYPE_RANK: dict[str, int] = {
+    "objective": 0,
+    "state": 1,
+    "relationship": 2,
+    "identity": 3,
+    "event": 4,
+}
+_KEY_CHARACTER_CLAIM_TYPE_DEFAULT_RANK = 5
+
+
+def _view_mentions_instance(view: dict[str, Any], *, instance_key: str, instance_lower: str) -> bool:
+    if not instance_key:
+        return False
+    text = f"{view.get('claim_text', '')} {view.get('snippet', '')}".lower()
+    if instance_lower and instance_lower in text:
+        return True
+    entities = view.get("entities")
+    if isinstance(entities, list):
+        for entity in entities:
+            if isinstance(entity, dict) and normalize_title(str(entity.get("name", ""))) == instance_key:
+                return True
+    return False
+
+
+def _order_key_character_summary_views(
+    views: list[dict[str, Any]], *, instance_name: str
+) -> list[dict[str, Any]]:
+    """Stable-rank routed claim views so presence-explaining claims survive the evidence cap.
+
+    Claims naming this instance lead (they tie the figure directly to where the player meets them),
+    then claims order by type so motivation and allegiance outrank identity facts and one-off events.
+    The sort is stable, so within a tier the original block/extraction order is preserved.
+    """
+    instance_key = normalize_title(instance_name) if instance_name else ""
+    instance_lower = instance_name.lower() if instance_name else ""
+
+    def rank_key(indexed: tuple[int, dict[str, Any]]) -> tuple[int, int, int]:
+        index, view = indexed
+        instance_tier = (
+            0
+            if _view_mentions_instance(view, instance_key=instance_key, instance_lower=instance_lower)
+            else 1
+        )
+        claim_type = str(view.get("claim_type", "")).strip().lower()
+        type_rank = _KEY_CHARACTER_CLAIM_TYPE_RANK.get(
+            claim_type, _KEY_CHARACTER_CLAIM_TYPE_DEFAULT_RANK
+        )
+        return (instance_tier, type_rank, index)
+
+    return [view for _, view in sorted(enumerate(views), key=rank_key)]
+
+
+def _key_character_summary_pool(
+    pool: list[dict[str, Any]], *, instance_name: str = ""
+) -> list[dict[str, Any]]:
+    routed = route_claim_views_for_pool(pool, KEY_CHARACTER_ROUTE)
+    return _order_key_character_summary_views(routed, instance_name=instance_name)
 
 
 def _structural_presence_summary_pool(
@@ -312,7 +373,7 @@ def _finalize_key_characters(
                 for view in unsafe_views
                 if (text := str(view.get("claim_text", "")).strip())
             ]
-            summary_pool = _key_character_summary_pool(source_pool)
+            summary_pool = _key_character_summary_pool(source_pool, instance_name=instance_name)
             safe_evidence_count = len(summary_pool)
             used_structural_fallback = False
             if not summary_pool:
@@ -334,6 +395,7 @@ def _finalize_key_characters(
                 boss_name=candidate.name,
                 instance_name=instance_name,
                 structural_role=structural_role,
+                max_words=MAX_KEY_CHARACTER_WORDS,
                 **summary_kwargs,
             )
             if (

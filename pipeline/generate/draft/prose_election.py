@@ -17,7 +17,6 @@ from pipeline.generate.draft.prose_lint import (
     has_location_list_dump,
     has_player_directive,
     has_present_state_framing,
-    past_marker_score,
     trim_words,
     word_count,
 )
@@ -346,10 +345,12 @@ def history_heading_from_role(section_role: str, raw_section_role: str = "") -> 
 def fallback_at_a_glance(items: list[dict[str, Any]]) -> tuple[str, list[str]]:
     if not items:
         return "", []
+    # at_a_glance is now a present-tense identity caption, so prefer a snippet that frames the zone's
+    # present state ("is/remains a ...") over one that merely narrates the past; fall back to length.
     best = max(
         items,
         key=lambda row: (
-            past_marker_score(str(row.get("snippet", ""))),
+            has_present_state_framing(str(row.get("snippet", ""))),
             word_count(str(row.get("snippet", ""))),
         ),
     )

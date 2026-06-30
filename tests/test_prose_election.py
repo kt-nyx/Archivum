@@ -296,24 +296,26 @@ def test_cap_history_pool_keeps_trailing_named_sections() -> None:
     assert capped[-1]["raw_section_role"] == "battle_for_azeroth"
 
 
-def test_fallback_at_a_glance_prefers_past_marked_snippet() -> None:
+def test_fallback_at_a_glance_prefers_present_state_snippet() -> None:
+    # at_a_glance is a present-tense identity caption, so the fallback now prefers a present-state
+    # snippet ("the region is a ...") over a purely past historical one.
     from pipeline.generate.draft.prose_election import fallback_at_a_glance
 
     items = [
-        {
-            "source_id": "src-present",
-            "snippet": " ".join(["maintains"] * 30),
-            "section_role": "lead",
-        },
         {
             "source_id": "src-past",
             "snippet": "The region was devastated during the invasion and fell under undead control for decades.",
             "section_role": "history",
         },
+        {
+            "source_id": "src-present",
+            "snippet": "The region is a reclaimed but blighted frontier that the Argent Crusade still holds.",
+            "section_role": "lead",
+        },
     ]
     summary, used = fallback_at_a_glance(items)
-    assert used == ["src-past"]
-    assert "was" in summary or "fell" in summary
+    assert used == ["src-present"]
+    assert "is" in summary or "holds" in summary
 
 
 def test_lint_helpers_flag_word_cap_and_meta() -> None:

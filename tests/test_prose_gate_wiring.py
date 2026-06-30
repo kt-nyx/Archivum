@@ -46,5 +46,5 @@ def test_zone_at_a_glance_finalizer_rejects_dangling_terminal(monkeypatch) -> No
     )
     # Both synthesis and fallback were rejected, so the deterministic default stands.
     assert artifact not in text
-    assert text.endswith("recovery efforts.")
+    assert text.endswith("ruin left by past conflict.")
     assert used == []

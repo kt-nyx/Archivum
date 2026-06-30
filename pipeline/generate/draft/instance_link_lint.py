@@ -5,10 +5,16 @@ from __future__ import annotations
 import re
 
 from pipeline.generate.draft.faction_lint import ensure_sentence_terminator
+from pipeline.generate.draft.instance_lint import (
+    MAX_AT_A_GLANCE_WORDS as INSTANCE_AT_A_GLANCE_WORDS,
+)
 from pipeline.generate.draft.prose_lint import trim_words, word_count
 
 MIN_INSTANCE_LINK_WORDS = 10
-MAX_INSTANCE_LINK_WORDS = 35
+# The zone's instance-link card reuses the instance page's own at_a_glance caption (see
+# draft_writer.instance_summary_map), so share that page's budget — a smaller cap here just
+# hard-trims the caption mid-sentence ("...and held its." vs "...and held its last stronghold.").
+MAX_INSTANCE_LINK_WORDS = INSTANCE_AT_A_GLANCE_WORDS
 
 _GENERIC_INSTANCE_LINK = re.compile(
     r"\banchors a key conflict thread linked to this zone\b",

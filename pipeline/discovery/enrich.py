@@ -92,6 +92,27 @@ def _instance_seed_field_names(
     return names
 
 
+_NARRATIVE_PROFILE_TOKENS = ("history", "lore", "background", "story")
+
+
+def _is_narrative_profile_section(
+    effective_section: str, *, extra_tokens: tuple[str, ...] = ()
+) -> bool:
+    """True when a crawled profile section is in-universe narrative prose, not a sidebar.
+
+    Profile pages (faction / character / cross-page lore) mix their lead and history with comic /
+    manga / legends / RPG / novel sidebars (``legends_the_journey_edit``, ``ashbringer_edit``,
+    ``in_the_rpg``) that must not feed an identity summary. Admit only the lead/intro and the
+    narrative history-family sections so a stray legends panel can't write the profile prose.
+    """
+    lowered = effective_section.lower()
+    if lowered.startswith("in_the_rpg"):
+        return False
+    if lowered in {"lead", "introduction"}:
+        return True
+    return any(token in lowered for token in _NARRATIVE_PROFILE_TOKENS + extra_tokens)
+
+
 def _is_history_digest_role(section_role: str) -> bool:
     lowered = section_role.lower()
     if lowered.startswith("in_the_rpg"):
@@ -341,6 +362,12 @@ def _build_evidence_packs(
             elif aux_role == "storyline":
                 field_names = ["questline_pool"]
             elif aux_role == "faction_profile":
+                # A faction page mixes its lead/history identity with comic / manga / legends
+                # sidebars (e.g. "Legends: The Journey" -> a one-off Maddox vignette) that are not
+                # the faction's identity. Apply the same narrative allowlist as character / cross-page
+                # profiles so a legends panel can't win the faction summary.
+                if not _is_narrative_profile_section(effective_section):
+                    continue
                 field_names = ["faction_pool"]
             elif aux_role == "location_profile":
                 field_names = ["location_pool"]
@@ -349,12 +376,9 @@ def _build_evidence_packs(
                 # patch-note sections that are not in-universe biography. Use the same strict
                 # narrative allowlist as cross-page lore so only biographical prose becomes
                 # evidence; the Slice-9 spoiler route still bounds it at draft time.
-                lowered_raw = effective_section.lower()
-                is_narrative = lowered_raw in {"lead", "introduction"} or any(
-                    token in lowered_raw
-                    for token in ("history", "lore", "background", "story", "biography")
-                )
-                if lowered_raw.startswith("in_the_rpg") or not is_narrative:
+                if not _is_narrative_profile_section(
+                    effective_section, extra_tokens=("biography",)
+                ):
                     continue
                 field_names = ["character_pool"]
             elif aux_role == "instance_lore":
@@ -363,11 +387,7 @@ def _build_evidence_packs(
                 # Cross-page lore is the highest overreach risk, so use a strict narrative
                 # allowlist (lead/intro + history/lore/background/story) rather than the
                 # broad _is_history_digest_role denylist used for instance-owned prose.
-                lowered_raw = effective_section.lower()
-                is_narrative = lowered_raw in {"lead", "introduction"} or any(
-                    token in lowered_raw for token in ("history", "lore", "background", "story")
-                )
-                if lowered_raw.startswith("in_the_rpg") or not is_narrative:
+                if not _is_narrative_profile_section(effective_section):
                     continue
                 field_names = [
                     "parent_lore_pool" if aux_role == "parent_lore" else "related_lore_pool"
