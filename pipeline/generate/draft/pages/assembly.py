@@ -35,14 +35,15 @@ from pipeline.generate.draft.temporal import (
     filter_temporal_items,
 )
 
-# A major-faction card describes a faction's role in the zone, which for an active belligerent IS
-# the current conflict. The entry-state-strict pools (at_a_glance, history, currently) exclude
-# active-storyline scopes to keep the stable description from reading like dated patch notes — but
-# applying that same exclusion to faction evidence silently starves a seed-only active combatant
-# (e.g. the Alliance/Horde contesting Andorhal) of the very evidence that justifies its election, so
-# it ranks #1 yet drops with no synthesizable card. Faction pools therefore admit the active-conflict
-# scopes in addition to pre-entry / entry-state.
-_FACTION_TEMPORAL_SCOPES = frozenset(
+# The faction-ROLE pool (seed mentions of a faction in zone/instance prose) admits the active-conflict
+# scopes on top of pre-entry / entry-state. A major-faction card describes a faction's role in the
+# zone, which for an active belligerent IS the current conflict; excluding active-storyline evidence
+# here silently starves a seed-only active combatant (e.g. the Alliance/Horde contesting Andorhal) of
+# the very evidence that justifies its election, so it ranks #1 yet drops with no synthesizable card.
+# The faction PROFILE pool (faction_pool — who the faction *is*) stays entry-state-strict, so a
+# faction's identity summary is never written from a tangential active-storyline anecdote that merely
+# happens to sit on its profile page (e.g. an unrelated nobleman's raid on Andorhal).
+_FACTION_ROLE_TEMPORAL_SCOPES = frozenset(
     {PRE_ENTRY_HISTORY, ENTRY_STATE, ACTIVE_STORYLINE, ACTIVE_STORYLINE_OUTCOME}
 )
 
@@ -390,7 +391,7 @@ def _build_evidence_pools(evidence_rows: list[dict[str, Any]]) -> dict[str, list
     quest_lore_pool = _iter_evidence_items(evidence_rows, {"quest_lore"})
     faction_pool = filter_temporal_items(
         _iter_evidence_items(evidence_rows, {"faction_pool"}, claim_route=FACTION_CONTEXT_ROUTE),
-        _FACTION_TEMPORAL_SCOPES,
+        {PRE_ENTRY_HISTORY, ENTRY_STATE},
     )
     location_pool = filter_temporal_items(
         _iter_evidence_items(evidence_rows, {"location_pool"}, claim_route=LOCATION_CONTEXT_ROUTE),
@@ -412,7 +413,7 @@ def _build_evidence_pools(evidence_rows: list[dict[str, Any]]) -> dict[str, list
     )
     faction_role_pool = filter_temporal_items(
         faction_role_pool,
-        _FACTION_TEMPORAL_SCOPES,
+        _FACTION_ROLE_TEMPORAL_SCOPES,
     )
     return {
         "at_a_glance_pool": at_a_glance_pool,
@@ -512,7 +513,7 @@ def _build_instance_evidence_pools(
     zone_mention_pool = _build_zone_mention_pool(instance_name, parent_zone_evidence_rows or [])
     faction_pool = filter_temporal_items(
         _iter_evidence_items(evidence_rows, {"faction_pool"}, claim_route=FACTION_CONTEXT_ROUTE),
-        _FACTION_TEMPORAL_SCOPES,
+        {PRE_ENTRY_HISTORY, ENTRY_STATE},
     )
     faction_role_pool = _iter_evidence_items(
         evidence_rows,
@@ -521,7 +522,7 @@ def _build_instance_evidence_pools(
     )
     faction_role_pool = filter_temporal_items(
         faction_role_pool,
-        _FACTION_TEMPORAL_SCOPES,
+        _FACTION_ROLE_TEMPORAL_SCOPES,
     )
     # Slice D: per-character biography from the crawled character pages. Built raw like boss_pool
     # (the key-character finalizer applies KEY_CHARACTER_ROUTE itself, dropping spoiler-unsafe
