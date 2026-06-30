@@ -14,6 +14,9 @@ from pipeline.generate.draft.prose_lint import (
     has_currently_meta,
     has_geography_hub_in_text,
     has_historical_framing,
+    has_location_list_dump,
+    has_player_directive,
+    has_present_state_framing,
     past_marker_score,
     trim_words,
     word_count,
@@ -66,6 +69,8 @@ def _is_excluded_currently_snippet(snippet: str, *, zone_name: str = "") -> bool
         return True
     if has_currently_meta(text):
         return True
+    if has_player_directive(text):
+        return True
     if has_historical_framing(text):
         return True
     if has_geography_hub_in_text(text):
@@ -73,6 +78,43 @@ def _is_excluded_currently_snippet(snippet: str, *, zone_name: str = "") -> bool
     if zone_name and zone_name.lower() in text.lower() and word_count(text) < 16:
         return False
     return False
+
+
+def _is_present_state_lore(snippet: str) -> bool:
+    """A lore snippet describing the zone's ongoing present state (present-tense active framing).
+
+    Tolerates named landmarks within the narrative (rejecting only an actual location *list dump*),
+    since present-state lore legitimately names where the recovery and conflict are happening.
+    """
+    text = snippet.strip()
+    if not text or not has_present_state_framing(text):
+        return False
+    if has_currently_meta(text) or has_player_directive(text):
+        return False
+    if has_historical_framing(text) or has_location_list_dump(text):
+        return False
+    return True
+
+
+def _tier_present_state_lore(items: list[dict[str, Any]], *, zone_name: str) -> list[dict[str, Any]]:
+    """Promote present-state lore above quest-objective evidence.
+
+    A zone whose evidence carries genuine present-state lore ("the Argent Crusade is still active...
+    Mardenholde Keep has become a training ground") should surface that instead of a player-facing
+    quest directive. Present-state snippets are moved to the front; the remaining safe (non-excluded)
+    items are kept as a tail so the claim-reorder contract — promote, never drop a safe claim — holds
+    even when a present-state verb falls outside the framing lexicon.
+    """
+    present = [item for item in items if _is_present_state_lore(str(item.get("snippet", "")))]
+    if not present:
+        return []
+    rest = [
+        item
+        for item in items
+        if item not in present
+        and not _is_excluded_currently_snippet(str(item.get("snippet", "")), zone_name=zone_name)
+    ]
+    return present + rest
 
 
 def _dedupe_items(items: list[dict[str, Any]], *, max_items: int) -> list[dict[str, Any]]:
@@ -215,6 +257,7 @@ def select_currently_pool(
     currently_items = list(pools.get("currently_pool", []))
     for tier in (
         lambda: _tier_expansion_edit(currently_items, zone_name=zone_name),
+        lambda: _tier_present_state_lore(currently_items, zone_name=zone_name),
         lambda: _tier_quests_edit(currently_items, zone_name=zone_name),
         lambda: _tier_cluster_lore(pools, zone_name=zone_name),
         lambda: _tier_latest_era_history(
@@ -320,7 +363,23 @@ def fallback_currently(
 ) -> tuple[str, list[str]]:
     if not items:
         return "", []
-    best = max(items, key=lambda row: word_count(str(row.get("snippet", ""))))
+    # Don't borrow the blindly-longest snippet: a player-facing quest directive ("Adventurers are
+    # tasked with...") is usually the longest item in a quest-derived pool and reads as walkthrough
+    # text. Drop directive / meta snippets, then prefer present-state lore framing over raw length.
+    clean = [
+        item
+        for item in items
+        if not has_player_directive(str(item.get("snippet", "")))
+        and not has_currently_meta(str(item.get("snippet", "")))
+    ]
+    pool = clean or items
+    best = max(
+        pool,
+        key=lambda row: (
+            has_present_state_framing(str(row.get("snippet", ""))),
+            word_count(str(row.get("snippet", ""))),
+        ),
+    )
     summary = trim_words(str(best.get("snippet", "")), max_words)
     source_id = str(best.get("source_id", "")).strip()
     return summary, [source_id] if source_id else []

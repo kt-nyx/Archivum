@@ -51,6 +51,26 @@ _LOCATION_LIST_RE = re.compile(
     r"(?:[A-Z][a-z]+(?:'s)?(?:,\s*)?){3,}[A-Z][a-z]+",
 )
 
+# Player-facing quest-directive voice. `currently` / `at_a_glance` describe the world in-universe,
+# not what the player is sent to do, yet quest-objective evidence ("Adventurers are tasked with...",
+# "Aid the Argent Crusade...", "See <zone> storyline") otherwise slips into the currently pool and
+# wins on length. This is a *voice/address* signal (second person, player-as-tasked-agent, bare
+# imperative opener, or a wiki cross-reference directive) — general English quest phrasing, not a
+# zone vocabulary list — so it generalizes across zones without hardcoding any one zone's content.
+_PLAYER_DIRECTIVE_RE = re.compile(
+    r"\b(?:you|your|yourself)\b"
+    r"|\b(?:adventurers?|heroes?|champions?|players?)\s+"
+    r"(?:are\s+(?:tasked|sent|asked|called|charged|dispatched)|must|should|can\s+(?:help|aid|assist))\b"
+    r"|\bsee\b[^.]*\bstoryline\b",
+    re.IGNORECASE,
+)
+_QUEST_IMPERATIVE_OPENER_RE = re.compile(
+    r"^\s*(?:aid|help|assist|defeat|slay|kill|destroy|stop|halt|find|seek|locate|travel|journey|"
+    r"venture|head|go|return|report|speak|talk|meet|escort|rescue|free|gather|collect|retrieve|"
+    r"deliver|bring|clear|defend|protect|investigate|search|beware|be\s+warned)\b",
+    re.IGNORECASE,
+)
+
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.?!])\s+")
 
@@ -162,6 +182,19 @@ def has_currently_meta(text: str) -> bool:
     return bool(_CURRENTLY_META_RE.search(text))
 
 
+def has_player_directive(text: str) -> bool:
+    """True when the text reads as a player-facing quest directive rather than in-universe prose."""
+    cleaned = text.strip()
+    if not cleaned:
+        return False
+    return bool(_PLAYER_DIRECTIVE_RE.search(cleaned) or _QUEST_IMPERATIVE_OPENER_RE.search(cleaned))
+
+
+def has_present_state_framing(text: str) -> bool:
+    """True when the text carries present-tense active-state framing (is/remains/holds/...)."""
+    return bool(_PRESENT_TENSE_RE.search(text))
+
+
 def has_geography_hub_in_text(text: str) -> bool:
     for token in re.findall(r"[A-Z][a-z]+(?:[''][a-z]+)?(?:\s+[A-Z][a-z]+)*", text):
         if entry_kinds(token.strip()) & _GEOGRAPHY_KINDS:
@@ -202,6 +235,8 @@ def lint_currently(text: str, *, zone_name: str = "", at_a_glance: str = "") -> 
         issues.append("currently mentions geography hub proper nouns")
     if has_currently_meta(text):
         issues.append("currently contains reputation/achievement/player meta")
+    if has_player_directive(text):
+        issues.append("currently reads as a player-facing quest directive")
     if at_a_glance.strip():
         overlap = token_jaccard(at_a_glance, text)
         if overlap >= AT_A_GLANCE_CURRENTLY_OVERLAP_THRESHOLD:

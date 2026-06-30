@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pipeline.common.wiki_evidence_filters import cap_history_pool
 from pipeline.generate.draft.prose_election import (
+    fallback_currently,
     history_heading_from_role,
     history_section_cap,
     select_at_a_glance_pool,
@@ -69,6 +70,52 @@ def test_currently_prefers_entry_state_claims() -> None:
     assert selected[0]["snippet"] == "The valley is contested by rival forces."
     # Both safe claims survive; the reorder (not exclusion) is what promotes the entry-state one.
     assert len(selected) == 2
+
+
+def test_currently_promotes_present_state_lore_over_quest_directive() -> None:
+    # A zone whose quest evidence is a player-facing directive ("Adventurers are tasked...") but
+    # whose lore carries genuine present-state framing must surface the lore, not the directive.
+    pool = {
+        "currently_pool": [
+            _item(
+                "quests_or_storyline",
+                "Adventurers are tasked with aiding their faction in the battle for the keep.",
+            ),
+            _item(
+                "history",
+                "The Argent Crusade still holds the reclaimed valley while rival forces contest "
+                "its borders.",
+            ),
+        ]
+    }
+    selected = select_currently_pool(pool, zone_name="Example Zone")
+    assert selected
+    assert "Argent Crusade still holds" in selected[0]["snippet"]
+    assert all("Adventurers are tasked" not in item["snippet"] for item in selected)
+
+
+def test_fallback_currently_skips_player_directive_for_present_state_lore() -> None:
+    # The directive snippet is the longest; blind-longest selection would borrow it. The hardened
+    # fallback drops directives and prefers present-state lore framing instead.
+    items = [
+        _item(
+            "quests_or_storyline",
+            "Adventurers are tasked with aiding their faction in the long and grinding battle for "
+            "the ruined keep that dominates the contested frontier of the blighted region.",
+        ),
+        _item("history", "The Argent Crusade still holds the reclaimed valley."),
+    ]
+    text, _ = fallback_currently(items)
+    assert "Argent Crusade still holds" in text
+    assert "Adventurers are tasked" not in text
+
+
+def test_lint_currently_flags_player_directive() -> None:
+    issues = lint_currently(
+        "Adventurers are tasked with aiding their faction in the battle for the keep.",
+        zone_name="Example Zone",
+    )
+    assert any("player-facing quest directive" in issue for issue in issues)
 
 
 def test_history_heading_prefers_distinct_subsection_text() -> None:
