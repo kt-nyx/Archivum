@@ -231,8 +231,13 @@ def lint_at_a_glance(text: str, *, zone_name: str = "") -> list[str]:
 
 def lint_currently(text: str, *, zone_name: str = "", at_a_glance: str = "") -> list[str]:
     issues: list[str] = []
-    if has_geography_hub_in_text(text):
-        issues.append("currently mentions geography hub proper nouns")
+    # Reject an actual location *list dump*, not any landmark mention: present-state lore legitimately
+    # names where the recovery and conflict are happening ("the Argent Crusade still holds Hearthglen;
+    # Caer Darrow remains a school of necromancy"). The stricter geography-hub check rejected that as a
+    # "geography hub" and dropped the zone's real present-state line to a canned fallback. Aligns with
+    # lint_at_a_glance and the present-state-lore election tier, which both gate on list dumps only.
+    if has_location_list_dump(text):
+        issues.append("currently reads like a location list dump")
     if has_currently_meta(text):
         issues.append("currently contains reputation/achievement/player meta")
     if has_player_directive(text):

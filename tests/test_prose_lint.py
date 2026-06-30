@@ -153,6 +153,19 @@ def test_currently_accepts_present_zone_flavor() -> None:
     assert not lint_currently(text)
 
 
+def test_currently_allows_landmarks_but_rejects_location_dump() -> None:
+    # Present-state lore legitimately names a couple of landmarks; it must not be rejected as a
+    # "geography hub" the way it was (which dropped the real currently line to a canned fallback).
+    lore = (
+        "The Argent Crusade still holds Hearthglen, while Caer Darrow remains a school of necromancy "
+        "under the Cult of the Damned."
+    )
+    assert not lint_currently(lore)
+    # An actual comma-separated location dump is still rejected.
+    dump = "Andorhal, Hearthglen, Darrowshire, Sorrowmill, and Felstone stand in ruin."
+    assert any("location list dump" in issue for issue in lint_currently(dump))
+
+
 def test_currently_rescue_stub_has_present_tense_markers() -> None:
     stub = (
         "Example Zone remains a contested frontier where crusaders and rival factions "
