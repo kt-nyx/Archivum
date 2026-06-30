@@ -36,7 +36,7 @@
       "notes": { "type": "string" },
       "auxiliary_role": {
         "type": "string",
-        "enum": ["storyline", "quest", "faction_profile", "location_profile", "instance_lore", "parent_lore", "related_lore"]
+        "enum": ["storyline", "quest", "faction_profile", "location_profile", "character_profile", "instance_lore", "parent_lore", "related_lore"]
       },
       "auxiliary_target_id": { "type": "string", "minLength": 1 },
       "traversal_origin": { "type": "string", "minLength": 1 },
