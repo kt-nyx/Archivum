@@ -31,37 +31,54 @@ SIMPLE_PAST_DISCIPLINE = (
 )
 
 AT_A_GLANCE_VOICE = (
-    "Zone essence caption: one evocative sentence (about 25–40 words) of almost pure atmosphere — what "
-    "this place LOOKS and FEELS like to someone standing in it. Capture the mood, the light, the state "
-    "of the land and air: the sensory and emotional impression, not the situation. This is NOT a "
-    "summary of what is happening here and NOT an establishing of who is involved. Do not name "
-    "factions, organizations, leaders, or characters; do not say who holds, contests, defends, or "
-    "recovers the zone (that belongs in 'currently'); do not enumerate towns, keeps, or landmarks "
-    "(those belong in the location cards). You may evoke the defining force whose legacy still hangs "
-    "over the land (e.g. the Scourge's blight) as part of the atmosphere, but only as mood and legacy, "
-    "never as an actor doing something now. "
-    "Carry history through scarring/legacy phrasing — past-participle adjectives ('plague-scarred', "
-    "'fallen', 'ruined', 'haunted', 'rotted') and 'bears the legacy of …' — rather than narrating "
-    "events. Do NOT narrate the past with finite past-tense verbs (avoid 'the Scourge invaded', 'the "
-    "farms fell', 'it was consumed'); reach for a past-tense verb only if nothing else can say what the "
-    "place is like. "
-    'Example shape: "The plague-scarred heartland of fallen Lordaeron, where ruined farms and haunted '
-    "towns bear the legacy of the Scourge, even as life slowly returns to the rotted land.\""
+    "Zone essence caption: one or two short, punchy sentences (about 25–45 words total) that land the "
+    "atmosphere and vibe of the place — what it FEELS like to stand here. Be direct: lead with a plain, "
+    "concrete declarative line and let strong nouns and verbs carry the mood instead of stacked "
+    "adjectives. Hit hard and stop — this is a caption, not a paragraph. "
+    "Stay on essence, not events: this is NOT a report of who is fighting, holding, defending, or "
+    "recovering the zone right now (that belongs in 'currently'), and NOT a roster of towns, keeps, or "
+    "landmarks (those belong in the location cards). Do not name leaders or characters. You may evoke "
+    "the defining force whose legacy still hangs over the land (e.g. the Scourge's blight) as part of "
+    "the atmosphere, but only as mood and legacy, never as an actor doing something now. "
+    "Keep it present and timeless; carry history through scarring/legacy phrasing rather than a "
+    "play-by-play. Do NOT narrate the past with finite past-tense verbs (avoid 'the Scourge invaded', "
+    "'the farms fell', 'it was consumed'). "
+    'Example shape: "The Scourge is gone, but its blight is not. Across fallen Lordaeron\'s heartland, '
+    "poisoned fields and silent ruins still ache with rot — even as the first green pushes back through "
+    "the dead soil.\""
 )
 
 CURRENTLY_VOICE = (
     "Zone flavor summary. Present tense only. Active conflict, recovery, or faction dynamics at the player's entry state. "
     "Capture the zone's overall present state — the principal factions, recovery efforts, and conflicts that define it now — "
     "rather than fixating on a single battle or questline. "
+    "Favor short, direct sentences; let strong verbs carry the tension rather than stacked adjectives. "
     "Do not restate the historical identity arc from at_a_glance. Name factions explicitly when describing conflict. "
     'Example shape: "The Argent Crusade and Cenarion Circle work to heal the blighted soil while Horde and Alliance forces contest..."'
 )
 
 HISTORY_VOICE = (
-    "Reference-chronicle blend. Past tense only. 3–5 sentences (~60–120 words) per era section. "
-    "Include factual name-checks (eras, key factions, places) and readable narrative flow. "
-    'Example shape: "During the Third War, the Scourge under Arthas overran..., ending Lordaeron\'s hold..." '
-    "Never use present-activity verbs (maintains, struggles, continues to hold) in historical bodies."
+    "Encyclopedic reference voice. Past tense by default. 3–5 sentences (~60–120 words) per era "
+    "section. "
+    "Write like a neutral lore encyclopedia entry: state plainly and in order what happened, with "
+    "factual name-checks (eras, key factions, places). Be thorough: include the relevant particulars "
+    "and the connections between events, and combine closely related facts into fuller, flowing "
+    "sentences rather than clipped, one-fact statements — plain and factual does not mean terse. Aim "
+    "for the upper end of the length range when the evidence supports it. Do not dramatize — avoid "
+    "literary flourishes, mood-setting adjectives, and reflective 'what it all meant' summations. Let "
+    "each section end on its last concrete fact rather than a thematic closing flourish. "
+    'Example shape: "During the Scourging of Lordaeron, Ner\'zhul placed plague energies into '
+    "portable cauldrons and tasked Kel'Thuzad with hiding them in cult-controlled villages. The Cult "
+    "of the Damned tainted grain from Andorhal and positioned four large cauldrons among the region's "
+    'major farmsteads." '
+    "Never use present-activity verbs (maintains, struggles, continues to hold) in the past-tense "
+    "background sections. One exception: if the final section is the present-state bridge — the "
+    "chronicle reaching the zone's current, ongoing condition as it currently stands in the content "
+    "(the state the content presents, not the latest point in the wider timeline) — write that "
+    "one section in present tense, while every earlier background section stays past tense and any "
+    "reference to a finished past event stays past tense even within it. "
+    "Stay in-world throughout: describe the present state of the place itself, never framed by "
+    "'the player' / 'adventurers' arriving and never in second person ('you', 'your')."
     + SIMPLE_PAST_DISCIPLINE
 )
 
@@ -82,10 +99,13 @@ NO_META_NO_PASSTHROUGH = (
 )
 
 INSTANCE_AT_A_GLANCE_VOICE = (
-    "Instance identity caption. 1–2 sentences naming what this place is and why it matters "
-    "in the world. State its nature and significance, not its mechanics. "
-    'Example shape: "Carved into the roots of the World Tree, this sanctum guards the '
-    'secrets the night elves would not surrender."'
+    "Instance identity caption: one or two short, punchy sentences (roughly 15–40 words) that land what "
+    "this place is and why it matters — fast. Be direct: lead with a plain-spoken declarative line and "
+    "let strong nouns and verbs carry the weight instead of stacked adjectives. State its nature and "
+    "significance, not its mechanics; do not list bosses, wings, or factions. Hit hard and stop. "
+    'Example shape: "Scholomance is the Scourge\'s school for necromancers. Built into the bones of '
+    "House Barov above drowned Caer Darrow, it turns out masters of undeath — and rarely lets the dead "
+    "rest.\""
 )
 
 INSTANCE_OVERVIEW_VOICE = (

@@ -806,3 +806,17 @@ def test_different_paragraphs_from_same_source_are_separate_canonical_records(mo
     ]
     assert len(set(ids)) == 2
     assert len(canonical) == 2
+
+
+def test_boundary_rubric_neutralizes_current_entity_pull() -> None:
+    # Leak B (Scholomance Legion): a later outside-faction retrieval mission was misfiled as
+    # pre_entry_history because it name-matched current entities. The rubric must tell the model that
+    # naming/interacting with current occupants does not make a later event pre-entry, and that a
+    # non-independent contract match is identity context only.
+    from pipeline.generate.draft.temporal import _temporal_adjudication_system_prompt
+
+    prompt = _temporal_adjudication_system_prompt(canonical=True)
+    assert "does not become pre_entry_history or entry_state just because it names" in prompt
+    assert "retrieve an artifact" in prompt
+    assert "non-independent match" in prompt
+    assert "not proof that the described event is part of the current entry state" in prompt

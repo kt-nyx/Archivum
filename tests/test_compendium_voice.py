@@ -26,7 +26,7 @@ def test_zone_system_prompt_composes_core_and_field_voice() -> None:
 def test_field_voice_constants_cover_zone_core_fields() -> None:
     assert "essence caption" in AT_A_GLANCE_VOICE
     assert "Present tense only" in CURRENTLY_VOICE
-    assert "Reference-chronicle blend" in HISTORY_VOICE
+    assert "Encyclopedic reference voice" in HISTORY_VOICE
 
 
 def test_voice_fragments_carry_slice_c_guidance() -> None:

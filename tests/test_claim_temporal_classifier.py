@@ -16,6 +16,9 @@ from pipeline.generate.draft.temporal import (
     PRE_ENTRY_HISTORY,
     SAFE_BACKGROUND,
     SAFE_ENTRY_CONTEXT,
+    CanonicalEvidenceRecord,
+    TemporalClassification,
+    classify_claims_temporal,
     enrich_evidence_temporal_metadata,
 )
 
@@ -358,3 +361,149 @@ def test_mixed_paragraph_claims_use_claim_level_llm(monkeypatch) -> None:
     assert "raw_section_role:history" in prompt_hints
     assert any(hint.startswith("category_disposition:") for hint in prompt_hints)
     assert any(hint.startswith("paragraph_structural_hint:") for hint in prompt_hints)
+
+
+def _entry_state_setup_bridge_record(
+    canonical_id: str, *, name: str = ""
+) -> CanonicalEvidenceRecord:
+    paragraph = TemporalClassification(
+        scope=ENTRY_STATE,
+        confidence=0.84,
+        reason="entry-state setup bridge",
+        history_eligibility=HISTORY_SETUP_BRIDGE,
+        history_reason="states the zone's current setup",
+    )
+    boundary: dict = {"boundary_id": "boundary-test"}
+    if name:
+        boundary["entry_state_contract"] = {"name": name}
+    return CanonicalEvidenceRecord(
+        canonical_evidence_id=canonical_id,
+        subject_id="zone-western-plaguelands",
+        subject_type="zone",
+        source_id="src-wpl",
+        source_categories=[],
+        source_title="Western Plaguelands",
+        snippet="(paragraph snippet)",
+        boundary=boundary,
+        appearances=[{"field_name": "history_digest"}],
+        refs=[],
+        structural_classifications=[],
+        classification=paragraph,
+    )
+
+
+def _claim(
+    claim_id: str, claim_type: str, text: str, entities: list[str], sentences: list[int]
+) -> dict:
+    return {
+        "claim_id": claim_id,
+        "claim_type": claim_type,
+        "claim_text": text,
+        "entities": [{"name": name} for name in entities],
+        "source_sentence_indexes": sentences,
+    }
+
+
+def _claim_rows_by_id(decision: dict, record: CanonicalEvidenceRecord) -> dict:
+    rows = classify_claims_temporal([decision], [record], run_id="test")
+    return {claim["claim_id"]: claim for claim in rows[0]["claims"]}
+
+
+def test_active_storyline_outcome_excluded_from_setup_bridge_paragraph() -> None:
+    # A setup-bridge paragraph that states current conditions ("war still raged in Andorhal") and
+    # also resolves the active conflict. The resolution claims must be re-labeled active_storyline_
+    # outcome regardless of whether extraction tagged them `event` or `state` (the tag is a
+    # nondeterministic coin flip), and every claim in the resolving sentence goes with them; the
+    # ongoing-state marker and the setup claims in other sentences stay eligible (clarification Q2).
+    canonical_id = "canonical-andorhal"
+    record = _entry_state_setup_bridge_record(canonical_id)
+    claims = [
+        _claim("c0", "state", "The plague was mostly dispelled during the Cataclysm.",
+               ["Western Plaguelands"], [0]),
+        _claim("c2", "state", "Life started to emerge again in the region.",
+               ["Western Plaguelands"], [1]),
+        _claim("c3", "encounter_state", "War still raged in Andorhal and Gahrron's Withering.",
+               ["Andorhal", "Gahrron's Withering"], [1]),
+        _claim("c5", "relationship", "Alliance forces were commanded by Thassarian.",
+               ["Alliance", "Thassarian"], [2]),
+        # Resolutions tagged as *state* — the wpl-15 coin flip that leaked before the fix widened
+        # anchoring/propagation beyond `event`.
+        _claim("c7", "state", "The Forsaken gained control of Andorhal.",
+               ["Forsaken", "Andorhal"], [2]),
+        _claim("c9", "state", "Scourge presence in the Western Plaguelands ended.",
+               ["Scourge", "Western Plaguelands"], [2]),
+    ]
+    decision = {
+        "canonical_evidence_id": canonical_id,
+        "subject_id": "zone-western-plaguelands",
+        "subject_type": "zone",
+        "claims": claims,
+        "appearances": [{"field_name": "history_digest"}],
+    }
+    by_id = _claim_rows_by_id(decision, record)
+
+    # safe setup in non-resolving sentences survives, including the ongoing-conflict marker
+    for claim_id in ("c0", "c2", "c3"):
+        assert by_id[claim_id]["temporal_scope"] == ENTRY_STATE
+        assert by_id[claim_id]["history_eligibility"] == HISTORY_SETUP_BRIDGE
+    # every claim in the resolving sentence is excluded: the state-tagged resolutions (c7, and the
+    # entity-poor "Scourge presence ended" c9 caught by sentence propagation) AND the commander
+    # relationship c5, which describes the active battle rather than pre-entry history
+    for claim_id in ("c5", "c7", "c9"):
+        assert by_id[claim_id]["temporal_scope"] == ACTIVE_STORYLINE_OUTCOME
+        assert by_id[claim_id]["history_eligibility"] == HISTORY_EXCLUDED_OUTCOME
+        assert by_id[claim_id]["spoiler_safety"] == ACTIVE_OUTCOME
+
+
+def test_subject_name_not_treated_as_contested_locus() -> None:
+    # The encounter_state marker lists the zone itself among its entities ("war raged in Andorhal …
+    # Western Plaguelands"). The subject's own name and id must be stripped from the contested set,
+    # so a safe setup claim that merely names the zone is not swept into the outcome. (wpl-15 bug:
+    # the id form of the zone stayed contested and anchored the safe sentences.)
+    canonical_id = "canonical-subject-guard"
+    record = _entry_state_setup_bridge_record(canonical_id, name="Western Plaguelands")
+    claims = [
+        _claim("s0", "state", "The plague was mostly dispelled across the Western Plaguelands.",
+               ["Western Plaguelands"], [0]),
+        _claim("s1", "encounter_state", "War still raged in Andorhal within the Western Plaguelands.",
+               ["Andorhal", "Western Plaguelands"], [1]),
+        _claim("s2", "state", "The Forsaken gained control of Andorhal.",
+               ["Forsaken", "Andorhal"], [2]),
+    ]
+    decision = {
+        "canonical_evidence_id": canonical_id,
+        "subject_id": "zone-western-plaguelands",
+        "subject_type": "zone",
+        "claims": claims,
+        "appearances": [{"field_name": "history_digest"}],
+    }
+    by_id = _claim_rows_by_id(decision, record)
+
+    assert by_id["s0"]["temporal_scope"] == ENTRY_STATE
+    assert by_id["s1"]["temporal_scope"] == ENTRY_STATE
+    assert by_id["s2"]["temporal_scope"] == ACTIVE_STORYLINE_OUTCOME
+
+
+def test_reclaimed_current_location_event_stays_history_eligible() -> None:
+    # Regression guard: a held/reclaimed location (no encounter_state sibling, not an active
+    # conflict) must NOT be mistaken for an active-storyline outcome. This is the Hearthglen
+    # setup-bridge that Slice 7 requires to remain in history.
+    canonical_id = "canonical-hearthglen"
+    record = _entry_state_setup_bridge_record(canonical_id)
+    claims = [
+        _claim("h0", "event", "Hearthglen was reclaimed by Tirion Fordring after the war.",
+               ["Hearthglen", "Tirion Fordring"], [0]),
+        _claim("h1", "location_status", "The city became the Argent Crusade's main base.",
+               ["Hearthglen", "Argent Crusade"], [1]),
+    ]
+    decision = {
+        "canonical_evidence_id": canonical_id,
+        "subject_id": "zone-western-plaguelands",
+        "subject_type": "zone",
+        "claims": claims,
+        "appearances": [{"field_name": "history_digest"}],
+    }
+    by_id = _claim_rows_by_id(decision, record)
+
+    assert by_id["h0"]["temporal_scope"] == ENTRY_STATE
+    assert by_id["h0"]["history_eligibility"] == HISTORY_SETUP_BRIDGE

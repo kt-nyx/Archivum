@@ -18,6 +18,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, cast
 
 from pipeline.ai.config import load_ai_settings
+from pipeline.common.draft_vocab import expansion_release_order
 from pipeline.common.wiki_category_registry import CategorySignal, classify_page_categories
 from pipeline.generate.draft.claims import (
     CLAIM_ELIGIBLE_FIELDS,
@@ -184,6 +185,16 @@ _CONTRACT_ID_KEYS = (
     "cluster_id",
     "quest_ref",
 )
+# Contract fields that mark a currently-active, contested locus (not merely a current entity).
+# Used to detect when an entry-state ``event`` claim is actually the resolution of an active
+# storyline. Deliberately excludes ``current_locations``/``current_factions``: a held location
+# (e.g. reclaimed Hearthglen) is current but not contested, and must stay history-eligible.
+_ACTIVE_CONFLICT_CONTRACT_FIELDS = (
+    "active_conflicts",
+    "active_storylines",
+    "active_encounters",
+    "current_threats",
+)
 
 
 @dataclass(frozen=True)
@@ -248,6 +259,9 @@ class EntryStateContract:
     active_encounters: list[dict[str, Any]] = field(default_factory=list)
     excluded_outcome_hints: list[dict[str, Any]] = field(default_factory=list)
     source_anchor_refs: list[dict[str, Any]] = field(default_factory=list)
+    # Expansion whose content defines the CURRENT playable version of this subject, as a soft,
+    # relative recency anchor for temporal classification: {"label": str, "rank": int} or None.
+    active_expansion: dict[str, Any] | None = None
     confidence: float = 0.0
     reason: str = ""
 
@@ -269,6 +283,7 @@ class EntryStateContract:
             "active_encounters": self.active_encounters,
             "excluded_outcome_hints": self.excluded_outcome_hints,
             "source_anchor_refs": self.source_anchor_refs,
+            "active_expansion": self.active_expansion,
             "confidence": self.confidence,
             "reason": self.reason,
         }
@@ -784,6 +799,117 @@ def _canonical_source_roles(record: CanonicalEvidenceRecord) -> list[str]:
     return sorted(roles)
 
 
+# --- Expansion recency (soft, relative temporal signal) ------------------------------------------
+# Expansion chronology is a deliberately-permitted SOFT prior (the "no expansion chronology" rule was
+# relaxed). A paragraph from a later expansion-edit section than the subject's active-content
+# expansion leans post_active; earlier/same leans pre_entry/entry. Ranks come from the ordered
+# release list in the shared draft vocab; the LLM rubric still governs and can override.
+_CURRENT_ANCHOR_FIELDS = frozenset(
+    {"at_a_glance_input", "currently_input", "boss_pool", "geography_input"}
+)
+
+
+def _expansion_rank_for_role(role: str) -> int | None:
+    """Rank of the expansion whose shorthand appears in a section-role string, or None."""
+    role_lower = str(role).lower()
+    for index, token in enumerate(expansion_release_order()):
+        if token and token in role_lower:
+            return index
+    return None
+
+
+def _paragraph_expansion_rank(record: CanonicalEvidenceRecord) -> int | None:
+    """Latest expansion rank among a paragraph's section-role appearances, or None if untagged."""
+    ranks: list[int] = []
+    for appearance in record.appearances:
+        for key in ("raw_section_role", "section_role"):
+            rank = _expansion_rank_for_role(str(appearance.get(key, "")))
+            if rank is not None:
+                ranks.append(rank)
+    return max(ranks) if ranks else None
+
+
+def _active_expansion_rank(boundary: dict[str, Any]) -> int | None:
+    contract = boundary.get("entry_state_contract")
+    if not isinstance(contract, dict):
+        return None
+    active = contract.get("active_expansion")
+    if not isinstance(active, dict):
+        return None
+    rank = active.get("rank")
+    return rank if isinstance(rank, int) else None
+
+
+def _expansion_recency(paragraph_rank: int | None, active_rank: int | None) -> str:
+    if paragraph_rank is None or active_rank is None:
+        return "unknown"
+    if paragraph_rank > active_rank:
+        return "later"
+    if paragraph_rank < active_rank:
+        return "earlier"
+    return "same"
+
+
+def _current_anchor_snippets(rows: list[dict[str, Any]], *, limit: int = 8) -> list[str]:
+    snippets: list[str] = []
+    for row in rows:
+        if str(row.get("field_name", "")).strip() not in _CURRENT_ANCHOR_FIELDS:
+            continue
+        for item in row.get("evidence_items", []) or []:
+            text = str(item.get("snippet") or item.get("text") or "").strip()
+            if text:
+                snippets.append(text[:400])
+                if len(snippets) >= limit:
+                    return snippets
+    return snippets
+
+
+def _derive_active_expansion(rows: list[dict[str, Any]], *, name: str) -> dict[str, Any] | None:
+    """One-shot LLM extraction of the subject's active-content expansion.
+
+    Reads the current-anchor evidence (at-a-glance / current dungeon description / roster) and asks
+    which expansion introduced or last redesigned the CURRENT playable version. Returns
+    {"label", "rank"} or None (LLM unavailable, no anchors, or 'unknown' — the recency prior then
+    simply is not applied).
+    """
+    if _llm_temporal_adjudication_disabled():
+        return None
+    snippets = _current_anchor_snippets(rows)
+    if not snippets:
+        return None
+    tokens = list(expansion_release_order())
+    try:
+        result = llm_json_with_retry(
+            required_keys=("expansion",),
+            response_json_schema={
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["expansion"],
+                "properties": {"expansion": {"type": "string", "enum": [*tokens, "unknown"]}},
+            },
+            system_prompt=(
+                "You identify which World of Warcraft expansion introduced or last redesigned the "
+                "CURRENT playable version of a zone or instance, from its current description. "
+                "Return exactly one token from the allowed list, or 'unknown' if the current "
+                "content's expansion is not stated. Judge the CURRENT version, not older lore."
+            ),
+            user_prompt=(
+                f"Subject: {name}\nAllowed expansion tokens (release order): {tokens}\n\n"
+                "Current-state evidence:\n" + "\n---\n".join(snippets)
+            ),
+            response_schema_name="wiki_first_active_expansion",
+            substep="wiki_first_active_expansion",
+            max_attempts=2,
+        )
+    except Exception:  # pragma: no cover - provider failures leave the prior unapplied
+        return None
+    label = str(result.get("expansion", "")).strip().lower()
+    rank = _expansion_rank_for_role(label)
+    if rank is None:
+        return None
+    return {"label": label, "rank": rank}
+
+
 def _contract_relation_hint(relation: dict[str, Any], *, prefix: str) -> str:
     fields = ",".join(str(field) for field in relation.get("matched_fields", [])[:4])
     independent = "independent" if relation.get("independent_match") else "not_independent"
@@ -1140,6 +1266,12 @@ def classify_claims_temporal(
     for entry in entries:
         canonical_id = str(entry["decision"].get("canonical_evidence_id", "")).strip()
         entries_by_canonical.setdefault(canonical_id, []).append(entry)
+
+    # A setup-bridge paragraph that states the zone's current condition can also carry the
+    # resolution of an active storyline (e.g. "war still raged in Andorhal ... the Forsaken gained
+    # control"). The per-claim deterministic pass inherits the paragraph's entry-state label onto
+    # every claim, so those outcome claims would leak into history/current prose. Re-label them.
+    _propagate_active_storyline_outcomes(entries_by_canonical)
 
     rows: list[dict[str, Any]] = []
     for decision in claim_decisions:
@@ -1609,6 +1741,156 @@ def _claim_candidate_terms(claim: dict[str, Any]) -> set[str]:
     return terms
 
 
+def _claim_entity_terms(claim: dict[str, Any]) -> set[str]:
+    """Normalized entity id/name terms for a claim (entities only, never the prose text)."""
+    terms: set[str] = set()
+    entities = claim.get("entities")
+    if isinstance(entities, list):
+        for entity in entities:
+            if not isinstance(entity, dict):
+                continue
+            _add_normalized_contract_term(terms, entity.get("entity_id"))
+            _add_normalized_contract_term(terms, entity.get("name"))
+    return terms
+
+
+def _claim_sentence_indexes(claim: dict[str, Any]) -> set[int]:
+    indexes: set[int] = set()
+    raw = claim.get("source_sentence_indexes")
+    if isinstance(raw, list):
+        for value in raw:
+            try:
+                indexes.add(int(value))
+            except (TypeError, ValueError):
+                continue
+    return indexes
+
+
+def _claim_matches_active_conflict_contract(claim: dict[str, Any], boundary: dict[str, Any]) -> bool:
+    """True when the claim's resolved entities match a contested/active contract locus.
+
+    Matches exact normalized entity labels/IDs against the active-conflict contract fields only,
+    never substring scans over prose.
+    """
+    contract = boundary.get("entry_state_contract")
+    if not isinstance(contract, dict):
+        return False
+    entity_terms = _claim_entity_terms(claim)
+    if not entity_terms:
+        return False
+    for contract_field in _ACTIVE_CONFLICT_CONTRACT_FIELDS:
+        values = contract.get(contract_field)
+        if not isinstance(values, list):
+            continue
+        for entry in values:
+            if not isinstance(entry, dict):
+                continue
+            terms = {_normalize_contract_term(entry.get("label"))}
+            for id_key in _CONTRACT_ID_KEYS:
+                terms.add(_normalize_contract_term(entry.get(id_key)))
+            terms.discard("")
+            if entity_terms & terms:
+                return True
+    return False
+
+
+def _active_storyline_outcome_classification(
+    previous: ClaimTemporalClassification,
+) -> ClaimTemporalClassification:
+    return ClaimTemporalClassification(
+        ACTIVE_STORYLINE_OUTCOME,
+        HISTORY_EXCLUDED_OUTCOME,
+        ACTIVE_OUTCOME,
+        0.8,
+        "event claim resolves an active storyline/conflict the page presents as current",
+        "active storyline outcomes are excluded from entry-state history and current prose",
+        previous.event_label,
+        "deterministic",
+        list(previous.structural_hints) + ["active_storyline_outcome_resolved"],
+    )
+
+
+def _subject_name_terms(record: CanonicalEvidenceRecord) -> set[str]:
+    """Normalized terms for the subject's own name.
+
+    Excluded from the contested-locus set: the zone/instance's own name (e.g. "Western Plaguelands")
+    is too broad to mark a specific contested place, and would otherwise drag safe sentences that
+    merely mention the zone into the outcome bucket.
+    """
+    terms: set[str] = set()
+    # Claims reference the subject by both its display name ("Western Plaguelands") and its id
+    # ("zone-western-plaguelands"); exclude both forms.
+    _add_normalized_contract_term(terms, record.subject_id)
+    contract = record.boundary.get("entry_state_contract")
+    if isinstance(contract, dict):
+        _add_normalized_contract_term(terms, contract.get("name"))
+    terms.discard("")
+    return terms
+
+
+# Claim types eligible to *anchor* an active-storyline outcome. A resolution can be extracted as a
+# discrete happening (``event``, "the Forsaken gained control") or a resulting condition (``state``,
+# "the Forsaken control Andorhal") — the extractor is nondeterministic between the two — so both
+# anchor. ``encounter_state`` (the "still ongoing" marker) never anchors and is never re-labeled.
+_OUTCOME_ANCHOR_CLAIM_TYPES = frozenset({"event", "state"})
+
+
+def _propagate_active_storyline_outcomes(
+    entries_by_canonical: dict[str, list[dict[str, Any]]],
+) -> None:
+    """Re-label entry-state claims that resolve an active storyline/conflict.
+
+    A claim is an outcome *anchor* when it is an entry-state ``event``/``state`` claim whose entities
+    either (a) overlap a sibling ``encounter_state`` claim in the same paragraph (a contested locus
+    such as "war still raged in Andorhal"), or (b) match an active-conflict contract field. The
+    outcome label then propagates to every claim sharing a source sentence with an anchor — a
+    sentence that resolves a conflict carries the whole resolution, regardless of how each sub-claim
+    was tagged ``event`` vs ``state``. The only claims spared are ``encounter_state`` ongoing markers
+    (they live in a different, setup sentence), so safe setup and current-context claims survive —
+    the safe-setup/exclude-outcome split from clarification Q2 of the temporal tracker.
+    """
+    for entries in entries_by_canonical.values():
+        subject_terms: set[str] = set()
+        for entry in entries:
+            subject_terms |= _subject_name_terms(entry["record"])
+
+        # Entities a sibling encounter_state claim marks as an active, unresolved conflict locus,
+        # minus the subject's own name (too broad — it would over-match safe sentences).
+        contested_terms: set[str] = set()
+        for entry in entries:
+            claim = entry["claim"]
+            if str(claim.get("claim_type", "")).strip() == "encounter_state":
+                contested_terms |= _claim_entity_terms(claim)
+        contested_terms -= subject_terms
+
+        anchor_sentences: set[int] = set()
+        for entry in entries:
+            if entry["classification"].temporal_scope != ENTRY_STATE:
+                continue
+            claim = entry["claim"]
+            if str(claim.get("claim_type", "")).strip() not in _OUTCOME_ANCHOR_CLAIM_TYPES:
+                continue
+            resolves = bool(_claim_entity_terms(claim) & contested_terms) or (
+                _claim_matches_active_conflict_contract(claim, entry["record"].boundary)
+            )
+            if resolves:
+                anchor_sentences |= _claim_sentence_indexes(claim)
+        if not anchor_sentences:
+            continue
+
+        for entry in entries:
+            classification = entry["classification"]
+            if classification.temporal_scope != ENTRY_STATE:
+                continue
+            claim = entry["claim"]
+            # Keep the ongoing-state marker ("war still rages") safe; relabel every other claim that
+            # shares the resolving sentence, regardless of its event/state tag.
+            if str(claim.get("claim_type", "")).strip() == "encounter_state":
+                continue
+            if anchor_sentences & _claim_sentence_indexes(claim):
+                entry["classification"] = _active_storyline_outcome_classification(classification)
+
+
 def _aggregate_history_eligibility(claim_rows: list[dict[str, Any]], scope: str) -> str:
     values = [str(row.get("history_eligibility", "")).strip() for row in claim_rows]
     if HISTORY_EXCLUDED_OUTCOME in values or scope == ACTIVE_STORYLINE_OUTCOME:
@@ -1875,6 +2157,8 @@ def build_entry_state_contracts(
             )
         contract.run_id = run_id or "unknown"
         contract = _maybe_distill_entry_state_contract_llm(contract)
+        if contract.active_expansion is None:
+            contract.active_expansion = _derive_active_expansion(rows, name=contract.name)
         contract.contract_id = _entry_state_contract_id(contract)
         contracts[entity_id] = contract
         decisions.append(contract.to_dict())
@@ -2230,6 +2514,9 @@ def _canonical_prompt_item(record: CanonicalEvidenceRecord) -> dict[str, Any]:
             }
         ),
         "contract_relation": _canonical_contract_relation(record),
+        "expansion_recency": _expansion_recency(
+            _paragraph_expansion_rank(record), _active_expansion_rank(record.boundary)
+        ),
         "deterministic_labels": [
             {
                 "temporal_scope": classification_row.scope,
@@ -2286,6 +2573,20 @@ def _temporal_adjudication_system_prompt(*, canonical: bool = False) -> str:
         "contract-tied profile paragraph describes older background for why that current "
         "entity matters, prefer pre_entry_history or history_setup_bridge over a forced "
         "entry_state label.\n\n"
+        "A later event does not become pre_entry_history or entry_state just because it names, "
+        "visits, or interacts with the current occupants, ruler, or site. An outside faction that "
+        "arrives to retrieve an artifact, negotiate, parley, or conduct research is post_active_lore "
+        "even when it speaks with the current inhabitants. A contract match that only shows the "
+        "paragraph mentions currently-present entities (a non-independent match) is identity "
+        "context, not proof that the described event is part of the current entry state: weigh what "
+        "the event IS, not merely which current entities it names.\n\n"
+        "Each item includes expansion_recency, comparing the paragraph's expansion-edit section to "
+        "the subject's active-content expansion: 'later' means the paragraph is from a newer "
+        "expansion than the current playable content, 'earlier'/'same' older or equal, 'unknown' no "
+        "signal. Treat 'later' as a soft prior toward post_active_lore unless the paragraph clearly "
+        "establishes the current entry state; 'earlier'/'same' leans pre_entry/entry. This is a weak "
+        "signal, not a rule — the entry-state contract and source structure still decide, and a "
+        "genuinely older-but-background 'later' paragraph can still be pre_entry_history.\n\n"
         "History eligibility labels:\n"
         "- history_background: origin, fall, or background that belongs in a history card.\n"
         "- history_setup_bridge: a transition/setup paragraph that explains the current "

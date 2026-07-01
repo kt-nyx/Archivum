@@ -60,7 +60,15 @@ Remaining temporal failures:
 ## Non-Negotiables
 
 - No WPL-specific, Scholomance-specific, expansion-specific, or keyword-list fixes.
-- No maintained era alias registry for temporal classification.
+- ~~No maintained era alias registry for temporal classification.~~ **RELAXED 2026-06-30 (owner
+  approved):** expansion chronology is now permitted as a **soft, relative** recency signal. A single
+  universal expansion release-order list (`expansion_release_order` in the shared draft vocab — not a
+  per-pilot lore registry) ranks a paragraph's expansion-edit section against the subject's
+  active-content expansion; `later` leans post_active, `earlier`/`same` leans pre_entry/entry. It is
+  fed to the boundary classifier as a weak prior it can override, never a hard gate. The subject's
+  active expansion is derived per-run (one-shot LLM over current-anchor prose); when unknown the
+  prior is not applied. Still prohibited: hardcoded "expansion X = post-active" rules and per-pilot
+  lore-to-era mappings.
 - Deterministic logic can use structure, source roles, graph position, category policy, roster
   membership, and persisted metadata.
 - LLMs may classify semantic relationships, but must not invent evidence.
@@ -1753,3 +1761,14 @@ Add dated entries here as slices move.
   skipped, pre-release). Added `model_versions.py` + `temporal_model_manifest.json`; recorded the
   claim-metadata-is-internal contract; added a public-JSON guard test. Full suite 887 passed /
   5 skipped / 1 xfailed; ruff + mypy clean.
+- 2026-06-30: Post-run-15 leak fixes. (A) Widened active-storyline-outcome propagation to be
+  robust to the `event`/`state` extraction coin-flip: anchor on `event`+`state`, propagate the
+  outcome label to every non-`encounter_state` claim in a resolving sentence, and strip the
+  subject's own name+id from the contested set (wpl-15 leaked the Andorhal outcome when tagged
+  `state`). (B) Sharpened the boundary rubric so naming/interacting with current occupants and a
+  non-independent contract match no longer pull a later outside-faction/retrieval event into
+  pre-entry (Scholomance Legion Shadow Council leak). (C) Added expansion-recency as a soft relative
+  prior (`expansion_release_order` vocab incl. Midnight/The Last Titan; per-paragraph rank vs
+  per-subject `active_expansion` on the contract; `expansion_recency` in the classifier prompt +
+  rubric). Non-negotiable relaxed accordingly (see above). New tests in
+  `test_claim_temporal_classifier`, `test_temporal_evidence_classifier`, `test_expansion_recency`.

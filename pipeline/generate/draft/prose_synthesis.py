@@ -223,22 +223,24 @@ def synthesize_at_a_glance(
         system_prompt = instance_system_prompt(
             field_voice=INSTANCE_AT_A_GLANCE_VOICE,
             task_lines=(
-                f"Write a concise at-a-glance caption for instance '{subject}' using ONLY the "
-                f"evidence snippets. Maximum {max_words} words. Do not list bosses, factions, or "
-                "wings. No extrapolation."
+                f"Write a punchy, direct at-a-glance caption for instance '{subject}' using ONLY the "
+                f"evidence snippets. Maximum {max_words} words, in one or two short sentences with "
+                "plain, concrete language and few adjectives. Name what the place is and why it "
+                "matters; do not list bosses, factions, or wings. No extrapolation."
             ),
         )
     else:
         system_prompt = zone_system_prompt(
             field_voice=AT_A_GLANCE_VOICE,
             task_lines=(
-                f"Write one vivid, atmospheric at-a-glance caption using ONLY the evidence snippets. "
-                f"Maximum {max_words} words. Evoke what the zone looks and feels like — its mood and "
-                "the state of the land — in a single sentence. Do NOT name factions, leaders, or "
-                "characters, do NOT say who holds or contests the zone, and do NOT list towns, keeps, "
-                "or landmarks; that detail belongs in other fields. You may reference the force whose "
-                "legacy haunts the land (e.g. 'the Scourge') only as atmosphere, never as an actor "
-                "acting now. No patch/reputation meta. No extrapolation."
+                f"Write a punchy, direct at-a-glance caption using ONLY the evidence snippets. "
+                f"Maximum {max_words} words, in one or two short sentences. Capture the zone's "
+                "atmosphere and vibe — what it feels like to stand here — with plain, concrete "
+                "language and few adjectives, not a report of current events. Do NOT name factions, "
+                "leaders, or characters, do NOT say who holds or contests the zone, and do NOT list "
+                "towns, keeps, or landmarks; that detail belongs in other fields. You may reference "
+                "the force whose legacy haunts the land (e.g. 'the Scourge') only as atmosphere, "
+                "never as an actor acting now. No patch/reputation meta. No extrapolation."
             ),
         )
     result = llm_json_with_retry(
@@ -354,7 +356,17 @@ def synthesize_history_sections(
         "'Exploring Azeroth'). "
         "Do not list locations. Cover only background that happened before the player enters "
         "the current content; do not narrate the current storyline's events, outcomes, or later "
-        "off-screen reports."
+        "off-screen reports. "
+        "Order the sections chronologically. If the most recent evidence describes the zone's current, "
+        "ongoing state — the condition in which the zone currently stands in the content, whether an "
+        "ongoing recovery or an unresolved, still-active conflict — write that one final section in "
+        "present tense, as the chronicle reaching that current state, and keep every earlier section "
+        "in past tense; a reference to a finished past event stays past tense even within that final "
+        "section. 'Current' here means the state this zone's content presents, not the latest point "
+        "in the wider timeline. If there is no such current-state material, keep all sections in past "
+        "tense. "
+        "Stay in-world: describe the state of the place itself, never framed by 'the player' or "
+        "'adventurers' arriving, and never in second person."
     )
     if required_event_texts:
         # Coverage retry (Slice 7): an eligible setup-bridge claim was dropped on the first pass.
