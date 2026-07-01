@@ -19,17 +19,11 @@ from pipeline.generate.draft.prose_synthesis import (
 )
 
 
-def test_at_a_glance_no_llm_prefers_past_heavy_snippet(monkeypatch) -> None:
+def test_at_a_glance_no_llm_prefers_present_state_snippet(monkeypatch) -> None:
+    # at_a_glance is a present-tense identity caption: the deterministic (NO_LLM) fallback prefers a
+    # present-state snippet over a purely past historical one.
     monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
     items = [
-        {
-            "source_id": "src-present",
-            "snippet": (
-                "Western Plaguelands is a blighted region where crusaders maintain outposts and continue "
-                "to heal the soil while factions clash over strategic ruins across the frontier."
-            ),
-            "section_role": "lead",
-        },
         {
             "source_id": "src-past",
             "snippet": (
@@ -38,10 +32,18 @@ def test_at_a_glance_no_llm_prefers_past_heavy_snippet(monkeypatch) -> None:
             ),
             "section_role": "history",
         },
+        {
+            "source_id": "src-present",
+            "snippet": (
+                "Western Plaguelands is a blighted region where crusaders maintain outposts and continue "
+                "to heal the soil while factions clash over strategic ruins across the frontier."
+            ),
+            "section_role": "lead",
+        },
     ]
     summary, used = synthesize_at_a_glance(items, max_words=45)
-    assert used == ["src-past"]
-    assert "were" in summary or "was" in summary
+    assert used == ["src-present"]
+    assert "is" in summary or "maintain" in summary
 
 
 def test_at_a_glance_system_prompt_uses_compendium_voice() -> None:

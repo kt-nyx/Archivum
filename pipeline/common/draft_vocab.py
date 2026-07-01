@@ -37,5 +37,14 @@ def era_section_role_tokens() -> tuple[str, ...]:
     return _tokens("era_section_role_tokens")
 
 
+def expansion_release_order() -> tuple[str, ...]:
+    """WoW expansion shorthands in chronological release order (index = rank).
+
+    Unlike :func:`era_section_role_tokens` (a membership set), order is meaningful: later index
+    means a later expansion. Used as a soft relative recency signal in temporal classification.
+    """
+    return _tokens("expansion_release_order")
+
+
 def historical_framing_markers() -> tuple[str, ...]:
     return _tokens("historical_framing_markers")

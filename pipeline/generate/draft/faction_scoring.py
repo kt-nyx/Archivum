@@ -20,9 +20,15 @@ from pipeline.generate.draft.temporal import (
 )
 
 MIN_FACTION_CARDS = 2
-MAX_FACTION_CARDS = 6
+MAX_FACTION_CARDS = 7
 MIN_SCORE = 2.0
 ALLIANCE_HORDE_CONFLICT_THRESHOLD = 2
+# Quest-binding score is driven by a faction's OWN side's quests (an active belligerent), not the
+# generic shared/neutral bindings that every faction in the zone matches. The cap bounds a large
+# campaign's contribution; the bonus gives a present-day combatant a decisive edge over factions
+# whose relevance is purely historical/profile-based.
+_SPECIFIC_BINDING_SCORE_CAP = 6.0
+ACTIVE_COMBATANT_BONUS = 3.0
 
 _ALLIANCE_HORDE_IDS = frozenset({"faction-alliance", "faction-horde"})
 
@@ -51,6 +57,7 @@ class FactionCandidate:
     profile_items: list[dict[str, Any]] = field(default_factory=list)
     seed_mentions: list[dict[str, Any]] = field(default_factory=list)
     quest_binding_count: int = 0
+    specific_quest_binding_count: int = 0
     score: float = 0.0
     has_high_weight_seed: bool = False
     lede_only: bool = False
@@ -91,6 +98,32 @@ def _bindings_for_faction_id(faction_id: str) -> frozenset[str]:
 
 def _count_quest_bindings(faction_id: str, v3_rows: list[dict[str, Any]], zone_id: str) -> int:
     bindings = _bindings_for_faction_id(faction_id)
+    count = 0
+    for row in v3_rows:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("zone_id", "")) != zone_id:
+            continue
+        if str(row.get("node_type", "")) != "quest":
+            continue
+        binding = str(row.get("faction_binding", "shared")).strip().lower()
+        if binding in bindings:
+            count += 1
+    return count
+
+
+def _count_specific_quest_bindings(
+    faction_id: str, v3_rows: list[dict[str, Any]], zone_id: str
+) -> int:
+    """Count zone quests bound to this faction's OWN side, excluding the generic ``shared`` /
+    ``neutral`` bindings that *every* faction matches. A nonzero count marks the faction as an active
+    belligerent in the zone's current quest conflict (e.g. the Alliance / Horde sides of a contested
+    zone). Without this, lore factions borrow score uniformly from every shared quest while
+    Alliance / Horde — whose bindings are side-specific — never do, so a defunct lore faction can
+    outrank an active war combatant."""
+    bindings = _bindings_for_faction_id(faction_id) - {"shared", "neutral"}
+    if not bindings:
+        return 0
     count = 0
     for row in v3_rows:
         if not isinstance(row, dict):
@@ -701,6 +734,9 @@ def collect_faction_candidates(
                 profile_items=profile_items,
                 seed_mentions=seed_mentions,
                 quest_binding_count=_count_quest_bindings(faction_id, v3_rows or [], zone_id),
+                specific_quest_binding_count=_count_specific_quest_bindings(
+                    faction_id, v3_rows or [], zone_id
+                ),
             )
         )
 
@@ -778,13 +814,19 @@ def score_faction_candidate(
         )
         score += 2.0 if profile_zone_hit else 1.0
 
-    if candidate.quest_binding_count:
-        score += min(candidate.quest_binding_count * 1.5, 4.5)
+    if candidate.specific_quest_binding_count:
+        score += min(candidate.specific_quest_binding_count * 1.5, _SPECIFIC_BINDING_SCORE_CAP)
+        if candidate.specific_quest_binding_count >= ALLIANCE_HORDE_CONFLICT_THRESHOLD:
+            score += ACTIVE_COMBATANT_BONUS
 
     candidate.has_high_weight_seed = has_high
     candidate.lede_only = _is_lede_only_profile(candidate)
 
-    if candidate.lede_only and not candidate.seed_mentions and candidate.quest_binding_count == 0:
+    if (
+        candidate.lede_only
+        and not candidate.seed_mentions
+        and candidate.specific_quest_binding_count == 0
+    ):
         lede_has_zone = any(
             _name_in_text(zone_name, str(item.get("snippet", "")))
             or any(_name_in_text(token, str(item.get("snippet", ""))) for token in tokens)

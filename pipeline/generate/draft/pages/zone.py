@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from pipeline.discovery.geography import resolve_parent_continent
-from pipeline.generate.draft.instance_link_lint import trim_instance_link_summary
+from pipeline.generate.draft.instance_link_lint import (
+    MAX_INSTANCE_LINK_WORDS,
+    trim_instance_link_summary,
+)
 from pipeline.generate.draft.instance_lint import (
     lint_passthrough_fragment,
 )
@@ -102,7 +105,7 @@ def _finalize_at_a_glance(
         if _rejected(text):
             text, used = "", []
     if not text:
-        text = f"{zone_name} was a contested region shaped by war and later recovery efforts."
+        text = f"{zone_name} is a war-scarred region slowly recovering from the ruin left by past conflict."
         used = []
     return text, used
 
@@ -520,7 +523,9 @@ def build_zone_page(
                 if str(item.get("source_id", "")).strip()
             ]
         if not summary:
-            summary, used_ids = synthesize_card_summary(scoped, subject=instance_name, max_words=35)
+            summary, used_ids = synthesize_card_summary(
+                scoped, subject=instance_name, max_words=MAX_INSTANCE_LINK_WORDS
+            )
         if not summary:
             summary = _best_snippet_for_term(scoped, instance_name, min_words=10)
             if summary:
@@ -541,6 +546,17 @@ def build_zone_page(
             for pointer in pointers:
                 used_source_ids.add(pointer["source_id"])
 
+    # The faction-summary zone-anchor lint accepts the zone name or a subregion token. When the
+    # evidence carries no "maps/subregion/geography" section, extract_subregion_tokens yields nothing
+    # and the lint effectively demands the literal zone name — so a faction whose WPL role is framed
+    # around a subzone ("the Battle for Andorhal") fails the anchor and its card is dropped even when
+    # it ranks first. The zone's own elected location cards ARE its subzones, so they are valid
+    # zone-of-record anchors; feed their names in so subzone-framed summaries clear the lint.
+    location_subregion_tokens = [
+        str(card.get("name", "")).strip()
+        for card in location_cards
+        if str(card.get("name", "")).strip()
+    ]
     faction_cards, faction_provenance_map = build_major_factions(
         zone_id=zone_id,
         zone_name=name,
@@ -549,6 +565,7 @@ def build_zone_page(
         questline_rows=active_questline_rows,
         revision_map=revision_map,
         faction_profile_targets=faction_profile_targets,
+        extra_subregion_tokens=location_subregion_tokens,
     )
     for pointers in faction_provenance_map.values():
         for pointer in pointers:

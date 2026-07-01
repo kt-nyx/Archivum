@@ -47,6 +47,10 @@ CLAIM_ELIGIBLE_FIELDS = frozenset(
         "instance_lore_pool",
         "parent_lore_pool",
         "related_lore_pool",
+        # Slice D: character-profile biography. Bounded volume (<=8 narrative-allowlisted pages),
+        # unlike the unbounded faction_pool/location_pool, and it MUST be claim-extracted so the
+        # Slice-9 spoiler route can bound a character's in-instance fate out of the summary.
+        "character_pool",
     }
 )
 
@@ -532,6 +536,8 @@ def _infer_claim_type(appearances: list[dict[str, Any]]) -> str:
         candidates.add("faction_presence")
     if "location_pool" in field_names:
         candidates.add("location_status")
+    if "character_pool" in field_names:
+        candidates.add("identity")
     if field_names.intersection({"currently_input", "at_a_glance_input"}):
         candidates.add("state")
     if "history_digest" in field_names:

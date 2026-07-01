@@ -9,6 +9,51 @@ from pipeline.generate.draft.pages import (
 from pipeline.generate.draft.pages import key_characters as key_character_page
 
 
+def test_merge_character_profile_evidence_prepends_biography_with_name_drift() -> None:
+    # Slice D: crawled character-page biography is attached to each cast member's profile_pool,
+    # tolerating page-title vs roster-name drift, and prepended ahead of structural mentions.
+    cast = [
+        BossCandidate(
+            boss_id="boss-gandling",
+            name="Darkmaster Gandling",
+            wiki_url="",
+            source_section_role="dungeon_journal",
+        ),
+        BossCandidate(
+            boss_id="boss-voss",
+            name="Lilian Voss",
+            wiki_url="",
+            source_section_role="dungeon_journal",
+            profile_pool=[{"snippet": "structural mention", "source_id": "src-instance"}],
+        ),
+    ]
+    character_pool = [
+        {"snippet": "Gandling biography.", "character_name": "Gandling", "source_id": "src-g"},
+        {"snippet": "Voss biography.", "character_name": "Lilian Voss", "source_id": "src-v"},
+    ]
+    key_character_page._merge_character_profile_evidence(cast, character_pool)
+
+    # Exact name match, prepended ahead of the pre-existing structural mention.
+    assert cast[1].profile_pool[0]["snippet"] == "Voss biography."
+    assert any("structural mention" in str(i.get("snippet")) for i in cast[1].profile_pool)
+    # Fuzzy: page "Gandling" binds to roster "Darkmaster Gandling".
+    assert any("Gandling biography" in str(i.get("snippet")) for i in cast[0].profile_pool)
+
+
+def test_merge_character_profile_evidence_noop_without_pool() -> None:
+    cast = [
+        BossCandidate(
+            boss_id="boss-x",
+            name="Someone",
+            wiki_url="",
+            source_section_role="dungeon_journal",
+            profile_pool=[{"snippet": "kept", "source_id": "s"}],
+        )
+    ]
+    key_character_page._merge_character_profile_evidence(cast, [])
+    assert cast[0].profile_pool == [{"snippet": "kept", "source_id": "s"}]
+
+
 def test_must_include_appears_when_llm_returns_empty(monkeypatch) -> None:
     monkeypatch.delenv("WOW_LORE_WIKI_FIRST_NO_LLM", raising=False)
     monkeypatch.setattr(
@@ -195,7 +240,7 @@ def test_finalize_keeps_structural_role_when_summary_mentions_ally(monkeypatch) 
     monkeypatch.setattr(
         key_character_page,
         "synthesize_key_character_summary",
-        lambda pool, boss_name, instance_name, structural_role="": (
+        lambda pool, boss_name, instance_name, structural_role="", max_words=None, **kwargs: (
             "Lilian Voss is a brief, tragic ally who helps adventurers in Test Keep.",
             ["src-lilian"],
         ),

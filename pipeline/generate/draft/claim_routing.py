@@ -320,6 +320,8 @@ def _claim_view_for_item(
         "faction_name": str(build_meta.get("faction_name", "")).strip(),
         "location_id": str(build_meta.get("location_id", "")).strip(),
         "location_name": str(build_meta.get("location_name", "")).strip(),
+        "character_id": str(build_meta.get("character_id", "")).strip(),
+        "character_name": str(build_meta.get("character_name", "")).strip(),
         "lore_scope": str(build_meta.get("lore_scope", "")).strip(),
         "lore_source_title": str(build_meta.get("lore_source_title", "")).strip(),
         "canonical_evidence_id": str(claim.get("canonical_evidence_id", "")).strip(),

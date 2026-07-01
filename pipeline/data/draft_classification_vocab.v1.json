@@ -17,6 +17,25 @@
       "shadowlands"
     ]
   },
+  "expansion_release_order": {
+    "_doc": "Canonical WoW expansion release order (chronological). Used as a SOFT, RELATIVE recency signal for temporal boundary classification: a paragraph from a later expansion-edit section than the subject's active-content expansion leans post_active_lore; earlier/same leans pre_entry/entry. Tokens match as substrings of the raw_section_role (e.g. 'mists' matches 'mists_of_pandaria_edit'). Order is meaningful here, unlike era_section_role_tokens which is a membership set. This deliberately encodes expansion chronology; it is a soft prior the LLM rubric can override, not a hard rule. Append the next expansion on release.",
+    "_pilot_bias_note": "All WoW expansions in release order, cross-zone. Announced-but-unreleased expansions (Midnight, The Last Titan) are included so forward-dated wiki edits are ranked.",
+    "tokens": [
+      "classic",
+      "burning_crusade",
+      "wrath",
+      "cataclysm",
+      "mists",
+      "warlords",
+      "legion",
+      "battle_for",
+      "shadowlands",
+      "dragonflight",
+      "war_within",
+      "midnight",
+      "last_titan"
+    ]
+  },
   "historical_framing_markers": {
     "_why_no_structural_signal": "has_historical_framing scans free prose text for past-framing phrases; there is no section role or category attached to the text at that decision point.",
     "_pilot_bias_note": "Generic historical-framing phrases plus two WoW-era references ('third war'); broadly cross-zone. Statistical detection (tense) is handled separately by _PAST_TENSE_RE; this list catches explicit period phrasing.",

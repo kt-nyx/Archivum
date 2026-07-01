@@ -18,6 +18,7 @@ from pipeline.contracts.models import (
     QuestlineClusterSummary,
     QuestRecord,
 )
+from pipeline.discovery.entity_typing import location_is_offzone
 from pipeline.discovery.instance_bosses import is_boss_section_role
 from pipeline.discovery.location_discovery import (
     build_location_decision_row,
@@ -89,6 +90,27 @@ def _instance_seed_field_names(
     if is_boss_section_role(section_role):
         names.append("boss_pool")
     return names
+
+
+_NARRATIVE_PROFILE_TOKENS = ("history", "lore", "background", "story")
+
+
+def _is_narrative_profile_section(
+    effective_section: str, *, extra_tokens: tuple[str, ...] = ()
+) -> bool:
+    """True when a crawled profile section is in-universe narrative prose, not a sidebar.
+
+    Profile pages (faction / character / cross-page lore) mix their lead and history with comic /
+    manga / legends / RPG / novel sidebars (``legends_the_journey_edit``, ``ashbringer_edit``,
+    ``in_the_rpg``) that must not feed an identity summary. Admit only the lead/intro and the
+    narrative history-family sections so a stray legends panel can't write the profile prose.
+    """
+    lowered = effective_section.lower()
+    if lowered.startswith("in_the_rpg"):
+        return False
+    if lowered in {"lead", "introduction"}:
+        return True
+    return any(token in lowered for token in _NARRATIVE_PROFILE_TOKENS + extra_tokens)
 
 
 def _is_history_digest_role(section_role: str) -> bool:
@@ -223,6 +245,15 @@ def _build_evidence_packs(
         if not isinstance(section_blocks, list):
             section_blocks = []
 
+        # Zone-of-record gate: a location page tagged to a *different* zone's subzone category was
+        # linked from this zone's prose but belongs elsewhere (e.g. Strahnbrad -> Hillsbrad Foothills,
+        # named in Western Plaguelands' history). Drop its evidence entirely so it never becomes a
+        # location card, glossary term, or planned claim for this zone.
+        if aux_role == "location_profile" and location_is_offzone(
+            snapshot.get("categories"), subject_zone_id
+        ):
+            continue
+
         if aux_role == "quest":
             lore_blocks = snapshot.get("quest_lore_blocks", [])
             if not isinstance(lore_blocks, list) or not lore_blocks:
@@ -331,20 +362,32 @@ def _build_evidence_packs(
             elif aux_role == "storyline":
                 field_names = ["questline_pool"]
             elif aux_role == "faction_profile":
+                # A faction page mixes its lead/history identity with comic / manga / legends
+                # sidebars (e.g. "Legends: The Journey" -> a one-off Maddox vignette) that are not
+                # the faction's identity. Apply the same narrative allowlist as character / cross-page
+                # profiles so a legends panel can't win the faction summary.
+                if not _is_narrative_profile_section(effective_section):
+                    continue
                 field_names = ["faction_pool"]
             elif aux_role == "location_profile":
                 field_names = ["location_pool"]
+            elif aux_role == "character_profile":
+                # Slice D: a character page mixes biography with combat / ability / strategy /
+                # patch-note sections that are not in-universe biography. Use the same strict
+                # narrative allowlist as cross-page lore so only biographical prose becomes
+                # evidence; the Slice-9 spoiler route still bounds it at draft time.
+                if not _is_narrative_profile_section(
+                    effective_section, extra_tokens=("biography",)
+                ):
+                    continue
+                field_names = ["character_pool"]
             elif aux_role == "instance_lore":
                 field_names = ["instance_lore_pool"]
             elif aux_role in {"parent_lore", "related_lore"}:
                 # Cross-page lore is the highest overreach risk, so use a strict narrative
                 # allowlist (lead/intro + history/lore/background/story) rather than the
                 # broad _is_history_digest_role denylist used for instance-owned prose.
-                lowered_raw = effective_section.lower()
-                is_narrative = lowered_raw in {"lead", "introduction"} or any(
-                    token in lowered_raw for token in ("history", "lore", "background", "story")
-                )
-                if lowered_raw.startswith("in_the_rpg") or not is_narrative:
+                if not _is_narrative_profile_section(effective_section):
                     continue
                 field_names = [
                     "parent_lore_pool" if aux_role == "parent_lore" else "related_lore_pool"
@@ -389,6 +432,11 @@ def _build_evidence_packs(
                 if aux_role == "location_profile":
                     build_meta["location_id"] = str(snapshot.get("auxiliary_target_id", "")).strip()
                     build_meta["location_name"] = page_title or entity_name
+                if aux_role == "character_profile":
+                    build_meta["character_id"] = str(
+                        snapshot.get("auxiliary_target_id", "")
+                    ).strip()
+                    build_meta["character_name"] = page_title or entity_name
                 if aux_role == "instance_lore":
                     build_meta["instance_id"] = str(
                         snapshot.get("auxiliary_target_id", subject_id)

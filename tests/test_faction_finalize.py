@@ -118,6 +118,49 @@ def test_build_major_factions_provenance_falls_back_to_resolvable_pool_source(mo
     assert all(pointer["source_id"] == "src-good" for pointer in pointers)
 
 
+def test_subzone_named_summary_elects_only_with_location_anchor_tokens(monkeypatch) -> None:
+    monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
+    # A faction whose only synthesizable involvement is framed around a subzone ("the battle for
+    # Andorhal") and never names the zone verbatim. With no maps/subregion section in the evidence,
+    # extract_subregion_tokens is empty and the anchor lint effectively demands the literal zone
+    # name, silently dropping the card even though it ranks. Passing the zone's elected location-card
+    # names as extra anchors (its real subzones) rescues it.
+    role_pool = [
+        {
+            "source_id": "src-zone",
+            "snippet": (
+                "The Argent Crusade still guards the reclaimed farms around Andorhal, having broken "
+                "the Scourge's grip there during the long battle for the town and driven the cauldron "
+                "lords from the poisoned fields."
+            ),
+            "section_role": "quests_edit",
+        }
+    ]
+    targets = [
+        {
+            "zone_id": "zone-x",
+            "faction_id": "faction-argent-crusade",
+            "name": "Argent Crusade",
+            "source_link": "",
+        }
+    ]
+    common = dict(
+        zone_id="zone-x",
+        zone_name="Example Zone",
+        evidence_rows=[],
+        pools={"faction_role_pool": role_pool, "faction_pool": []},
+        questline_rows=[],
+        revision_map={"src-zone": "mw:1"},
+        faction_profile_targets=targets,
+    )
+    cards_without, _ = build_major_factions(**common)
+    assert not any(card["id"] == "faction-argent-crusade" for card in cards_without)
+
+    cards_with, provenance = build_major_factions(**common, extra_subregion_tokens=["Andorhal"])
+    assert any(card["id"] == "faction-argent-crusade" for card in cards_with)
+    assert provenance.get("faction-argent-crusade"), "rescued card must carry a provenance pointer"
+
+
 def test_candidates_for_finalize_keeps_sub_threshold_out_when_eligible_exist() -> None:
     strong = FactionCandidate(
         faction_id="faction-argent-crusade",

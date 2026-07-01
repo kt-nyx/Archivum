@@ -318,3 +318,69 @@ def test_prefer_entry_state_first_mixed_pool_keeps_paragraphs_neutral() -> None:
         "paragraph",
         "old origin claim",
     ]
+
+
+def _kc_view(text: str, claim_type: str, *, entities: list[dict] | None = None) -> dict:
+    return {
+        "snippet": text,
+        "claim_text": text,
+        "claim_type": claim_type,
+        "entities": entities or [],
+        "is_claim_view": True,
+    }
+
+
+def test_order_key_character_views_surfaces_presence_over_atmosphere() -> None:
+    """The motivation that explains a figure's presence must outrank flavor and later-life trivia.
+
+    Mirrors the Lilian Voss regression: in extraction order the flavor quote and generic identity
+    lead, so an 8-item cap starved the Scarlet-Crusade -> hunts-necromancers -> at-Scholomance arc.
+    Presence-first ordering pulls that arc to the front of the kept window.
+    """
+    from pipeline.generate.draft.pages.key_characters import _order_key_character_summary_views
+
+    views = [
+        _kc_view("Haunted forever by the ghosts of your past.", "identity"),
+        _kc_view("Voss is a member of the Desolate Council.", "identity"),
+        _kc_view("Voss was killed prior to the Cataclysm.", "event"),
+        _kc_view("Voss had history within the Scarlet Crusade.", "relationship"),
+        _kc_view("Voss was horrified at what she had become.", "state"),
+        _kc_view("Voss began a campaign against the Crusade.", "objective"),
+        _kc_view(
+            "Voss redirects her attention to the necromancers within Scholomance.",
+            "state",
+            entities=[{"name": "Scholomance"}],
+        ),
+        _kc_view("Voss intends to kill Darkmaster Gandling.", "objective"),
+    ]
+
+    ordered = _order_key_character_summary_views(views, instance_name="Scholomance")
+    texts = [view["claim_text"] for view in ordered]
+
+    # The instance-naming claim leads; objectives/states/relationships precede identity and events.
+    assert texts[0] == "Voss redirects her attention to the necromancers within Scholomance."
+    assert texts.index("Voss intends to kill Darkmaster Gandling.") < texts.index(
+        "Voss is a member of the Desolate Council."
+    )
+    assert texts.index("Voss had history within the Scarlet Crusade.") < texts.index(
+        "Voss was killed prior to the Cataclysm."
+    )
+    # The flavor quote sinks behind every substantive claim.
+    assert texts[-1] in {
+        "Haunted forever by the ghosts of your past.",
+        "Voss was killed prior to the Cataclysm.",
+    }
+
+
+def test_order_key_character_views_is_stable_and_paragraph_safe() -> None:
+    """Paragraph fallback items (no claim_type) keep their original relative order."""
+    from pipeline.generate.draft.pages.key_characters import _order_key_character_summary_views
+
+    views = [
+        {"snippet": "first paragraph", "claim_text": "first paragraph"},
+        {"snippet": "second paragraph", "claim_text": "second paragraph"},
+    ]
+
+    ordered = _order_key_character_summary_views(views, instance_name="Scholomance")
+
+    assert [view["snippet"] for view in ordered] == ["first paragraph", "second paragraph"]

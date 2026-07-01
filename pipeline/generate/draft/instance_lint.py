@@ -23,7 +23,10 @@ MAX_AT_A_GLANCE_WORDS = 55
 MIN_OVERVIEW_WORDS = 70
 MAX_OVERVIEW_WORDS = 160
 MIN_KEY_CHARACTER_WORDS = 18
-MAX_KEY_CHARACTER_WORDS = 60
+# Headroom for the figures whose relevant history actually explains why they are in the instance
+# (e.g. Lilian Voss: Scarlet Crusade -> raised undead -> vendetta against necromancers -> here for
+# Gandling). The voice keeps minor figures brief, so this is a ceiling for rich arcs, not a target.
+MAX_KEY_CHARACTER_WORDS = 110
 
 _GENERIC_AT_A_GLANCE = re.compile(r"\bis a lore-significant retail instance\b", re.IGNORECASE)
 _GENERIC_OVERVIEW = re.compile(

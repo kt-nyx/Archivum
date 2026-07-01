@@ -31,23 +31,35 @@ _CLEAN = [
         "the worst of the plague had receded and travelers ventured the old roads once again.",
     ),
 ]
+# Present-dominant sections that trip lint. They are placed mid-history (never the final slot), since
+# the final section of a multi-section history is the legitimate present-state bridge and is exempt
+# from the present-tense check — only a non-final present section is a lint failure to salvage.
 _BAD_PRESENT = _section(
     "Now",
     "The academy stands today and the Scourge controls its halls while necromancers raise the dead. "
     "Acolytes study dark arts in the lower vaults, the dead serve their masters, and patrols guard "
     "every corridor as the order maintains its grip and recruits new students from the surrounding land.",
 )
+_BAD_PRESENT_2 = _section(
+    "Today",
+    "The order holds the keep and its agents roam the countryside while cultists gather in the crypts. "
+    "Wardens patrol the walls, the faithful tend the shrines, and the masters direct their servants as "
+    "the school endures and draws fresh recruits from the villages that still stand nearby.",
+)
 
 
 def test_history_finalize_salvages_clean_llm_sections(monkeypatch) -> None:
     """A single failing section must not discard the whole clean LLM batch.
 
-    The LLM returns three clean past-tense sections plus one present-dominant section that trips lint.
-    Salvage keeps the three clean ones (>= MIN_HISTORY_SECTIONS) and never falls to the deterministic
-    fallback — which we monkeypatch to a sentinel that proves it was not used.
+    The LLM returns three clean past-tense sections plus one present-dominant section (placed
+    mid-history, not final) that trips lint. Salvage keeps the three clean ones (>=
+    MIN_HISTORY_SECTIONS) and never falls to the deterministic fallback — which we monkeypatch to a
+    sentinel that proves it was not used.
     """
     monkeypatch.setattr(
-        cards, "synthesize_history_sections", lambda pool, **kw: (_CLEAN + [_BAD_PRESENT], ["used"])
+        cards,
+        "synthesize_history_sections",
+        lambda pool, **kw: ([_CLEAN[0], _BAD_PRESENT, _CLEAN[1], _CLEAN[2]], ["used"]),
     )
 
     def _sentinel_fallback(pool, **kw):  # pragma: no cover - asserted not called
@@ -69,7 +81,7 @@ def test_history_finalize_falls_through_when_too_few_clean(monkeypatch) -> None:
     monkeypatch.setattr(
         cards,
         "synthesize_history_sections",
-        lambda pool, **kw: (_CLEAN[:1] + [_BAD_PRESENT, _BAD_PRESENT], ["used"]),
+        lambda pool, **kw: ([_BAD_PRESENT, _BAD_PRESENT_2, _CLEAN[0]], ["used"]),
     )
     called: dict[str, bool] = {}
 

@@ -189,7 +189,7 @@ def test_zone_draft_excludes_internal_claim_metadata(monkeypatch) -> None:
     assert "claim_id" not in serialized
 
 
-def test_build_zone_page_prefers_past_snippet_for_at_a_glance(monkeypatch) -> None:
+def test_build_zone_page_prefers_present_snippet_for_at_a_glance(monkeypatch) -> None:
     monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
     zone_id = "zone-example"
     evidence = [
@@ -199,20 +199,20 @@ def test_build_zone_page_prefers_past_snippet_for_at_a_glance(monkeypatch) -> No
             "field_name": "at_a_glance_input",
             "evidence_items": [
                 {
-                    "source_id": "src-present",
-                    "snippet": (
-                        "Example Zone is a blighted region where crusaders maintain outposts and continue "
-                        "to heal the soil while factions clash over strategic ruins."
-                    ),
-                    "section_role": "lead",
-                },
-                {
                     "source_id": "src-past",
                     "snippet": (
                         "Once a fertile frontier, the region was devastated during the Third War and remained "
                         "blighted for decades before recovery efforts began."
                     ),
                     "section_role": "history",
+                },
+                {
+                    "source_id": "src-present",
+                    "snippet": (
+                        "Example Zone is a blighted region where crusaders maintain outposts and continue "
+                        "to heal the soil while factions clash over strategic ruins."
+                    ),
+                    "section_role": "lead",
                 },
             ],
             "build_meta": {"source_id": "src-zone", "subject_zone_id": zone_id},
@@ -244,7 +244,7 @@ def test_build_zone_page_prefers_past_snippet_for_at_a_glance(monkeypatch) -> No
         {},
         None,
     )
-    assert "was" in draft["at_a_glance"] or "remained" in draft["at_a_glance"]
+    assert "is" in draft["at_a_glance"] or "maintain" in draft["at_a_glance"]
     assert not lint_at_a_glance(str(draft["at_a_glance"]), zone_name="Example Zone")
 
 

@@ -51,6 +51,36 @@ _LOCATION_LIST_RE = re.compile(
     r"(?:[A-Z][a-z]+(?:'s)?(?:,\s*)?){3,}[A-Z][a-z]+",
 )
 
+# Player-facing quest-directive voice. `currently` / `at_a_glance` describe the world in-universe,
+# not what the player is sent to do, yet quest-objective evidence ("Adventurers are tasked with...",
+# "Aid the Argent Crusade...", "See <zone> storyline") otherwise slips into the currently pool and
+# wins on length. This is a *voice/address* signal (second person, player-as-tasked-agent, bare
+# imperative opener, or a wiki cross-reference directive) — general English quest phrasing, not a
+# zone vocabulary list — so it generalizes across zones without hardcoding any one zone's content.
+_PLAYER_DIRECTIVE_RE = re.compile(
+    r"\b(?:you|your|yourself)\b"
+    r"|\b(?:adventurers?|heroes?|champions?|players?)\s+"
+    r"(?:are\s+(?:tasked|sent|asked|called|charged|dispatched)|must|should|can\s+(?:help|aid|assist))\b"
+    r"|\bsee\b[^.]*\bstoryline\b",
+    re.IGNORECASE,
+)
+# Fourth-wall / game-meta reference to the person at the keyboard. The compendium is in-world lore,
+# so "the player", "the player's arrival", or second-person address ("you", "your") break the frame
+# even inside otherwise-narrative prose — e.g. a present-state bridge that reads "By the player's
+# arrival, the region is still...". Distinct from _PLAYER_DIRECTIVE_RE (quest-objective voice): this
+# catches the bare meta noun regardless of directive phrasing. "player(s)" is never in-world; heroes,
+# champions, and adventurers are canonical actors and are intentionally NOT matched here.
+_PLAYER_META_RE = re.compile(
+    r"\bplayers?\b|\byou\b|\byour\b|\byourself\b",
+    re.IGNORECASE,
+)
+_QUEST_IMPERATIVE_OPENER_RE = re.compile(
+    r"^\s*(?:aid|help|assist|defeat|slay|kill|destroy|stop|halt|find|seek|locate|travel|journey|"
+    r"venture|head|go|return|report|speak|talk|meet|escort|rescue|free|gather|collect|retrieve|"
+    r"deliver|bring|clear|defend|protect|investigate|search|beware|be\s+warned)\b",
+    re.IGNORECASE,
+)
+
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.?!])\s+")
 
@@ -162,6 +192,28 @@ def has_currently_meta(text: str) -> bool:
     return bool(_CURRENTLY_META_RE.search(text))
 
 
+def has_player_directive(text: str) -> bool:
+    """True when the text reads as a player-facing quest directive rather than in-universe prose."""
+    cleaned = text.strip()
+    if not cleaned:
+        return False
+    return bool(_PLAYER_DIRECTIVE_RE.search(cleaned) or _QUEST_IMPERATIVE_OPENER_RE.search(cleaned))
+
+
+def has_player_meta_reference(text: str) -> bool:
+    """True when the prose breaks the in-world frame with a game-meta reference to the player.
+
+    Catches the bare noun ("the player", "the player's arrival") and second-person address, which
+    :func:`has_player_directive` misses because they carry no quest-objective verb.
+    """
+    return bool(_PLAYER_META_RE.search(text))
+
+
+def has_present_state_framing(text: str) -> bool:
+    """True when the text carries present-tense active-state framing (is/remains/holds/...)."""
+    return bool(_PRESENT_TENSE_RE.search(text))
+
+
 def has_geography_hub_in_text(text: str) -> bool:
     for token in re.findall(r"[A-Z][a-z]+(?:[''][a-z]+)?(?:\s+[A-Z][a-z]+)*", text):
         if entry_kinds(token.strip()) & _GEOGRAPHY_KINDS:
@@ -187,21 +239,33 @@ def lint_at_a_glance(text: str, *, zone_name: str = "") -> list[str]:
         issues.append("at_a_glance reads like a location list dump")
     if zone_name and zone_name.lower() in text.lower() and words < 12:
         issues.append("at_a_glance reads like bare zone description filler")
-    if has_dominant_present_tense(text):
-        issues.append("at_a_glance uses dominant present tense")
-    if not _PAST_TENSE_RE.search(text) and not has_historical_framing(text):
-        if words >= _SHORT_TEXT_PRESENT_CARVEOUT_WORDS:
-            issues.append("at_a_glance lacks past-tense or historical framing")
+    # at_a_glance is an essence caption: it describes what the zone IS, carrying its history through
+    # scarring/legacy *adjectives* ("plague-scarred", "fallen", "ruined") rather than narrating past
+    # events. Reject a caption whose verb spine is dominantly past tense (it reads as a history blurb);
+    # a present/atemporal or nominal caption — including the all-participle gold shape — is fine. This
+    # gates on finite past-tense verbs only, so past-participle adjectives never trip it.
+    past, present = tense_marker_counts(text)
+    if words >= _SHORT_TEXT_PRESENT_CARVEOUT_WORDS and past > present:
+        issues.append("at_a_glance reads as past-tense narration")
     issues.extend(lint_adp_date_style(text))
     return issues
 
 
 def lint_currently(text: str, *, zone_name: str = "", at_a_glance: str = "") -> list[str]:
     issues: list[str] = []
-    if has_geography_hub_in_text(text):
-        issues.append("currently mentions geography hub proper nouns")
+    # Reject an actual location *list dump*, not any landmark mention: present-state lore legitimately
+    # names where the recovery and conflict are happening ("the Argent Crusade still holds Hearthglen;
+    # Caer Darrow remains a school of necromancy"). The stricter geography-hub check rejected that as a
+    # "geography hub" and dropped the zone's real present-state line to a canned fallback. Aligns with
+    # lint_at_a_glance and the present-state-lore election tier, which both gate on list dumps only.
+    if has_location_list_dump(text):
+        issues.append("currently reads like a location list dump")
     if has_currently_meta(text):
         issues.append("currently contains reputation/achievement/player meta")
+    if has_player_directive(text):
+        issues.append("currently reads as a player-facing quest directive")
+    if has_player_meta_reference(text):
+        issues.append("currently references the player / breaks in-world frame")
     if at_a_glance.strip():
         overlap = token_jaccard(at_a_glance, text)
         if overlap >= AT_A_GLANCE_CURRENTLY_OVERLAP_THRESHOLD:
@@ -223,6 +287,7 @@ def lint_history_sections(
     issues: list[str] = []
     if len(sections) > max_sections:
         issues.append(f"history_sections count {len(sections)} exceeds cap {max_sections}")
+    final_index = len(sections) - 1
     for index, section in enumerate(sections):
         if not isinstance(section, dict):
             continue
@@ -230,11 +295,23 @@ def lint_history_sections(
         if not body:
             issues.append(f"history_sections[{index}] has empty body")
             continue
-        has_framing = has_past_tense_signal(body) or has_historical_framing(body)
-        if not has_framing:
-            issues.append(f"history_sections[{index}] lacks past-tense historical framing")
-        elif has_dominant_present_tense(body, short_text_word_limit=0):
-            issues.append(f"history_sections[{index}] uses dominant present tense")
+        # In-world frame guard — applies to every section, including the present-state bridge, which
+        # is otherwise exempt from the tense checks below and is the section most tempted to write
+        # "by the player's arrival" as its present-day anchor.
+        if has_player_meta_reference(body):
+            issues.append(f"history_sections[{index}] references the player / breaks in-world frame")
+        # The final section of a multi-section history is the present-state bridge: the chronicle
+        # catching up to the zone's current, ongoing condition. It may be written in present tense,
+        # so it is exempt from the past-tense framing / dominant-present checks. Every earlier section
+        # stays hard-guarded past, so background eras can never be present-tensed; a lone section is
+        # never exempt (a one-section "history" must still read as past background).
+        is_present_state_bridge = index == final_index and len(sections) > 1
+        if not is_present_state_bridge:
+            has_framing = has_past_tense_signal(body) or has_historical_framing(body)
+            if not has_framing:
+                issues.append(f"history_sections[{index}] lacks past-tense historical framing")
+            elif has_dominant_present_tense(body, short_text_word_limit=0):
+                issues.append(f"history_sections[{index}] uses dominant present tense")
         for adp_issue in lint_adp_date_style(body):
             issues.append(f"history_sections[{index}] {adp_issue}")
     return issues
