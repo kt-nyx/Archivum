@@ -455,6 +455,230 @@ def test_active_storyline_outcome_excluded_from_setup_bridge_paragraph() -> None
         assert by_id[claim_id]["spoiler_safety"] == ACTIVE_OUTCOME
 
 
+def _llm_setup_bridge_record_with_active_conflict(
+    canonical_id: str, *, conflict_label: str, fallback_mode: str
+) -> CanonicalEvidenceRecord:
+    paragraph = TemporalClassification(
+        scope=ENTRY_STATE,
+        confidence=0.84,
+        reason="entry-state setup bridge",
+        fallback_mode=fallback_mode,
+        history_eligibility=HISTORY_SETUP_BRIDGE,
+        history_reason="standing setup: the antagonist now holds this site",
+    )
+    boundary: dict = {
+        "boundary_id": "boundary-test",
+        "entry_state_contract": {
+            "name": "Scholomance",
+            "active_conflicts": [{"label": conflict_label}],
+        },
+    }
+    return CanonicalEvidenceRecord(
+        canonical_evidence_id=canonical_id,
+        subject_id="instance-scholomance",
+        subject_type="instance",
+        source_id="src-scholomance",
+        source_categories=[],
+        source_title="Scholomance",
+        snippet="(paragraph snippet)",
+        boundary=boundary,
+        appearances=[{"field_name": "history_digest"}],
+        refs=[],
+        structural_classifications=[],
+        classification=paragraph,
+    )
+
+
+def test_llm_setup_bridge_paragraph_survives_global_conflict_match() -> None:
+    # Scholomance/Gandling: the page's LLM boundary pass judged the whole paragraph standing setup
+    # (history_setup_bridge). A claim that merely NAMES a globally-contested locus ("failed at
+    # Andorhal, retreated here to bide his time") while describing who now holds THIS site must not
+    # be relabeled an active-storyline outcome by the broad global active-conflict contract match.
+    # No encounter_state sibling exists, so the only would-be anchor is that global match.
+    canonical_id = "canonical-gandling-holdout"
+    record = _llm_setup_bridge_record_with_active_conflict(
+        canonical_id, conflict_label="Andorhal", fallback_mode="llm_boundary"
+    )
+    claims = [
+        _claim(
+            "g0",
+            "event",
+            "After failing to take control of Andorhal, Gandling retreated back into "
+            "Scholomance to bide his time.",
+            ["Darkmaster Gandling", "Andorhal", "Scholomance"],
+            [0],
+        ),
+    ]
+    decision = {
+        "canonical_evidence_id": canonical_id,
+        "subject_id": "instance-scholomance",
+        "subject_type": "instance",
+        "claims": claims,
+        "appearances": [{"field_name": "history_digest"}],
+    }
+    by_id = _claim_rows_by_id(decision, record)
+    assert by_id["g0"]["temporal_scope"] == ENTRY_STATE
+    assert by_id["g0"]["history_eligibility"] == HISTORY_SETUP_BRIDGE
+
+
+def test_deterministic_setup_bridge_still_relabels_global_conflict_resolution() -> None:
+    # Guard the narrowness of the exception: only a *considered LLM* setup-bridge judgment outranks
+    # the global active-conflict match. A merely deterministic setup-bridge label does not, so a
+    # genuine resolution of a globally-contested locus is still excluded from history.
+    canonical_id = "canonical-det-resolution"
+    record = _llm_setup_bridge_record_with_active_conflict(
+        canonical_id, conflict_label="Andorhal", fallback_mode="deterministic"
+    )
+    claims = [
+        _claim(
+            "d0",
+            "state",
+            "The Forsaken gained control of Andorhal.",
+            ["Forsaken", "Andorhal"],
+            [0],
+        ),
+    ]
+    decision = {
+        "canonical_evidence_id": canonical_id,
+        "subject_id": "instance-scholomance",
+        "subject_type": "instance",
+        "claims": claims,
+        "appearances": [{"field_name": "history_digest"}],
+    }
+    by_id = _claim_rows_by_id(decision, record)
+    assert by_id["d0"]["temporal_scope"] == ACTIVE_STORYLINE_OUTCOME
+    assert by_id["d0"]["history_eligibility"] == HISTORY_EXCLUDED_OUTCOME
+
+
+def _llm_verdict_record_with_active_conflict(
+    canonical_id: str,
+    *,
+    conflict_label: str,
+    confidence: float,
+    history_eligibility: str = HISTORY_BACKGROUND,
+) -> CanonicalEvidenceRecord:
+    """A confident/unconfident llm_boundary ENTRY_STATE paragraph without setup-bridge eligibility."""
+    paragraph = TemporalClassification(
+        scope=ENTRY_STATE,
+        confidence=confidence,
+        reason="entry-state paragraph",
+        fallback_mode="llm_boundary",
+        history_eligibility=history_eligibility,
+        history_reason="paragraph describes the standing state of the site",
+    )
+    boundary: dict = {
+        "boundary_id": "boundary-test",
+        "entry_state_contract": {
+            "name": "Scholomance",
+            "active_conflicts": [{"label": conflict_label}],
+        },
+    }
+    return CanonicalEvidenceRecord(
+        canonical_evidence_id=canonical_id,
+        subject_id="instance-scholomance",
+        subject_type="instance",
+        source_id="src-scholomance",
+        source_categories=[],
+        source_title="Scholomance",
+        snippet="(paragraph snippet)",
+        boundary=boundary,
+        appearances=[{"field_name": "history_digest"}],
+        refs=[],
+        structural_classifications=[],
+        classification=paragraph,
+    )
+
+
+def test_confident_llm_paragraph_verdict_defers_global_match_beyond_setup_bridge() -> None:
+    # Phase 3 generalization: ANY confident llm_boundary paragraph verdict — not only a
+    # history_setup_bridge one — outranks the global active-conflict entity match. The paragraph
+    # here is confident entry-state background; a claim naming the contested locus must not be
+    # deterministically flipped to an active-storyline outcome.
+    canonical_id = "canonical-llm-verdict-general"
+    record = _llm_verdict_record_with_active_conflict(
+        canonical_id, conflict_label="Andorhal", confidence=0.84
+    )
+    claims = [
+        _claim(
+            "v0",
+            "event",
+            "After failing to take control of Andorhal, Gandling retreated back into "
+            "Scholomance to bide his time.",
+            ["Darkmaster Gandling", "Andorhal", "Scholomance"],
+            [0],
+        ),
+    ]
+    decision = {
+        "canonical_evidence_id": canonical_id,
+        "subject_id": "instance-scholomance",
+        "subject_type": "instance",
+        "claims": claims,
+        "appearances": [{"field_name": "history_digest"}],
+    }
+    by_id = _claim_rows_by_id(decision, record)
+    assert by_id["v0"]["temporal_scope"] == ENTRY_STATE
+
+
+def test_unconfident_llm_paragraph_verdict_does_not_defer_global_match() -> None:
+    # An llm_boundary verdict the model itself was unsure about (ambiguous-tier confidence) is not
+    # authoritative: the global active-conflict match still relabels the resolving claim.
+    canonical_id = "canonical-llm-verdict-unsure"
+    record = _llm_verdict_record_with_active_conflict(
+        canonical_id, conflict_label="Andorhal", confidence=0.5
+    )
+    claims = [
+        _claim(
+            "u0",
+            "state",
+            "The Forsaken gained control of Andorhal.",
+            ["Forsaken", "Andorhal"],
+            [0],
+        ),
+    ]
+    decision = {
+        "canonical_evidence_id": canonical_id,
+        "subject_id": "instance-scholomance",
+        "subject_type": "instance",
+        "claims": claims,
+        "appearances": [{"field_name": "history_digest"}],
+    }
+    by_id = _claim_rows_by_id(decision, record)
+    assert by_id["u0"]["temporal_scope"] == ACTIVE_STORYLINE_OUTCOME
+
+
+def test_claim_scope_divergence_from_paragraph_is_recorded() -> None:
+    # Disagreement telemetry: a claim whose final scope diverges from its canonical paragraph
+    # verdict carries a paragraph_scope_divergence record, so deterministic reversions are
+    # auditable in the decisions sidecar rather than silent.
+    canonical_id = "canonical-divergence"
+    record = _entry_state_setup_bridge_record(canonical_id, name="Western Plaguelands")
+    claims = [
+        _claim("t0", "state", "The plague was mostly dispelled across the region.",
+               ["Western Plaguelands"], [0]),
+        _claim("t1", "encounter_state", "War still raged in Andorhal.",
+               ["Andorhal"], [1]),
+        _claim("t2", "state", "The Forsaken gained control of Andorhal.",
+               ["Forsaken", "Andorhal"], [2]),
+    ]
+    decision = {
+        "canonical_evidence_id": canonical_id,
+        "subject_id": "zone-western-plaguelands",
+        "subject_type": "zone",
+        "claims": claims,
+        "appearances": [{"field_name": "history_digest"}],
+    }
+    by_id = _claim_rows_by_id(decision, record)
+
+    # t2 was deterministically relabeled away from the paragraph's entry_state verdict → recorded.
+    assert by_id["t2"]["temporal_scope"] == ACTIVE_STORYLINE_OUTCOME
+    divergence = by_id["t2"]["paragraph_scope_divergence"]
+    assert divergence["paragraph_scope"] == ENTRY_STATE
+    assert divergence["claim_fallback_mode"] == "deterministic"
+    # Claims agreeing with the paragraph verdict carry no divergence marker.
+    assert "paragraph_scope_divergence" not in by_id["t0"]
+    assert "paragraph_scope_divergence" not in by_id["t1"]
+
+
 def test_subject_name_not_treated_as_contested_locus() -> None:
     # The encounter_state marker lists the zone itself among its entities ("war raged in Andorhal …
     # Western Plaguelands"). The subject's own name and id must be stripped from the contested set,

@@ -11,6 +11,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from pipeline.common.text_normalize import clean_wiki_snippet
+from pipeline.generate.draft.prose_lint import split_sentences
 from pipeline.generate.draft.temporal import (
     ACTIVE_STORYLINE,
     ACTIVE_STORYLINE_OUTCOME,
@@ -263,6 +264,84 @@ def route_claim_views_for_item(item: dict[str, Any], route: str) -> list[dict[st
     if not isinstance(views, list):
         return []
     return [view for view in views if _claim_allowed_for_route(view, route)]
+
+
+def _sentence_indexes(view: dict[str, Any]) -> list[int]:
+    raw = view.get("source_sentence_indexes")
+    if not isinstance(raw, list):
+        return []
+    out: list[int] = []
+    for value in raw:
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int):
+            out.append(value)
+    return out
+
+
+def safe_paragraph_excerpt(claim_views: list[dict[str, Any]], route: str) -> str:
+    """Rebuild a source paragraph from only its route-safe sentences.
+
+    Claims are atomized for fine-grained temporal/spoiler classification, but that shreds the
+    synthesizer's input into fragments. This reconstructs contiguous prose from the original
+    ``source_excerpt``, keeping a sentence only when it is covered by a route-safe claim AND by no
+    filtered claim — so a sentence that produced any future/spoiler claim is dropped whole and no
+    unsafe content leaks back in. Returns ``""`` when the paragraph text or sentence indexes are
+    unavailable, so callers fall back to claim-text fragments.
+    """
+    source_excerpt = ""
+    for view in claim_views:
+        candidate = str(view.get("source_excerpt", "")).strip()
+        if candidate:
+            source_excerpt = candidate
+            break
+    if not source_excerpt:
+        return ""
+    sentences = split_sentences(clean_wiki_snippet(source_excerpt))
+    if not sentences:
+        return ""
+    safe_idx: set[int] = set()
+    filtered_idx: set[int] = set()
+    for view in claim_views:
+        indexes = _sentence_indexes(view)
+        if _claim_allowed_for_route(view, route):
+            safe_idx.update(indexes)
+        else:
+            filtered_idx.update(indexes)
+    include = [
+        index
+        for index in sorted(safe_idx)
+        if index not in filtered_idx and 0 <= index < len(sentences)
+    ]
+    return " ".join(sentences[index].strip() for index in include).strip()
+
+
+def reconstruct_safe_paragraph_excerpts(
+    source_pool: list[dict[str, Any]], route: str
+) -> dict[str, str]:
+    """Map each source paragraph (canonical_evidence_id) to its route-safe reconstructed excerpt.
+
+    Operates on the full evidence items (which carry every claim view for the paragraph, safe and
+    unsafe), so the safe/filtered sentence split is computed against the complete claim set.
+    """
+    by_paragraph: dict[str, list[dict[str, Any]]] = {}
+    for item in source_pool:
+        views = item.get(CLAIM_VIEW_KEY)
+        if not isinstance(views, list):
+            continue
+        for view in views:
+            if not isinstance(view, dict):
+                continue
+            canonical_id = str(view.get("canonical_evidence_id", "")).strip()
+            if not canonical_id:
+                continue
+            by_paragraph.setdefault(canonical_id, []).append(view)
+    excerpts: dict[str, str] = {}
+    for canonical_id, claim_views in by_paragraph.items():
+        excerpt = safe_paragraph_excerpt(claim_views, route)
+        if excerpt:
+            excerpts[canonical_id] = excerpt
+    return excerpts
 
 
 def _claims_by_canonical_id(

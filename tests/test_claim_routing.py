@@ -5,10 +5,14 @@ import hashlib
 from pipeline.generate.draft.claim_routing import (
     ACTIVE_MECHANICS_STATE,
     ACTIVE_OUTCOME,
+    CLAIM_VIEW_KEY,
+    KEY_CHARACTER_ROUTE,
     SAFE_ENTRY_CONTEXT,
     apply_claim_views_to_evidence_rows,
     build_claim_view_routing_decisions,
+    reconstruct_safe_paragraph_excerpts,
     route_claim_views_for_pool,
+    safe_paragraph_excerpt,
 )
 from pipeline.generate.draft.pages.assembly import (
     _build_evidence_pools,
@@ -320,56 +324,184 @@ def test_prefer_entry_state_first_mixed_pool_keeps_paragraphs_neutral() -> None:
     ]
 
 
-def _kc_view(text: str, claim_type: str, *, entities: list[dict] | None = None) -> dict:
+def _kc_view(
+    text: str,
+    claim_type: str,
+    *,
+    entities: list[dict] | None = None,
+    section_role: str = "",
+    content_role: str = "",
+) -> dict:
     return {
         "snippet": text,
         "claim_text": text,
         "claim_type": claim_type,
         "entities": entities or [],
+        "section_role": section_role,
+        "raw_section_role": section_role,
+        "content_role": content_role,
         "is_claim_view": True,
     }
 
 
-def test_order_key_character_views_surfaces_presence_over_atmosphere() -> None:
-    """The motivation that explains a figure's presence must outrank flavor and later-life trivia.
+def test_order_key_character_views_follows_chronological_spine() -> None:
+    """The biography is ordered chronologically (Fix 3): origin first, then expansion sections in
+    release order, so the arrival that explains the figure's presence lands last instead of leading.
 
-    Mirrors the Lilian Voss regression: in extraction order the flavor quote and generic identity
-    lead, so an 8-item cap starved the Scarlet-Crusade -> hunts-necromancers -> at-Scholomance arc.
-    Presence-first ordering pulls that arc to the front of the kept window.
+    Mirrors the Lilian Voss regression, where the summary opened on the in-instance moment and
+    back-filled. With per-expansion section tags the arc now reads in order:
+    life -> cataclysm -> mists (turn toward Scholomance).
     """
     from pipeline.generate.draft.pages.key_characters import _order_key_character_summary_views
 
     views = [
-        _kc_view("Haunted forever by the ghosts of your past.", "identity"),
-        _kc_view("Voss is a member of the Desolate Council.", "identity"),
-        _kc_view("Voss was killed prior to the Cataclysm.", "event"),
-        _kc_view("Voss had history within the Scarlet Crusade.", "relationship"),
-        _kc_view("Voss was horrified at what she had become.", "state"),
-        _kc_view("Voss began a campaign against the Crusade.", "objective"),
         _kc_view(
             "Voss redirects her attention to the necromancers within Scholomance.",
             "state",
+            section_role="mists_of_pandaria_edit",
             entities=[{"name": "Scholomance"}],
         ),
-        _kc_view("Voss intends to kill Darkmaster Gandling.", "objective"),
+        _kc_view("Voss was killed prior to the Cataclysm.", "event", section_role="cataclysm_edit"),
+        _kc_view(
+            "Voss was raised by her father to be a weapon against the undead.",
+            "identity",
+            section_role="life_edit",
+        ),
+        _kc_view(
+            "Voss began a campaign against the Crusade.",
+            "objective",
+            section_role="cataclysm_edit",
+        ),
     ]
 
     ordered = _order_key_character_summary_views(views, instance_name="Scholomance")
     texts = [view["claim_text"] for view in ordered]
 
-    # The instance-naming claim leads; objectives/states/relationships precede identity and events.
-    assert texts[0] == "Voss redirects her attention to the necromancers within Scholomance."
-    assert texts.index("Voss intends to kill Darkmaster Gandling.") < texts.index(
-        "Voss is a member of the Desolate Council."
+    # Origin (life) precedes Cataclysm precedes the Mists-era turn toward Scholomance.
+    assert texts[0] == "Voss was raised by her father to be a weapon against the undead."
+    assert texts[-1] == "Voss redirects her attention to the necromancers within Scholomance."
+    assert texts.index("Voss began a campaign against the Crusade.") < texts.index(
+        "Voss redirects her attention to the necromancers within Scholomance."
     )
-    assert texts.index("Voss had history within the Scarlet Crusade.") < texts.index(
-        "Voss was killed prior to the Cataclysm."
-    )
-    # The flavor quote sinks behind every substantive claim.
-    assert texts[-1] in {
-        "Haunted forever by the ghosts of your past.",
-        "Voss was killed prior to the Cataclysm.",
+
+
+def test_order_key_character_views_demotes_modern_lead() -> None:
+    """Fix 2: once real non-lead biography exists, the whole-page lead is pushed to the back so it
+    loses the evidence cap; if the lead is all the figure has, it is left in place."""
+    from pipeline.generate.draft.pages.key_characters import _order_key_character_summary_views
+
+    with_biography = [
+        _kc_view(
+            "Voss is a member of the Desolate Council and the Horde Council.",
+            "identity",
+            content_role="lead",
+            section_role="lead",
+        ),
+        _kc_view(
+            "Voss was raised to be a weapon against the undead.",
+            "identity",
+            section_role="life_edit",
+        ),
+    ]
+    ordered = _order_key_character_summary_views(with_biography, instance_name="Scholomance")
+    assert ordered[-1]["content_role"] == "lead"
+
+    lead_only = [
+        _kc_view("Rattlegore is a bone golem bound to the school.", "identity", content_role="lead"),
+    ]
+    kept = _order_key_character_summary_views(lead_only, instance_name="Scholomance")
+    assert len(kept) == 1
+
+
+def test_select_salient_views_guarantees_instance_beat_and_era_spread() -> None:
+    """The evidence cap must keep the instance-relevant beat and spread across eras, not fill on one
+    era's micro-claims (the Lilian Voss salience regression)."""
+    from pipeline.generate.draft.pages.key_characters import _select_salient_key_character_views
+
+    views = [
+        _kc_view("Voss was raised as a weapon.", "state", section_role="life_edit"),
+        _kc_view("Voss studied stealth and sorcery.", "other", section_role="life_edit"),
+        _kc_view("Voss knew Lieutenant Gebler.", "relationship", section_role="life_edit"),
+        _kc_view("Voss trained relentlessly.", "other", section_role="life_edit"),
+        _kc_view("Voss died and was raised undead.", "event", section_role="cataclysm_edit"),
+        _kc_view("Voss killed her father.", "event", section_role="cataclysm_edit"),
+        _kc_view(
+            "Voss ventured to eradicate the Scourge remnant in Scholomance.",
+            "objective",
+            section_role="mists_of_pandaria_edit",
+        ),
+    ]
+
+    selected = _select_salient_key_character_views(views, instance_name="Scholomance", limit=4)
+    texts = [v["claim_text"] for v in selected]
+
+    assert "Voss ventured to eradicate the Scourge remnant in Scholomance." in texts
+    life_kept = sum(1 for v in selected if v["section_role"] == "life_edit")
+    assert life_kept <= 2  # one era's micro-claims do not swamp the window
+    assert any(v["section_role"] == "cataclysm_edit" for v in selected)
+    assert len(selected) == 4
+
+
+_RECON_PARAGRAPH = (
+    "Alpha happened first. Beta is the spoiler outcome. Gamma is safe background."
+)
+
+
+def _recon_claim(sentence_index: int, *, scope: str, safety: str, text: str) -> dict:
+    return {
+        "canonical_evidence_id": "c1",
+        "source_excerpt": _RECON_PARAGRAPH,
+        "source_sentence_indexes": [sentence_index],
+        "temporal_scope": scope,
+        "spoiler_safety": safety,
+        "claim_text": text,
+        "is_claim_view": True,
     }
+
+
+def test_safe_paragraph_excerpt_keeps_safe_sentences_drops_spoiler() -> None:
+    views = [
+        _recon_claim(0, scope="pre_entry_history", safety="safe_background", text="Alpha"),
+        _recon_claim(1, scope="active_storyline_outcome", safety="active_outcome", text="Beta"),
+        _recon_claim(2, scope="pre_entry_history", safety="safe_background", text="Gamma"),
+    ]
+    excerpt = safe_paragraph_excerpt(views, KEY_CHARACTER_ROUTE)
+    assert "Alpha happened first." in excerpt
+    assert "Gamma is safe background." in excerpt
+    assert "Beta" not in excerpt  # the spoiler-outcome sentence is dropped
+
+
+def test_safe_paragraph_excerpt_drops_contaminated_sentence() -> None:
+    # Sentence 0 produced a safe claim AND a spoiler claim (LLM split): it is dropped whole so no
+    # future/outcome content leaks back into the reconstructed prose.
+    views = [
+        _recon_claim(0, scope="pre_entry_history", safety="safe_background", text="Alpha-safe"),
+        _recon_claim(0, scope="active_storyline_outcome", safety="active_outcome", text="Alpha-bad"),
+        _recon_claim(2, scope="pre_entry_history", safety="safe_background", text="Gamma"),
+    ]
+    excerpt = safe_paragraph_excerpt(views, KEY_CHARACTER_ROUTE)
+    assert "Alpha" not in excerpt
+    assert "Gamma is safe background." in excerpt
+
+
+def test_reconstruct_safe_paragraph_excerpts_maps_by_canonical_id() -> None:
+    item = {
+        CLAIM_VIEW_KEY: [
+            _recon_claim(0, scope="pre_entry_history", safety="safe_background", text="Alpha"),
+            _recon_claim(1, scope="active_storyline_outcome", safety="active_outcome", text="Beta"),
+        ]
+    }
+    excerpts = reconstruct_safe_paragraph_excerpts([item], KEY_CHARACTER_ROUTE)
+    assert set(excerpts) == {"c1"}
+    assert "Alpha happened first." in excerpts["c1"]
+    assert "Beta" not in excerpts["c1"]
+
+
+def test_select_salient_views_noop_within_cap() -> None:
+    from pipeline.generate.draft.pages.key_characters import _select_salient_key_character_views
+
+    views = [_kc_view("only claim", "state", section_role="life_edit")]
+    assert _select_salient_key_character_views(views, instance_name="Scholomance", limit=14) == views
 
 
 def test_order_key_character_views_is_stable_and_paragraph_safe() -> None:

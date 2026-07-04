@@ -13,8 +13,55 @@ from pipeline.generate.draft.temporal import (
     HISTORY_SETUP_BRIDGE,
     POST_ACTIVE_LORE,
     PRE_ENTRY_HISTORY,
+    CanonicalEvidenceRecord,
+    TemporalClassification,
+    _character_profile_recency_override,
     enrich_evidence_temporal_metadata,
 )
+
+
+def _character_record(scope: str, raw_section_role: str, *, active_rank: int = 4):
+    """A character_pool canonical record with an empty contract (so any contract match is
+    non-independent) and one appearance in the given expansion section."""
+    return CanonicalEvidenceRecord(
+        canonical_evidence_id="c1",
+        subject_id="instance-x",
+        subject_type="instance",
+        source_id="src",
+        source_categories=[],
+        source_title="Lilian Voss",
+        snippet="Later council material.",
+        boundary={
+            "boundary_id": "b1",
+            "entry_state_contract": {"active_expansion": {"label": "Mists", "rank": active_rank}},
+        },
+        appearances=[{"field_name": "character_pool", "raw_section_role": raw_section_role}],
+        refs=[],
+        structural_classifications=[],
+        classification=TemporalClassification(scope, 0.7, "roster_presence_bump", "b1"),
+    )
+
+
+def test_character_profile_recency_guard_floors_later_roster_presence() -> None:
+    # War Within (rank ~10) is later than the active Mists content (rank 4): a still-living
+    # character's modern profile line kept as entry_state via roster presence is floored to
+    # post_active_lore (Fix 1).
+    record = _character_record(ENTRY_STATE, "the_war_within_edit")
+    override = _character_profile_recency_override(record)
+    assert override is not None
+    assert override.scope == POST_ACTIVE_LORE
+
+
+def test_character_profile_recency_guard_keeps_earlier_and_out_of_scope() -> None:
+    # A pre-entry-tagged Cataclysm line (rank 3, earlier than Mists rank 4) is left untouched.
+    assert (
+        _character_profile_recency_override(_character_record(PRE_ENTRY_HISTORY, "cataclysm_edit"))
+        is None
+    )
+    # A non-character_pool record is out of scope for the guard.
+    record = _character_record(ENTRY_STATE, "the_war_within_edit")
+    record.appearances = [{"field_name": "faction_pool", "raw_section_role": "the_war_within_edit"}]
+    assert _character_profile_recency_override(record) is None
 
 
 def _row(

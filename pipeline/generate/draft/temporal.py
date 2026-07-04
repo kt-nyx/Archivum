@@ -436,6 +436,17 @@ def enrich_evidence_temporal_metadata(
                     appearances=record.appearances,
                 )
 
+    # Fix 1: floor still-living characters' later-expansion profile lines that only survived as
+    # entry_state via "current roster presence" (the Lilian Voss leak). Runs after the LLM pass so it
+    # corrects both deterministic and adjudicated classifications.
+    for record in canonical_records:
+        guard = _character_profile_recency_override(record)
+        if guard is not None:
+            record.classification = _with_canonical_history_defaults(
+                guard,
+                appearances=record.appearances,
+            )
+
     decisions: list[dict[str, Any]] = []
     canonical_decisions: list[dict[str, Any]] = []
     claim_decisions: list[dict[str, Any]] = []
@@ -848,6 +859,51 @@ def _expansion_recency(paragraph_rank: int | None, active_rank: int | None) -> s
     if paragraph_rank < active_rank:
         return "earlier"
     return "same"
+
+
+def _record_appears_in_character_pool(record: CanonicalEvidenceRecord) -> bool:
+    return any(
+        str(appearance.get("field_name", "")).strip() == "character_pool"
+        for appearance in record.appearances
+    )
+
+
+def _character_profile_recency_override(
+    record: CanonicalEvidenceRecord,
+) -> TemporalClassification | None:
+    """Guard: a character-profile paragraph from an expansion strictly LATER than the subject's
+    active-content expansion cannot be entry_state/pre_entry_history for THIS instance.
+
+    Floors such a paragraph to post_active_lore, overriding the "current roster presence" pull that
+    otherwise leaks a still-living character's whole modern biography into an instance card (the
+    Lilian Voss leak). Roster presence is a *legitimate* current-state match — that is why it cannot
+    be filtered as a non-independent one — but a biography paragraph describing a later-expansion
+    event still post-dates the current playable content no matter who it is about. Deliberately
+    narrow: gated on character_pool + strictly-'later' recency, so the instance's own active-expansion
+    section (recency 'same') is untouched and this does not reinstate a blanket expansion-era rule —
+    expansion chronology stays a soft signal elsewhere (memory: expansion-chronology-now-soft-signal).
+    """
+    classification = record.classification
+    if classification is None:
+        return None
+    if classification.scope not in {ENTRY_STATE, PRE_ENTRY_HISTORY}:
+        return None
+    if not _record_appears_in_character_pool(record):
+        return None
+    recency = _expansion_recency(
+        _paragraph_expansion_rank(record), _active_expansion_rank(record.boundary)
+    )
+    if recency != "later":
+        return None
+    boundary_id = str(record.boundary.get("boundary_id", "")).strip()
+    return TemporalClassification(
+        POST_ACTIVE_LORE,
+        max(classification.confidence, 0.6),
+        "character_profile_later_expansion_non_independent_roster_presence",
+        boundary_id,
+        "character_profile_recency_guard",
+        event_label=classification.event_label,
+    )
 
 
 def _current_anchor_snippets(rows: list[dict[str, Any]], *, limit: int = 8) -> list[str]:
@@ -1280,10 +1336,21 @@ def classify_claims_temporal(
         if record is None:
             continue
         claim_entries = entries_by_canonical.get(canonical_id, [])
-        claim_rows = [
-            _claim_temporal_decision_row(entry["claim"], entry["classification"])
-            for entry in claim_entries
-        ]
+        claim_rows = []
+        for entry in claim_entries:
+            row = _claim_temporal_decision_row(entry["claim"], entry["classification"])
+            # Disagreement telemetry: a claim whose final scope diverges from its canonical
+            # paragraph verdict is recorded, so a deterministic pass silently reverting the
+            # paragraph-level LLM judgment is visible in the decisions sidecar (drives audits).
+            paragraph = record.classification
+            if paragraph is not None and row["temporal_scope"] != paragraph.scope:
+                row["paragraph_scope_divergence"] = {
+                    "paragraph_scope": paragraph.scope,
+                    "paragraph_fallback_mode": paragraph.fallback_mode,
+                    "paragraph_confidence": paragraph.confidence,
+                    "claim_fallback_mode": row["fallback_mode"],
+                }
+            claim_rows.append(row)
         rows.append(
             {
                 "canonical_evidence_id": canonical_id,
@@ -1810,6 +1877,32 @@ def _active_storyline_outcome_classification(
     )
 
 
+# Minimum paragraph-verdict confidence for the LLM boundary pass to be treated as authoritative
+# over deterministic claim-level heuristics. LLM boundary verdicts carry 0.84 when decisive and
+# <= 0.5 when the model itself said "ambiguous" — only the decisive ones outrank heuristics.
+_LLM_PARAGRAPH_VERDICT_MIN_CONFIDENCE = 0.7
+
+
+def _paragraph_has_confident_llm_verdict(record: CanonicalEvidenceRecord) -> bool:
+    """True when the page's LLM boundary pass confidently classified this whole paragraph.
+
+    The canonical (paragraph-level) adjudicator sees the full paragraph in context, so its
+    confident verdict is authoritative: deterministic claim passes may refine *within* it (e.g.
+    excluding a resolving sentence flagged by a within-paragraph ``encounter_state`` sibling), but
+    must never flip it on the strength of a broad *global* signal alone — an instance paragraph
+    that merely NAMES a contested place while describing who now holds the site is standing setup,
+    not a resolution of that conflict (the Scholomance/Gandling case). The reliable
+    within-paragraph ``encounter_state`` sibling signal is unaffected and still anchors outcomes.
+    """
+    classification = record.classification
+    if classification is None:
+        return False
+    return (
+        classification.fallback_mode == "llm_boundary"
+        and classification.confidence >= _LLM_PARAGRAPH_VERDICT_MIN_CONFIDENCE
+    )
+
+
 def _subject_name_terms(record: CanonicalEvidenceRecord) -> set[str]:
     """Normalized terms for the subject's own name.
 
@@ -1870,10 +1963,20 @@ def _propagate_active_storyline_outcomes(
             claim = entry["claim"]
             if str(claim.get("claim_type", "")).strip() not in _OUTCOME_ANCHOR_CLAIM_TYPES:
                 continue
-            resolves = bool(_claim_entity_terms(claim) & contested_terms) or (
-                _claim_matches_active_conflict_contract(claim, entry["record"].boundary)
+            # (a) A sibling encounter_state claim marks a still-active conflict locus in THIS
+            # paragraph — a reliable within-paragraph resolution signal.
+            resolves_local = bool(_claim_entity_terms(claim) & contested_terms)
+            # (b) The claim's entities match a global active-conflict contract locus. This is a
+            # broad heuristic: a paragraph the page's own LLM boundary pass confidently classified
+            # — e.g. standing setup, "after failing at Andorhal, X fell back here and now holds
+            # it" — merely NAMES the contested place; it does not resolve that conflict. Defer to
+            # that considered paragraph verdict rather than let the global match override it.
+            resolves_contract = _claim_matches_active_conflict_contract(
+                claim, entry["record"].boundary
             )
-            if resolves:
+            if resolves_contract and _paragraph_has_confident_llm_verdict(entry["record"]):
+                resolves_contract = False
+            if resolves_local or resolves_contract:
                 anchor_sentences |= _claim_sentence_indexes(claim)
         if not anchor_sentences:
             continue
@@ -2555,7 +2658,13 @@ def _temporal_adjudication_system_prompt(*, canonical: bool = False) -> str:
         "- pre_entry_history: background that happened before the player enters this content.\n"
         "- entry_state: the current setup visible or true as the player arrives.\n"
         "- active_storyline: events the player is about to participate in, without outcome.\n"
-        "- active_storyline_outcome: results, resolutions, deaths, victories, or late-chain reveals.\n"
+        "- active_storyline_outcome: the resolution of THIS content's own active storyline — an "
+        "outcome the player brings about or witnesses by playing this instance/zone (a boss defeated "
+        "here, a quest chain's payoff, a late-chain reveal). A death, defeat, failure, or shift of "
+        "control that occurred off-screen or in earlier content, and whose lasting RESULT is simply "
+        "the standing situation the player now finds (who holds the site, who rules, who has holed up "
+        "here), is NOT this label — classify it by that standing situation, usually entry_state with "
+        "history_setup_bridge, even though it names a death, defeat, or seizure.\n"
         "- post_active_lore: later off-screen lore, reports, books, or events after this content. "
         "For instances, do not label a paragraph pre_entry_history merely because it happens "
         "before the player personally enters. pre_entry_history is origin/fall/background that "
@@ -2592,8 +2701,11 @@ def _temporal_adjudication_system_prompt(*, canonical: bool = False) -> str:
         "- history_setup_bridge: a transition/setup paragraph that explains the current "
         "playable state, current occupants, ruler, threat, holdout, or condition as the "
         "player enters. Use this even if the paragraph also describes the current setup.\n"
-        "- history_excluded_outcome: active quest or dungeon outcome, boss defeat, player "
-        "resolution, late-chain reveal, victory, or death.\n"
+        "- history_excluded_outcome: the outcome of THIS content's active storyline that the player "
+        "reaches by playing it — a boss defeat or quest resolution achieved here, a late-chain "
+        "reveal, or a victory/death that is the payoff of this content. Do not use it for an earlier "
+        "or off-screen death, defeat, failure, or control change whose enduring result is the current "
+        "holdout, ruler, or threat the player walks into; that is history_setup_bridge.\n"
         "- history_excluded_post_active: later off-screen visitors, reports, book/retrieval "
         "missions, research missions, or outside-faction activity absent from the current "
         "setup anchors.\n"
@@ -2603,9 +2715,12 @@ def _temporal_adjudication_system_prompt(*, canonical: bool = False) -> str:
         "the player arrives, classify it as entry_state with history_setup_bridge. For "
         "zones, this includes transition paragraphs that explain current quest hubs, "
         "restoration efforts, faction bases, staging grounds, or front lines the player "
-        "encounters on entry. Do not use history_setup_bridge for player-completed quest "
-        "outcomes, control changes caused by the active storyline, victory summaries, or "
-        "later off-screen reports. Return one temporal_scope and one history_eligibility "
+        "encounters on entry. Do not use history_setup_bridge for outcomes the player completes "
+        "in THIS content, control changes the player's own active storyline brings about, victory "
+        "summaries, or later off-screen reports. But an antagonist who, after an earlier or "
+        "off-screen defeat, fell back to this site and now holds it or bides his time here IS "
+        "history_setup_bridge — that is the ruler or holdout the player finds on entry, not a "
+        "resolution the player achieves. Return one temporal_scope and one history_eligibility "
         "per item, with short rationales grounded only in the inputs."
     )
 
