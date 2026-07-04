@@ -95,9 +95,10 @@ def test_budget_absorbs_subfloor_section_into_previous() -> None:
     assert "brief note" in out[-1]["body"]
 
 
-def test_budget_keeps_subfloor_when_at_minimum_sections() -> None:
-    # Exactly MIN sections, one sub-floor: absorbing would drop below the minimum, so it
-    # is kept as-is rather than collapsing legitimate multi-section history.
+def test_budget_absorbs_subfloor_even_below_minimum_sections() -> None:
+    # Exactly MIN sections, one sub-floor: absorption is still allowed (Slice 2). Validate's
+    # own floor is one section, and shipping a budget-violating section is the worse outcome
+    # — the old keep-at-minimum behavior shipped a guaranteed budget.history_section hard-fail.
     full = lambda: " ".join(_sentence(i) for i in range(5))  # noqa: E731
     out = _apply_history_section_budget(
         [
@@ -106,7 +107,8 @@ def test_budget_keeps_subfloor_when_at_minimum_sections() -> None:
             {"heading": "C", "body": "Too short.", "source_refs": []},
         ]
     )
-    assert [s["heading"] for s in out] == ["A", "B", "C"]
+    assert [s["heading"] for s in out] == ["A", "B"]
+    assert "Too short." in out[-1]["body"]
 
 
 def test_budget_keeps_subfloor_section_when_it_cannot_be_absorbed() -> None:

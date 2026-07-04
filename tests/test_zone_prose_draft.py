@@ -79,7 +79,9 @@ def _prose_evidence(zone_id: str) -> list[dict[str, object]]:
                     "snippet": (
                         "The region was devastated during the invasion and fell under undead control "
                         "for decades before military campaigns began restoring order across the frontier, "
-                        "broken keeps, and scattered villages throughout the zone."
+                        "broken keeps, and scattered villages throughout the zone. The farmlands burned "
+                        "first, and the survivors who fled carried plague stories to every neighboring "
+                        "province."
                     ),
                     "section_role": "history",
                 },
@@ -87,7 +89,9 @@ def _prose_evidence(zone_id: str) -> list[dict[str, object]]:
                     "snippet": (
                         "Crusader expeditions established fortified outposts and slowly reclaimed "
                         "key strongholds from the lingering scourge that had dominated the region for "
-                        "many years after the initial collapse."
+                        "many years after the initial collapse. Their engineers rebuilt the watchtowers "
+                        "along the old roads, and patrols escorted supply caravans between the recovered "
+                        "garrisons."
                     ),
                     "section_role": "history_third_war",
                 },
@@ -95,7 +99,9 @@ def _prose_evidence(zone_id: str) -> list[dict[str, object]]:
                     "snippet": (
                         "After the Cataclysm, recovery efforts reshaped roads and outposts while "
                         "undead remnants were pushed back along the frontier between crusaders and "
-                        "broken keeps across the ruined farmland."
+                        "broken keeps across the ruined farmland. The wardens who returned planted new "
+                        "groves beside the rebuilt bridges, and traders followed once the roads were "
+                        "declared safe."
                     ),
                     "section_role": "cataclysm_edit",
                 },

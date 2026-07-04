@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from pipeline.common.text_normalize import clean_wiki_snippet
+from pipeline.contracts.models import ZONE_PAGE_BUDGET_RULES
 from pipeline.discovery.geography import resolve_parent_continent
 from pipeline.generate.draft.instance_link_lint import (
     MAX_INSTANCE_LINK_WORDS,
@@ -165,14 +166,29 @@ def _finalize_currently(
     pool = currently_pool or select_currently_pool(pools, zone_name=zone_name)
     if not pool:
         return None, [], FIELD_STATUS_NO_EVIDENCE
+    budget = ZONE_PAGE_BUDGET_RULES["currently"]
 
     def _reasons(candidate: str) -> list[str]:
         reasons = list(lint_currently(candidate, zone_name=zone_name, at_a_glance=at_a_glance))
         reasons.extend(prose_gate_violations(candidate))
         return reasons
 
+    def _live_reasons(candidate: str) -> list[str]:
+        # Word budget as a retry trigger (Slice 2): validate hard-fails outside the rule, so
+        # an out-of-budget draft must be repaired by the driver, never shipped. Live-only:
+        # the offline borrow ladder has no retry lever, and a thin sanctioned borrow beats a
+        # null field on a smoke run (validate still reports the violation on its artifacts).
+        reasons = _reasons(candidate)
+        words = _word_count(candidate)
+        if words < budget.min_words or words > budget.max_words:
+            reasons.append(
+                f"currently is {words} words; it must be {budget.min_words}-{budget.max_words} "
+                "words — expand it with evidenced present-state detail or condense it"
+            )
+        return reasons
+
     if not llm_synthesis_active():
-        text, used = synthesize_currently(pool, max_words=120)
+        text, used = synthesize_currently(pool, max_words=budget.max_words)
         if _reasons(text):
             text, used = fallback_currently(pool)
             if _reasons(text):
@@ -180,13 +196,13 @@ def _finalize_currently(
         return text, used, FIELD_STATUS_OFFLINE_FALLBACK
 
     def _call(reinforce: str) -> dict[str, Any]:
-        text, used = synthesize_currently(pool, max_words=120, reinforce=reinforce)
+        text, used = synthesize_currently(pool, max_words=budget.max_words, reinforce=reinforce)
         return {"text": text, "used": used}
 
     result = synthesize_with_validation(
         call=_call,
         extract_bodies=lambda payload: [str(payload.get("text", ""))],
-        validate=lambda payload: _reasons(str(payload.get("text", ""))),
+        validate=lambda payload: _live_reasons(str(payload.get("text", ""))),
         source_snippets=_evidence_snippets(pool),
         label="currently",
     )

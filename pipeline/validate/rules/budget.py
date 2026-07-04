@@ -14,6 +14,7 @@ from pipeline.contracts.models import (
     INSTANCE_BUDGET_RULES,
     INSTANCE_MAX_KEY_CHARACTERS,
     INSTANCE_MIN_KEY_CHARACTERS,
+    PAGE_HISTORY_SECTION_BUDGET_RULE,
     ZONE_BUDGET_RULES,
     ZONE_MAX_MAJOR_CHARACTERS,
     ZONE_MAX_MAJOR_LANDMARKS,
@@ -22,6 +23,7 @@ from pipeline.contracts.models import (
     ZONE_MIN_MAJOR_CHARACTERS,
     ZONE_MIN_MAJOR_LANDMARKS,
     ZONE_MIN_TOTAL_QUESTLINE_CARDS,
+    ZONE_PAGE_BUDGET_RULES,
     BudgetRule,
     BudgetSeverity,
     Character,
@@ -288,58 +290,47 @@ def _validate_zone_page(zone_page: ZonePage) -> list[ValidationIssue]:
             # Recorded synthesis failure (field_status); the structure rule surfaces it — a null
             # field has no word budget.
             continue
-        words = _word_count(value)
-        if field_name == "at_a_glance" and not (18 <= words <= 48):
-            issues.append(
-                ValidationIssue(
-                    code="budget.section",
-                    message=f"{field_name} word count {words} is outside budget [18, 48]",
-                    severity=ValidationSeverity.WARN,
-                    path=f"$.{field_name}",
-                )
-            )
-        if field_name == "currently" and not (35 <= words <= 90):
-            issues.append(
-                ValidationIssue(
-                    code="budget.section",
-                    message=f"{field_name} word count {words} is outside budget [35, 90]",
-                    severity=ValidationSeverity.HARD_FAIL,
-                    path=f"$.{field_name}",
-                )
-            )
+        issue = _rule_issue_count(
+            ZONE_PAGE_BUDGET_RULES[field_name],
+            _word_count(value),
+            f"$.{field_name}",
+            "budget.section",
+        )
+        if issue:
+            issues.append(issue)
     for index, section in enumerate(zone_page.history_sections):
-        words = _word_count(section.body)
-        if not (40 <= words <= 110):
-            issues.append(
-                ValidationIssue(
-                    code="budget.history_section",
-                    message=f"history section word count {words} is outside budget [40, 110]",
-                    severity=ValidationSeverity.HARD_FAIL,
-                    path=f"$.history_sections[{index}].body",
-                )
-            )
+        issue = _rule_issue_count(
+            PAGE_HISTORY_SECTION_BUDGET_RULE,
+            _word_count(section.body),
+            f"$.history_sections[{index}].body",
+            "budget.history_section",
+        )
+        if issue:
+            issues.append(issue)
     for index, card in enumerate(zone_page.major_factions):
         words = _word_count(card.summary)
-        if words and not (18 <= words <= 48):
-            issues.append(
-                ValidationIssue(
-                    code="budget.faction_card",
-                    message=f"major_factions summary word count {words} is outside budget [18, 48]",
-                    severity=ValidationSeverity.WARN,
-                    path=f"$.major_factions[{index}].summary",
-                )
-            )
+        if not words:
+            continue
+        issue = _rule_issue_count(
+            ZONE_PAGE_BUDGET_RULES["major_factions_card_summary"],
+            words,
+            f"$.major_factions[{index}].summary",
+            "budget.faction_card",
+        )
+        if issue:
+            issues.append(issue)
     for index, instance_card in enumerate(zone_page.instance_links):
         words = _word_count(instance_card.summary)
-        if words and not (18 <= words <= 48):
-            issues.append(
-                ValidationIssue(
-                    code="budget.instance_link_card",
-                    message=f"instance_links summary word count {words} is outside budget [18, 48]",
-                    severity=ValidationSeverity.WARN,
-                    path=f"$.instance_links[{index}].summary",
-                )
-            )
+        if not words:
+            continue
+        issue = _rule_issue_count(
+            ZONE_PAGE_BUDGET_RULES["instance_links_card_summary"],
+            words,
+            f"$.instance_links[{index}].summary",
+            "budget.instance_link_card",
+        )
+        if issue:
+            issues.append(issue)
     return issues
 
 
@@ -406,16 +397,14 @@ def _validate_instance_page(
             issues.append(issue)
 
     for index, section in enumerate(instance_page.history_sections):
-        words = _word_count(section.body)
-        if not (40 <= words <= 110):
-            issues.append(
-                ValidationIssue(
-                    code="budget.history_section",
-                    message=f"history section word count {words} is outside budget [40, 110]",
-                    severity=ValidationSeverity.HARD_FAIL,
-                    path=f"$.history_sections[{index}].body",
-                )
-            )
+        issue = _rule_issue_count(
+            PAGE_HISTORY_SECTION_BUDGET_RULE,
+            _word_count(section.body),
+            f"$.history_sections[{index}].body",
+            "budget.history_section",
+        )
+        if issue:
+            issues.append(issue)
     return issues
 
 

@@ -9,7 +9,11 @@ from typing import Any
 from pipeline.common.discovery_vocab import faction_title_tokens, lore_faction_tokens
 from pipeline.common.draft_vocab import era_section_role_tokens
 from pipeline.common.text_ids import slugify
-from pipeline.generate.draft.faction_lint import MIN_FACTION_SUMMARY_WORDS, trim_faction_summary
+from pipeline.generate.draft.faction_lint import (
+    MAX_FACTION_SUMMARY_WORDS,
+    MIN_FACTION_SUMMARY_WORDS,
+    trim_faction_summary,
+)
 from pipeline.generate.draft.prose_gate import detect_list_shape
 from pipeline.generate.draft.prose_lint import has_currently_meta, word_count
 from pipeline.generate.draft.temporal import (
@@ -45,8 +49,6 @@ _BINDING_BY_FACTION_ID: dict[str, frozenset[str]] = {
     "faction-horde": frozenset({"horde"}),
     "faction-forsaken": frozenset({"horde", "neutral", "shared"}),
 }
-
-MAX_FACTION_SUMMARY_WORDS = 40
 
 
 @dataclass

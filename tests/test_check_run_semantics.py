@@ -538,7 +538,8 @@ def test_check_run_validates_instance_draft(tmp_path: Path, capsys) -> None:
                 "name": "Archivist Maelor",
                 "summary": (
                     "Archivist Maelor guards the forbidden stacks within Archive Vault, directing hostile "
-                    "instructors and preserving grim curricula that threaten nearby settlements."
+                    "instructors, preserving grim curricula that threaten nearby settlements, and turning "
+                    "away every armed rescue expedition."
                 ),
             },
             {
@@ -546,7 +547,8 @@ def test_check_run_validates_instance_draft(tmp_path: Path, capsys) -> None:
                 "name": "Warden Voss",
                 "summary": (
                     "Warden Voss patrols the inner vaults of Archive Vault, enforcing ritual discipline "
-                    "among hostile instructors and blocking every attempt to reclaim the academy's secrets."
+                    "among hostile instructors and blocking every attempt to reclaim the academy's secrets "
+                    "from the outside world."
                 ),
             },
         ],
@@ -748,7 +750,7 @@ def test_check_run_passes_with_single_key_character_when_only_one_boss_name(
                 "summary": (
                     "Darkmaster Gandling commands Scholomance faculty and anchors the instance's "
                     "necromantic hierarchy within its haunted halls, directing hostile instructors "
-                    "and preserving grim curricula."
+                    "and preserving grim curricula that threaten the surrounding countryside."
                 ),
             }
         ],
@@ -784,7 +786,7 @@ def test_check_run_fails_when_instance_story_context_pointer_cap_exceeded(tmp_pa
                 "summary": (
                     "Darkmaster Gandling commands Scholomance faculty and anchors the instance's "
                     "necromantic hierarchy within its haunted halls, directing hostile instructors "
-                    "and preserving grim curricula."
+                    "and preserving grim curricula that threaten the surrounding countryside."
                 ),
             }
         ],
@@ -820,7 +822,7 @@ def test_check_run_fails_when_instance_identity_header_pointer_cap_exceeded(tmp_
                 "summary": (
                     "Darkmaster Gandling commands Scholomance faculty and anchors the instance's "
                     "necromantic hierarchy within its haunted halls, directing hostile instructors "
-                    "and preserving grim curricula."
+                    "and preserving grim curricula that threaten the surrounding countryside."
                 ),
             }
         ],
@@ -856,7 +858,7 @@ def test_check_run_fails_when_two_boss_candidates_but_one_key_character(tmp_path
                 "summary": (
                     "Darkmaster Gandling commands Scholomance faculty and anchors the instance's "
                     "necromantic hierarchy within its haunted halls, directing hostile instructors "
-                    "and preserving grim curricula."
+                    "and preserving grim curricula that threaten the surrounding countryside."
                 ),
             }
         ],
@@ -901,7 +903,8 @@ def _enemy_card(card_id: str, name: str) -> dict[str, object]:
         "role": "enemy",
         "summary": (
             f"{name} commands Scholomance faculty and anchors the instance's necromantic hierarchy "
-            "within its haunted halls, directing hostile instructors and preserving grim curricula."
+            "within its haunted halls, directing hostile instructors and preserving grim curricula "
+            "that threaten the surrounding countryside."
         ),
     }
 

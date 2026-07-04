@@ -8,6 +8,7 @@ from pathlib import Path
 
 from pipeline.common import wiki_html
 from pipeline.common.text_normalize import clean_wiki_snippet
+from pipeline.contracts.models import INSTANCE_BUDGET_RULES
 from pipeline.generate.draft.prose_gate import detect_list_shape
 from pipeline.generate.draft.prose_lint import (
     has_currently_meta,
@@ -18,15 +19,17 @@ from pipeline.generate.draft.prose_lint import (
     word_count,
 )
 
+# Word budgets derive from the contracts BudgetRule registry (Slice 2): the draft lint
+# enforces exactly what validate checks, so the two homes cannot drift apart again.
+# Intentional exception, kept deliberately laxer than identity_header.min_words (22): the
+# at_a_glance floor is a degenerate-stub guard for the offline borrow ladder, and validate
+# only WARNs below the rule minimum.
 MIN_AT_A_GLANCE_WORDS = 10
-MAX_AT_A_GLANCE_WORDS = 55
-MIN_OVERVIEW_WORDS = 70
-MAX_OVERVIEW_WORDS = 160
-MIN_KEY_CHARACTER_WORDS = 18
-# Headroom for the figures whose relevant history actually explains why they are in the instance
-# (e.g. Lilian Voss: Scarlet Crusade -> raised undead -> vendetta against necromancers -> here for
-# Gandling). The voice keeps minor figures brief, so this is a ceiling for rich arcs, not a target.
-MAX_KEY_CHARACTER_WORDS = 110
+MAX_AT_A_GLANCE_WORDS = INSTANCE_BUDGET_RULES["identity_header"].max_words
+MIN_OVERVIEW_WORDS = INSTANCE_BUDGET_RULES["story_context"].min_words
+MAX_OVERVIEW_WORDS = INSTANCE_BUDGET_RULES["story_context"].max_words
+MIN_KEY_CHARACTER_WORDS = INSTANCE_BUDGET_RULES["key_characters_card_summary"].min_words
+MAX_KEY_CHARACTER_WORDS = INSTANCE_BUDGET_RULES["key_characters_card_summary"].max_words
 
 _GENERIC_AT_A_GLANCE = re.compile(r"\bis a lore-significant retail instance\b", re.IGNORECASE)
 _GENERIC_OVERVIEW = re.compile(
@@ -398,10 +401,13 @@ def fallback_key_character_summary(
     instance_name: str,
     max_words: int = MAX_KEY_CHARACTER_WORDS,
 ) -> tuple[str, list[str]]:
+    # Sized to clear MIN_KEY_CHARACTER_WORDS even with one-word names, so the sanctioned
+    # offline generic never trips the card-summary word floor it exists to satisfy.
     generic = trim_key_character_summary(
         (
             f"{boss_name} is a major presence within {instance_name}, tied to the hostile powers "
-            "and local ambitions that define the halls before outsiders intervene."
+            "and local ambitions that define its halls, and their part in its story begins well "
+            "before outsiders ever intervene."
         ),
         max_words=max_words,
     )

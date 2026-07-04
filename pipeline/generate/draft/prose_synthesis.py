@@ -9,6 +9,7 @@ from typing import Any
 
 from pipeline.ai.config import load_ai_settings
 from pipeline.common.text_normalize import clean_wiki_snippet
+from pipeline.contracts.models import INSTANCE_BUDGET_RULES, ZONE_PAGE_BUDGET_RULES
 from pipeline.generate.draft import finalize_trace
 from pipeline.generate.draft.card_lint import finalize_cta_hook
 from pipeline.generate.draft.compendium_voice import (
@@ -24,7 +25,11 @@ from pipeline.generate.draft.compendium_voice import (
     instance_system_prompt,
     zone_system_prompt,
 )
-from pipeline.generate.draft.faction_lint import strip_faction_label_prefix, trim_faction_summary
+from pipeline.generate.draft.faction_lint import (
+    MAX_FACTION_SUMMARY_WORDS,
+    strip_faction_label_prefix,
+    trim_faction_summary,
+)
 from pipeline.generate.draft.llm import llm_json_with_retry
 from pipeline.generate.draft.prose_election import (
     history_heading_from_role,
@@ -32,6 +37,7 @@ from pipeline.generate.draft.prose_election import (
 )
 from pipeline.generate.draft.prose_gate import detect_source_passthrough
 from pipeline.generate.draft.prose_lint import (
+    MAX_AT_A_GLANCE_WORDS,
     MAX_HISTORY_SECTIONS,
     has_present_state_framing,
     past_marker_score,
@@ -359,7 +365,7 @@ def synthesize_with_validation(
 def synthesize_at_a_glance(
     items: list[dict[str, Any]],
     *,
-    max_words: int = 45,
+    max_words: int = MAX_AT_A_GLANCE_WORDS,
     subject: str | None = None,
     reference_framing: str = "",
     reinforce: str = "",
@@ -435,7 +441,10 @@ def synthesize_at_a_glance(
 
 
 def synthesize_currently(
-    items: list[dict[str, Any]], *, max_words: int = 120, reinforce: str = ""
+    items: list[dict[str, Any]],
+    *,
+    max_words: int = ZONE_PAGE_BUDGET_RULES["currently"].max_words,
+    reinforce: str = "",
 ) -> tuple[str, list[str]]:
     if not items:
         return "", []
@@ -741,7 +750,7 @@ def synthesize_faction_summary(
     *,
     faction_name: str,
     zone_name: str,
-    max_words: int = 40,
+    max_words: int = MAX_FACTION_SUMMARY_WORDS,
     subregion_tokens: list[str] | None = None,
     instance_name: str | None = None,
     reinforce: str = "",
@@ -1197,7 +1206,7 @@ def synthesize_key_character_summary(
     boss_name: str,
     instance_name: str,
     structural_role: str = "",
-    max_words: int = 50,
+    max_words: int = INSTANCE_BUDGET_RULES["key_characters_card_summary"].max_words,
     avoid_hints: list[str] | None = None,
     reference_framing: str = "",
     evidence_item_limit: int = KEY_CHARACTER_EVIDENCE_ITEM_LIMIT,

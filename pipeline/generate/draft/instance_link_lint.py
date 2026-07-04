@@ -10,10 +10,14 @@ from pipeline.generate.draft.instance_lint import (
 )
 from pipeline.generate.draft.prose_lint import trim_words, word_count
 
+# Intentionally laxer than the registry rule minimum (identity_header, 22): a degenerate-stub
+# floor for the offline borrow ladder; validate only WARNs below the rule minimum (Slice 2).
 MIN_INSTANCE_LINK_WORDS = 10
 # The zone's instance-link card reuses the instance page's own at_a_glance caption (see
 # draft_writer.instance_summary_map), so share that page's budget — a smaller cap here just
 # hard-trims the caption mid-sentence ("...and held its." vs "...and held its last stronghold.").
+# The registry mirrors this coupling: ZONE_PAGE_BUDGET_RULES["instance_links_card_summary"]
+# IS the identity_header rule, and INSTANCE_AT_A_GLANCE_WORDS derives from it.
 MAX_INSTANCE_LINK_WORDS = INSTANCE_AT_A_GLANCE_WORDS
 
 _GENERIC_INSTANCE_LINK = re.compile(

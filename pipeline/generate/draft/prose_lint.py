@@ -7,10 +7,15 @@ from typing import Any
 
 from pipeline.common.draft_vocab import historical_framing_markers
 from pipeline.common.text_sim import token_jaccard
+from pipeline.contracts.models import ZONE_PAGE_BUDGET_RULES
 from pipeline.discovery.world_registry import entry_kinds
 
 _GEOGRAPHY_KINDS = frozenset({"zone", "continent", "capital", "region", "instance"})
-MAX_AT_A_GLANCE_WORDS = 45
+# Derives from the contracts BudgetRule registry (Slice 2), the same home validate's
+# zone_page at_a_glance check reads. There is deliberately no lint word *floor* here:
+# validate's minimum (18) is WARN-severity, and the <12-words filler heuristic in
+# ``lint_at_a_glance`` is a degenerate-stub guard for the offline borrow ladder, not a budget.
+MAX_AT_A_GLANCE_WORDS = ZONE_PAGE_BUDGET_RULES["at_a_glance"].max_words
 MIN_HISTORY_SECTIONS = 3
 MAX_HISTORY_SECTIONS = 8
 AT_A_GLANCE_CURRENTLY_OVERLAP_THRESHOLD = 0.55

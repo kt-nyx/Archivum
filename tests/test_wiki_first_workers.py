@@ -72,7 +72,7 @@ def test_wiki_first_workers_deterministic_fallback_without_llm(monkeypatch) -> N
     assert used_history
 
 
-def test_at_a_glance_default_cap_is_forty_five(monkeypatch) -> None:
+def test_at_a_glance_default_cap_matches_registry_budget(monkeypatch) -> None:
     monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
     snippet = " ".join(["word"] * 80)
     summary, _ = synthesize_at_a_glance([{"source_id": "src", "snippet": snippet}])

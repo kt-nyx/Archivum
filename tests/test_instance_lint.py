@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pipeline.generate.draft.instance_lint import (
+    MAX_KEY_CHARACTER_WORDS,
+    MIN_KEY_CHARACTER_WORDS,
     MIN_OVERVIEW_WORDS,
     assess_role_diversity,
     fallback_instance_overview,
@@ -11,6 +13,7 @@ from pipeline.generate.draft.instance_lint import (
     lint_overview,
     lint_passthrough_fragment,
 )
+from pipeline.generate.draft.prose_lint import word_count
 
 
 def test_fallback_key_character_summary_refuses_colon_spliced_fragment() -> None:
@@ -113,6 +116,30 @@ def test_lint_at_a_glance_accepts_anchored_abstract() -> None:
         "whose dark teachings endured long after Lordaeron fell."
     )
     assert lint_at_a_glance(text, instance_name="Scholomance") == []
+
+
+def test_lint_key_character_summary_rejects_over_registry_cap() -> None:
+    # Slice 2: the word cap derives from the contracts BudgetRule ([25, 60]); the old
+    # draft-only 110-word ceiling shipped cards that WARNed in validate.
+    text = "Darkmaster Gandling was " + " ".join(["relentless"] * MAX_KEY_CHARACTER_WORDS) + "."
+    issues = lint_key_character_summary(
+        text, boss_name="Darkmaster Gandling", instance_name="Scholomance"
+    )
+    assert any(f"exceeds {MAX_KEY_CHARACTER_WORDS} words" in issue for issue in issues)
+
+
+def test_fallback_key_character_generic_clears_registry_floor() -> None:
+    # The sanctioned offline generic must clear the registry word floor even with short
+    # names, or the fallback ladder drops every sparse-evidence card.
+    summary, used = fallback_key_character_summary(
+        [], boss_name="Rattlegore", instance_name="Scholomance"
+    )
+    assert word_count(summary) >= MIN_KEY_CHARACTER_WORDS
+    assert used == []
+    assert (
+        lint_key_character_summary(summary, boss_name="Rattlegore", instance_name="Scholomance")
+        == []
+    )
 
 
 def test_lint_key_character_summary_flags_hollow_characterization() -> None:

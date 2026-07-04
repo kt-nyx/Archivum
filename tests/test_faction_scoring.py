@@ -92,7 +92,10 @@ def test_fallback_faction_summary_prefers_lint_and_gate_passing_snippet() -> Non
         "On Azeroth, the abominations were created by Kel'Thuzad, and as such are mainly "
         "found in the Scourge's and Forsaken ranks across the world at large."
     )
-    clean = "In Scholomance the Scourge maintains the academy and guards its dark halls."
+    clean = (
+        "In Scholomance the Scourge maintains the academy, guards its dark halls, and trains "
+        "new necromancers to spread the plague beyond Caer Darrow."
+    )
     items = [
         {"snippet": gate_tripping, "source_id": "src-gate"},
         {"snippet": clean, "source_id": "src-clean"},

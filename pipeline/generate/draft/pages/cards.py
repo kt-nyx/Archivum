@@ -7,6 +7,7 @@ from typing import Any
 
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.common.wiki_evidence_filters import cap_history_pool
+from pipeline.contracts.models import PAGE_HISTORY_SECTION_BUDGET_RULE
 from pipeline.generate.draft import finalize_trace
 from pipeline.generate.draft.coverage import (
     build_section_coverage_decisions,
@@ -16,7 +17,11 @@ from pipeline.generate.draft.coverage import (
     required_event_texts,
     setup_bridge_body,
 )
-from pipeline.generate.draft.faction_lint import ensure_sentence_terminator, lint_faction_summary
+from pipeline.generate.draft.faction_lint import (
+    MAX_FACTION_SUMMARY_WORDS,
+    ensure_sentence_terminator,
+    lint_faction_summary,
+)
 from pipeline.generate.draft.faction_scoring import (
     MAX_FACTION_CARDS,
     FactionCandidate,
@@ -81,11 +86,37 @@ from pipeline.generate.draft.prose_synthesis import (
 )
 from pipeline.generate.draft.temporal import HISTORY_SETUP_BRIDGE
 
-# Per-section history word budget enforced by validate (budget.py: 40 <= words <= 110).
-# The draft keeps merged/deterministic sections inside it so a run can't hard-fail on
-# an over-long merged section or a too-short wiki paragraph.
-_HISTORY_SECTION_MIN_WORDS = 40
-_HISTORY_SECTION_MAX_WORDS = 110
+# Per-section history word budget, derived from the same contracts BudgetRule validate
+# enforces (Slice 2). The deterministic trim/absorb pass keeps sections inside it, and any
+# section it cannot repair becomes a synthesis retry reason via ``_history_budget_reasons``.
+_HISTORY_SECTION_MIN_WORDS = PAGE_HISTORY_SECTION_BUDGET_RULE.min_words
+_HISTORY_SECTION_MAX_WORDS = PAGE_HISTORY_SECTION_BUDGET_RULE.max_words
+
+
+def _history_budget_reasons(sections: list[dict[str, Any]]) -> list[str]:
+    """Out-of-budget history sections as actionable synthesis retry reasons (Slice 2).
+
+    Runs after the deterministic trim/absorb pass, so a reason here means that pass could
+    not repair the section (a sub-floor section whose neighbor is too full to absorb it).
+    """
+    reasons: list[str] = []
+    for index, section in enumerate(sections):
+        if not isinstance(section, dict):
+            continue
+        words = word_count(str(section.get("body", "")))
+        if words < _HISTORY_SECTION_MIN_WORDS:
+            reasons.append(
+                f"history section {index + 1} is {words} words; each section must be "
+                f"{_HISTORY_SECTION_MIN_WORDS}-{_HISTORY_SECTION_MAX_WORDS} words — merge it "
+                "into an adjacent section or expand it with adjacent evidence"
+            )
+        elif words > _HISTORY_SECTION_MAX_WORDS:
+            reasons.append(
+                f"history section {index + 1} is {words} words; each section must be "
+                f"{_HISTORY_SECTION_MIN_WORDS}-{_HISTORY_SECTION_MAX_WORDS} words — split it "
+                "or condense it"
+            )
+    return reasons
 
 
 def _section_gate_reasons(
@@ -249,8 +280,17 @@ def _finalize_history_sections(
     def _postprocess(raw_sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return _apply_history_section_budget(_merge_consecutive_history_headings(raw_sections))
 
-    def _batch_reasons(candidate_sections: list[dict[str, Any]]) -> list[str]:
+    def _batch_reasons(
+        candidate_sections: list[dict[str, Any]], *, enforce_budget: bool = True
+    ) -> list[str]:
+        # Word budget as a retry trigger (Slice 2): validate hard-fails an out-of-budget
+        # section, so the live driver must repair it, never ship it. Live-only
+        # (``enforce_budget=False`` on the offline ladder): the sanctioned NO_LLM borrow has
+        # no retry lever, and a thin wiki paragraph beats an empty history on a smoke run —
+        # validate still reports the violation on its artifacts.
         reasons = list(lint_history_sections(candidate_sections, max_sections=lint_cap))
+        if enforce_budget:
+            reasons.extend(_history_budget_reasons(candidate_sections))
         reasons.extend(_section_gate_reasons(candidate_sections, pool_snippets))
         return reasons
 
@@ -286,6 +326,7 @@ def _finalize_history_sections(
                 section
                 for section in sections
                 if not lint_history_sections([section], max_sections=1)
+                and not _history_budget_reasons([section])
                 and not _sections_trip_gate([section], pool_snippets)
             ]
             if len(kept) >= MIN_HISTORY_SECTIONS:
@@ -310,7 +351,7 @@ def _finalize_history_sections(
         sections, used = synthesize_history_sections(history_pool, max_sections=section_cap)
         sections = _postprocess(sections)
         outcome = "no_llm"
-        if _batch_reasons(sections):
+        if _batch_reasons(sections, enforce_budget=False):
             kept = [
                 section
                 for section in sections
@@ -323,7 +364,7 @@ def _finalize_history_sections(
                 sections, used = fallback_history_sections(history_pool, max_sections=section_cap)
                 sections = _postprocess(sections)
                 outcome = "no_llm_fallback"
-                if _batch_reasons(sections):
+                if _batch_reasons(sections, enforce_budget=False):
                     sections, used = [], []
                     outcome = "rejected"
         if not sections:
@@ -337,7 +378,7 @@ def _finalize_history_sections(
                     if not lint_history_sections([section], max_sections=1)
                 ]
                 candidate_sections = _postprocess(kept_sections or pool_sections)
-                if not _batch_reasons(candidate_sections):
+                if not _batch_reasons(candidate_sections, enforce_budget=False):
                     sections = candidate_sections[:section_cap]
                     used = pool_used
                     outcome = "pool"
@@ -415,6 +456,7 @@ def _apply_history_coverage(
         if (
             retry_sections
             and not lint_history_sections(retry_sections, max_sections=lint_cap)
+            and not _history_budget_reasons(retry_sections)
             and not _sections_trip_gate(retry_sections, coverage_snippets)
         ):
             retry_covered = covered_coverage_ids(units, retry_used)
@@ -565,12 +607,13 @@ def _trim_body_to_word_budget(body: str, max_words: int) -> str:
 
 
 def _apply_history_section_budget(sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Keep every history section inside the validate word budget (40..110).
+    """Keep every history section inside the shared validate word budget.
 
     Over-long sections (e.g. several wiki paragraphs merged under one subsection heading)
     are trimmed to whole leading sentences; a section that is still below the floor is
-    absorbed into the previous section when that stays in budget, otherwise dropped — so
-    the deterministic path can't ship a section that hard-fails ``budget.history_section``.
+    absorbed into the previous section when the merge stays in budget, otherwise kept
+    as-is — where the LLM path turns it into a synthesis retry reason
+    (``_history_budget_reasons``) instead of shipping a ``budget.history_section`` hard-fail.
     """
     # Pass 1: trim every section to whole leading sentences within the word cap.
     trimmed: list[dict[str, Any]] = []
@@ -583,13 +626,14 @@ def _apply_history_section_budget(sections: list[dict[str, Any]]) -> list[dict[s
         )
         trimmed.append(out)
     # Pass 2: absorb a sub-floor section into the previous one (when the result stays in
-    # budget) — e.g. a one-line era blurb folded into the prior era — but never reduce the
-    # section count below the minimum, so legitimate multi-section history isn't collapsed.
-    # Content is never dropped: a short section that can't be absorbed is kept as-is.
-    absorb_budget = max(0, len(trimmed) - MIN_HISTORY_SECTIONS)
+    # budget) — e.g. a one-line era blurb folded into the prior era. Absorption may reduce
+    # the section count below MIN_HISTORY_SECTIONS: validate's own floor is one section, and
+    # shipping a budget-violating section is the worse outcome (Slice 2). Content is never
+    # dropped: a short section that can't be absorbed in-budget is kept as-is (and surfaces
+    # as a synthesis retry reason via ``_history_budget_reasons`` on the LLM path).
     result: list[dict[str, Any]] = []
     for out in trimmed:
-        if absorb_budget > 0 and result and word_count(str(out["body"])) < _HISTORY_SECTION_MIN_WORDS:
+        if result and word_count(str(out["body"])) < _HISTORY_SECTION_MIN_WORDS:
             prev = result[-1]
             combined = " ".join(
                 part
@@ -605,7 +649,6 @@ def _apply_history_section_budget(sections: list[dict[str, Any]]) -> list[dict[s
                         prev_refs.append(ref)
                         seen.add(_source_ref_key(ref))
                 prev["source_refs"] = prev_refs
-                absorb_budget -= 1
                 continue
         result.append(out)
     return result
@@ -685,7 +728,7 @@ def _finalize_faction_card(
                 pool,
                 faction_name=candidate.name,
                 zone_name=zone_name,
-                max_words=40,
+                max_words=MAX_FACTION_SUMMARY_WORDS,
                 subregion_tokens=subregion_tokens,
                 instance_name=instance_name,
             )
@@ -708,7 +751,7 @@ def _finalize_faction_card(
                 pool,
                 faction_name=candidate.name,
                 zone_name=zone_name,
-                max_words=40,
+                max_words=MAX_FACTION_SUMMARY_WORDS,
                 subregion_tokens=subregion_tokens,
                 instance_name=instance_name,
                 reinforce=reinforce,

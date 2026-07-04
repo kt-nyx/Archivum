@@ -56,7 +56,8 @@ _LLM_SECTIONS = [
         "Scourging",
         "The Scourge razed Andorhal and slaughtered its people as the plague consumed the "
         "surrounding farmlands. Arthas marched his undead legions through the heartland, and the "
-        "defenders who remained were overwhelmed within days as the once-fertile valley darkened.",
+        "defenders who remained behind were overwhelmed within days as the once-fertile valley "
+        "darkened under the blight.",
     ),
     _section(
         "Cauldron Campaign",

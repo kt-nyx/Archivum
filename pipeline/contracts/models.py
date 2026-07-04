@@ -633,6 +633,30 @@ INSTANCE_BUDGET_RULES: dict[str, BudgetRule] = {
     ),
 }
 
+# Page-scope budget rules (Slice 2): the single home for the word budgets that the
+# published zone_page / instance_page payloads are validated against. The draft-side lint
+# constants derive from these and validate reads them directly, so the two sides cannot
+# drift apart again. History sections use one shared rule for both page types.
+PAGE_HISTORY_SECTION_BUDGET_RULE = BudgetRule(
+    target_words=75, min_words=40, max_words=110, severity=BudgetSeverity.HARD_FAIL
+)
+
+ZONE_PAGE_BUDGET_RULES: dict[str, BudgetRule] = {
+    "at_a_glance": BudgetRule(
+        target_words=33, min_words=18, max_words=48, severity=BudgetSeverity.WARN
+    ),
+    "currently": BudgetRule(
+        target_words=60, min_words=35, max_words=90, severity=BudgetSeverity.HARD_FAIL
+    ),
+    "major_factions_card_summary": BudgetRule(
+        target_words=30, min_words=18, max_words=48, severity=BudgetSeverity.WARN
+    ),
+    # The zone's instance-link card reuses the instance page's own at_a_glance caption
+    # (draft_writer.instance_summary_map), so it shares that caption's budget — a smaller
+    # cap here would only hard-trim the caption mid-sentence.
+    "instance_links_card_summary": INSTANCE_BUDGET_RULES["identity_header"],
+}
+
 CHARACTER_BUDGET_RULES: dict[str, BudgetRule] = {
     "summary": BudgetRule(
         target_words=70, min_words=45, max_words=100, severity=BudgetSeverity.HARD_FAIL

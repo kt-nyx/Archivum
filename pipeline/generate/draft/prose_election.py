@@ -7,6 +7,7 @@ from typing import Any
 
 from pipeline.common.draft_vocab import era_section_role_tokens
 from pipeline.common.wiki_evidence_filters import should_exclude_from_history
+from pipeline.contracts.models import ZONE_PAGE_BUDGET_RULES
 from pipeline.generate.draft.claim_routing import prefer_entry_state_first
 from pipeline.generate.draft.prose_lint import (
     MAX_AT_A_GLANCE_WORDS,
@@ -370,7 +371,9 @@ def fallback_at_a_glance(items: list[dict[str, Any]]) -> tuple[str, list[str]]:
 
 
 def fallback_currently(
-    items: list[dict[str, Any]], *, max_words: int = 120
+    items: list[dict[str, Any]],
+    *,
+    max_words: int = ZONE_PAGE_BUDGET_RULES["currently"].max_words,
 ) -> tuple[str, list[str]]:
     if not items:
         return "", []

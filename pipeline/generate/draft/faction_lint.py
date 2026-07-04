@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from pipeline.contracts.models import ZONE_PAGE_BUDGET_RULES
 from pipeline.generate.draft.prose_lint import (
     has_currently_meta,
     has_historical_framing,
@@ -14,8 +15,10 @@ from pipeline.generate.draft.prose_lint import (
     word_count,
 )
 
-MIN_FACTION_SUMMARY_WORDS = 12
-MAX_FACTION_SUMMARY_WORDS = 40
+# Word budget derives from the contracts BudgetRule registry (Slice 2), the same home
+# validate's zone_page faction-card check reads — the two sides cannot drift apart again.
+MIN_FACTION_SUMMARY_WORDS = ZONE_PAGE_BUDGET_RULES["major_factions_card_summary"].min_words
+MAX_FACTION_SUMMARY_WORDS = ZONE_PAGE_BUDGET_RULES["major_factions_card_summary"].max_words
 
 
 def strip_faction_label_prefix(text: str, faction_name: str = "") -> str:

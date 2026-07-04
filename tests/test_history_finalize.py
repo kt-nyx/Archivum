@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from pipeline.generate.draft.pages import cards
+from pipeline.generate.draft.prose_lint import word_count
 
 
 def _section(heading: str, body: str) -> dict[str, Any]:
@@ -96,3 +97,74 @@ def test_history_finalize_falls_through_when_too_few_clean(monkeypatch) -> None:
     )
     assert called.get("yes") is True
     assert len(sections) == 3
+
+
+# A lint-clean past-tense section near the top of the word budget (96..110 words), so a
+# trailing sub-floor section cannot be absorbed into it without breaking the cap.
+_NEAR_CAP = _section(
+    "Collapse",
+    "The Scourge razed the farmsteads across the western valley and the defenders who stood "
+    "against the tide were overwhelmed before the harvest could be gathered. Survivors abandoned "
+    "the ruined villages and carried what little remained toward the western hills while the "
+    "blight crept outward and consumed the fields behind them. The plagued soil hardened through "
+    "the long winters and the roads that once carried grain wagons fell silent as the last of the "
+    "caravans turned away. The old chapels crumbled into the mire and their bells were carried "
+    "off by looters who braved the dead for whatever silver endured.",
+)
+# Lint-clean but far below the per-section word floor.
+_SUB_FLOOR_BODY = "The village was razed and its people were scattered across the plagued farmland."
+
+
+def test_history_finalize_retries_on_out_of_budget_section(monkeypatch) -> None:
+    """An out-of-budget section the trim/absorb pass cannot repair is a retry reason (Slice 2).
+
+    Attempt 1 ends with a sub-floor section whose neighbor is too full to absorb it; the
+    driver must re-prompt with the actionable budget reason, and attempt 2's clean batch ships.
+    """
+    assert 96 <= word_count(_NEAR_CAP["body"]) <= cards._HISTORY_SECTION_MAX_WORDS
+    assert word_count(_SUB_FLOOR_BODY) < cards._HISTORY_SECTION_MIN_WORDS
+
+    monkeypatch.setattr(cards, "llm_synthesis_active", lambda: True)
+    calls: list[str] = []
+
+    def _synth(pool, **kw):
+        calls.append(str(kw.get("reinforce", "")))
+        if len(calls) == 1:
+            return [_CLEAN[0], _NEAR_CAP, _section("Coda", _SUB_FLOOR_BODY)], ["used"]
+        return _CLEAN, ["used"]
+
+    monkeypatch.setattr(cards, "synthesize_history_sections", _synth)
+
+    sections, _used, status = cards._finalize_history_sections(
+        history_pool=[{"text": "x"}], evidence_rows=[], max_history=4
+    )
+
+    assert len(calls) == 2
+    assert "13 words" in calls[1]
+    assert "40-110 words" in calls[1]
+    assert status == "ok"
+    assert [s["heading"] for s in sections] == ["Scourging", "Aftermath", "Reclamation"]
+
+
+def test_apply_history_section_budget_absorbs_below_min_sections() -> None:
+    """A sub-floor section is absorbed even when that drops the count below MIN_HISTORY_SECTIONS.
+
+    Validate's own floor is one section; shipping a budget-violating section is the worse
+    outcome (Slice 2). The old pass kept the violating section once the count reached the
+    minimum, shipping a guaranteed ``budget.history_section`` hard-fail.
+    """
+    sections = [_CLEAN[0], _section("Coda", _SUB_FLOOR_BODY)]
+    result = cards._apply_history_section_budget(sections)
+    assert len(result) == 1
+    assert _SUB_FLOOR_BODY in result[0]["body"]
+    assert not cards._history_budget_reasons(result)
+
+
+def test_apply_history_section_budget_keeps_unabsorbable_sub_floor_section() -> None:
+    """A sub-floor section that cannot merge in-budget is kept (content is never dropped)."""
+    sections = [_NEAR_CAP, _section("Coda", _SUB_FLOOR_BODY)]
+    result = cards._apply_history_section_budget(sections)
+    assert [s["heading"] for s in result] == ["Collapse", "Coda"]
+    reasons = cards._history_budget_reasons(result)
+    assert len(reasons) == 1
+    assert "section 2" in reasons[0]
