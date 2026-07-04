@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pipeline.discovery.enrich import _build_evidence_packs, _is_history_digest_role
+from pipeline.discovery.enrich import _build_evidence_packs, _is_seed_history_section
 from pipeline.ingest.fetch_wiki import _extract_sections_and_links
 
 
@@ -58,5 +58,9 @@ def test_rpg_blocks_excluded_from_history_digest() -> None:
     assert not any("non-canon details" in snippet for snippet in history_snippets)
 
 
-def test_is_history_digest_role_rejects_in_the_rpg_history() -> None:
-    assert not _is_history_digest_role("in_the_rpg_history")
+def test_seed_history_rejects_in_the_rpg_history() -> None:
+    # in_the_rpg_* is non_canon in the registry, so it never routes to history_digest.
+    assert not _is_seed_history_section("in_the_rpg_history", "in_the_rpg")
+    # A real history section (and its nested era subsections) do route to history.
+    assert _is_seed_history_section("history_edit", "history_edit")
+    assert _is_seed_history_section("cataclysm_edit", "history_edit")

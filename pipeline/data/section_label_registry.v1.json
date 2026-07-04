@@ -1,0 +1,1542 @@
+{
+  "version": 1,
+  "_status": "Active. Top-level-type + parent-inheritance model. Regenerate the harvest via scripts.harvest_section_labels; classify only NEW recurring top-level types.",
+  "_model": "Enumerate recurring TOP-LEVEL section types only. A block is classified by its own label; on a miss the consumer falls back to the parent (top-level ancestor) section's class; on a further miss it defaults to 'meta' (exclude from lore). Nested subsections (expansion timelines, event sections, faction subgroups, cultural facets) are intentionally NOT listed — they inherit. This removes the open, unmaintainable tail and eliminates substring false-positives (e.g. 'Crimson legion' inherits roster from 'Organization', not narrative from 'legion').",
+  "_doc": "slug = slugify(heading,'_'); the pipeline's raw_section_role appends '_edit' (HTML edit-link artifact) — a lookup strips a trailing '_edit'. _evidence is from the whole-game harvest (scripts.harvest_section_labels).",
+  "_pilot_bias_note": "Top-level types derived from a 6,047-page whole-game random sample plus the faction/character page trees (Forsaken, Scarlet Crusade, Lilian Voss). Expansion tokens are all current WoW expansions incl. announced (Midnight); append the next on release. Context-dependent labels (battles/horde/classes/letter) are deliberately omitted so parent inheritance resolves them per page.",
+  "content_classes": {
+    "narrative": "in-universe lore prose; ADMIT to lore pools (character/faction/history)",
+    "roster": "structural membership/creature/object lists; structural presence, not prose",
+    "geography": "place/geography prose+lists; geography_input",
+    "gameplay": "mechanics (abilities/loot/quests/rewards/strategy); EXCLUDE from lore prose",
+    "meta": "editorial/out-of-universe apparatus (refs, changelog, gallery, tooltip, trivia); EXCLUDE. (No separate 'chrome' class: true site chrome never appears as a heading.)",
+    "non_canon": "RPG/novel-derived; EXCLUDE from canon (canon=false)"
+  },
+  "fallback": "classify by label; else by parent (top-level ancestor) section's class; else default content_class=meta (exclude from lore prose).",
+  "prefix_rules": {
+    "in_the_rpg": {
+      "content_class": "non_canon",
+      "canon": false
+    }
+  },
+  "labels": {
+    "history": {
+      "content_class": "narrative",
+      "narrative_kind": "history",
+      "_evidence": {
+        "pages": 53,
+        "top_level_occurrences": 53,
+        "top_parents": []
+      }
+    },
+    "background": {
+      "content_class": "narrative",
+      "narrative_kind": "background",
+      "_evidence": {
+        "pages": 22,
+        "top_level_occurrences": 22,
+        "top_parents": []
+      }
+    },
+    "battle_for_azeroth": {
+      "content_class": "narrative",
+      "narrative_kind": "history",
+      "temporality": "expansion_era",
+      "_evidence": {
+        "pages": 22,
+        "top_level_occurrences": 2,
+        "top_parents": [
+          "history",
+          "background",
+          "biography"
+        ]
+      }
+    },
+    "world_of_warcraft": {
+      "content_class": "narrative",
+      "narrative_kind": "history",
+      "temporality": "expansion_era",
+      "_evidence": {
+        "pages": 22,
+        "top_level_occurrences": 3,
+        "top_parents": [
+          "history",
+          "quotes",
+          "background"
+        ]
+      }
+    },
+    "biography": {
+      "content_class": "narrative",
+      "narrative_kind": "biography",
+      "_evidence": {
+        "pages": 20,
+        "top_level_occurrences": 20,
+        "top_parents": []
+      }
+    },
+    "legion": {
+      "content_class": "narrative",
+      "narrative_kind": "history",
+      "temporality": "expansion_era",
+      "_evidence": {
+        "pages": 19,
+        "top_level_occurrences": 4,
+        "top_parents": [
+          "biography",
+          "history",
+          "background"
+        ]
+      }
+    },
+    "cataclysm": {
+      "content_class": "narrative",
+      "narrative_kind": "history",
+      "temporality": "expansion_era",
+      "_evidence": {
+        "pages": 18,
+        "top_level_occurrences": 2,
+        "top_parents": [
+          "history",
+          "background",
+          "biography"
+        ]
+      }
+    },
+    "dragonflight": {
+      "content_class": "narrative",
+      "narrative_kind": "history",
+      "temporality": "expansion_era",
+      "_evidence": {
+        "pages": 13,
+        "top_level_occurrences": 2,
+        "top_parents": [
+          "background",
+          "history",
+          "biography"
+        ]
+      }
+    },
+    "the_war_within": {
+      "content_class": "narrative",
+      "narrative_kind": "history",
+      "temporality": "expansion_era",
+      "_evidence": {
+        "pages": 11,
+        "top_level_occurrences": 0,
+        "top_parents": [
+          "history",
+          "background",
+          "biography"
+        ]
+      }
+    },
+    "overview": {
+      "content_class": "narrative",
+      "narrative_kind": "overview",
+      "_evidence": {
+        "pages": 10,
+        "top_level_occurrences": 10,
+        "top_parents": []
+      }
+    },
+    "shadowlands": {
+      "content_class": "narrative",
+      "narrative_kind": "history",
+      "temporality": "expansion_era",
+      "_evidence": {
+        "pages": 10,
+        "top_level_occurrences": 2,
+        "top_parents": [
+          "biography",
+          "history",
+          "quotes"
+        ]
+      }
+    },
+    "warlords_of_draenor": {
+      "content_class": "narrative",
+      "narrative_kind": "history",
+      "temporality": "expansion_era",
+      "_evidence": {
+        "pages": 9,
+        "top_level_occurrences": 2,
+        "top_parents": [
+          "history",
+          "background",
+          "biography"
+        ]
+      }
+    },
+    "mists_of_pandaria": {
+      "content_class": "narrative",
+      "narrative_kind": "history",
+      "temporality": "expansion_era",
+      "_evidence": {
+        "pages": 8,
+        "top_level_occurrences": 1,
+        "top_parents": [
+          "background",
+          "history",
+          "biography"
+        ]
+      }
+    },
+    "wrath_of_the_lich_king": {
+      "content_class": "narrative",
+      "narrative_kind": "history",
+      "temporality": "expansion_era",
+      "_evidence": {
+        "pages": 8,
+        "top_level_occurrences": 2,
+        "top_parents": [
+          "history",
+          "biography",
+          "quotes"
+        ]
+      }
+    },
+    "the_burning_crusade": {
+      "content_class": "narrative",
+      "narrative_kind": "history",
+      "temporality": "expansion_era",
+      "_evidence": {
+        "pages": 7,
+        "top_level_occurrences": 1,
+        "top_parents": [
+          "history",
+          "quotes",
+          "background"
+        ]
+      }
+    },
+    "classic": {
+      "content_class": "narrative",
+      "narrative_kind": "history",
+      "temporality": "expansion_era",
+      "_evidence": {
+        "pages": 5,
+        "top_level_occurrences": 3,
+        "top_parents": [
+          "values",
+          "quotes"
+        ]
+      }
+    },
+    "midnight": {
+      "content_class": "narrative",
+      "narrative_kind": "history",
+      "temporality": "expansion_era",
+      "_evidence": {
+        "pages": 4,
+        "top_level_occurrences": 0,
+        "top_parents": [
+          "history",
+          "background",
+          "biography"
+        ]
+      }
+    },
+    "characteristics": {
+      "content_class": "narrative",
+      "narrative_kind": "background",
+      "_evidence": {
+        "pages": 3,
+        "top_level_occurrences": 3,
+        "top_parents": []
+      }
+    },
+    "culture": {
+      "content_class": "narrative",
+      "narrative_kind": "background",
+      "_evidence": {
+        "pages": 3,
+        "top_level_occurrences": 3,
+        "top_parents": []
+      }
+    },
+    "summary": {
+      "content_class": "narrative",
+      "narrative_kind": "overview",
+      "_evidence": {
+        "pages": 3,
+        "top_level_occurrences": 3,
+        "top_parents": []
+      }
+    },
+    "introduction": {
+      "content_class": "narrative",
+      "narrative_kind": "identity",
+      "_evidence": {
+        "pages": 2,
+        "top_level_occurrences": 0,
+        "top_parents": [
+          "swift_flight_form_quest_chain",
+          "story_summary"
+        ]
+      }
+    },
+    "narrative": {
+      "content_class": "narrative",
+      "narrative_kind": "overview",
+      "_evidence": {
+        "pages": 1,
+        "top_level_occurrences": 1,
+        "top_parents": []
+      }
+    },
+    "biology": {
+      "content_class": "narrative",
+      "narrative_kind": "background",
+      "_evidence": {
+        "pages": 0,
+        "top_level_occurrences": 0,
+        "top_parents": []
+      }
+    },
+    "culture_and_people": {
+      "content_class": "narrative",
+      "narrative_kind": "background",
+      "_evidence": {
+        "pages": 0,
+        "top_level_occurrences": 0,
+        "top_parents": []
+      }
+    },
+    "lead": {
+      "content_class": "narrative",
+      "narrative_kind": "identity",
+      "_evidence": {
+        "pages": 0,
+        "top_level_occurrences": 0,
+        "top_parents": []
+      }
+    },
+    "relations": {
+      "content_class": "narrative",
+      "narrative_kind": "background",
+      "_evidence": {
+        "pages": 0,
+        "top_level_occurrences": 0,
+        "top_parents": []
+      }
+    },
+    "inhabitants": {
+      "content_class": "roster",
+      "_evidence": {
+        "pages": 26,
+        "top_level_occurrences": 25,
+        "top_parents": [
+          "article"
+        ]
+      }
+    },
+    "relatives": {
+      "content_class": "roster",
+      "_evidence": {
+        "pages": 20,
+        "top_level_occurrences": 20,
+        "top_parents": []
+      }
+    },
+    "members": {
+      "content_class": "roster",
+      "_evidence": {
+        "pages": 16,
+        "top_level_occurrences": 16,
+        "top_parents": []
+      }
+    },
+    "npcs": {
+      "content_class": "roster",
+      "_evidence": {
+        "pages": 15,
+        "top_level_occurrences": 14,
+        "top_parents": [
+          "inhabitants"
+        ]
+      }
+    },
+    "known": {
+      "content_class": "roster",
+      "_evidence": {
+        "pages": 12,
+        "top_level_occurrences": 12,
+        "top_parents": []
+      }
+    },
+    "notable": {
+      "content_class": "roster",
+      "_evidence": {
+        "pages": 12,
+        "top_level_occurrences": 12,
+        "top_parents": []
+      }
+    },
+    "characters": {
+      "content_class": "roster",
+      "_evidence": {
+        "pages": 5,
+        "top_level_occurrences": 5,
+        "top_parents": []
+      }
+    },
+    "known_members": {
+      "content_class": "roster",
+      "_evidence": {
+        "pages": 4,
+        "top_level_occurrences": 4,
+        "top_parents": []
+      }
+    },
+    "types": {
+      "content_class": "roster",
+      "_evidence": {
+        "pages": 4,
+        "top_level_occurrences": 3,
+        "top_parents": [
+          "notable_marines"
+        ]
+      }
+    },
+    "forces": {
+      "content_class": "roster",
+      "_evidence": {
+        "pages": 3,
+        "top_level_occurrences": 3,
+        "top_parents": []
+      }
+    },
+    "mobs": {
+      "content_class": "roster",
+      "_evidence": {
+        "pages": 3,
+        "top_level_occurrences": 3,
+        "top_parents": []
+      }
+    },
+    "notable_characters": {
+      "content_class": "roster",
+      "_evidence": {
+        "pages": 3,
+        "top_level_occurrences": 2,
+        "top_parents": [
+          "dungeon_denizens"
+        ]
+      }
+    },
+    "notable_members": {
+      "content_class": "roster",
+      "_evidence": {
+        "pages": 3,
+        "top_level_occurrences": 3,
+        "top_parents": []
+      }
+    },
+    "objects": {
+      "content_class": "roster",
+      "_evidence": {
+        "pages": 3,
+        "top_level_occurrences": 3,
+        "top_parents": []
+      }
+    },
+    "dungeon_denizens": {
+      "content_class": "roster",
+      "_evidence": {
+        "pages": 2,
+        "top_level_occurrences": 2,
+        "top_parents": []
+      }
+    },
+    "organization": {
+      "content_class": "roster",
+      "_evidence": {
+        "pages": 2,
+        "top_level_occurrences": 2,
+        "top_parents": []
+      }
+    },
+    "denizens": {
+      "content_class": "roster",
+      "_evidence": {
+        "pages": 1,
+        "top_level_occurrences": 1,
+        "top_parents": []
+      }
+    },
+    "membership": {
+      "content_class": "roster",
+      "_evidence": {
+        "pages": 1,
+        "top_level_occurrences": 1,
+        "top_parents": []
+      }
+    },
+    "leadership": {
+      "content_class": "roster",
+      "_evidence": {
+        "pages": 0,
+        "top_level_occurrences": 0,
+        "top_parents": []
+      }
+    },
+    "locations": {
+      "content_class": "geography",
+      "_evidence": {
+        "pages": 50,
+        "top_level_occurrences": 50,
+        "top_parents": []
+      }
+    },
+    "geography": {
+      "content_class": "geography",
+      "_evidence": {
+        "pages": 9,
+        "top_level_occurrences": 9,
+        "top_parents": []
+      }
+    },
+    "flight_paths": {
+      "content_class": "geography",
+      "_evidence": {
+        "pages": 7,
+        "top_level_occurrences": 6,
+        "top_parents": [
+          "geography"
+        ]
+      }
+    },
+    "maps_and_subregions": {
+      "content_class": "geography",
+      "_evidence": {
+        "pages": 4,
+        "top_level_occurrences": 1,
+        "top_parents": [
+          "geography"
+        ]
+      }
+    },
+    "travel_connections": {
+      "content_class": "geography",
+      "_evidence": {
+        "pages": 3,
+        "top_level_occurrences": 3,
+        "top_parents": []
+      }
+    },
+    "adjacent_regions": {
+      "content_class": "geography",
+      "_evidence": {
+        "pages": 2,
+        "top_level_occurrences": 0,
+        "top_parents": [
+          "geography"
+        ]
+      }
+    },
+    "getting_there": {
+      "content_class": "geography",
+      "_evidence": {
+        "pages": 2,
+        "top_level_occurrences": 1,
+        "top_parents": [
+          "article"
+        ]
+      }
+    },
+    "territories": {
+      "content_class": "geography",
+      "_evidence": {
+        "pages": 0,
+        "top_level_occurrences": 0,
+        "top_parents": []
+      }
+    },
+    "abilities": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 658,
+        "top_level_occurrences": 657,
+        "top_parents": [
+          "tactics"
+        ]
+      }
+    },
+    "objectives": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 623,
+        "top_level_occurrences": 623,
+        "top_parents": []
+      }
+    },
+    "rewards": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 615,
+        "top_level_occurrences": 614,
+        "top_parents": [
+          "reputation"
+        ]
+      }
+    },
+    "completion": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 604,
+        "top_level_occurrences": 604,
+        "top_parents": []
+      }
+    },
+    "progression": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 451,
+        "top_level_occurrences": 452,
+        "top_parents": []
+      }
+    },
+    "objective_of": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 443,
+        "top_level_occurrences": 439,
+        "top_parents": [
+          "quests",
+          "phase_1"
+        ]
+      }
+    },
+    "source": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 442,
+        "top_level_occurrences": 442,
+        "top_parents": []
+      }
+    },
+    "progress": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 373,
+        "top_level_occurrences": 374,
+        "top_parents": []
+      }
+    },
+    "quests": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 191,
+        "top_level_occurrences": 190,
+        "top_parents": [
+          "season_of_discovery"
+        ]
+      }
+    },
+    "as_a_quest_objective": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 118,
+        "top_level_occurrences": 118,
+        "top_parents": []
+      }
+    },
+    "returns": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 116,
+        "top_level_occurrences": 116,
+        "top_parents": []
+      }
+    },
+    "sells": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 106,
+        "top_level_occurrences": 106,
+        "top_parents": []
+      }
+    },
+    "arguments": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 105,
+        "top_level_occurrences": 105,
+        "top_parents": []
+      }
+    },
+    "when_disenchanted": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 96,
+        "top_level_occurrences": 96,
+        "top_parents": []
+      }
+    },
+    "drops": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 86,
+        "top_level_occurrences": 86,
+        "top_parents": []
+      }
+    },
+    "criteria_of": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 68,
+        "top_level_occurrences": 68,
+        "top_parents": []
+      }
+    },
+    "items": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 43,
+        "top_level_occurrences": 43,
+        "top_parents": []
+      }
+    },
+    "random_enchantments": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 41,
+        "top_level_occurrences": 41,
+        "top_parents": []
+      }
+    },
+    "loot": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 36,
+        "top_level_occurrences": 35,
+        "top_parents": [
+          "rewards"
+        ]
+      }
+    },
+    "mount_journal": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 35,
+        "top_level_occurrences": 35,
+        "top_parents": []
+      }
+    },
+    "contained_in": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 33,
+        "top_level_occurrences": 33,
+        "top_parents": []
+      }
+    },
+    "as_an_ingredient": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 29,
+        "top_level_occurrences": 29,
+        "top_parents": []
+      }
+    },
+    "pet_journal": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 29,
+        "top_level_occurrences": 29,
+        "top_parents": []
+      }
+    },
+    "strategy": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 26,
+        "top_level_occurrences": 26,
+        "top_parents": []
+      }
+    },
+    "adventure_guide": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 23,
+        "top_level_occurrences": 20,
+        "top_parents": [
+          "storyline",
+          "history",
+          "background"
+        ]
+      }
+    },
+    "achievements": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 22,
+        "top_level_occurrences": 21,
+        "top_parents": [
+          "reputation"
+        ]
+      }
+    },
+    "counters": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 14,
+        "top_level_occurrences": 14,
+        "top_parents": []
+      }
+    },
+    "crafting_reagent_for": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 14,
+        "top_level_occurrences": 14,
+        "top_parents": []
+      }
+    },
+    "in_hearthstone": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 13,
+        "top_level_occurrences": 13,
+        "top_parents": []
+      }
+    },
+    "cooking": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 11,
+        "top_level_occurrences": 0,
+        "top_parents": [
+          "as_an_ingredient",
+          "crafting_reagent_for"
+        ]
+      }
+    },
+    "used_by": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 11,
+        "top_level_occurrences": 11,
+        "top_parents": []
+      }
+    },
+    "blacksmithing": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 10,
+        "top_level_occurrences": 0,
+        "top_parents": [
+          "as_an_ingredient",
+          "as_an_ingrdient",
+          "usable_while_crafting"
+        ]
+      }
+    },
+    "contains": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 10,
+        "top_level_occurrences": 10,
+        "top_parents": []
+      }
+    },
+    "drops_from": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 10,
+        "top_level_occurrences": 10,
+        "top_parents": []
+      }
+    },
+    "engineering": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 10,
+        "top_level_occurrences": 0,
+        "top_parents": [
+          "as_an_ingredient",
+          "crafting_reagent_for",
+          "usable_while_crafting"
+        ]
+      }
+    },
+    "inscription": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 9,
+        "top_level_occurrences": 0,
+        "top_parents": [
+          "as_an_ingredient",
+          "crafting_reagent_for",
+          "as_an_optional_crafting_ingredient"
+        ]
+      }
+    },
+    "reputation": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 9,
+        "top_level_occurrences": 8,
+        "top_parents": [
+          "rewards"
+        ]
+      }
+    },
+    "tailoring": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 9,
+        "top_level_occurrences": 0,
+        "top_parents": [
+          "as_an_ingredient",
+          "crafting_reagent_for",
+          "as_an_ingrdient"
+        ]
+      }
+    },
+    "tracking_quest": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 9,
+        "top_level_occurrences": 9,
+        "top_parents": []
+      }
+    },
+    "leatherworking": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 8,
+        "top_level_occurrences": 0,
+        "top_parents": [
+          "as_an_ingredient",
+          "as_an_ingrdient",
+          "usable_while_crafting"
+        ]
+      }
+    },
+    "notable_drops": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 8,
+        "top_level_occurrences": 8,
+        "top_parents": []
+      }
+    },
+    "related_achievements": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 8,
+        "top_level_occurrences": 8,
+        "top_parents": []
+      }
+    },
+    "as_a_quest_reward": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 7,
+        "top_level_occurrences": 7,
+        "top_parents": []
+      }
+    },
+    "enchanting": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 7,
+        "top_level_occurrences": 0,
+        "top_parents": [
+          "as_an_ingredient",
+          "crafting_reagent_for",
+          "usable_while_crafting"
+        ]
+      }
+    },
+    "jewelcrafting": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 7,
+        "top_level_occurrences": 0,
+        "top_parents": [
+          "crafting_reagent_for",
+          "as_an_ingredient",
+          "usable_while_crafting"
+        ]
+      }
+    },
+    "as_a_hunter_pet": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 6,
+        "top_level_occurrences": 6,
+        "top_parents": []
+      }
+    },
+    "similar_enchantments": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 6,
+        "top_level_occurrences": 6,
+        "top_parents": []
+      }
+    },
+    "tips_and_tactics": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 6,
+        "top_level_occurrences": 6,
+        "top_parents": []
+      }
+    },
+    "alchemy": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 5,
+        "top_level_occurrences": 0,
+        "top_parents": [
+          "as_an_ingredient",
+          "crafting_reagent_for",
+          "created_by"
+        ]
+      }
+    },
+    "changing_this_setting": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 5,
+        "top_level_occurrences": 5,
+        "top_parents": []
+      }
+    },
+    "reward": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 5,
+        "top_level_occurrences": 5,
+        "top_parents": []
+      }
+    },
+    "strategies": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 5,
+        "top_level_occurrences": 5,
+        "top_parents": []
+      }
+    },
+    "tactics": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 5,
+        "top_level_occurrences": 5,
+        "top_parents": []
+      }
+    },
+    "as_a_companion_pet": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 4,
+        "top_level_occurrences": 4,
+        "top_parents": []
+      }
+    },
+    "as_a_mission_reward": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 4,
+        "top_level_occurrences": 4,
+        "top_parents": []
+      }
+    },
+    "currency_for": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 4,
+        "top_level_occurrences": 4,
+        "top_parents": []
+      }
+    },
+    "default_setting": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 4,
+        "top_level_occurrences": 4,
+        "top_parents": []
+      }
+    },
+    "possible_settings": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 4,
+        "top_level_occurrences": 4,
+        "top_parents": []
+      }
+    },
+    "reagents": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 4,
+        "top_level_occurrences": 4,
+        "top_parents": []
+      }
+    },
+    "set_items": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 4,
+        "top_level_occurrences": 4,
+        "top_parents": []
+      }
+    },
+    "sources": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 4,
+        "top_level_occurrences": 4,
+        "top_parents": []
+      }
+    },
+    "teaches": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 4,
+        "top_level_occurrences": 3,
+        "top_parents": []
+      }
+    },
+    "usage": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 4,
+        "top_level_occurrences": 4,
+        "top_parents": []
+      }
+    },
+    "as_a_mount": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 3,
+        "top_level_occurrences": 3,
+        "top_parents": []
+      }
+    },
+    "creates": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 3,
+        "top_level_occurrences": 3,
+        "top_parents": []
+      }
+    },
+    "fishing": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 3,
+        "top_level_occurrences": 2,
+        "top_parents": [
+          "professions"
+        ]
+      }
+    },
+    "notable_loot": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 3,
+        "top_level_occurrences": 3,
+        "top_parents": []
+      }
+    },
+    "objective": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 3,
+        "top_level_occurrences": 2,
+        "top_parents": [
+          "mission_briefing"
+        ]
+      }
+    },
+    "quest_chain": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 3,
+        "top_level_occurrences": 3,
+        "top_parents": []
+      }
+    },
+    "upgrades": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 3,
+        "top_level_occurrences": 3,
+        "top_parents": []
+      }
+    },
+    "professions": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 2,
+        "top_level_occurrences": 2,
+        "top_parents": []
+      }
+    },
+    "classification": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 1,
+        "top_level_occurrences": 1,
+        "top_parents": []
+      }
+    },
+    "cost": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 1,
+        "top_level_occurrences": 1,
+        "top_parents": []
+      }
+    },
+    "quest_guide": {
+      "content_class": "gameplay",
+      "_evidence": {
+        "pages": 1,
+        "top_level_occurrences": 1,
+        "top_parents": []
+      }
+    },
+    "patch_changes": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 5178,
+        "top_level_occurrences": 5178,
+        "top_parents": []
+      }
+    },
+    "external_links": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 5070,
+        "top_level_occurrences": 5070,
+        "top_parents": []
+      }
+    },
+    "description": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 622,
+        "top_level_occurrences": 622,
+        "top_parents": []
+      }
+    },
+    "notes": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 600,
+        "top_level_occurrences": 600,
+        "top_parents": []
+      }
+    },
+    "quotes": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 444,
+        "top_level_occurrences": 444,
+        "top_parents": [
+          "season_of_discovery"
+        ]
+      }
+    },
+    "see_also": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 360,
+        "top_level_occurrences": 360,
+        "top_parents": []
+      }
+    },
+    "references": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 345,
+        "top_level_occurrences": 345,
+        "top_parents": []
+      }
+    },
+    "trivia": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 223,
+        "top_level_occurrences": 223,
+        "top_parents": []
+      }
+    },
+    "gallery": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 143,
+        "top_level_occurrences": 143,
+        "top_parents": []
+      }
+    },
+    "other_versions": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 96,
+        "top_level_occurrences": 96,
+        "top_parents": []
+      }
+    },
+    "speculation": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 58,
+        "top_level_occurrences": 58,
+        "top_parents": []
+      }
+    },
+    "notes_and_trivia": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 57,
+        "top_level_occurrences": 57,
+        "top_parents": []
+      }
+    },
+    "series": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 53,
+        "top_level_occurrences": 53,
+        "top_parents": []
+      }
+    },
+    "contents": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 46,
+        "top_level_occurrences": 46,
+        "top_parents": []
+      }
+    },
+    "details": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 34,
+        "top_level_occurrences": 34,
+        "top_parents": []
+      }
+    },
+    "payload": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 29,
+        "top_level_occurrences": 29,
+        "top_parents": []
+      }
+    },
+    "appearances": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 27,
+        "top_level_occurrences": 27,
+        "top_parents": []
+      }
+    },
+    "example": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 18,
+        "top_level_occurrences": 18,
+        "top_parents": []
+      }
+    },
+    "videos": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 17,
+        "top_level_occurrences": 17,
+        "top_parents": []
+      }
+    },
+    "on_click": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 16,
+        "top_level_occurrences": 0,
+        "top_parents": [
+          "quotes"
+        ]
+      }
+    },
+    "beta_version": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 13,
+        "top_level_occurrences": 13,
+        "top_parents": []
+      }
+    },
+    "article": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 9,
+        "top_level_occurrences": 9,
+        "top_parents": []
+      }
+    },
+    "credits": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 8,
+        "top_level_occurrences": 8,
+        "top_parents": []
+      }
+    },
+    "shared_appearances": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 8,
+        "top_level_occurrences": 8,
+        "top_parents": []
+      }
+    },
+    "content": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 6,
+        "top_level_occurrences": 6,
+        "top_parents": []
+      }
+    },
+    "versions": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 6,
+        "top_level_occurrences": 6,
+        "top_parents": []
+      }
+    },
+    "patches": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 5,
+        "top_level_occurrences": 5,
+        "top_parents": []
+      }
+    },
+    "images": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 4,
+        "top_level_occurrences": 4,
+        "top_parents": []
+      }
+    },
+    "alpha_version": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 3,
+        "top_level_occurrences": 3,
+        "top_parents": []
+      }
+    },
+    "information": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 3,
+        "top_level_occurrences": 3,
+        "top_parents": []
+      }
+    },
+    "letter": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 3,
+        "top_level_occurrences": 3,
+        "top_parents": []
+      }
+    },
+    "video": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 3,
+        "top_level_occurrences": 3,
+        "top_parents": []
+      }
+    },
+    "faction_description": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 1,
+        "top_level_occurrences": 1,
+        "top_parents": []
+      }
+    },
+    "family_tree": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 1,
+        "top_level_occurrences": 1,
+        "top_parents": []
+      }
+    },
+    "reputation_description": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 1,
+        "top_level_occurrences": 0,
+        "top_parents": [
+          "reputation"
+        ]
+      }
+    },
+    "community_site": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 0,
+        "top_level_occurrences": 0,
+        "top_parents": []
+      }
+    },
+    "control_by_blizzard": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 0,
+        "top_level_occurrences": 0,
+        "top_parents": []
+      }
+    },
+    "faction_crests": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 0,
+        "top_level_occurrences": 0,
+        "top_parents": []
+      }
+    },
+    "opening_dates": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 0,
+        "top_level_occurrences": 0,
+        "top_parents": []
+      }
+    },
+    "technical_considerations": {
+      "content_class": "meta",
+      "_evidence": {
+        "pages": 0,
+        "top_level_occurrences": 0,
+        "top_parents": []
+      }
+    },
+    "in_the_rpg": {
+      "content_class": "non_canon",
+      "canon": false,
+      "_evidence": {
+        "pages": 33,
+        "top_level_occurrences": 33,
+        "top_parents": []
+      }
+    }
+  }
+}

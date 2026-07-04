@@ -23,3 +23,5 @@ cache/
 # Pipeline run outputs (reproducible locally; not source)
 artifacts/
 pipeline/discovery/.world_registry_category_cache.json
+pipeline/data/.section_label_harvest_cache.json
+pipeline/data/.section_label_harvest_cache_v2.json

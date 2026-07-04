@@ -199,6 +199,25 @@ def _build_manifest_row(
     return row
 
 
+def _persist_section_block(block: dict[str, str]) -> dict[str, str]:
+    """Serialize a section block for the snapshot, preserving parent nesting.
+
+    ``parent_section_role`` carries the enclosing top-level (H2) heading of a nested
+    (H3+) subsection. Downstream, ``_effective_section_slug`` (enrich) falls back to it
+    so an unrecognized or era-named subsection ("Cataclysm" under "Biography") inherits
+    its parent's narrative/history role instead of collapsing to "other". Dropping it
+    here silently disabled that inheritance for every crawled profile page.
+    """
+    persisted: dict[str, str] = {
+        "section_role": str(block.get("section_role", "other")),
+        "text": clean_wiki_snippet(str(block.get("text", ""))),
+    }
+    parent = str(block.get("parent_section_role", "")).strip()
+    if parent:
+        persisted["parent_section_role"] = parent
+    return persisted
+
+
 def _snapshot_from_fetch(
     *,
     manifest_row: dict[str, Any],
@@ -216,14 +235,9 @@ def _snapshot_from_fetch(
     quest_lore_blocks: list[dict[str, str]] | None = None,
     quest_record: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    cleaned_blocks: list[dict[str, str]] = []
-    for block in section_blocks:
-        cleaned_blocks.append(
-            {
-                "section_role": str(block.get("section_role", "other")),
-                "text": clean_wiki_snippet(str(block.get("text", ""))),
-            }
-        )
+    cleaned_blocks: list[dict[str, str]] = [
+        _persist_section_block(block) for block in section_blocks
+    ]
     snapshot = {
         "entity_id": manifest_row["entity_id"],
         "entity_type": manifest_row["entity_type"],
@@ -304,13 +318,7 @@ def _upgrade_storyline_snapshot(
     existing["body"] = clean_wiki_snippet(fetched.body)
     existing["revision_id"] = fetched.revision_id
     existing["locator"] = fetched.locator
-    existing["section_blocks"] = [
-        {
-            "section_role": str(block.get("section_role", "other")),
-            "text": clean_wiki_snippet(str(block.get("text", ""))),
-        }
-        for block in section_blocks
-    ]
+    existing["section_blocks"] = [_persist_section_block(block) for block in section_blocks]
     existing["wiki_links"] = fetched.wiki_links
     existing["structured_links"] = fetched.structured_links or build_structured_links_from_sections(
         section_blocks, fetched.wiki_links

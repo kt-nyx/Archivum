@@ -25,6 +25,7 @@ from urllib.parse import unquote, urlparse
 from pipeline.common.io import read_json
 from pipeline.common.retail import is_non_retail_title
 from pipeline.common.run_context import RunContext
+from pipeline.common.section_registry import section_content_class
 from pipeline.common.text_ids import slugify
 from pipeline.common.text_normalize import normalize_display_punctuation
 from pipeline.generate.draft.temporal import (
@@ -572,7 +573,12 @@ def _collect_from_seed_links(
                 continue
             section_role = str(link.get("section_role", "")).lower()
             parent_role = str(link.get("parent_section_role", "")).lower()
-            if section_role.startswith("in_the_rpg") or parent_role.startswith("in_the_rpg"):
+            # Drop non-canon (Warcraft RPG) links via the section registry's non_canon class,
+            # checking the link's own section and its parent.
+            if (
+                section_content_class(section_role) == "non_canon"
+                or section_content_class(parent_role) == "non_canon"
+            ):
                 continue
             href = str(link.get("href", "")).strip()
             label = str(link.get("label", "")).strip()

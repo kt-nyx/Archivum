@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from pipeline.common.discovery_vocab import non_canon_body_markers
+from pipeline.common.section_registry import section_content_class
 
 _GENERIC_SECTION_ROLES = frozenset(
     {
@@ -63,7 +64,9 @@ _SIMILE_CONTINENT_RE_TEMPLATE = r"\b(?:as|like|just as|similar to)\s+(?:in|to)\s
 
 
 def is_rpg_section(raw_section_role: str) -> bool:
-    return str(raw_section_role).strip().lower().startswith("in_the_rpg")
+    # Non-canon sections (Warcraft RPG) are the section registry's non_canon class; centralize the
+    # definition there rather than repeating the ``in_the_rpg`` prefix test.
+    return section_content_class(raw_section_role) == "non_canon"
 
 
 def is_non_canon_history_snippet(text: str) -> bool:

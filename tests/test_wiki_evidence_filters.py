@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pipeline.common.section_registry import section_content_class
 from pipeline.common.wiki_evidence_filters import (
     cap_history_pool,
     is_expansion_boilerplate,
@@ -10,7 +11,6 @@ from pipeline.common.wiki_evidence_filters import (
     should_exclude_from_history,
     trailing_named_section_items,
 )
-from pipeline.discovery.enrich import _is_geography_input_role
 
 
 def test_is_rpg_section_prefix() -> None:
@@ -30,9 +30,11 @@ def test_is_expansion_boilerplate() -> None:
     assert not is_expansion_boilerplate("Recovery efforts continued across the zone.")
 
 
-def test_is_geography_input_role_rejects_rpg_prefix() -> None:
-    assert not _is_geography_input_role("in_the_rpg_geography_edit")
-    assert _is_geography_input_role("geography_edit")
+def test_geography_class_rejects_rpg_prefix() -> None:
+    # Geography routing now goes through the registry: rpg-prefixed sections are non_canon,
+    # so they never classify as geography.
+    assert section_content_class("in_the_rpg_geography_edit") != "geography"
+    assert section_content_class("geography_edit") == "geography"
 
 
 def test_should_exclude_from_history_rpg_section() -> None:
