@@ -347,8 +347,10 @@ class ZonePage(BaseModel):
     wiki_url: str = Field(min_length=1)
     parent_continent: str = Field(min_length=1)
     expansion_context: str = Field(min_length=1)
-    at_a_glance: str = Field(min_length=1)
-    currently: str = Field(min_length=1)
+    # Prose fields are nullable: a field whose live synthesis fails after retries is emitted as
+    # null with the reason recorded in ``field_status`` — never as borrowed source text.
+    at_a_glance: str | None = Field(default=None, min_length=1)
+    currently: str | None = Field(default=None, min_length=1)
     history_sections: list[HistorySection] = Field(default_factory=list)
     major_factions: list[FactionCard] = Field(default_factory=list)
     major_questlines: list[QuestlineCardV2] = Field(default_factory=list)
@@ -357,6 +359,9 @@ class ZonePage(BaseModel):
     glossary_refs: list[GlossaryLink] = Field(default_factory=list)
     sources: list[SourceManifestEntry] = Field(default_factory=list)
     provenance: ZoneProvenance
+    # Per-field outcome map ("ok" | "synthesis_failed" | "no_evidence" | "offline_fallback");
+    # the validate stage treats a null field with a recorded failure as a status, not an error.
+    field_status: dict[str, str] = Field(default_factory=dict)
 
 
 class Zone(BaseModel):
@@ -449,8 +454,10 @@ class InstancePage(BaseModel):
     parent_zone_id: str = Field(pattern=ID_PATTERN)
     expansion_context: str = Field(min_length=1)
     wiki_url: str = Field(min_length=1)
-    at_a_glance: str = Field(min_length=1)
-    overview: str = Field(min_length=1)
+    # Nullable prose + field_status: see ZonePage — failed live synthesis is null + status,
+    # never borrowed source text.
+    at_a_glance: str | None = Field(default=None, min_length=1)
+    overview: str | None = Field(default=None, min_length=1)
     history_sections: list[HistorySection] = Field(default_factory=list)
     key_characters: list[CharacterCard] = Field(default_factory=list)
     major_factions: list[FactionCard] = Field(default_factory=list)
@@ -461,6 +468,7 @@ class InstancePage(BaseModel):
     glossary_refs: list[GlossaryLink] = Field(default_factory=list)
     sources: list[SourceManifestEntry] = Field(default_factory=list)
     provenance: InstanceProvenance
+    field_status: dict[str, str] = Field(default_factory=dict)
 
 
 class Instance(BaseModel):

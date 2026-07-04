@@ -22,14 +22,15 @@ def test_instance_overview_finalizer_rejects_script_mixed_synthesis(monkeypatch)
         instance_page, "fallback_instance_overview", lambda *a, **k: (artifact, ["s1"])
     )
 
-    text, used, pool = instance_page._finalize_instance_overview(
+    text, used, pool, status = instance_page._finalize_instance_overview(
         instance_name="Archive Vault",
         overview_pool=[{"snippet": "x", "source_id": "s1"}],
         zone_mention_pool=[],
     )
-    assert text == ""
+    assert text is None
     assert used == []
     assert pool == []
+    assert status == instance_page.FIELD_STATUS_SYNTHESIS_FAILED
 
 
 def test_zone_at_a_glance_finalizer_rejects_dangling_terminal(monkeypatch) -> None:
@@ -39,12 +40,12 @@ def test_zone_at_a_glance_finalizer_rejects_dangling_terminal(monkeypatch) -> No
     monkeypatch.setattr(zone_page, "synthesize_at_a_glance", lambda *a, **k: (artifact, ["s1"]))
     monkeypatch.setattr(zone_page, "fallback_at_a_glance", lambda *a, **k: (artifact, ["s1"]))
 
-    text, used = zone_page._finalize_at_a_glance(
+    text, used, status = zone_page._finalize_at_a_glance(
         zone_name="Western Plaguelands",
         at_pool=[{"snippet": "x", "source_id": "s1"}],
         evidence_rows=[],
     )
-    # Both synthesis and fallback were rejected, so the deterministic default stands.
-    assert artifact not in text
-    assert text.endswith("ruin left by past conflict.")
+    # Both synthesis and fallback were rejected; the field fails explicitly (no canned default).
+    assert text is None
     assert used == []
+    assert status == zone_page.FIELD_STATUS_SYNTHESIS_FAILED

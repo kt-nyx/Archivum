@@ -14,6 +14,26 @@ def _load_json(path: Path) -> Any:
     return read_json(path)
 
 
+# Prose fields that may be null when live synthesis failed (recorded in the page's field_status).
+_NULLABLE_PROSE_FIELDS = ("at_a_glance", "currently", "overview")
+
+
+def _omit_failed_prose_fields(payload: Any) -> Any:
+    """Drop null prose fields so the addon renders nothing for a failed section.
+
+    The draft failure contract emits ``null`` + a ``field_status`` reason for a field whose live
+    synthesis failed; the addon must omit that section entirely — never render placeholder text.
+    ``field_status`` stays in the payload for auditability.
+    """
+    if not isinstance(payload, dict):
+        return payload
+    return {
+        key: value
+        for key, value in payload.items()
+        if not (key in _NULLABLE_PROSE_FIELDS and value is None)
+    }
+
+
 def _load_static_glossary_term_metadata() -> dict[str, dict[str, str]]:
     dictionary_path = (
         Path(__file__).resolve().parents[2] / "dictionary" / "glossary_aliases.v1.json"
@@ -107,7 +127,7 @@ def build_addon_bundle(context: RunContext) -> Path:
     nav_edges: list[dict[str, str]] = []
 
     for zone_path in zone_pages:
-        payload = _load_json(zone_path)
+        payload = _omit_failed_prose_fields(_load_json(zone_path))
         zone_id = str(payload.get("zone_id", zone_path.stem))
         write_json((zones_dir / f"{zone_id}.json"), payload)
         for location in payload.get("location_cards", []):
@@ -136,7 +156,7 @@ def build_addon_bundle(context: RunContext) -> Path:
                 )
 
     for instance_path in instance_pages:
-        payload = _load_json(instance_path)
+        payload = _omit_failed_prose_fields(_load_json(instance_path))
         instance_id = str(payload.get("instance_id", instance_path.stem))
         write_json((instances_dir / f"{instance_id}.json"), payload)
         for ref in payload.get("glossary_refs", []):

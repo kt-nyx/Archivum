@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from pipeline.generate.draft.prose_synthesis import enforce_non_passthrough
+from pipeline.generate.draft.prose_synthesis import (
+    SYNTHESIS_MAX_ATTEMPTS,
+    synthesize_with_validation,
+)
 
 # A >=25-word source paragraph so a verbatim copy of it clears the anti-passthrough word floor.
 SOURCE = (
@@ -25,58 +28,73 @@ def _bodies(payload: dict[str, Any]) -> list[str]:
     return [str(section["body"]) for section in payload["sections"]]
 
 
-def test_enforce_passes_clean_first_attempt_without_retry() -> None:
+def test_driver_passes_clean_first_attempt_without_retry() -> None:
     calls: list[str] = []
 
     def call(reinforce: str) -> dict[str, Any]:
         calls.append(reinforce)
         return _result(PARAPHRASE)
 
-    out = enforce_non_passthrough(
-        _result(PARAPHRASE),
+    out = synthesize_with_validation(
         call=call,
         extract_bodies=_bodies,
         source_snippets=[SOURCE],
     )
-    assert _bodies(out) == [PARAPHRASE]
-    assert calls == []  # clean first attempt never triggers the retry call
+    assert out.ok
+    assert _bodies(out.payload) == [PARAPHRASE]
+    assert out.attempts == 1
+    assert calls == [""]  # clean first attempt: one call, no reinforcement
 
 
-def test_enforce_reprompts_once_and_accepts_clean_retry() -> None:
+def test_driver_reprompts_on_copy_and_accepts_clean_retry() -> None:
+    calls: list[str] = []
+    attempts = iter([_result(SOURCE), _result(PARAPHRASE)])
+
+    def call(reinforce: str) -> dict[str, Any]:
+        calls.append(reinforce)
+        return next(attempts)
+
+    out = synthesize_with_validation(
+        call=call,
+        extract_bodies=_bodies,
+        source_snippets=[SOURCE],
+    )
+    assert out.ok
+    assert _bodies(out.payload) == [PARAPHRASE]
+    assert out.attempts == 2
+    assert "your own words" in calls[1].lower()  # retry carried the paraphrase feedback
+
+
+def test_driver_fails_explicitly_when_all_attempts_copy() -> None:
+    # RC1 contract: when every attempt copies source prose, the driver returns an explicit
+    # failure — it never accepts the borrow. The caller maps this to null + field_status.
     calls: list[str] = []
 
     def call(reinforce: str) -> dict[str, Any]:
         calls.append(reinforce)
-        return _result(PARAPHRASE)
+        return _result(SOURCE)
 
-    out = enforce_non_passthrough(
-        _result(SOURCE),  # first attempt is a verbatim copy
+    out = synthesize_with_validation(
         call=call,
         extract_bodies=_bodies,
         source_snippets=[SOURCE],
     )
-    assert _bodies(out) == [PARAPHRASE]
-    assert len(calls) == 1  # exactly one retry
-    assert "your own words" in calls[0].lower()  # carried the paraphrase feedback
+    assert not out.ok
+    assert out.attempts == SYNTHESIS_MAX_ATTEMPTS
+    assert len(calls) == SYNTHESIS_MAX_ATTEMPTS
+    assert any("verbatim" in reason for reason in out.reasons)
+    # The best attempt is still exposed for diagnostics, but ok=False means "do not ship".
+    assert _bodies(out.payload) == [SOURCE]
 
 
-def test_enforce_returns_retry_for_finalize_gate_when_still_verbatim() -> None:
-    # If the retry still copies, the guard returns an attempt (one retry only) rather than raising —
-    # the caller's finalize-level passthrough gate rejects it gracefully instead of crashing the stage.
-    calls: list[str] = []
-
-    def call(reinforce: str) -> dict[str, Any]:
-        calls.append(reinforce)
-        return _result(SOURCE)  # retry still copies
-
-    out = enforce_non_passthrough(
-        _result(SOURCE),
-        call=call,
+def test_driver_fails_explicitly_on_persistently_empty_output() -> None:
+    out = synthesize_with_validation(
+        call=lambda reinforce: _result(""),
         extract_bodies=_bodies,
         source_snippets=[SOURCE],
     )
-    assert _bodies(out) == [SOURCE]
-    assert len(calls) == 1  # retried exactly once, no infinite loop
+    assert not out.ok
+    assert any("empty" in reason for reason in out.reasons)
 
 
 def _history_lint(payload: dict[str, Any]) -> list[str]:
@@ -103,44 +121,68 @@ PRESENT_SECTION = {
 }
 
 
-def test_enforce_reprompts_on_lint_and_keeps_corrected_retry() -> None:
-    # A present-tense first attempt fails lint (not the passthrough gate); the retry returns a clean
-    # past-tense section and is preferred. The feedback echoes the lint reason.
+def test_driver_reprompts_on_lint_and_accepts_corrected_retry() -> None:
+    # A present-tense first attempt fails the validator (not the copy gate); the retry returns a
+    # clean past-tense section and passes. The feedback echoes the concrete lint reason.
     calls: list[str] = []
+    attempts = iter(
+        [
+            {"sections": [PRESENT_SECTION], "used_evidence_ids": []},
+            {"sections": [PAST_SECTION], "used_evidence_ids": []},
+        ]
+    )
 
     def call(reinforce: str) -> dict[str, Any]:
         calls.append(reinforce)
-        return {"sections": [PAST_SECTION], "used_evidence_ids": []}
+        return next(attempts)
 
-    out = enforce_non_passthrough(
-        {"sections": [PRESENT_SECTION], "used_evidence_ids": []},
+    out = synthesize_with_validation(
         call=call,
         extract_bodies=_bodies,
+        validate=_history_lint,
         source_snippets=[SOURCE],  # not copied, so only lint drives the retry
-        lint_reasons=_history_lint,
     )
-    assert out["sections"] == [PAST_SECTION]
-    assert len(calls) == 1
-    assert "past tense" in calls[0].lower()
+    assert out.ok
+    assert out.payload["sections"] == [PAST_SECTION]
+    assert out.attempts == 2
+    assert "past tense" in calls[1].lower()
 
 
-def test_enforce_keeps_original_when_lint_retry_is_no_better() -> None:
-    # If the retry fails lint just as badly, keep the original attempt (tie → original), still one call.
+def test_driver_fails_and_keeps_best_attempt_when_lint_never_passes() -> None:
     calls: list[str] = []
 
     def call(reinforce: str) -> dict[str, Any]:
         calls.append(reinforce)
         return {"sections": [PRESENT_SECTION], "used_evidence_ids": []}
 
-    first = {"sections": [dict(PRESENT_SECTION, heading="First")], "used_evidence_ids": []}
-    out = enforce_non_passthrough(
-        first,
+    out = synthesize_with_validation(
         call=call,
         extract_bodies=_bodies,
+        validate=_history_lint,
         source_snippets=[SOURCE],
-        lint_reasons=_history_lint,
     )
-    assert out is first  # tie keeps the original
+    assert not out.ok
+    assert len(calls) == SYNTHESIS_MAX_ATTEMPTS
+    assert out.payload["sections"] == [PRESENT_SECTION]  # best attempt kept for diagnostics
+    assert out.reasons  # concrete lint reasons surfaced
+
+
+def test_driver_skips_copy_check_without_source_snippets() -> None:
+    # Offline (or corpus-less) callers pass no snippets: a verbatim body is then only judged by
+    # the validator, so a clean-linting borrow passes in one attempt.
+    calls: list[str] = []
+
+    def call(reinforce: str) -> dict[str, Any]:
+        calls.append(reinforce)
+        return _result(SOURCE)
+
+    out = synthesize_with_validation(
+        call=call,
+        extract_bodies=_bodies,
+        source_snippets=None,
+    )
+    assert out.ok
+    assert _bodies(out.payload) == [SOURCE]
     assert len(calls) == 1
 
 
@@ -175,16 +217,3 @@ def test_sections_trip_gate_rejects_verbatim_only_with_corpus() -> None:
     # With the source corpus the copied body is rejected; without it (offline) the borrow passes.
     assert _sections_trip_gate(verbatim, [source]) is True
     assert _sections_trip_gate(verbatim, None) is False
-
-
-def test_enforce_noop_without_source_snippets() -> None:
-    def call(reinforce: str) -> dict[str, Any]:  # pragma: no cover - must not be called
-        raise AssertionError("retry must not run when there are no sources to compare against")
-
-    out = enforce_non_passthrough(
-        _result(SOURCE),
-        call=call,
-        extract_bodies=_bodies,
-        source_snippets=[],
-    )
-    assert _bodies(out) == [SOURCE]

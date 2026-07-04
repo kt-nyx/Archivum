@@ -13,6 +13,7 @@ from pipeline.discovery.entity_typing import normalize_title
 from pipeline.discovery.world_registry import entry_kinds
 from pipeline.generate.draft.claim_routing import (
     AT_A_GLANCE_ROUTE,
+    CLAIM_VIEW_KEY,
     CURRENTLY_ROUTE,
     FACTION_CONTEXT_ROUTE,
     HISTORY_ROUTE,
@@ -20,6 +21,7 @@ from pipeline.generate.draft.claim_routing import (
     LOCATION_CONTEXT_ROUTE,
     item_has_claim_views,
     route_claim_views_for_item,
+    safe_paragraph_excerpt,
 )
 from pipeline.generate.draft.lore_selection import (
     dedupe_lore_items,
@@ -96,7 +98,20 @@ def _iter_evidence_items(
             if not isinstance(item, dict):
                 continue
             if claim_route and item_has_claim_views(item):
-                items.extend(route_claim_views_for_item(item, claim_route))
+                safe_views = route_claim_views_for_item(item, claim_route)
+                # Fix 1 (general): attach the paragraph's route-safe reconstructed excerpt to each
+                # surviving claim view. Ordering / caps / eligibility still run per claim view; the
+                # shared evidence formatter collapses these to one coherent excerpt per paragraph at
+                # synthesis time. Computed from the item's full claim set so contaminated (spoiler)
+                # sentences are excluded.
+                all_views = item.get(CLAIM_VIEW_KEY)
+                excerpt = (
+                    safe_paragraph_excerpt(all_views, claim_route)
+                    if safe_views and isinstance(all_views, list)
+                    else ""
+                )
+                for view in safe_views:
+                    items.append({**view, "_route_safe_excerpt": excerpt} if excerpt else view)
                 continue
             snippet = _clean_snippet(str(item.get("snippet", "")))
             if not snippet:

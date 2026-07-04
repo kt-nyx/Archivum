@@ -342,18 +342,28 @@ def history_heading_from_role(section_role: str, raw_section_role: str = "") -> 
     return label.title()
 
 
-def fallback_at_a_glance(items: list[dict[str, Any]]) -> tuple[str, list[str]]:
-    if not items:
-        return "", []
-    # at_a_glance is now a present-tense identity caption, so prefer a snippet that frames the zone's
-    # present state ("is/remains a ...") over one that merely narrates the past; fall back to length.
-    best = max(
+def ranked_at_a_glance_candidates(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Pool items in borrow-preference order for the offline at_a_glance ladder (best first).
+
+    at_a_glance is a present-tense identity caption, so a snippet that frames the zone's present
+    state ("is/remains a ...") outranks one that merely narrates the past; ties fall back to length.
+    The offline finalizer walks this order until a candidate passes validation, so a lint-clean
+    lead snippet still ships when the longest snippet reads as past-tense narration.
+    """
+    return sorted(
         items,
         key=lambda row: (
             has_present_state_framing(str(row.get("snippet", ""))),
             word_count(str(row.get("snippet", ""))),
         ),
+        reverse=True,
     )
+
+
+def fallback_at_a_glance(items: list[dict[str, Any]]) -> tuple[str, list[str]]:
+    if not items:
+        return "", []
+    best = ranked_at_a_glance_candidates(items)[0]
     summary = trim_words(str(best.get("snippet", "")), MAX_AT_A_GLANCE_WORDS)
     source_id = str(best.get("source_id", "")).strip()
     return summary, [source_id] if source_id else []

@@ -284,6 +284,10 @@ def _validate_zone_page(zone_page: ZonePage) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
     for field_name in ("at_a_glance", "currently"):
         value = getattr(zone_page, field_name)
+        if value is None:
+            # Recorded synthesis failure (field_status); the structure rule surfaces it — a null
+            # field has no word budget.
+            continue
         words = _word_count(value)
         if field_name == "at_a_glance" and not (18 <= words <= 48):
             issues.append(
@@ -378,9 +382,13 @@ def _validate_instance_page(
         "overview": INSTANCE_BUDGET_RULES["story_context"],
     }
     for field_name, rule in section_rules.items():
+        value = getattr(instance_page, field_name, None)
+        if value is None:
+            # Recorded synthesis failure (field_status); no word budget for a null field.
+            continue
         issue = _rule_issue_count(
             rule,
-            _word_count(str(getattr(instance_page, field_name, ""))),
+            _word_count(str(value)),
             f"$.{field_name}",
             "budget.section",
         )

@@ -572,3 +572,90 @@ def test_high_weight_current_mentions_discover_missing_faction_targets() -> None
     assert "faction-argent-crusade" in elected_ids
     assert "faction-cenarion-circle" in elected_ids
     assert elected_ids.index("faction-argent-crusade") < elected_ids.index("faction-redpine-tribe")
+
+
+def test_resolve_canonical_faction_name_strips_umbrella_qualifier() -> None:
+    from pipeline.generate.draft.faction_scoring import resolve_canonical_faction_name
+
+    # RC5: adjacent article links render as one phrase ("[Horde] [Forsaken]"); the member faction
+    # is the canonical identity.
+    assert resolve_canonical_faction_name("Horde Forsaken") == "Forsaken"
+    # Non-umbrella names and the umbrellas themselves are untouched.
+    assert resolve_canonical_faction_name("Scarlet Crusade") == "Scarlet Crusade"
+    assert resolve_canonical_faction_name("Horde") == "Horde"
+    # An umbrella followed by a non-faction word is not resolved.
+    assert resolve_canonical_faction_name("Alliance forces") == "Alliance forces"
+
+
+def test_variant_faction_candidates_merge_onto_canonical_survivor() -> None:
+    # Two alias candidates for one faction: the canonical "Forsaken" (from a profile target) and
+    # the "Horde Forsaken" variant (e.g. from a stored target that predates phrase resolution).
+    # They must collapse to ONE candidate carrying both evidence pools.
+    zone_id = "zone-example"
+    pools = {
+        "faction_pool": [
+            _profile_item(
+                "faction-forsaken",
+                "The Forsaken are renegade undead who broke from the Scourge's control.",
+            ),
+            _profile_item(
+                "faction-horde-forsaken",
+                "The Forsaken hold Andorhal in Example Zone after the battle.",
+                source_id="src-variant",
+            ),
+        ],
+        "faction_role_pool": [],
+    }
+    candidates = collect_faction_candidates(
+        zone_id=zone_id,
+        evidence_rows=[],
+        pools=pools,
+        faction_profile_targets=[
+            _target("faction-forsaken", "Forsaken"),
+            _target("faction-horde-forsaken", "Horde Forsaken"),
+        ],
+    )
+    forsaken_like = [row for row in candidates if "forsaken" in row.faction_id]
+    assert len(forsaken_like) == 1
+    survivor = forsaken_like[0]
+    assert survivor.faction_id == "faction-forsaken"
+    assert survivor.name == "Forsaken"
+    # The variant's pooled evidence merged onto the survivor (richer card).
+    merged_sources = {str(item.get("source_id", "")) for item in survivor.profile_items}
+    assert "src-variant" in merged_sources
+
+
+def test_variant_without_canonical_sibling_renamed_to_canonical() -> None:
+    zone_id = "zone-example"
+    candidates = collect_faction_candidates(
+        zone_id=zone_id,
+        evidence_rows=[],
+        pools={"faction_pool": [], "faction_role_pool": []},
+        faction_profile_targets=[_target("faction-horde-forsaken", "Horde Forsaken")],
+    )
+    assert [row.faction_id for row in candidates] == ["faction-forsaken"]
+    assert candidates[0].name == "Forsaken"
+    assert candidates[0].wiki_url.endswith("/wiki/Forsaken")
+
+
+def test_seed_mention_harvest_resolves_umbrella_variant_phrase() -> None:
+    # Phrase-level: the seed-mention harvest must never mint a "Horde Forsaken" identity from
+    # prose in the first place.
+    zone_id = "zone-example"
+    pools = {
+        "faction_pool": [],
+        "faction_role_pool": [
+            _seed_item(
+                "War rages in the west as the Horde Forsaken hold the ruined city of Andorhal."
+            )
+        ],
+    }
+    candidates = collect_faction_candidates(
+        zone_id=zone_id,
+        evidence_rows=[],
+        pools=pools,
+        faction_profile_targets=[],
+    )
+    ids = {row.faction_id for row in candidates}
+    assert "faction-horde-forsaken" not in ids
+    assert "faction-forsaken" in ids

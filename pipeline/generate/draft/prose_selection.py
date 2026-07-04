@@ -21,14 +21,20 @@ def classify_key_character_role_llm(
     character_name: str,
     instance_name: str,
     fallback_role: str = "uncertain",
+    reference_framing: str = "",
 ) -> str:
     """LLM tiebreaker for an ambiguous character role, constrained to the enum.
 
     Only meant to be called when deterministic classification returned
     ``"uncertain"``. Offline / no-LLM / empty-evidence returns ``fallback_role`` so
     the deterministic result (usually ``"uncertain"``) stands.
+
+    ``reference_framing`` (the Adventure Guide blurb) is the strongest role signal: a figure's
+    ally/enemy status is often stated only in the game's own framing, since the in-instance beat
+    that reveals it is scoped out of the pre-entry evidence. Passing it keeps allies like Lilian Voss
+    from defaulting to ``uncertain`` on backstory that predates their allegiance to the player.
     """
-    if not items:
+    if not items and not reference_framing.strip():
         return fallback_role
     settings = load_ai_settings()
     if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {
@@ -37,6 +43,9 @@ def classify_key_character_role_llm(
         "yes",
     }:
         return fallback_role
+    user_prompt = f"Evidence:\n{_format_evidence_block(items)}"
+    if reference_framing.strip():
+        user_prompt += f"\n\nGame's framing of this character's role here:\n{reference_framing.strip()}"
     result = llm_json_with_retry(
         required_keys=("role",),
         response_json_schema={
@@ -47,11 +56,11 @@ def classify_key_character_role_llm(
         },
         system_prompt=(
             f"Classify the role of '{character_name}' within the instance '{instance_name}' "
-            "using ONLY the evidence. Choose exactly one: 'enemy' (opposes or is fought by "
-            "adventurers), 'ally' (aids or fights alongside adventurers), 'neutral' (a non-hostile "
-            "figure such as a vendor or bystander), or 'uncertain' if the evidence does not say."
+            "using the evidence and the game's framing. Choose exactly one: 'enemy' (opposes or is "
+            "fought by adventurers), 'ally' (aids or fights alongside adventurers), 'neutral' (a "
+            "non-hostile figure such as a vendor or bystander), or 'uncertain' if it does not say."
         ),
-        user_prompt=f"Evidence:\n{_format_evidence_block(items)}",
+        user_prompt=user_prompt,
         response_schema_name="wiki_first_key_character_role",
         substep="wiki_first_key_character_role",
     )

@@ -10,6 +10,11 @@ from typing import Any, Literal
 from pipeline.common.content_role import classify_content_role
 from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext
+from pipeline.common.section_registry import (
+    is_narrative_section,
+    normalize_section_label,
+    section_content_class,
+)
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.common.wiki_evidence_filters import should_exclude_from_history
 from pipeline.contracts.models import (
@@ -42,6 +47,19 @@ EnrichPhase = Literal["full", "roster", "cluster", "significance", "card_polish"
 
 _UNCLUSTERED_CLUSTER_ID = "unclustered"
 
+# Fix 5: crawled profile/lore pools whose snippets are in-universe biography and must be screened
+# for disclaimer-banner / non-canon noise the same way the history digest is.
+_NARRATIVE_PROFILE_POOL_FIELDS = frozenset(
+    {
+        "character_pool",
+        "faction_pool",
+        "parent_lore_pool",
+        "related_lore_pool",
+        "instance_lore_pool",
+        "location_pool",
+    }
+)
+
 _HISTORY_DIGEST_EXCLUDED = frozenset(
     {
         "geography_edit",
@@ -73,8 +91,22 @@ def _is_instance_seed_snapshot(snapshot: dict[str, Any]) -> bool:
     )
 
 
+def _is_seed_history_section(section_role: str, parent_section_role: str) -> bool:
+    """A seed section whose prose belongs in history_digest: registry-narrative, but not the
+    lead/intro (which is routed to at_a_glance on its own). Nested subsections inherit their
+    History/Biology parent, so era/event subsections count without being enumerated."""
+    if normalize_section_label(section_role) in {"lead", "introduction"}:
+        return False
+    return section_content_class(section_role, parent_section_role) == "narrative"
+
+
 def _instance_seed_field_names(
-    section_role: str, *, lead_emitted: int, block_type: str = "paragraph"
+    section_role: str,
+    parent_section_role: str = "",
+    *,
+    lead_emitted: int,
+    history_at_glance_emitted: int = 0,
+    block_type: str = "paragraph",
 ) -> list[str]:
     lowered = section_role.lower()
     names: list[str] = []
@@ -84,46 +116,16 @@ def _instance_seed_field_names(
     is_prose = block_type == "paragraph"
     if is_prose and lowered in {"lead", "introduction"} and lead_emitted < 2:
         names.append("at_a_glance_input")
-    if is_prose and _is_history_digest_role(lowered):
+    if is_prose and _is_seed_history_section(section_role, parent_section_role):
         names.append("history_digest")
-        names.append("at_a_glance_input")
+        # RC3: at_a_glance is the essence field (identity lead + broad origin arc), not an event
+        # chronicle. Only the first history paragraph — the origin/identity arc — joins its pool;
+        # the granular event paragraphs feed history_digest alone.
+        if history_at_glance_emitted < 1:
+            names.append("at_a_glance_input")
     if is_boss_section_role(section_role):
         names.append("boss_pool")
     return names
-
-
-_NARRATIVE_PROFILE_TOKENS = ("history", "lore", "background", "story")
-
-
-def _is_narrative_profile_section(
-    effective_section: str, *, extra_tokens: tuple[str, ...] = ()
-) -> bool:
-    """True when a crawled profile section is in-universe narrative prose, not a sidebar.
-
-    Profile pages (faction / character / cross-page lore) mix their lead and history with comic /
-    manga / legends / RPG / novel sidebars (``legends_the_journey_edit``, ``ashbringer_edit``,
-    ``in_the_rpg``) that must not feed an identity summary. Admit only the lead/intro and the
-    narrative history-family sections so a stray legends panel can't write the profile prose.
-    """
-    lowered = effective_section.lower()
-    if lowered.startswith("in_the_rpg"):
-        return False
-    if lowered in {"lead", "introduction"}:
-        return True
-    return any(token in lowered for token in _NARRATIVE_PROFILE_TOKENS + extra_tokens)
-
-
-def _is_history_digest_role(section_role: str) -> bool:
-    lowered = section_role.lower()
-    if lowered.startswith("in_the_rpg"):
-        return False
-    if lowered in _HISTORY_DIGEST_EXCLUDED:
-        return False
-    if "history" in lowered:
-        return True
-    if lowered.endswith("_edit"):
-        return True
-    return False
 
 
 def _is_currently_input_role(section_role: str) -> bool:
@@ -139,36 +141,38 @@ def _is_currently_input_role(section_role: str) -> bool:
     return False
 
 
-_GEOGRAPHY_INPUT_HINTS = ("maps", "subregion", "geography")
-
-
-def _is_geography_input_role(section_role: str) -> bool:
-    lowered = section_role.lower()
-    if lowered.startswith("in_the_rpg"):
-        return False
-    if lowered in {"geography_edit", "geography", "maps_subregions"}:
-        return True
-    return any(hint in lowered for hint in _GEOGRAPHY_INPUT_HINTS)
-
-
 def _seed_field_names(
-    section_role: str, *, lead_emitted: int, block_type: str = "paragraph"
+    section_role: str,
+    parent_section_role: str = "",
+    *,
+    lead_emitted: int,
+    history_at_glance_emitted: int = 0,
+    block_type: str = "paragraph",
 ) -> list[str]:
-    lowered = section_role.lower()
     names: list[str] = []
     # Zone prose fields draw from paragraphs only; list/table blocks (subregion,
     # loot, quest, resource lists) are not prose and historically never reached
     # these fields, so keep them out to avoid evidence bloat/dilution.
     if block_type != "paragraph":
         return names
-    if lowered in {"lead", "introduction"} and lead_emitted < 2:
+    is_lead = normalize_section_label(section_role) in {"lead", "introduction"}
+    is_geography = section_content_class(section_role, parent_section_role) == "geography"
+    if is_lead and lead_emitted < 2:
         names.append("at_a_glance_input")
-    if _is_geography_input_role(lowered):
+    if is_geography:
         names.append("geography_input")
-    if _is_history_digest_role(lowered):
+    elif _is_seed_history_section(section_role, parent_section_role):
         names.append("history_digest")
-        names.append("at_a_glance_input")
-    if _is_currently_input_role(lowered):
+        # RC3: at_a_glance is the essence field (identity lead + broad origin arc), not an event
+        # chronicle. Only the first history paragraph — the origin/identity arc (e.g. "was fertile
+        # Lordaeron heartland → now blighted") — joins its pool; granular event paragraphs
+        # (cauldron lords, commanders) feed history_digest alone.
+        if history_at_glance_emitted < 1:
+            names.append("at_a_glance_input")
+    # currently_input is a temporal (current-state) signal, not a content-type one, and it
+    # intentionally draws quest/recent sections the registry classes as gameplay — so it keeps
+    # its own role check. Geography is never current-state, so don't let it leak in.
+    if not is_geography and _is_currently_input_role(section_role.lower()):
         names.append("currently_input")
     return names
 
@@ -223,6 +227,9 @@ def _build_evidence_packs(
 ) -> list[dict[str, Any]]:
     packs: list[dict[str, Any]] = []
     lead_counts: dict[str, int] = {}
+    # RC3: per-subject count of history paragraphs already routed into at_a_glance_input, so only
+    # the origin/identity paragraph joins the essence pool (see _seed_field_names).
+    history_at_glance_counts: dict[str, int] = {}
     cluster_index = _v3_cluster_index(v3_rows or [])
     cluster_snippets: dict[tuple[str, str], list[dict[str, Any]]] = {}
 
@@ -338,7 +345,11 @@ def _build_evidence_packs(
             if is_zone_seed:
                 lead_emitted = lead_counts.get(subject_id, 0)
                 field_names = _seed_field_names(
-                    effective_section, lead_emitted=lead_emitted, block_type=block_type
+                    raw_section,
+                    parent_section,
+                    lead_emitted=lead_emitted,
+                    history_at_glance_emitted=history_at_glance_counts.get(subject_id, 0),
+                    block_type=block_type,
                 )
                 if "at_a_glance_input" in field_names and raw_section.lower() in {
                     "lead",
@@ -350,7 +361,11 @@ def _build_evidence_packs(
             elif is_instance_seed:
                 lead_emitted = lead_counts.get(subject_id, 0)
                 field_names = _instance_seed_field_names(
-                    effective_section, lead_emitted=lead_emitted, block_type=block_type
+                    raw_section,
+                    parent_section,
+                    lead_emitted=lead_emitted,
+                    history_at_glance_emitted=history_at_glance_counts.get(subject_id, 0),
+                    block_type=block_type,
                 )
                 if "at_a_glance_input" in field_names and raw_section.lower() in {
                     "lead",
@@ -364,30 +379,30 @@ def _build_evidence_packs(
             elif aux_role == "faction_profile":
                 # A faction page mixes its lead/history identity with comic / manga / legends
                 # sidebars (e.g. "Legends: The Journey" -> a one-off Maddox vignette) that are not
-                # the faction's identity. Apply the same narrative allowlist as character / cross-page
-                # profiles so a legends panel can't win the faction summary.
-                if not _is_narrative_profile_section(effective_section):
+                # the faction's identity. The section registry admits only in-universe narrative
+                # sections (with nested subsections inheriting their parent), so a legends panel
+                # can't win the faction summary.
+                if not is_narrative_section(raw_section, parent_section):
                     continue
                 field_names = ["faction_pool"]
             elif aux_role == "location_profile":
                 field_names = ["location_pool"]
             elif aux_role == "character_profile":
                 # Slice D: a character page mixes biography with combat / ability / strategy /
-                # patch-note sections that are not in-universe biography. Use the same strict
-                # narrative allowlist as cross-page lore so only biographical prose becomes
-                # evidence; the Slice-9 spoiler route still bounds it at draft time.
-                if not _is_narrative_profile_section(
-                    effective_section, extra_tokens=("biography",)
-                ):
+                # patch-note sections that are not in-universe biography. The section registry
+                # admits only in-universe narrative sections; crucially, per-expansion and event
+                # subsections (Cataclysm, "The Scourging"...) inherit "narrative" from their
+                # History/Biography parent, so a character laid out by expansion is no longer
+                # starved down to the lead. The Slice-9 spoiler route still bounds it at draft time.
+                if not is_narrative_section(raw_section, parent_section):
                     continue
                 field_names = ["character_pool"]
             elif aux_role == "instance_lore":
                 field_names = ["instance_lore_pool"]
             elif aux_role in {"parent_lore", "related_lore"}:
-                # Cross-page lore is the highest overreach risk, so use a strict narrative
-                # allowlist (lead/intro + history/lore/background/story) rather than the
-                # broad _is_history_digest_role denylist used for instance-owned prose.
-                if not _is_narrative_profile_section(effective_section):
+                # Cross-page lore is the highest overreach risk, so admit only registry-narrative
+                # sections (nested subsections inherit their parent).
+                if not is_narrative_section(raw_section, parent_section):
                     continue
                 field_names = [
                     "parent_lore_pool" if aux_role == "parent_lore" else "related_lore_pool"
@@ -409,10 +424,27 @@ def _build_evidence_packs(
                     continue
                 if (
                     field_name == "at_a_glance_input"
-                    and _is_history_digest_role(raw_section)
+                    and _is_seed_history_section(raw_section, parent_section)
                     and exclude_history
                 ):
                     continue
+                # Fix 5: the crawled profile/lore pools also picked up rendered disclaimer banners
+                # ("This section concerns content related to X.") and non-canon markers as if they
+                # were biography. should_exclude_from_history already screens exactly these (plus RPG
+                # sections and empties); wire it into the narrative profile pools so a character/
+                # faction/lore card is never built from banner or non-canon noise.
+                if field_name in _NARRATIVE_PROFILE_POOL_FIELDS and exclude_history:
+                    continue
+                if (
+                    field_name == "at_a_glance_input"
+                    and is_seed
+                    and _is_seed_history_section(raw_section, parent_section)
+                ):
+                    # Counted only on actual emission, so an excluded first paragraph doesn't
+                    # burn the single origin-arc slot (see history_at_glance_counts above).
+                    history_at_glance_counts[subject_id] = (
+                        history_at_glance_counts.get(subject_id, 0) + 1
+                    )
 
                 build_meta: dict[str, Any] = {
                     "run_id": run_id,

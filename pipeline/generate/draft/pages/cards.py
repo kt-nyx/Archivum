@@ -57,7 +57,7 @@ from pipeline.generate.draft.prose_election import (
     history_section_cap,
     select_history_pool,
 )
-from pipeline.generate.draft.prose_gate import prose_gate_rejects, prose_gate_violations
+from pipeline.generate.draft.prose_gate import prose_gate_violations
 from pipeline.generate.draft.prose_lint import (
     MAX_HISTORY_SECTIONS,
     MIN_HISTORY_SECTIONS,
@@ -66,11 +66,18 @@ from pipeline.generate.draft.prose_lint import (
     word_count,
 )
 from pipeline.generate.draft.prose_synthesis import (
+    FIELD_STATUS_NO_EVIDENCE,
+    FIELD_STATUS_OFFLINE_FALLBACK,
+    FIELD_STATUS_OK,
+    FIELD_STATUS_SYNTHESIS_FAILED,
+    SYNTHESIS_MAX_ATTEMPTS,
+    llm_synthesis_active,
     passthrough_corpus,
     relabel_history_headings,
     synthesize_faction_summary,
     synthesize_history_sections,
     synthesize_location_summary,
+    synthesize_with_validation,
 )
 from pipeline.generate.draft.temporal import HISTORY_SETUP_BRIDGE
 
@@ -221,87 +228,127 @@ def _finalize_history_sections(
     subject_id: str = "",
     coverage_sink: list[dict[str, Any]] | None = None,
     coverage_pointer_builder: Callable[[dict[str, Any], int], dict[str, str] | None] | None = None,
-) -> tuple[list[dict[str, Any]], list[str]]:
+) -> tuple[list[dict[str, Any]], list[str], str]:
+    """History sections: synthesize with validation-driven retries, else explicit failure.
+
+    Live path: the shared synthesis driver retries with concrete lint/copy feedback; if the final
+    attempt still fails as a batch, individually-clean LLM sections are salvaged (still LLM prose,
+    never a borrow). Below the salvage minimum the field fails explicitly — the verbatim
+    ``fallback_history_sections`` / pool borrows are reserved for offline NO_LLM runs.
+    Returns ``(sections, used_source_ids, field_status)``.
+    """
+    if not history_pool:
+        return [], [], FIELD_STATUS_NO_EVIDENCE
     section_cap = max_history or MIN_HISTORY_SECTIONS
     lint_cap = max_history or MAX_HISTORY_SECTIONS
     # Source-aware passthrough corpus: reject history bodies that copy their evidence paragraph
-    # verbatim, from the LLM synth or either deterministic fallback (the licensing exposure). Active
-    # only in a live LLM run (None offline, where borrowing source prose is the accepted fallback).
+    # verbatim (the licensing exposure). None offline, where borrowing source prose is sanctioned.
     pool_snippets = passthrough_corpus(history_pool)
-    sections, used = synthesize_history_sections(history_pool, max_sections=section_cap)
-    sections = _apply_history_section_budget(_merge_consecutive_history_headings(sections))
-    # Capture why each stage is (or is not) accepted so an empty history is attributable.
-    synth_count = len(sections)
-    synth_lint = lint_history_sections(sections, max_sections=lint_cap)
-    synth_gate = _section_gate_reasons(sections, pool_snippets)
-    outcome = "llm"
-    salvaged_count: int | None = None
-    fallback_count: int | None = None
-    fallback_lint: list[str] = []
-    fallback_gate: list[str] = []
-    pool_count: int | None = None
-    if synth_lint or synth_gate:
-        # Per-section salvage: a single failing section must not discard the whole clean LLM batch
-        # and force the verbatim deterministic fallback (which the gate then rejects → empty). Keep
-        # the sections that individually pass BOTH lint and the source-aware prose gate — so a
-        # verbatim section is still dropped, preserving the anti-verbatim guarantee — and only fall
-        # to the deterministic fallback when fewer than the minimum survive. Mirrors the pool path.
-        kept = [
-            section
-            for section in sections
-            if not lint_history_sections([section], max_sections=1)
-            and not _sections_trip_gate([section], pool_snippets)
-        ]
-        if len(kept) >= MIN_HISTORY_SECTIONS:
-            sections = kept[:section_cap]
-            salvaged_count = len(sections)
-            outcome = "llm_salvaged"
-        else:
-            sections, used = fallback_history_sections(history_pool, max_sections=section_cap)
-            sections = _apply_history_section_budget(_merge_consecutive_history_headings(sections))
-            fallback_count = len(sections)
-            fallback_lint = lint_history_sections(sections, max_sections=lint_cap)
-            fallback_gate = _section_gate_reasons(sections, pool_snippets)
-            if fallback_lint or fallback_gate:
-                sections, used = [], []
-                outcome = "rejected"
-            else:
-                outcome = "deterministic_fallback"
-    if not sections:
-        pool_sections, pool_used = _history_sections_from_pool(
-            history_pool, evidence_rows=evidence_rows
+    status = FIELD_STATUS_OK
+
+    def _postprocess(raw_sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return _apply_history_section_budget(_merge_consecutive_history_headings(raw_sections))
+
+    def _batch_reasons(candidate_sections: list[dict[str, Any]]) -> list[str]:
+        reasons = list(lint_history_sections(candidate_sections, max_sections=lint_cap))
+        reasons.extend(_section_gate_reasons(candidate_sections, pool_snippets))
+        return reasons
+
+    if llm_synthesis_active():
+
+        def _call(reinforce: str) -> dict[str, Any]:
+            raw_sections, used_ids = synthesize_history_sections(
+                history_pool, max_sections=section_cap, reinforce=reinforce
+            )
+            return {"sections": _postprocess(raw_sections), "used": used_ids}
+
+        result = synthesize_with_validation(
+            call=_call,
+            extract_bodies=lambda payload: [
+                str(row.get("body", ""))
+                for row in (payload.get("sections") or [])
+                if isinstance(row, dict)
+            ],
+            validate=lambda payload: _batch_reasons(list(payload.get("sections") or [])),
+            # The driver's own copy check is redundant with _section_gate_reasons (which is
+            # source-aware per section); pass None so copy failures surface as gate reasons.
+            source_snippets=None,
+            label="history",
         )
-        if pool_sections:
-            kept_sections = [
+        sections = list(result.payload.get("sections") or [])
+        used = list(result.payload.get("used") or [])
+        outcome = "llm"
+        salvaged_count: int | None = None
+        if not result.ok:
+            # Per-section salvage: keep the individually-clean LLM sections (still synthesized
+            # prose) rather than discarding a mostly-good batch over one bad section.
+            kept = [
                 section
-                for section in pool_sections
+                for section in sections
+                if not lint_history_sections([section], max_sections=1)
+                and not _sections_trip_gate([section], pool_snippets)
+            ]
+            if len(kept) >= MIN_HISTORY_SECTIONS:
+                sections = kept[:section_cap]
+                used = list(result.payload.get("used") or [])
+                salvaged_count = len(sections)
+                outcome = "llm_salvaged"
+            else:
+                sections, used = [], []
+                outcome = "failed"
+                status = FIELD_STATUS_SYNTHESIS_FAILED
+        finalize_trace.record(
+            "history.finalize",
+            outcome=outcome,
+            gate_active=pool_snippets is not None,
+            attempts=result.attempts,
+            reject_reasons=result.reasons[:8],
+            llm_salvaged_count=salvaged_count,
+        )
+    else:
+        # Offline NO_LLM: the deterministic borrow ladder is the sanctioned path.
+        sections, used = synthesize_history_sections(history_pool, max_sections=section_cap)
+        sections = _postprocess(sections)
+        outcome = "no_llm"
+        if _batch_reasons(sections):
+            kept = [
+                section
+                for section in sections
                 if not lint_history_sections([section], max_sections=1)
             ]
-            candidate_sections = _apply_history_section_budget(
-                _merge_consecutive_history_headings(kept_sections or pool_sections)
+            if len(kept) >= MIN_HISTORY_SECTIONS:
+                sections = kept[:section_cap]
+                outcome = "no_llm_salvaged"
+            else:
+                sections, used = fallback_history_sections(history_pool, max_sections=section_cap)
+                sections = _postprocess(sections)
+                outcome = "no_llm_fallback"
+                if _batch_reasons(sections):
+                    sections, used = [], []
+                    outcome = "rejected"
+        if not sections:
+            pool_sections, pool_used = _history_sections_from_pool(
+                history_pool, evidence_rows=evidence_rows
             )
-            if not lint_history_sections(
-                candidate_sections, max_sections=lint_cap
-            ) and not _sections_trip_gate(candidate_sections, pool_snippets):
-                sections = candidate_sections[:section_cap]
-                used = pool_used
-                pool_count = len(sections)
-                outcome = "pool"
-    if not sections:
-        outcome = "empty"
-    finalize_trace.record(
-        "history.finalize",
-        outcome=outcome,
-        gate_active=pool_snippets is not None,
-        llm_section_count=synth_count,
-        llm_lint=synth_lint,
-        llm_gate=synth_gate,
-        llm_salvaged_count=salvaged_count,
-        fallback_section_count=fallback_count,
-        fallback_lint=fallback_lint,
-        fallback_gate=fallback_gate,
-        pool_section_count=pool_count,
-    )
+            if pool_sections:
+                kept_sections = [
+                    section
+                    for section in pool_sections
+                    if not lint_history_sections([section], max_sections=1)
+                ]
+                candidate_sections = _postprocess(kept_sections or pool_sections)
+                if not _batch_reasons(candidate_sections):
+                    sections = candidate_sections[:section_cap]
+                    used = pool_used
+                    outcome = "pool"
+        status = (
+            FIELD_STATUS_OFFLINE_FALLBACK if sections else FIELD_STATUS_SYNTHESIS_FAILED
+        )
+        finalize_trace.record(
+            "history.finalize",
+            outcome=outcome if sections else "empty",
+            gate_active=False,
+        )
     # Re-title bare era/TOC headings ("World of Warcraft", "Cataclysm") with thematic, body-derived
     # titles. Runs whichever path produced the bodies, so wiki-fallback sections still get LLM
     # headings; offline this is a no-op (deterministic label is kept).
@@ -317,7 +364,10 @@ def _finalize_history_sections(
         coverage_sink=coverage_sink,
         pointer_builder=coverage_pointer_builder,
     )
-    return sections, used
+    if sections and status == FIELD_STATUS_SYNTHESIS_FAILED:
+        # Coverage appended a deterministic bridge card to an otherwise-failed history.
+        status = FIELD_STATUS_OK if llm_synthesis_active() else FIELD_STATUS_OFFLINE_FALLBACK
+    return sections, used, status
 
 
 def _apply_history_coverage(
@@ -372,6 +422,17 @@ def _apply_history_coverage(
                 sections, used = retry_sections, retry_used
                 covered = retry_covered
                 missing = []
+    if missing and pool_snippets is not None:
+        # Live-path anti-borrow: a deterministic bridge body is built from claim texts, and
+        # sentence-level claims are verbatim source sentences. Never append a bridge card whose
+        # body reproduces the source; the gap stays recorded as uncovered in the coverage sink.
+        missing = [
+            unit
+            for unit in missing
+            if not _sections_trip_gate(
+                [{"heading": "bridge", "body": setup_bridge_body(unit)}], pool_snippets
+            )
+        ]
     if missing:
         sections, used, appended_ids = _append_setup_bridge_cards(
             sections, used, missing, pointer_builder=pointer_builder
@@ -586,51 +647,93 @@ def _finalize_faction_card(
     subregion_tokens: list[str],
     instance_name: str | None = None,
 ) -> tuple[dict[str, Any] | None, list[str], list[dict[str, Any]]]:
+    """Faction card: synthesize with validation-driven retries; failure drops the card.
+
+    Live path never borrows a source snippet — a candidate whose summary cannot pass validation
+    after retries is dropped (recorded in the finalize trace) rather than shipped as copy. The
+    offline NO_LLM ladder keeps the sanctioned deterministic borrow.
+    """
     pools_to_try = finalize_evidence_pools(candidate)
     if not pools_to_try:
         return None, [], []
 
-    for pool in pools_to_try:
-        summary, used = synthesize_faction_summary(
-            pool,
-            faction_name=candidate.name,
-            zone_name=zone_name,
-            max_words=40,
-            subregion_tokens=subregion_tokens,
-            instance_name=instance_name,
-        )
-        summary = ensure_sentence_terminator(summary)
-        if not lint_faction_summary(
-            summary, zone_name=zone_name, subregion_tokens=subregion_tokens
-        ) and not prose_gate_rejects(summary):
-            return (
-                {
-                    "id": candidate.faction_id,
-                    "name": candidate.name,
-                    "summary": summary,
-                    "wiki_url": candidate.wiki_url,
-                },
-                used,
-                pool,
+    def _reasons(summary: str, pool_snippets: list[str] | None) -> list[str]:
+        reasons = list(
+            lint_faction_summary(
+                summary,
+                zone_name=zone_name,
+                subregion_tokens=subregion_tokens,
+                faction_name=candidate.name,
             )
-        summary, used = fallback_faction_summary(
-            pool,
-            zone_name=zone_name,
-            subregion_tokens=subregion_tokens,
-            faction_name=candidate.name,
         )
-        summary = ensure_sentence_terminator(summary)
-        if not lint_faction_summary(
-            summary, zone_name=zone_name, subregion_tokens=subregion_tokens
-        ) and not prose_gate_rejects(summary):
+        reasons.extend(prose_gate_violations(summary, source_snippets=pool_snippets))
+        return reasons
+
+    def _card(summary: str) -> dict[str, Any]:
+        return {
+            "id": candidate.faction_id,
+            "name": candidate.name,
+            "summary": summary,
+            "wiki_url": candidate.wiki_url,
+        }
+
+    live = llm_synthesis_active()
+    for pool_index, pool in enumerate(pools_to_try):
+        pool_snippets = passthrough_corpus(pool)
+        if not live:
+            summary, used = synthesize_faction_summary(
+                pool,
+                faction_name=candidate.name,
+                zone_name=zone_name,
+                max_words=40,
+                subregion_tokens=subregion_tokens,
+                instance_name=instance_name,
+            )
+            summary = ensure_sentence_terminator(summary)
+            if summary and not _reasons(summary, pool_snippets):
+                return _card(summary), used, pool
+            summary, used = fallback_faction_summary(
+                pool,
+                zone_name=zone_name,
+                subregion_tokens=subregion_tokens,
+                faction_name=candidate.name,
+            )
+            summary = ensure_sentence_terminator(summary)
+            if summary and not _reasons(summary, pool_snippets):
+                return _card(summary), used, pool
+            continue
+
+        def _call(reinforce: str, pool: list[dict[str, Any]] = pool) -> dict[str, Any]:
+            summary, used = synthesize_faction_summary(
+                pool,
+                faction_name=candidate.name,
+                zone_name=zone_name,
+                max_words=40,
+                subregion_tokens=subregion_tokens,
+                instance_name=instance_name,
+                reinforce=reinforce,
+            )
+            return {"text": ensure_sentence_terminator(summary), "used": used}
+
+        def _validate(
+            payload: dict[str, Any], snippets: list[str] | None = pool_snippets
+        ) -> list[str]:
+            return _reasons(str(payload.get("text", "")), snippets)
+
+        result = synthesize_with_validation(
+            call=_call,
+            extract_bodies=lambda payload: [str(payload.get("text", ""))],
+            validate=_validate,
+            # Copy detection runs inside _reasons via the source-aware gate.
+            source_snippets=None,
+            label=f"faction.{candidate.faction_id}",
+            # Full retries on the primary pool; a single attempt on each rescue pool.
+            max_attempts=SYNTHESIS_MAX_ATTEMPTS if pool_index == 0 else 1,
+        )
+        if result.ok:
             return (
-                {
-                    "id": candidate.faction_id,
-                    "name": candidate.name,
-                    "summary": summary,
-                    "wiki_url": candidate.wiki_url,
-                },
-                used,
+                _card(str(result.payload.get("text", ""))),
+                list(result.payload.get("used", [])),
                 pool,
             )
     return None, [], []
@@ -718,50 +821,74 @@ def _finalize_location_card(
         return None, [], []
     reason_codes = _decision_reason_codes(candidate.location_id, location_decision_map)
 
-    for pool in pools_to_try:
-        summary, used = synthesize_location_summary(
-            pool,
-            location_name=candidate.name,
-            zone_name=zone_name,
-            max_words=50,
+    def _reasons(summary: str, pool_snippets: list[str] | None) -> list[str]:
+        reasons = list(
+            lint_location_summary(summary, zone_name=zone_name, location_name=candidate.name)
         )
-        summary = ensure_location_sentence_terminator(summary)
-        if not lint_location_summary(
-            summary, zone_name=zone_name, location_name=candidate.name
-        ) and not prose_gate_rejects(summary):
-            return (
-                _build_location_card_body(
-                    candidate,
-                    summary=summary,
-                    pool=pool,
-                    zone_name=zone_name,
-                    reason_codes=reason_codes,
-                ),
-                used,
+        reasons.extend(prose_gate_violations(summary, source_snippets=pool_snippets))
+        return reasons
+
+    def _built(
+        summary: str, pool: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        return _build_location_card_body(
+            candidate,
+            summary=summary,
+            pool=pool,
+            zone_name=zone_name,
+            reason_codes=reason_codes,
+        )
+
+    live = llm_synthesis_active()
+    for pool_index, pool in enumerate(pools_to_try):
+        pool_snippets = passthrough_corpus(pool)
+        if not live:
+            summary, used = synthesize_location_summary(
                 pool,
+                location_name=candidate.name,
+                zone_name=zone_name,
+                max_words=50,
             )
-        summary, used = fallback_location_summary(
-            pool,
-            zone_name=zone_name,
-            location_name=candidate.name,
+            summary = ensure_location_sentence_terminator(summary)
+            if summary and not _reasons(summary, pool_snippets):
+                return _built(summary, pool), used, pool
+            summary, used = fallback_location_summary(
+                pool,
+                zone_name=zone_name,
+                location_name=candidate.name,
+            )
+            summary = ensure_location_sentence_terminator(summary)
+            if summary and not _reasons(summary, pool_snippets):
+                return _built(summary, pool), used, pool
+            continue
+
+        def _call(reinforce: str, pool: list[dict[str, Any]] = pool) -> dict[str, Any]:
+            summary, used = synthesize_location_summary(
+                pool,
+                location_name=candidate.name,
+                zone_name=zone_name,
+                max_words=50,
+                reinforce=reinforce,
+            )
+            return {"text": ensure_location_sentence_terminator(summary), "used": used}
+
+        def _validate(
+            payload: dict[str, Any], snippets: list[str] | None = pool_snippets
+        ) -> list[str]:
+            return _reasons(str(payload.get("text", "")), snippets)
+
+        result = synthesize_with_validation(
+            call=_call,
+            extract_bodies=lambda payload: [str(payload.get("text", ""))],
+            validate=_validate,
+            source_snippets=None,
+            label=f"location.{candidate.location_id}",
+            max_attempts=SYNTHESIS_MAX_ATTEMPTS if pool_index == 0 else 1,
         )
-        summary = ensure_location_sentence_terminator(summary)
-        if (
-            summary
-            and not lint_location_summary(
-                summary, zone_name=zone_name, location_name=candidate.name
-            )
-            and not prose_gate_rejects(summary)
-        ):
+        if result.ok:
             return (
-                _build_location_card_body(
-                    candidate,
-                    summary=summary,
-                    pool=pool,
-                    zone_name=zone_name,
-                    reason_codes=reason_codes,
-                ),
-                used,
+                _built(str(result.payload.get("text", "")), pool),
+                list(result.payload.get("used", [])),
                 pool,
             )
     return None, [], []

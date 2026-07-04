@@ -27,8 +27,41 @@ from pipeline.generate.draft.instance_lint import (
 from pipeline.validate.types import ValidationIssue, ValidationSeverity
 
 
-def _non_empty_text(value: str) -> bool:
-    return bool(value.strip())
+def _non_empty_text(value: str | None) -> bool:
+    return bool(value and value.strip())
+
+
+# ``field_status`` values that record an explicit, audited synthesis failure. A null prose field
+# carrying one of these is a *recorded* outcome (WARN, the section is omitted downstream), not a
+# structural contract violation — the failure contract from the prose-synthesis refactor.
+_RECORDED_FAILURE_STATUSES = frozenset({"synthesis_failed", "no_evidence"})
+
+
+def _required_section_issue(
+    *,
+    section_name: str,
+    value: str | None,
+    field_status: dict[str, str],
+    path: str,
+    code: str = "structure.required_section_empty",
+) -> ValidationIssue | None:
+    """Issue for an empty/null required prose section, honoring the field_status contract."""
+    if _non_empty_text(value):
+        return None
+    recorded = field_status.get(section_name, "")
+    if recorded in _RECORDED_FAILURE_STATUSES:
+        return ValidationIssue(
+            code="structure.section_synthesis_failed",
+            message=f"{section_name} is null with recorded field_status '{recorded}'",
+            severity=ValidationSeverity.WARN,
+            path=path,
+        )
+    return ValidationIssue(
+        code=code,
+        message=f"{section_name} is required and must not be empty",
+        severity=ValidationSeverity.HARD_FAIL,
+        path=path,
+    )
 
 
 def _validate_enriched_glossary_refs(
@@ -365,33 +398,35 @@ def _validate_zone_page(
     validation_context: dict[str, Any] | None = None,
 ) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
-    if not _non_empty_text(zone_page.at_a_glance):
-        issues.append(
-            ValidationIssue(
-                code="structure.required_section_empty",
-                message="at_a_glance is required and must not be empty",
-                severity=ValidationSeverity.HARD_FAIL,
-                path="$.at_a_glance",
-            )
+    for section_name in ("at_a_glance", "currently"):
+        issue = _required_section_issue(
+            section_name=section_name,
+            value=getattr(zone_page, section_name),
+            field_status=zone_page.field_status,
+            path=f"$.{section_name}",
         )
-    if not _non_empty_text(zone_page.currently):
-        issues.append(
-            ValidationIssue(
-                code="structure.required_section_empty",
-                message="currently is required and must not be empty",
-                severity=ValidationSeverity.HARD_FAIL,
-                path="$.currently",
-            )
-        )
+        if issue:
+            issues.append(issue)
     if not zone_page.history_sections:
-        issues.append(
-            ValidationIssue(
-                code="structure.required_section_empty",
-                message="history_sections must include at least one section",
-                severity=ValidationSeverity.HARD_FAIL,
-                path="$.history_sections",
+        recorded = zone_page.field_status.get("history", "")
+        if recorded in _RECORDED_FAILURE_STATUSES:
+            issues.append(
+                ValidationIssue(
+                    code="structure.section_synthesis_failed",
+                    message=f"history_sections is empty with recorded field_status '{recorded}'",
+                    severity=ValidationSeverity.WARN,
+                    path="$.history_sections",
+                )
             )
-        )
+        else:
+            issues.append(
+                ValidationIssue(
+                    code="structure.required_section_empty",
+                    message="history_sections must include at least one section",
+                    severity=ValidationSeverity.HARD_FAIL,
+                    path="$.history_sections",
+                )
+            )
     for index, card in enumerate(zone_page.major_questlines):
         if card.include_decision != IncludeDecision.INCLUDE:
             issues.append(
@@ -402,7 +437,7 @@ def _validate_zone_page(
                     path=f"$.major_questlines[{index}].include_decision",
                 )
             )
-    currently_lower = zone_page.currently.lower()
+    currently_lower = (zone_page.currently or "").lower()
     if any(
         marker in currently_lower
         for marker in (
@@ -422,7 +457,7 @@ def _validate_zone_page(
             )
         )
     history_blob = " ".join(section.body for section in zone_page.history_sections)
-    overlap = token_jaccard(zone_page.currently, history_blob)
+    overlap = token_jaccard(zone_page.currently or "", history_blob)
     if overlap >= 0.6:
         issues.append(
             ValidationIssue(
@@ -508,34 +543,36 @@ def _validate_zone_page(
 
 def _validate_instance_page(instance_page: InstancePage) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
-    if not _non_empty_text(instance_page.at_a_glance):
-        issues.append(
-            ValidationIssue(
-                code="structure.required_section_empty",
-                message="at_a_glance is required and must not be empty",
-                severity=ValidationSeverity.HARD_FAIL,
-                path="$.at_a_glance",
-            )
+    for section_name in ("at_a_glance", "overview"):
+        issue = _required_section_issue(
+            section_name=section_name,
+            value=getattr(instance_page, section_name),
+            field_status=instance_page.field_status,
+            path=f"$.{section_name}",
         )
-    if not _non_empty_text(instance_page.overview):
-        issues.append(
-            ValidationIssue(
-                code="structure.required_section_empty",
-                message="overview is required and must not be empty",
-                severity=ValidationSeverity.HARD_FAIL,
-                path="$.overview",
-            )
-        )
+        if issue:
+            issues.append(issue)
     if not instance_page.history_sections:
-        issues.append(
-            ValidationIssue(
-                code="structure.required_section_empty",
-                message="history_sections must include at least one section",
-                severity=ValidationSeverity.HARD_FAIL,
-                path="$.history_sections",
+        recorded = instance_page.field_status.get("history", "")
+        if recorded in _RECORDED_FAILURE_STATUSES:
+            issues.append(
+                ValidationIssue(
+                    code="structure.section_synthesis_failed",
+                    message=f"history_sections is empty with recorded field_status '{recorded}'",
+                    severity=ValidationSeverity.WARN,
+                    path="$.history_sections",
+                )
             )
-        )
-    overview = instance_page.overview.strip()
+        else:
+            issues.append(
+                ValidationIssue(
+                    code="structure.required_section_empty",
+                    message="history_sections must include at least one section",
+                    severity=ValidationSeverity.HARD_FAIL,
+                    path="$.history_sections",
+                )
+            )
+    overview = (instance_page.overview or "").strip()
     if overview and lint_passthrough_fragment(overview):
         issues.append(
             ValidationIssue(

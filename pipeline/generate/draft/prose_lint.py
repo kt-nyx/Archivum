@@ -192,6 +192,30 @@ def has_currently_meta(text: str) -> bool:
     return bool(_CURRENTLY_META_RE.search(text))
 
 
+# Category detector for the self-negating non-answer (RC6): a "summary" whose sentence asserts the
+# ABSENCE of evidenced content ("no zone-specific role is evidenced", "their motive is not stated")
+# instead of stating content. Detected as negation + an epistemic/evidence verb in the same
+# sentence — the category, not an enumeration of phrasings.
+_NON_ANSWER_NEGATION_RE = re.compile(r"\b(no|not|none|nothing|never|without|neither)\b", re.IGNORECASE)
+_NON_ANSWER_EPISTEMIC_RE = re.compile(
+    r"\b(evidence[ds]?|stated|specified|mentioned|described|documented|attested|recorded|"
+    r"indicated|confirmed|established|noted|detailed|provided|available|given)\b",
+    re.IGNORECASE,
+)
+
+
+def is_self_negating_non_answer(text: str) -> bool:
+    """True when any sentence asserts the absence of content rather than content.
+
+    A synthesis result in this category is a non-answer regardless of phrasing; callers route it
+    to the synthesis driver's retry → explicit failure, never publish it as a summary.
+    """
+    for sentence in split_sentences(text):
+        if _NON_ANSWER_NEGATION_RE.search(sentence) and _NON_ANSWER_EPISTEMIC_RE.search(sentence):
+            return True
+    return False
+
+
 def has_player_directive(text: str) -> bool:
     """True when the text reads as a player-facing quest directive rather than in-universe prose."""
     cleaned = text.strip()
@@ -247,6 +271,8 @@ def lint_at_a_glance(text: str, *, zone_name: str = "") -> list[str]:
     past, present = tense_marker_counts(text)
     if words >= _SHORT_TEXT_PRESENT_CARVEOUT_WORDS and past > present:
         issues.append("at_a_glance reads as past-tense narration")
+    if is_self_negating_non_answer(text):
+        issues.append("at_a_glance asserts absence of content instead of describing the subject")
     issues.extend(lint_adp_date_style(text))
     return issues
 

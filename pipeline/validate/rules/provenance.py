@@ -361,6 +361,10 @@ def _validate_zone_page(
         "currently": zone_page.currently,
     }
     for section_name, section_text in sections.items():
+        if not section_text:
+            # Null/failed section (recorded in field_status): it renders nothing, so it
+            # requires no provenance pointers.
+            continue
         pointers = getattr(zone_page.provenance, section_name)
         min_count = _required_pointer_count(_word_count(section_text))
         issues.extend(
@@ -542,6 +546,9 @@ def _validate_instance_page(
         "story_context": instance_page.overview,
     }
     for section_name, section_text in sections.items():
+        if not section_text:
+            # Null/failed section (recorded in field_status): renders nothing, needs no pointers.
+            continue
         pointers = getattr(instance_page.provenance, section_name)
         min_count = _required_pointer_count(_word_count(section_text))
         issues.extend(

@@ -49,6 +49,19 @@ _PATCH_NOTES_RE = re.compile(
     r"\b(patch|hotfix|achievement|dungeon journal|player.?guide|walkthrough)\b",
     re.IGNORECASE,
 )
+# Fix 7: narrow purple-prose shapes that signal an over-ornamented key-character summary. Kept
+# deliberately specific (ornamental epithet/metaphor constructions) so grounded prose is not flagged.
+_PURPLE_PROSE_RE = re.compile(
+    r"\b\w+-touched\s+(?:daughter|son|child|scion)\b"
+    r"|\bthe\s+afterlife\s+of\s+a\b"
+    r"|\bbartered\s+away\s+(?:its|their|her|his)\s+soul\b"
+    r"|\bcounted\s+among\s+the\b",
+    re.IGNORECASE,
+)
+
+
+def has_purple_prose(text: str) -> bool:
+    return bool(_PURPLE_PROSE_RE.search(text.strip()))
 
 # Passthrough-fragment shapes (complementary to similarity checks): a copied mid-sentence
 # source fragment, an unterminated clause, or list-bullet residue.
@@ -146,6 +159,8 @@ def lint_key_character_summary(
         issues.append("key enemy summary reads like generic stub")
     if _HOLLOW_SUMMARY_RE.search(cleaned):
         issues.append("key enemy summary reads as hollow/non-notable characterization")
+    if has_purple_prose(cleaned):
+        issues.append("key enemy summary uses ornate/purple phrasing")
     if boss_name and boss_name.lower() not in cleaned.lower():
         issues.append("key enemy summary lacks boss name anchor")
     if (
@@ -155,6 +170,48 @@ def lint_key_character_summary(
     ):
         issues.append("key enemy summary lacks instance context")
     issues.extend(lint_adp_date_style(cleaned))
+    return issues
+
+
+# Fix 4: in-instance encounter-outcome spoiler shapes. The claim route already drops
+# active_storyline_outcome / spoiler-unsafe claim views, so this is a prose-level backstop for
+# outcomes the synthesizer *infers* (e.g. from a demoted lead) — a character eliminating a fellow
+# boss of the same instance, or the "counted among the dead" reveal. Naming an outside force
+# (e.g. "destroyed by the Alliance at Andorhal") is legitimate backstory and is NOT flagged: the
+# gate fires only when an outcome verb co-occurs with another *cast member's* name.
+_OUTCOME_VERB_RE = re.compile(
+    r"\b(?:kill(?:s|ed)?|slay(?:s|ed)?|slain|defeat(?:s|ed)?|destroy(?:s|ed)?"
+    r"|vanquish(?:es|ed)?|subdu(?:e|es|ed)|eliminat(?:e|es|ed))\b",
+    re.IGNORECASE,
+)
+_DEAD_TARGET_RE = re.compile(r"\bcounted among the dead\b|\bamong the dead\b", re.IGNORECASE)
+
+
+def lint_key_character_spoilers(
+    text: str,
+    *,
+    self_name: str = "",
+    other_cast_names: Iterable[str] = (),
+) -> list[str]:
+    """Flag a key-character summary that reveals an in-instance encounter outcome (Fix 4)."""
+    issues: list[str] = []
+    cleaned = text.strip()
+    if not cleaned:
+        return issues
+    if _DEAD_TARGET_RE.search(cleaned):
+        issues.append("key character summary reveals an in-instance elimination outcome")
+        return issues
+    if not _OUTCOME_VERB_RE.search(cleaned):
+        return issues
+    lowered = cleaned.lower()
+    self_key = self_name.strip().lower()
+    for name in other_cast_names:
+        key = str(name).strip().lower()
+        if key and key != self_key and key in lowered:
+            issues.append(
+                f"key character summary pairs an encounter outcome with cast member {name!r}"
+            )
+            break
     return issues
 
 

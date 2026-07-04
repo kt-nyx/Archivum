@@ -127,9 +127,18 @@ def test_scoped_evidence_pools_exclude_auxiliary_other_from_prose_fields() -> No
 
     glance_items = sum(len(row.get("evidence_items", [])) for row in glance_packs)
 
-    assert glance_items <= 50
+    # RC3 essence contract: the leads plus exactly one origin-arc history paragraph — never the
+    # full 40-paragraph event chain (which floods the essence field with event narration).
+    assert glance_items == 3
 
-    assert glance_items >= 42
+    glance_history_items = [
+        item
+        for row in glance_packs
+        if (row.get("build_meta") or {}).get("section_role") == "history"
+        for item in row.get("evidence_items", [])
+    ]
+
+    assert len(glance_history_items) == 1
 
     assert all((row.get("build_meta") or {}).get("source_kind") == "seed" for row in glance_packs)
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from pipeline.ai.config import load_ai_settings
@@ -23,7 +24,7 @@ from pipeline.generate.draft.compendium_voice import (
     instance_system_prompt,
     zone_system_prompt,
 )
-from pipeline.generate.draft.faction_lint import trim_faction_summary
+from pipeline.generate.draft.faction_lint import strip_faction_label_prefix, trim_faction_summary
 from pipeline.generate.draft.llm import llm_json_with_retry
 from pipeline.generate.draft.prose_election import (
     history_heading_from_role,
@@ -33,7 +34,6 @@ from pipeline.generate.draft.prose_gate import detect_source_passthrough
 from pipeline.generate.draft.prose_lint import (
     MAX_HISTORY_SECTIONS,
     has_present_state_framing,
-    lint_history_sections,
     past_marker_score,
     trim_words,
     word_count,
@@ -58,11 +58,133 @@ def _present_state_rank_key(row: dict[str, Any]) -> tuple[int, int]:
 # the kept window holds the claims that matter.
 KEY_CHARACTER_EVIDENCE_ITEM_LIMIT = 14
 
+# Upper bound on beats shown to the salience ranker, so its prompt stays small on figures with a
+# large route-safe pool (Lilian Voss routes dozens of atomized biography claims). The deterministic
+# era-balanced selection trims to this before the LLM ranks within it.
+KEY_CHARACTER_RANKER_INPUT_LIMIT = 28
+
+
+def _wiki_first_no_llm() -> bool:
+    return os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {"1", "true", "yes"}
+
+
+def select_salient_key_character_beats_llm(
+    items: list[dict[str, Any]],
+    *,
+    boss_name: str,
+    instance_name: str,
+    limit: int = KEY_CHARACTER_EVIDENCE_ITEM_LIMIT,
+    reference_arc: str = "",
+) -> list[dict[str, Any]] | None:
+    """Pick the most significant biography beats to fit the evidence budget (option B).
+
+    Wiki biographies atomize into many valid-but-uneven micro-claims. Rather than let a mechanical
+    cap keep whichever beats sort first, this asks the model to select the beats that most define who
+    the character is and why they are present here, dropping low-significance detail (minor
+    acquaintances, training minutiae, one-off errands). It only *selects* from the already
+    route-filtered pool — it introduces no new evidence and cannot resurface filtered content.
+
+    ``reference_arc`` (the Adventure Guide blurb) names the arc points the game itself treats as
+    defining; when present it steers the ranker toward beats that develop those points, but it is
+    only a salience hint — it never enters the kept beats or the card text.
+
+    Returns the selected subset (same dict objects; the caller orders them), or ``None`` when the LLM
+    is unavailable, errors, or the pool already fits — so the caller falls back to deterministic
+    selection. Paragraph-fallback pools (no claim views) also return ``None``.
+    """
+    claim_views = [item for item in items if isinstance(item, dict) and item.get("is_claim_view")]
+    if limit <= 0 or len(items) <= limit or not claim_views:
+        return None
+    settings = load_ai_settings()
+    if not settings.openai_ready or _wiki_first_no_llm():
+        return None
+
+    indexed = list(enumerate(items))
+    beat_lines = "\n".join(
+        f"[{index}] ({view.get('raw_section_role') or view.get('section_role') or 'unknown'}) "
+        f"{clean_wiki_snippet(str(view.get('claim_text') or view.get('snippet', '')))}"
+        for index, view in indexed
+    )
+    system_prompt = (
+        "You curate a compact lore-compendium card for a single character a player is about "
+        "to encounter in a World of Warcraft dungeon or raid. From the numbered biography "
+        "beats, select the MOST significant ones that together convey who this character is "
+        "and why they are present here, within a tight word budget.\n"
+        "Keep: origin and defining nature; pivotal transformations (death, being raised, "
+        "corruption, redemption); core motivation and allegiance; the turning points of "
+        "their arc; and the beat that explains their presence in this place.\n"
+        "Drop: minor acquaintances, routine training or study details, one-off errands, "
+        "incidental appearances, and granular play-by-play that does not change who they "
+        "are.\n"
+        "Prefer coverage of the whole arc over many beats from a single period. Return only "
+        f"the ids to keep, most important first, at most {limit}."
+    )
+    user_prompt = f"Character: {boss_name}\nInstance: {instance_name}\n\nBeats:\n{beat_lines}"
+    if reference_arc.strip():
+        user_prompt += (
+            "\n\nThe game's own account emphasizes these arc points (use only to judge which beats "
+            f"matter; do not add them as beats):\n{reference_arc.strip()}"
+        )
+    try:
+        result = llm_json_with_retry(
+            required_keys=("keep_ids",),
+            response_json_schema={
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["keep_ids"],
+                "properties": {
+                    "keep_ids": {"type": "array", "items": {"type": "integer"}},
+                },
+            },
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            response_schema_name="wiki_first_key_character_beats",
+            substep="wiki_first_key_character_beats",
+        )
+    except Exception:  # pragma: no cover - provider failures fall back to deterministic selection
+        return None
+
+    keep_ids: list[int] = []
+    for value in result.get("keep_ids", []):
+        try:
+            keep_ids.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    valid = {index for index, _ in indexed}
+    # Dedupe valid ids, preserving the model's importance order, then cap to the budget.
+    keep_set: set[int] = set()
+    for index in keep_ids:
+        if index in valid and index not in keep_set:
+            keep_set.add(index)
+            if len(keep_set) >= limit:
+                break
+    if not keep_set:
+        return None
+    return [item for index, item in indexed if index in keep_set]
+
 
 def _format_evidence_block(items: list[dict[str, Any]], *, max_items: int = 8) -> str:
+    """Format an evidence pool for a synthesis prompt.
+
+    When a claim view carries ``_route_safe_excerpt`` (Fix 1), the atomized claims of a source
+    paragraph are collapsed into that one coherent, spoiler-filtered excerpt — so the model reads
+    connected prose instead of fragments, and ``max_items`` then counts paragraphs, not fragments.
+    Items without a reconstructed excerpt (offline/paragraph pools) format one line each as before.
+    """
     lines: list[str] = []
-    for index, item in enumerate(items[:max_items], start=1):
-        snippet = clean_wiki_snippet(str(item.get("snippet", "")))
+    seen_paragraphs: set[str] = set()
+    for index, item in enumerate(items, start=1):
+        if len(lines) >= max_items:
+            break
+        canonical_id = str(item.get("canonical_evidence_id", "")).strip()
+        route_excerpt = str(item.get("_route_safe_excerpt", "")).strip()
+        if route_excerpt and canonical_id:
+            if canonical_id in seen_paragraphs:
+                continue
+            seen_paragraphs.add(canonical_id)
+            snippet = clean_wiki_snippet(route_excerpt)
+        else:
+            snippet = clean_wiki_snippet(str(item.get("snippet", "")))
         if not snippet:
             continue
         source_id = str(item.get("source_id", f"ev-{index}"))
@@ -132,79 +254,115 @@ def passthrough_corpus(items: list[dict[str, Any]]) -> list[str] | None:
     return [str(item.get("snippet", "")) for item in items]
 
 
-def enforce_non_passthrough(
-    result: dict[str, Any],
+# One initial synthesis attempt + up to two corrective retries. This is the single owner of
+# "how many content-level attempts a prose field gets" (JSON/schema retries live inside
+# ``llm_json_with_retry`` per call). Bounded so a stubborn field costs at most 3 LLM calls.
+SYNTHESIS_MAX_ATTEMPTS = 3
+
+# Failure-status vocabulary for the per-field ``field_status`` map on draft pages.
+FIELD_STATUS_OK = "ok"
+FIELD_STATUS_SYNTHESIS_FAILED = "synthesis_failed"
+FIELD_STATUS_NO_EVIDENCE = "no_evidence"
+FIELD_STATUS_OFFLINE_FALLBACK = "offline_fallback"
+
+_COPY_REASON = "near-verbatim copy of source evidence"
+_EMPTY_REASON = "empty synthesis output"
+
+
+@dataclass(frozen=True)
+class SynthesisAttemptResult:
+    """Outcome of the shared synthesize→validate→retry loop.
+
+    ``payload`` is the best attempt's raw payload even on failure, so field-specific salvage
+    (e.g. keeping individually-clean history sections) can inspect it. ``reasons`` are the best
+    attempt's outstanding validation failures (empty when ``ok``).
+    """
+
+    ok: bool
+    payload: dict[str, Any]
+    reasons: list[str]
+    attempts: int
+
+
+def synthesize_with_validation(
     *,
     call: Callable[[str], dict[str, Any]],
     extract_bodies: Callable[[dict[str, Any]], list[str]],
-    source_snippets: list[str],
+    validate: Callable[[dict[str, Any]], list[str]] | None = None,
+    source_snippets: list[str] | None = None,
     label: str = "",
-    lint_reasons: Callable[[dict[str, Any]], list[str]] | None = None,
-) -> dict[str, Any]:
-    """Re-prompt once with corrective feedback when the first synthesis attempt is sub-par.
+    max_attempts: int = SYNTHESIS_MAX_ATTEMPTS,
+) -> SynthesisAttemptResult:
+    """Shared synthesis contract: synthesize → validate → re-prompt with reasons → explicit failure.
 
-    ``call(reinforce)`` runs one synthesis attempt; ``reinforce`` is a feedback string appended to
-    the task ("" for the first attempt). Two failure modes trigger the one retry:
+    ``call(reinforce)`` runs one synthesis attempt ("" for the first); each retry's ``reinforce``
+    carries the previous attempt's concrete failure reasons (:data:`PARAPHRASE_REINFORCE` for
+    copying, :func:`lint_reinforce` for editorial failures). An attempt passes only when it is
+    non-empty, copies nothing from ``source_snippets`` (contiguous-run check via
+    :func:`detect_source_passthrough`; pass ``None`` to disable, e.g. offline), and ``validate``
+    returns no reasons.
 
-    * **Copying** — a body reproduces the source (:func:`detect_source_passthrough`, contiguous-run
-      copies, not just set overlap). Feedback: :data:`PARAPHRASE_REINFORCE`.
-    * **Lint** — when ``lint_reasons`` is supplied, the first attempt failing an editorial check
-      (e.g. a history section that slipped into present tense) feeds those reasons back via
-      :func:`lint_reinforce`. This fixes-and-keeps the section at the source instead of letting the
-      finalize layer drop it.
-
-    The retry runs at most once (bounded cost). The *better* of the two attempts is kept — fewer
-    combined problems (copies + lint hits) wins; a tie keeps the original. If both attempts are still
-    flawed, the caller's finalize-level gate/salvage handles the residue gracefully rather than this
-    raising and aborting the draft stage.
+    On exhaustion this returns an explicit failure — it never borrows source prose or substitutes
+    a template. Callers map failure to the page's ``field_status`` sentinel (the field becomes
+    ``null``); the deterministic borrow paths are reserved for offline NO_LLM runs where no LLM
+    exists to paraphrase.
     """
 
-    def _copies(payload: dict[str, Any]) -> bool:
-        return bool(source_snippets) and any(
-            body and detect_source_passthrough(body, source_snippets)
-            for body in extract_bodies(payload)
-        )
+    def _reasons_for(payload: dict[str, Any]) -> tuple[list[str], bool]:
+        bodies = [body for body in extract_bodies(payload)]
+        reasons: list[str] = []
+        copied = False
+        if not any(str(body).strip() for body in bodies):
+            reasons.append(_EMPTY_REASON)
+        elif source_snippets:
+            copied = any(
+                body and detect_source_passthrough(body, source_snippets) for body in bodies
+            )
+            if copied:
+                reasons.append(_COPY_REASON)
+        if validate is not None:
+            reasons.extend(validate(payload))
+        return reasons, copied
 
-    def _lint(payload: dict[str, Any]) -> list[str]:
-        return lint_reasons(payload) if lint_reasons else []
-
-    first_copied = _copies(result)
-    first_lint = _lint(result)
-    if not first_copied and not first_lint:
-        finalize_trace.record(
-            f"{label}.synth_guard",
-            first_attempt_copied=False,
-            first_attempt_lint=[],
-            retried=False,
-        )
-        return result
-
+    best_payload: dict[str, Any] = {}
+    best_reasons: list[str] | None = None
     feedback = ""
-    if first_copied:
-        feedback += PARAPHRASE_REINFORCE
-    if first_lint:
-        feedback += lint_reinforce(first_lint)
-    retried = call(feedback)
-    retry_copied = _copies(retried)
-    retry_lint = _lint(retried)
-    # Keep the better attempt: fewer combined problems wins, tie keeps the original (no needless churn).
-    retry_score = int(retry_copied) + len(retry_lint)
-    first_score = int(first_copied) + len(first_lint)
-    chosen = retried if retry_score < first_score else result
+    attempts = 0
+    for attempt in range(1, max(1, max_attempts) + 1):
+        attempts = attempt
+        payload = call(feedback)
+        reasons, copied = _reasons_for(payload)
+        if not reasons:
+            finalize_trace.record(
+                f"{label}.synth_guard",
+                outcome="ok",
+                attempts=attempt,
+            )
+            return SynthesisAttemptResult(True, payload, [], attempt)
+        if best_reasons is None or len(reasons) < len(best_reasons):
+            best_payload, best_reasons = payload, reasons
+        feedback = ""
+        if copied:
+            feedback += PARAPHRASE_REINFORCE
+        lint_only = [reason for reason in reasons if reason != _COPY_REASON]
+        if lint_only:
+            feedback += lint_reinforce(lint_only)
     finalize_trace.record(
         f"{label}.synth_guard",
-        first_attempt_copied=first_copied,
-        first_attempt_lint=first_lint,
-        retried=True,
-        retry_still_copied=retry_copied,
-        retry_lint=retry_lint,
-        kept_retry=chosen is retried,
+        outcome="failed",
+        attempts=attempts,
+        reasons=(best_reasons or [])[:8],
     )
-    return chosen
+    return SynthesisAttemptResult(False, best_payload, best_reasons or [], attempts)
 
 
 def synthesize_at_a_glance(
-    items: list[dict[str, Any]], *, max_words: int = 45, subject: str | None = None
+    items: list[dict[str, Any]],
+    *,
+    max_words: int = 45,
+    subject: str | None = None,
+    reference_framing: str = "",
+    reinforce: str = "",
 ) -> tuple[str, list[str]]:
     if not items:
         return "", []
@@ -227,7 +385,8 @@ def synthesize_at_a_glance(
                 f"evidence snippets. Maximum {max_words} words, in one or two short sentences with "
                 "plain, concrete language and few adjectives. Name what the place is and why it "
                 "matters; do not list bosses, factions, or wings. No extrapolation."
-            ),
+            )
+            + reinforce,
         )
     else:
         system_prompt = zone_system_prompt(
@@ -241,7 +400,16 @@ def synthesize_at_a_glance(
                 "towns, keeps, or landmarks; that detail belongs in other fields. You may reference "
                 "the force whose legacy haunts the land (e.g. 'the Scourge') only as atmosphere, "
                 "never as an actor acting now. No patch/reputation meta. No extrapolation."
-            ),
+            )
+            + reinforce,
+        )
+    at_a_glance_user_prompt = f"Evidence:\n{_format_evidence_block(prepared, max_items=12)}"
+    if subject and reference_framing.strip():
+        # Tone reference only (the game's intro for this place); never copied, and the voice already
+        # bars naming factions/leaders here, so it informs register, not content.
+        at_a_glance_user_prompt += (
+            "\n\nReference (tone only — do not copy or name any factions/characters from it):\n"
+            f"{reference_framing.strip()}"
         )
     result = llm_json_with_retry(
         required_keys=("summary", "used_evidence_ids"),
@@ -255,21 +423,19 @@ def synthesize_at_a_glance(
             },
         },
         system_prompt=system_prompt,
-        user_prompt=f"Evidence:\n{_format_evidence_block(prepared, max_items=12)}",
+        user_prompt=at_a_glance_user_prompt,
         response_schema_name="wiki_first_at_a_glance",
         substep="wiki_first_at_a_glance",
     )
     summary = trim_words(clean_wiki_snippet(str(result.get("summary", ""))), max_words)
     used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
-    if not summary:
-        best = max(prepared, key=_present_state_rank_key)
-        summary = trim_words(clean_wiki_snippet(str(best.get("snippet", ""))), max_words)
-        used = [str(best.get("source_id", ""))]
+    # Empty result = failed attempt; the finalize-level synthesis driver retries or fails
+    # explicitly. Never borrow a source snippet on the live path.
     return summary, used
 
 
 def synthesize_currently(
-    items: list[dict[str, Any]], *, max_words: int = 120
+    items: list[dict[str, Any]], *, max_words: int = 120, reinforce: str = ""
 ) -> tuple[str, list[str]]:
     if not items:
         return "", []
@@ -303,7 +469,8 @@ def synthesize_currently(
                 "generic 'Horde'; 'Scarlet Crusade', not 'humans'). "
                 "Do not write quest walkthrough steps, reputation/achievement meta, adjacent-zone geography hubs, "
                 "or out-of-universe player instructions."
-            ),
+            )
+            + reinforce,
         ),
         user_prompt=f"Evidence:\n{_format_evidence_block(items)}",
         response_schema_name="wiki_first_currently",
@@ -311,10 +478,7 @@ def synthesize_currently(
     )
     summary = trim_words(clean_wiki_snippet(str(result.get("summary", ""))), max_words)
     used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
-    if not summary:
-        best = max(items, key=lambda row: word_count(str(row.get("snippet", ""))))
-        summary = trim_words(clean_wiki_snippet(str(best.get("snippet", ""))), max_words)
-        used = [str(best.get("source_id", ""))]
+    # Empty result = failed attempt; the finalize-level driver retries or fails explicitly.
     return summary, used
 
 
@@ -323,6 +487,7 @@ def synthesize_history_sections(
     *,
     max_sections: int = MAX_HISTORY_SECTIONS,
     required_event_texts: list[str] | None = None,
+    reinforce: str = "",
 ) -> tuple[list[dict[str, Any]], list[str]]:
     if not items:
         return [], []
@@ -411,24 +576,7 @@ def synthesize_history_sections(
             substep="wiki_first_history",
         )
 
-    def _history_lint(payload: dict[str, Any]) -> list[str]:
-        rows = [
-            row for row in (payload.get("sections") or []) if isinstance(row, dict)
-        ][:max_sections]
-        return lint_history_sections(rows, max_sections=max_sections)
-
-    result = enforce_non_passthrough(
-        _call(""),
-        call=_call,
-        extract_bodies=lambda payload: [
-            str(row.get("body", ""))
-            for row in (payload.get("sections") or [])
-            if isinstance(row, dict)
-        ],
-        source_snippets=_evidence_snippets(items),
-        label="history",
-        lint_reasons=_history_lint,
-    )
+    result = _call(reinforce)
     sections_out: list[dict[str, Any]] = []
     raw_sections = result.get("sections", [])
     if isinstance(raw_sections, list):
@@ -440,24 +588,13 @@ def synthesize_history_sections(
             if heading and body:
                 sections_out.append({"heading": heading, "body": body, "source_refs": []})
     used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
-    if not sections_out:
-        # The LLM returned no usable sections; borrow verbatim snippets (rejected later by the
-        # finalize gate in a live run). Recorded so an empty history is attributable to "LLM empty".
-        finalize_trace.record("history.synth", path="llm_empty_fallback")
-        sections = []
-        used_ids: list[str] = []
-        for item in items[:max_sections]:
-            snippet = clean_wiki_snippet(str(item.get("snippet", "")))
-            if not snippet:
-                continue
-            heading = history_heading_from_role(
-                str(item.get("section_role", "other")),
-                str(item.get("raw_section_role", "")),
-            )
-            sections.append({"heading": heading, "body": snippet, "source_refs": []})
-            used_ids.append(str(item.get("source_id", "")))
-        return sections, used_ids
-    finalize_trace.record("history.synth", path="llm", section_count=len(sections_out))
+    # An empty LLM result is a failed attempt for the finalize-level synthesis driver to retry —
+    # never borrow verbatim snippets on the live path (licensing exposure).
+    finalize_trace.record(
+        "history.synth",
+        path="llm" if sections_out else "llm_empty",
+        section_count=len(sections_out),
+    )
     return sections_out, used
 
 
@@ -607,6 +744,7 @@ def synthesize_faction_summary(
     max_words: int = 40,
     subregion_tokens: list[str] | None = None,
     instance_name: str | None = None,
+    reinforce: str = "",
 ) -> tuple[str, list[str]]:
     if not items:
         return "", []
@@ -623,6 +761,7 @@ def synthesize_faction_summary(
             max_words=max_words,
             zone_name=zone_name,
             subregion_tokens=subregion_tokens,
+            faction_name=faction_name,
         )
     if instance_name:
         system_prompt = instance_system_prompt(
@@ -632,7 +771,8 @@ def synthesize_faction_summary(
                 f"'{instance_name}' using ONLY evidence. Maximum {max_words} words. "
                 "Write from the entry-state perspective: present tense for active roles, past "
                 "tense only for older identity context, and no current-storyline outcomes."
-            ),
+            )
+            + reinforce,
         )
     else:
         system_prompt = (
@@ -641,6 +781,7 @@ def synthesize_faction_summary(
             "Write from the entry-state perspective: present tense for active roles, past tense "
             "only for older identity context, and no current-storyline outcomes. "
             "Do not copy generic faction wiki ledes, geography lists, reputation/achievement meta, or out-of-zone plot."
+            + reinforce
         )
     result = llm_json_with_retry(
         required_keys=("summary", "used_evidence_ids"),
@@ -658,17 +799,14 @@ def synthesize_faction_summary(
         response_schema_name="wiki_first_faction_summary",
         substep="wiki_first_faction_summary",
     )
-    summary = trim_faction_summary(clean_wiki_snippet(str(result.get("summary", ""))), max_words)
+    summary = trim_faction_summary(
+        strip_faction_label_prefix(
+            clean_wiki_snippet(str(result.get("summary", ""))), faction_name
+        ),
+        max_words,
+    )
     used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
-    if not summary:
-        from pipeline.generate.draft.faction_scoring import fallback_faction_summary
-
-        return fallback_faction_summary(
-            items,
-            max_words=max_words,
-            zone_name=zone_name,
-            subregion_tokens=subregion_tokens,
-        )
+    # Empty result = failed attempt; the finalize-level driver retries or drops the card.
     return summary, used
 
 
@@ -678,6 +816,7 @@ def synthesize_location_summary(
     location_name: str,
     zone_name: str,
     max_words: int = 50,
+    reinforce: str = "",
 ) -> tuple[str, list[str]]:
     if not items:
         return "", []
@@ -718,6 +857,7 @@ def synthesize_location_summary(
             f"Maximum {max_words} words. Describe what this place is and does within this zone. "
             "Use encyclopedic tone. Do not copy generic wiki ledes, faction lists, adjacent-zone geography, "
             "dating conventions, reputation/achievement meta, or out-of-zone plot."
+            + reinforce
         ),
         user_prompt=f"Evidence:\n{_format_evidence_block(items)}",
         response_schema_name="wiki_first_location_summary",
@@ -725,16 +865,7 @@ def synthesize_location_summary(
     )
     summary = trim_location_summary(clean_wiki_snippet(str(result.get("summary", ""))), max_words)
     used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
-    if not summary:
-        ranked = sorted(
-            items, key=lambda row: word_count(str(row.get("snippet", ""))), reverse=True
-        )
-        for item in ranked:
-            snippet = trim_location_summary(
-                clean_wiki_snippet(str(item.get("snippet", ""))), max_words
-            )
-            if snippet:
-                return snippet, [str(item.get("source_id", ""))]
+    # Empty result = failed attempt; the finalize-level driver retries or drops the card.
     return summary, used
 
 
@@ -982,6 +1113,8 @@ def synthesize_instance_overview(
     *,
     instance_name: str,
     max_words: int | None = None,
+    reference_framing: str = "",
+    reinforce: str = "",
 ) -> tuple[str, list[str]]:
     if not items:
         return "", []
@@ -1010,6 +1143,17 @@ def synthesize_instance_overview(
         f"Write an in-universe story-context overview for instance '{instance_name}' "
         f"using ONLY evidence. Target {MIN_OVERVIEW_WORDS}-{max_words} words."
     )
+    reference_block = ""
+    if reference_framing.strip():
+        # The game's own Adventure Guide intro for this instance: reference for framing/emphasis
+        # only, never copied (the finalize-level passthrough gate includes it in its corpus). It
+        # must not dictate the overview's length, tone, or structure.
+        overview_task += (
+            " A REFERENCE block follows the evidence: the game's own intro for this place. Use it "
+            "only to anchor what the place is and why it matters; do NOT quote or paraphrase it, and "
+            "do NOT match its length, tone, or structure — build the overview from the Evidence."
+        )
+        reference_block = f"\n\nReference (framing only — do not copy):\n{reference_framing.strip()}"
 
     def _call(reinforce: str) -> dict[str, Any]:
         return llm_json_with_retry(
@@ -1027,26 +1171,23 @@ def synthesize_instance_overview(
                 field_voice=INSTANCE_OVERVIEW_VOICE,
                 task_lines=overview_task + reinforce,
             ),
-            user_prompt=f"Evidence:\n{_format_evidence_block(items, max_items=12)}",
+            user_prompt=f"Evidence:\n{_format_evidence_block(items, max_items=12)}{reference_block}",
             response_schema_name="wiki_first_instance_overview",
             substep="wiki_first_instance_overview",
         )
 
-    result = enforce_non_passthrough(
-        _call(""),
-        call=_call,
-        extract_bodies=lambda payload: [str(payload.get("summary", ""))],
-        source_snippets=_evidence_snippets(items),
-        label="overview",
-    )
+    result = _call(reinforce)
     summary = trim_instance_overview(
         clean_wiki_snippet(str(result.get("summary", ""))), max_words=max_words
     )
     used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
-    if not summary:
-        finalize_trace.record("overview.synth", path="llm_empty_fallback")
-        return fallback_instance_overview(items, instance_name=instance_name, max_words=max_words)
-    finalize_trace.record("overview.synth", path="llm", words=word_count(summary))
+    # An empty LLM result is a failed attempt for the finalize-level synthesis driver to retry —
+    # never borrow verbatim/templated prose on the live path.
+    finalize_trace.record(
+        "overview.synth",
+        path="llm" if summary else "llm_empty",
+        words=word_count(summary),
+    )
     return summary, used
 
 
@@ -1058,7 +1199,9 @@ def synthesize_key_character_summary(
     structural_role: str = "",
     max_words: int = 50,
     avoid_hints: list[str] | None = None,
+    reference_framing: str = "",
     evidence_item_limit: int = KEY_CHARACTER_EVIDENCE_ITEM_LIMIT,
+    reinforce: str = "",
 ) -> tuple[str, list[str]]:
     if not items:
         return "", []
@@ -1097,6 +1240,20 @@ def synthesize_key_character_summary(
                 " Do not state, imply, or hint at these in-encounter mechanics or outcomes: "
                 f"{joined}."
             )
+    user_prompt = f"Evidence:\n{_format_evidence_block(items, max_items=evidence_item_limit)}"
+    if reference_framing.strip():
+        # The game's own Adventure Guide framing: high-quality context for *which arc points matter*
+        # and for anchoring identity/role facts. It is reference, NOT evidence — the card is
+        # synthesized from the Evidence beats above; the passthrough gate at the call site rejects
+        # any run copied from this block. It must not dictate the card's length, tone, or structure.
+        task_lines += (
+            " A REFERENCE block follows the evidence: the game's own account of this character's "
+            "backstory and role. Use it only to judge which parts of their arc matter and to anchor "
+            "identity and role facts. Do NOT quote or paraphrase it, and do NOT match its length, "
+            "tone, register, or structure; write the summary at its own target length from the "
+            "Evidence beats."
+        )
+        user_prompt += f"\n\nReference (framing only — do not copy):\n{reference_framing.strip()}"
     result = llm_json_with_retry(
         required_keys=("summary", "used_evidence_ids"),
         response_json_schema={
@@ -1110,9 +1267,9 @@ def synthesize_key_character_summary(
         },
         system_prompt=instance_system_prompt(
             field_voice=KEY_CHARACTER_VOICE,
-            task_lines=task_lines,
+            task_lines=task_lines + reinforce,
         ),
-        user_prompt=f"Evidence:\n{_format_evidence_block(items, max_items=evidence_item_limit)}",
+        user_prompt=user_prompt,
         response_schema_name="wiki_first_key_character_summary",
         substep="wiki_first_key_character_summary",
     )
@@ -1120,11 +1277,5 @@ def synthesize_key_character_summary(
         clean_wiki_snippet(str(result.get("summary", ""))), max_words=max_words
     )
     used = [str(value) for value in result.get("used_evidence_ids", []) if str(value).strip()]
-    if not summary:
-        return fallback_key_character_summary(
-            items,
-            boss_name=boss_name,
-            instance_name=instance_name,
-            max_words=max_words,
-        )
+    # Empty result = failed attempt; the finalize-level driver retries or drops the candidate.
     return summary, used

@@ -67,7 +67,7 @@ def test_history_finalize_salvages_clean_llm_sections(monkeypatch) -> None:
 
     monkeypatch.setattr(cards, "fallback_history_sections", _sentinel_fallback)
 
-    sections, _used = cards._finalize_history_sections(
+    sections, _used, _status = cards._finalize_history_sections(
         history_pool=[{"text": "x"}], evidence_rows=[], max_history=4
     )
 
@@ -91,7 +91,7 @@ def test_history_finalize_falls_through_when_too_few_clean(monkeypatch) -> None:
 
     monkeypatch.setattr(cards, "fallback_history_sections", _fallback)
 
-    sections, _used = cards._finalize_history_sections(
+    sections, _used, _status = cards._finalize_history_sections(
         history_pool=[{"text": "x"}], evidence_rows=[], max_history=4
     )
     assert called.get("yes") is True

@@ -109,22 +109,33 @@ INSTANCE_AT_A_GLANCE_VOICE = (
 )
 
 INSTANCE_OVERVIEW_VOICE = (
-    "Instance story-context overview. Convey what this place IS and, in broad strokes, how it came "
-    "to be that way — its essential identity, significance, and the stakes for those who enter. Keep "
-    "it high-level: capture the overall arc rather than chronicling specific events in sequence "
-    "(name that corruption befell a place, not each disaster in turn); that granular history belongs "
-    "in the history sections. Still write a full, flowing paragraph — high-level means less granular, "
-    "not shorter. Readable in-universe prose, no walkthrough framing."
+    "Instance story-context overview: an encyclopaedic account of what this place IS and, in broad "
+    "strokes, how it came to be that way — its essential identity, who holds it and to what end, and "
+    "the stakes for those who enter. Lead with the concrete and stay informative: name the place's "
+    "nature, its masters, and the purpose it now serves, and make every sentence carry a fact the "
+    "reader did not already have. Keep it high-level — capture the overall arc rather than chronicling "
+    "specific events in sequence (name that corruption befell a place, not each disaster in turn); "
+    "that granular history belongs in the history sections. Write plainly and directly, letting "
+    "strong, specific nouns and verbs do the work; evoke atmosphere through what is concretely true, "
+    "not through mood-setting for its own sake. Avoid purple flourishes, ornate epithets, and hollow "
+    "framing sentences that restate the mood without adding information (e.g. 'to enter is to step "
+    "into the lingering shadow of a ruin that should have been reclaimed'). A full paragraph, but "
+    "every clause earns its place. Readable in-universe prose, no walkthrough framing."
 )
 
 KEY_CHARACTER_VOICE = (
     "Key-character card: a compact in-universe biography of this figure, 1–4 sentences. Lead by "
     "describing who they are — their background, nature, and what defines them in the world — then "
     "follow the through-line that explains why they are present here now: the history, motivations, "
-    "or allegiances that brought them to this place and define their role in it. Prioritize the "
+    "or allegiances that brought them to this place and define their role in it. Tell it in "
+    "chronological order (origin first, then how they came to be here); do not open on the in-place "
+    "moment and back-fill. Prioritize the "
     "details that lead to their presence here (what they want, who wronged them, what they came to do) "
     "over unrelated later-life events, honors, or offices they hold elsewhere. Spend more sentences on "
     "a figure whose relevant history is rich and let a minor figure stay to one or two — never pad. "
+    "Use plain, grounded language: state what happened directly. Avoid ornate epithets, poetic "
+    "metaphors, and purple flourishes (e.g. 'death-touched daughter of…', 'the afterlife of a house "
+    "that bartered away its soul'). "
     "Treat the world as real; do not explain gameplay, narrative function, combat tactics, or "
     "abilities." + COMPLETE_CLAUSE_MANDATE
 )

@@ -40,21 +40,31 @@ from pipeline.generate.draft.pages.cards import (
 from pipeline.generate.draft.pages.key_characters import (
     InstanceKeyCharacterSelection,
     _finalize_key_characters,
+    adventure_guide_overview_framing,
     build_instance_key_character_selection,
+    resolve_adventure_guide_instance,
 )
 from pipeline.generate.draft.prose_election import (
     fallback_at_a_glance,
     select_at_a_glance_pool,
 )
-from pipeline.generate.draft.prose_gate import prose_gate_rejects, prose_gate_violations
+from pipeline.generate.draft.prose_gate import prose_gate_violations
 from pipeline.generate.draft.prose_lint import (
     MAX_AT_A_GLANCE_WORDS,
     MAX_HISTORY_SECTIONS,
 )
 from pipeline.generate.draft.prose_synthesis import (
+    FIELD_STATUS_NO_EVIDENCE,
+    FIELD_STATUS_OFFLINE_FALLBACK,
+    FIELD_STATUS_OK,
+    FIELD_STATUS_SYNTHESIS_FAILED,
+    SYNTHESIS_MAX_ATTEMPTS,
+    _evidence_snippets,
+    llm_synthesis_active,
     passthrough_corpus,
     synthesize_at_a_glance,
     synthesize_instance_overview,
+    synthesize_with_validation,
 )
 from pipeline.generate.draft.provenance import (
     build_revision_index,
@@ -68,33 +78,66 @@ def _finalize_instance_at_a_glance(
     instance_name: str,
     at_pool: list[dict[str, Any]],
     evidence_rows: list[dict[str, Any]],
-) -> tuple[str, list[str], list[dict[str, Any]]]:
-    def _rejected(candidate: str) -> bool:
-        # Reject lint failures AND copied/truncated source fragments (mid-sentence start,
-        # missing terminal punctuation) — the at_a_glance path previously skipped the
-        # passthrough check the overview path applies.
-        return (
-            bool(lint_instance_at_a_glance(candidate, instance_name=instance_name))
-            or bool(lint_passthrough_fragment(candidate))
-            or prose_gate_rejects(candidate)
-        )
+    reference_framing: str = "",
+) -> tuple[str | None, list[str], list[dict[str, Any]], str]:
+    """Instance at_a_glance: validation-driven retries, else explicit failure.
 
-    text, used = synthesize_at_a_glance(
-        at_pool, max_words=MAX_AT_A_GLANCE_WORDS, subject=instance_name
+    Returns ``(text, used_source_ids, producing_pool, field_status)``. The live path never borrows
+    a source snippet; the offline NO_LLM ladder keeps the sanctioned deterministic borrow.
+    """
+    if not at_pool:
+        return None, [], [], FIELD_STATUS_NO_EVIDENCE
+
+    def _reasons(candidate: str) -> list[str]:
+        # Lint failures AND copied/truncated source fragments (mid-sentence start, missing
+        # terminal punctuation). The Adventure Guide reference (when present) joins the copy
+        # corpus via the driver so a caption lifted from it is rejected too.
+        reasons = list(lint_instance_at_a_glance(candidate, instance_name=instance_name))
+        reasons.extend(lint_passthrough_fragment(candidate))
+        reasons.extend(prose_gate_violations(candidate))
+        return reasons
+
+    if not llm_synthesis_active():
+        text, used = synthesize_at_a_glance(
+            at_pool,
+            max_words=MAX_AT_A_GLANCE_WORDS,
+            subject=instance_name,
+            reference_framing=reference_framing,
+        )
+        if _reasons(text):
+            text, used = fallback_at_a_glance(at_pool)
+            if _reasons(text):
+                return None, [], [], FIELD_STATUS_SYNTHESIS_FAILED
+        return text, used, at_pool, FIELD_STATUS_OFFLINE_FALLBACK
+
+    def _call(reinforce: str) -> dict[str, Any]:
+        text, used = synthesize_at_a_glance(
+            at_pool,
+            max_words=MAX_AT_A_GLANCE_WORDS,
+            subject=instance_name,
+            reference_framing=reference_framing,
+            reinforce=reinforce,
+        )
+        return {"text": text, "used": used}
+
+    corpus = _evidence_snippets(at_pool)
+    if reference_framing:
+        corpus = [*corpus, reference_framing]
+    result = synthesize_with_validation(
+        call=_call,
+        extract_bodies=lambda payload: [str(payload.get("text", ""))],
+        validate=lambda payload: _reasons(str(payload.get("text", ""))),
+        source_snippets=corpus,
+        label="instance_at_a_glance",
     )
-    producing_pool = at_pool
-    if _rejected(text):
-        text, used = fallback_at_a_glance(at_pool)
-        if _rejected(text):
-            text, used = "", []
-    if not text:
-        rescue_pool = at_pool
-        producing_pool = rescue_pool
-        text, used = fallback_at_a_glance(rescue_pool)
-        if _rejected(text):
-            text, used = "", []
-            producing_pool = []
-    return text, used, producing_pool
+    if not result.ok:
+        return None, [], [], FIELD_STATUS_SYNTHESIS_FAILED
+    return (
+        str(result.payload.get("text", "")),
+        list(result.payload.get("used", [])),
+        at_pool,
+        FIELD_STATUS_OK,
+    )
 
 
 def _finalize_instance_overview(
@@ -103,7 +146,9 @@ def _finalize_instance_overview(
     overview_pool: list[dict[str, Any]],
     zone_mention_pool: list[dict[str, Any]],
     sparse_rescue_pool: list[dict[str, Any]] | None = None,
-) -> tuple[str, list[str], list[dict[str, Any]]]:
+    reference_framing: str = "",
+) -> tuple[str | None, list[str], list[dict[str, Any]], str]:
+    """Instance overview: validation-driven retries per pool, else explicit failure."""
     pools_to_try: list[list[dict[str, Any]]] = []
     if overview_pool:
         pools_to_try.append(overview_pool)
@@ -118,6 +163,8 @@ def _finalize_instance_overview(
         combined = overview_pool + sparse_rescue_pool
         if combined not in pools_to_try:
             pools_to_try.append(combined)
+    if not pools_to_try:
+        return None, [], [], FIELD_STATUS_NO_EVIDENCE
 
     def _reject_reasons(candidate: str, snippets: list[str] | None) -> list[str]:
         reasons = list(lint_overview(candidate, instance_name=instance_name))
@@ -126,31 +173,68 @@ def _finalize_instance_overview(
         reasons.extend(prose_gate_violations(candidate, source_snippets=snippets))
         return reasons
 
-    for pool in pools_to_try:
-        # Source-aware passthrough: reject a verbatim copy of the evidence from *either* the LLM
-        # synth (whose internal empty-result path borrows verbatim) or the deterministic fallback.
-        # Without the snippets the gate is blind to copying, so the fallback shipped a whole source
-        # paragraph as the overview (the licensing exposure). Gate-fail beats shipping copy. Active
-        # only in a live LLM run (``passthrough_corpus`` returns None offline, where borrowing is the
-        # accepted fallback) so offline pages still render.
+    live = llm_synthesis_active()
+    for pool_index, pool in enumerate(pools_to_try):
+        # Source-aware passthrough: reject a verbatim copy of the evidence (the licensing
+        # exposure). Inactive offline (``passthrough_corpus`` returns None), where borrowing is the
+        # sanctioned fallback. The Adventure Guide reference (when present, live only) joins the
+        # copy corpus so an overview lifted from it is rejected too.
         pool_snippets = passthrough_corpus(pool)
-        text, used = synthesize_instance_overview(pool, instance_name=instance_name)
-        synth_reasons = _reject_reasons(text, pool_snippets)
-        if not synth_reasons:
-            finalize_trace.record("overview.finalize", outcome="llm", gate_active=pool_snippets is not None)
-            return text, used, pool
-        text, used = fallback_instance_overview(pool, instance_name=instance_name)
-        fallback_reasons = _reject_reasons(text, pool_snippets)
-        finalize_trace.record(
-            "overview.finalize",
-            outcome="deterministic_fallback" if not fallback_reasons else "rejected",
-            gate_active=pool_snippets is not None,
-            llm_reject=synth_reasons,
-            fallback_reject=fallback_reasons,
+        gate_snippets = pool_snippets
+        if pool_snippets is not None and reference_framing:
+            gate_snippets = [*pool_snippets, reference_framing]
+        if not live:
+            text, used = synthesize_instance_overview(
+                pool, instance_name=instance_name, reference_framing=reference_framing
+            )
+            if not _reject_reasons(text, gate_snippets):
+                finalize_trace.record("overview.finalize", outcome="no_llm", gate_active=False)
+                return text, used, pool, FIELD_STATUS_OFFLINE_FALLBACK
+            text, used = fallback_instance_overview(pool, instance_name=instance_name)
+            if not _reject_reasons(text, gate_snippets):
+                finalize_trace.record(
+                    "overview.finalize", outcome="no_llm_fallback", gate_active=False
+                )
+                return text, used, pool, FIELD_STATUS_OFFLINE_FALLBACK
+            continue
+
+        def _call(reinforce: str, pool: list[dict[str, Any]] = pool) -> dict[str, Any]:
+            text, used = synthesize_instance_overview(
+                pool,
+                instance_name=instance_name,
+                reference_framing=reference_framing,
+                reinforce=reinforce,
+            )
+            return {"text": text, "used": used}
+
+        def _validate(
+            payload: dict[str, Any], snippets: list[str] | None = gate_snippets
+        ) -> list[str]:
+            return _reject_reasons(str(payload.get("text", "")), snippets)
+
+        result = synthesize_with_validation(
+            call=_call,
+            extract_bodies=lambda payload: [str(payload.get("text", ""))],
+            validate=_validate,
+            # Copy detection runs inside _reject_reasons via the source-aware gate corpus.
+            source_snippets=None,
+            label="overview",
+            max_attempts=SYNTHESIS_MAX_ATTEMPTS if pool_index == 0 else 1,
         )
-        if not fallback_reasons:
-            return text, used, pool
-    return "", [], []
+        if result.ok:
+            finalize_trace.record("overview.finalize", outcome="llm", gate_active=True)
+            return (
+                str(result.payload.get("text", "")),
+                list(result.payload.get("used", [])),
+                pool,
+                FIELD_STATUS_OK,
+            )
+    finalize_trace.record(
+        "overview.finalize",
+        outcome="failed" if live else "empty",
+        gate_active=live,
+    )
+    return None, [], [], FIELD_STATUS_SYNTHESIS_FAILED
 
 
 def build_instance_major_factions(
@@ -265,10 +349,21 @@ def build_instance_page(
     )
     used_source_ids: set[str] = set()
 
-    at_a_glance, at_used, at_producing_pool = _finalize_instance_at_a_glance(
-        instance_name=name,
-        at_pool=select_at_a_glance_pool(pools["at_a_glance_pool"]),
-        evidence_rows=evidence_rows,
+    # The game's dedicated Adventure Guide page for this instance (per-boss blurbs + an intro),
+    # resolved once and reused as reference framing across overview, at_a_glance, and key characters.
+    # Gated to live LLM runs inside the resolver; ``None`` (or partial content) degrades to no
+    # framing at each use site, so instances with no / partial Adventure Guide coverage are unchanged.
+    adventure_guide = resolve_adventure_guide_instance(name)
+    ag_overview_framing = adventure_guide_overview_framing(adventure_guide)
+
+    field_status: dict[str, str] = {}
+    at_a_glance, at_used, at_producing_pool, field_status["at_a_glance"] = (
+        _finalize_instance_at_a_glance(
+            instance_name=name,
+            at_pool=select_at_a_glance_pool(pools["at_a_glance_pool"]),
+            evidence_rows=evidence_rows,
+            reference_framing=ag_overview_framing,
+        )
     )
     at_pointers = _pointers_for_source_ids(at_producing_pool, at_used, revision_map)
     at_pointers = _cap_card_pointers(
@@ -276,10 +371,12 @@ def build_instance_page(
             at_pointers,
             pool=at_producing_pool,
             revision_map=revision_map,
-            min_count=_pointer_count_for_words(_word_count(at_a_glance)),
+            min_count=_pointer_count_for_words(_word_count(at_a_glance or "")),
         ),
         max_count=3,
     )
+    if at_a_glance is None:
+        at_pointers = []
     used_source_ids.update(pointer["source_id"] for pointer in at_pointers)
 
     sparse_rescue_pool: list[dict[str, Any]] = []
@@ -289,11 +386,14 @@ def build_instance_page(
             related_lore_pool=pools["related_lore_pool"],
             instance_name=name,
         )
-    overview, overview_used, overview_pool = _finalize_instance_overview(
-        instance_name=name,
-        overview_pool=pools["overview_pool"],
-        zone_mention_pool=pools["zone_mention_pool"],
-        sparse_rescue_pool=sparse_rescue_pool,
+    overview, overview_used, overview_pool, field_status["overview"] = (
+        _finalize_instance_overview(
+            instance_name=name,
+            overview_pool=pools["overview_pool"],
+            zone_mention_pool=pools["zone_mention_pool"],
+            sparse_rescue_pool=sparse_rescue_pool,
+            reference_framing=ag_overview_framing,
+        )
     )
     overview_pointers = _pointers_for_source_ids(overview_pool, overview_used, revision_map)
     overview_pointers = _cap_card_pointers(
@@ -301,10 +401,12 @@ def build_instance_page(
             overview_pointers,
             pool=overview_pool,
             revision_map=revision_map,
-            min_count=_pointer_count_for_words(_word_count(overview)),
+            min_count=_pointer_count_for_words(_word_count(overview or "")),
         ),
         max_count=3,
     )
+    if overview is None:
+        overview_pointers = []
     used_source_ids.update(pointer["source_id"] for pointer in overview_pointers)
     # Cross-page lore counts as "used" only when a story-context provenance pointer
     # actually cites a parent/related source, so the lore_source flip stays accurate.
@@ -323,7 +425,7 @@ def build_instance_page(
     if instance_history_cap <= 0:
         instance_history_cap = MAX_HISTORY_SECTIONS
     section_coverage_decisions: list[dict[str, Any]] = []
-    history_sections, history_used = _finalize_history_sections(
+    history_sections, history_used, field_status["history"] = _finalize_history_sections(
         history_pool=draft_history_pool or history_pool,
         evidence_rows=evidence_rows,
         max_history=instance_history_cap,
@@ -379,6 +481,7 @@ def build_instance_page(
         boss_pool=pools["boss_pool"],
         revision_map=revision_map,
         selection_reasons=key_character_selection.selection_reasons,
+        adventure_guide=adventure_guide,
     )
     used_source_ids.update(character_used)
 
@@ -423,6 +526,7 @@ def build_instance_page(
         "variant_policy": "standalone",
         "variant_reason_codes": [],
         "glossary_refs": [],
+        "field_status": field_status,
         "provenance": {
             "identity_header": at_pointers,
             "story_context": overview_pointers,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.discovery.geography import resolve_parent_continent
 from pipeline.generate.draft.instance_link_lint import (
     MAX_INSTANCE_LINK_WORDS,
@@ -45,20 +46,29 @@ from pipeline.generate.draft.pages.questlines import (
 from pipeline.generate.draft.prose_election import (
     fallback_at_a_glance,
     fallback_currently,
+    ranked_at_a_glance_candidates,
     select_at_a_glance_pool,
     select_currently_pool,
 )
-from pipeline.generate.draft.prose_gate import prose_gate_rejects
+from pipeline.generate.draft.prose_gate import prose_gate_rejects, prose_gate_violations
 from pipeline.generate.draft.prose_lint import (
     MAX_AT_A_GLANCE_WORDS,
     lint_at_a_glance,
     lint_currently,
+    trim_words,
 )
 from pipeline.generate.draft.prose_synthesis import (
+    FIELD_STATUS_NO_EVIDENCE,
+    FIELD_STATUS_OFFLINE_FALLBACK,
+    FIELD_STATUS_OK,
+    FIELD_STATUS_SYNTHESIS_FAILED,
+    _evidence_snippets,
+    llm_synthesis_active,
     synthesize_at_a_glance,
     synthesize_card_summary,
     synthesize_currently,
     synthesize_questline_cta_hook,
+    synthesize_with_validation,
 )
 from pipeline.generate.draft.provenance import (
     build_revision_index,
@@ -86,28 +96,61 @@ def _finalize_at_a_glance(
     zone_name: str,
     at_pool: list[dict[str, Any]],
     evidence_rows: list[dict[str, Any]],
-) -> tuple[str, list[str]]:
-    def _rejected(candidate: str) -> bool:
-        return (
-            bool(lint_at_a_glance(candidate, zone_name=zone_name))
-            or bool(lint_passthrough_fragment(candidate))
-            or prose_gate_rejects(candidate)
-        )
+) -> tuple[str | None, list[str], str]:
+    """Zone at_a_glance: synthesize with validation-driven retries, else explicit failure.
 
-    text, used = synthesize_at_a_glance(at_pool, max_words=MAX_AT_A_GLANCE_WORDS)
-    if _rejected(text):
+    Returns ``(text, used_source_ids, field_status)``. On the live path a field that cannot pass
+    validation after retries becomes ``None`` + ``synthesis_failed`` — never a borrowed source
+    snippet or a canned template. The offline NO_LLM path keeps the sanctioned deterministic borrow.
+    """
+    if not at_pool:
+        return None, [], FIELD_STATUS_NO_EVIDENCE
+
+    def _reasons(candidate: str) -> list[str]:
+        reasons = list(lint_at_a_glance(candidate, zone_name=zone_name))
+        reasons.extend(lint_passthrough_fragment(candidate))
+        reasons.extend(prose_gate_violations(candidate))
+        return reasons
+
+    if not llm_synthesis_active():
+        # Offline: synthesize_at_a_glance returns the deterministic borrow; keep the ladder, then
+        # walk the remaining candidates in borrow-preference order so a lint-clean lead snippet
+        # still ships when the top-ranked snippet reads as past-tense narration.
+        text, used = synthesize_at_a_glance(at_pool, max_words=MAX_AT_A_GLANCE_WORDS)
+        if not _reasons(text):
+            return text, used, FIELD_STATUS_OFFLINE_FALLBACK
         text, used = fallback_at_a_glance(at_pool)
-        if _rejected(text):
-            text, used = "", []
-    if not text:
-        rescue_pool = at_pool
-        text, used = fallback_at_a_glance(rescue_pool)
-        if _rejected(text):
-            text, used = "", []
-    if not text:
-        text = f"{zone_name} is a war-scarred region slowly recovering from the ruin left by past conflict."
-        used = []
-    return text, used
+        if not _reasons(text):
+            return text, used, FIELD_STATUS_OFFLINE_FALLBACK
+        for candidate in ranked_at_a_glance_candidates(at_pool)[1:]:
+            text = trim_words(
+                clean_wiki_snippet(str(candidate.get("snippet", ""))), MAX_AT_A_GLANCE_WORDS
+            )
+            if text and not _reasons(text):
+                source_id = str(candidate.get("source_id", "")).strip()
+                return text, [source_id] if source_id else [], FIELD_STATUS_OFFLINE_FALLBACK
+        return None, [], FIELD_STATUS_SYNTHESIS_FAILED
+
+    def _call(reinforce: str) -> dict[str, Any]:
+        text, used = synthesize_at_a_glance(
+            at_pool, max_words=MAX_AT_A_GLANCE_WORDS, reinforce=reinforce
+        )
+        return {"text": text, "used": used}
+
+    result = synthesize_with_validation(
+        call=_call,
+        extract_bodies=lambda payload: [str(payload.get("text", ""))],
+        validate=lambda payload: _reasons(str(payload.get("text", ""))),
+        source_snippets=_evidence_snippets(at_pool),
+        label="at_a_glance",
+    )
+    if not result.ok:
+        return None, [], FIELD_STATUS_SYNTHESIS_FAILED
+    return (
+        str(result.payload.get("text", "")),
+        list(result.payload.get("used", [])),
+        FIELD_STATUS_OK,
+    )
 
 
 def _finalize_currently(
@@ -117,30 +160,43 @@ def _finalize_currently(
     currently_pool: list[dict[str, Any]],
     evidence_rows: list[dict[str, Any]],
     pools: dict[str, list[dict[str, Any]]],
-) -> tuple[str, list[str]]:
-    text, used = synthesize_currently(currently_pool, max_words=120)
-    if lint_currently(text, zone_name=zone_name, at_a_glance=at_a_glance) or prose_gate_rejects(
-        text
-    ):
-        text, used = fallback_currently(currently_pool)
-        if lint_currently(text, zone_name=zone_name, at_a_glance=at_a_glance) or prose_gate_rejects(
-            text
-        ):
-            text, used = "", []
-    if not text:
-        rescue_pool = currently_pool or select_currently_pool(pools, zone_name=zone_name)
-        text, used = fallback_currently(rescue_pool)
-        if lint_currently(text, zone_name=zone_name, at_a_glance=at_a_glance) or prose_gate_rejects(
-            text
-        ):
-            text, used = "", []
-    if not text:
-        text = (
-            f"{zone_name} remains a contested frontier where crusaders and rival factions "
-            "continue to clash over ruined strongholds."
-        )
-        used = []
-    return text, used
+) -> tuple[str | None, list[str], str]:
+    """Zone currently: synthesize with validation-driven retries, else explicit failure."""
+    pool = currently_pool or select_currently_pool(pools, zone_name=zone_name)
+    if not pool:
+        return None, [], FIELD_STATUS_NO_EVIDENCE
+
+    def _reasons(candidate: str) -> list[str]:
+        reasons = list(lint_currently(candidate, zone_name=zone_name, at_a_glance=at_a_glance))
+        reasons.extend(prose_gate_violations(candidate))
+        return reasons
+
+    if not llm_synthesis_active():
+        text, used = synthesize_currently(pool, max_words=120)
+        if _reasons(text):
+            text, used = fallback_currently(pool)
+            if _reasons(text):
+                return None, [], FIELD_STATUS_SYNTHESIS_FAILED
+        return text, used, FIELD_STATUS_OFFLINE_FALLBACK
+
+    def _call(reinforce: str) -> dict[str, Any]:
+        text, used = synthesize_currently(pool, max_words=120, reinforce=reinforce)
+        return {"text": text, "used": used}
+
+    result = synthesize_with_validation(
+        call=_call,
+        extract_bodies=lambda payload: [str(payload.get("text", ""))],
+        validate=lambda payload: _reasons(str(payload.get("text", ""))),
+        source_snippets=_evidence_snippets(pool),
+        label="currently",
+    )
+    if not result.ok:
+        return None, [], FIELD_STATUS_SYNTHESIS_FAILED
+    return (
+        str(result.payload.get("text", "")),
+        list(result.payload.get("used", [])),
+        FIELD_STATUS_OK,
+    )
 
 
 def _instance_link_candidates(
@@ -198,15 +254,16 @@ def build_zone_page(
     history_pool = pools["history_pool"]
     draft_history_pool, max_history = prepare_history_synthesis_pool(history_pool)
 
-    at_a_glance, at_glance_used = _finalize_at_a_glance(
+    field_status: dict[str, str] = {}
+    at_a_glance, at_glance_used, field_status["at_a_glance"] = _finalize_at_a_glance(
         zone_name=name,
         at_pool=at_pool,
         evidence_rows=evidence_rows,
     )
 
-    currently, currently_used = _finalize_currently(
+    currently, currently_used, field_status["currently"] = _finalize_currently(
         zone_name=name,
-        at_a_glance=at_a_glance,
+        at_a_glance=at_a_glance or "",
         currently_pool=currently_pool,
         evidence_rows=evidence_rows,
         pools=pools,
@@ -219,10 +276,12 @@ def build_zone_page(
             at_a_glance_pointers,
             pool=at_glance_pool,
             revision_map=revision_map,
-            min_count=_pointer_count_for_words(_word_count(at_a_glance)),
+            min_count=_pointer_count_for_words(_word_count(at_a_glance or "")),
         ),
         max_count=3,
     )
+    if at_a_glance is None:
+        at_a_glance_pointers = []
     currently_pointer_pool = currently_pool or pools["currently_pool"]
     currently_pointers = _pointers_for_source_ids(
         currently_pointer_pool, currently_used, revision_map
@@ -232,15 +291,17 @@ def build_zone_page(
             currently_pointers,
             pool=currently_pointer_pool,
             revision_map=revision_map,
-            min_count=_pointer_count_for_words(_word_count(currently)),
+            min_count=_pointer_count_for_words(_word_count(currently or "")),
         ),
         max_count=3,
     )
+    if currently is None:
+        currently_pointers = []
     for pointer in at_a_glance_pointers + currently_pointers:
         used_source_ids.add(pointer["source_id"])
 
     section_coverage_decisions: list[dict[str, Any]] = []
-    history_sections, history_used = _finalize_history_sections(
+    history_sections, history_used, field_status["history"] = _finalize_history_sections(
         history_pool=draft_history_pool,
         evidence_rows=evidence_rows,
         max_history=max_history,
@@ -585,6 +646,7 @@ def build_zone_page(
         "location_cards": location_cards,
         "instance_links": instance_links,
         "glossary_refs": [],
+        "field_status": field_status,
         "provenance": {
             "at_a_glance": at_a_glance_pointers,
             "currently": currently_pointers,

@@ -184,12 +184,42 @@ _GENERIC_ROLE_ALIAS_HEADS = frozenset(
 )
 
 
+def resolve_canonical_faction_name(
+    phrase: str, single: frozenset[str] | None = None, multi: frozenset[str] | None = None
+) -> str:
+    """Resolve a variant faction name onto its canonical member faction (RC5).
+
+    Wiki prose renders adjacent article links as one phrase ("the [Horde] [Forsaken] commanded
+    by Sylvanas"), which harvests as a distinct "Horde Forsaken" faction alongside "Forsaken" —
+    two cards for one faction. When a name is an umbrella faction qualifying a recognized member
+    faction, the member is the canonical identity (the concrete actor); whether the *umbrella*
+    card also survives stays with :func:`_suppress_umbrella_factions` at election time.
+    Vocabulary-driven (shared faction-token registry + the structural umbrella set), never a
+    per-pair mapping.
+    """
+    if single is None or multi is None:
+        single, multi = _faction_token_set()
+    umbrella_names = frozenset(_UMBRELLA_TAG_BY_ID.values())
+    current = phrase.strip()
+    for _ in range(2):
+        words = current.split()
+        if len(words) < 2 or words[0].lower() not in umbrella_names:
+            break
+        tail = re.sub(r"^the\s+", "", " ".join(words[1:]).strip(), flags=re.IGNORECASE)
+        if not tail or not _phrase_is_faction(tail, single, multi):
+            break
+        current = tail
+    return current
+
+
 def _canonicalize_faction_phrase(
     phrase: str, single: frozenset[str], multi: frozenset[str]
 ) -> str:
     """Trim a leading ``X of [the] <FACTION>`` qualifier (e.g. "Members of the Cult of the Damned"
     -> "Cult of the Damned") so a faction reads under one canonical name. Only trims when the
     remaining tail is itself a recognized faction, leaving names like "Scarlet Crusade" intact.
+    Also resolves an umbrella-qualified member name ("Horde Forsaken" -> "Forsaken") onto the
+    canonical member faction (see :func:`resolve_canonical_faction_name`).
     """
     current = phrase
     for _ in range(4):
@@ -201,7 +231,7 @@ def _canonicalize_faction_phrase(
             current = tail
         else:
             break
-    return current
+    return resolve_canonical_faction_name(current, single, multi)
 
 
 def _is_generic_role_alias_phrase(phrase: str) -> bool:
@@ -740,7 +770,51 @@ def collect_faction_candidates(
             )
         )
 
-    return candidates
+    return merge_variant_faction_candidates(candidates)
+
+
+def merge_variant_faction_candidates(
+    candidates: list[FactionCandidate],
+) -> list[FactionCandidate]:
+    """Collapse variant faction candidates onto one canonical faction, merging evidence (RC5).
+
+    Candidates arrive from several harvests (profile targets, evidence pools, seed mentions), and
+    a variant name that slipped past phrase canonicalization in an earlier stage's stored targets
+    can mint a second identity for the same faction ("Horde Forsaken" beside "Forsaken"). Each
+    candidate's name is resolved to its canonical faction: when the canonical sibling was also
+    harvested, the variant's pooled evidence is deduped onto that survivor so the retained card is
+    richer; a variant with no harvested sibling is renamed to the canonical identity instead.
+    """
+    single, multi = _faction_token_set()
+    by_id = {candidate.faction_id: candidate for candidate in candidates}
+    merged: list[FactionCandidate] = []
+    for candidate in candidates:
+        canonical_name = resolve_canonical_faction_name(candidate.name, single, multi)
+        if canonical_name.strip().lower() == candidate.name.strip().lower():
+            merged.append(candidate)
+            continue
+        canonical_id = f"faction-{slugify(canonical_name)}"
+        survivor = by_id.get(canonical_id)
+        if survivor is None or survivor is candidate:
+            candidate.faction_id = canonical_id
+            candidate.name = canonical_name
+            candidate.wiki_url = _wiki_url_from_name(canonical_name)
+            by_id[canonical_id] = candidate
+            merged.append(candidate)
+            continue
+        for item in candidate.profile_items:
+            if item not in survivor.profile_items:
+                survivor.profile_items.append(item)
+        for item in candidate.seed_mentions:
+            if item not in survivor.seed_mentions:
+                survivor.seed_mentions.append(item)
+        survivor.quest_binding_count = max(
+            survivor.quest_binding_count, candidate.quest_binding_count
+        )
+        survivor.specific_quest_binding_count = max(
+            survivor.specific_quest_binding_count, candidate.specific_quest_binding_count
+        )
+    return merged
 
 
 def _is_lede_only_profile(candidate: FactionCandidate) -> bool:
@@ -971,13 +1045,17 @@ def fallback_faction_summary(
         )
         return (1 if faction_hit else 0, 1 if zone_hit else 0, word_count(snippet))
 
-    from pipeline.generate.draft.faction_lint import lint_faction_summary
+    from pipeline.generate.draft.faction_lint import (
+        lint_faction_summary,
+        strip_faction_label_prefix,
+    )
     from pipeline.generate.draft.prose_gate import prose_gate_rejects
 
     ranked = sorted(items, key=_zone_rank, reverse=True)
 
     def _clean_summary(item: dict[str, Any]) -> str:
-        snippet = str(item.get("snippet", "")).strip()
+        # Strip the internal "<Faction>: " binding label before borrowing the snippet as prose.
+        snippet = strip_faction_label_prefix(str(item.get("snippet", "")).strip(), faction_name)
         if has_currently_meta(snippet) or detect_list_shape(snippet):
             return ""
         source = _faction_focused_excerpt(
@@ -998,7 +1076,12 @@ def fallback_faction_summary(
         summary = _clean_summary(item)
         if (
             summary
-            and not lint_faction_summary(summary, zone_name=zone_name, subregion_tokens=tokens)
+            and not lint_faction_summary(
+                summary,
+                zone_name=zone_name,
+                subregion_tokens=tokens,
+                faction_name=faction_name,
+            )
             and not prose_gate_rejects(summary)
         ):
             source_id = str(item.get("source_id", "")).strip()

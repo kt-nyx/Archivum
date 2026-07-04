@@ -165,7 +165,7 @@ def test_finalize_appends_missing_setup_bridge(monkeypatch) -> None:
     )
 
     sink: list[dict[str, Any]] = []
-    sections, used = cards._finalize_history_sections(
+    sections, used, _status = cards._finalize_history_sections(
         history_pool=[{"snippet": "x", "source_id": "src-scourging"}],
         evidence_rows=[],
         max_history=3,
@@ -205,7 +205,7 @@ def test_finalize_bridge_card_carries_explicit_provenance(monkeypatch) -> None:
     def _pointer_builder(item: dict[str, Any], ordinal: int) -> dict[str, str]:
         return {"source_id": str(item.get("source_id", "")), "locator": f"mw:{ordinal}"}
 
-    sections, _used = cards._finalize_history_sections(
+    sections, _used, _status = cards._finalize_history_sections(
         history_pool=[{"snippet": "x", "source_id": "src-scourging"}],
         evidence_rows=[],
         max_history=3,
@@ -243,7 +243,7 @@ def test_finalize_llm_retry_covers_bridge_without_deterministic_append(monkeypat
     monkeypatch.setattr(cards, "synthesize_history_sections", _synth)
 
     sink: list[dict[str, Any]] = []
-    sections, used = cards._finalize_history_sections(
+    sections, used, _status = cards._finalize_history_sections(
         history_pool=[{"snippet": "x", "source_id": "src-scourging"}],
         evidence_rows=[],
         max_history=3,
@@ -275,7 +275,7 @@ def test_finalize_no_append_when_setup_bridge_already_covered(monkeypatch) -> No
     )
 
     sink: list[dict[str, Any]] = []
-    sections, used = cards._finalize_history_sections(
+    sections, used, _status = cards._finalize_history_sections(
         history_pool=[{"snippet": "x", "source_id": "src-scourging"}],
         evidence_rows=[],
         max_history=3,
