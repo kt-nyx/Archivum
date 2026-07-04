@@ -23,6 +23,10 @@ def build_run_id() -> str:
     return f"run-{timestamp}-{uuid.uuid4().hex[:8]}"
 
 
+class RunArtifactsExistError(RuntimeError):
+    """A new pipeline execution targeted a run id that already has stage artifacts."""
+
+
 @dataclass(frozen=True)
 class RunContext:
     """Filesystem metadata shared across all stage commands."""
@@ -80,7 +84,13 @@ def ensure_run_context(
     *,
     artifacts_root: Path | None = None,
 ) -> RunContext:
-    """Create a run context under ``artifacts/runs`` (default: under the repository root)."""
+    """Attach to (or create) a run directory under ``artifacts/runs``.
+
+    Performs no immutability check: single-stage commands and in-flow stage tasks use
+    this to attach to a run that already has artifacts. New pipeline executions must go
+    through :func:`create_run_context`, which refuses to reuse a run id with existing
+    stage manifests.
+    """
     resolved_run_id = run_id or build_run_id()
     root = artifacts_root or _default_artifacts_runs_dir()
     run_root = (root / resolved_run_id).resolve()
@@ -89,6 +99,77 @@ def ensure_run_context(
     (run_root / "reports").mkdir(exist_ok=True)
     (run_root / "traces").mkdir(exist_ok=True)
     return RunContext(run_id=resolved_run_id, root_dir=run_root)
+
+
+def _stage_manifests_in(run_root: Path) -> list[Path]:
+    """Stage manifests recorded for a run directory (empty when none exist yet)."""
+    manifests_dir = run_root / "traces" / "manifests"
+    if not manifests_dir.is_dir():
+        return []
+    return sorted(manifests_dir.glob("*.json"))
+
+
+def create_run_context(
+    run_id: str | None = None,
+    *,
+    artifacts_root: Path | None = None,
+    force_new_suffix: bool = False,
+) -> RunContext:
+    """Create a run context for a **new** pipeline execution — runs are immutable.
+
+    Refuses to reuse a run id whose directory already contains stage manifests, so an
+    existing run's artifacts can never be silently overwritten (regressions between
+    generations stay provable). With ``force_new_suffix=True`` the run id is suffixed
+    to the first free sibling (``<run_id>-2``, ``-3``, ...) instead of failing. There
+    is deliberately no overwrite option; re-running a single stage in place goes
+    through the stage commands, which trace the replacement
+    (:func:`record_stage_reexecution`).
+    """
+    resolved_run_id = run_id or build_run_id()
+    root = artifacts_root or _default_artifacts_runs_dir()
+    existing = _stage_manifests_in((root / resolved_run_id).resolve())
+    if existing:
+        if not force_new_suffix:
+            stage_names = ", ".join(path.stem for path in existing)
+            raise RunArtifactsExistError(
+                f"run '{resolved_run_id}' already contains stage artifacts ({stage_names}) "
+                "and runs are immutable; choose a new run id, pass --force-new-suffix to "
+                "auto-suffix one, or re-run a single stage via its stage command"
+            )
+        suffix = 2
+        while _stage_manifests_in((root / f"{resolved_run_id}-{suffix}").resolve()):
+            suffix += 1
+        resolved_run_id = f"{resolved_run_id}-{suffix}"
+    return ensure_run_context(resolved_run_id, artifacts_root=artifacts_root)
+
+
+def record_stage_reexecution(context: RunContext, stage_name: str) -> None:
+    """Trace a single-stage re-execution that will replace existing stage outputs.
+
+    Re-running one stage against an existing run is a legitimate dev workflow, but it
+    must stay auditable: when the stage already has a manifest, append a trace event
+    recording which outputs are about to be replaced. No-op for a first execution.
+    """
+    manifest_path = context.stage_manifest_path(stage_name)
+    if not manifest_path.exists():
+        return
+    try:
+        prior = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        prior = {}
+    if not isinstance(prior, dict):
+        prior = {}
+    append_trace_event(
+        context,
+        stage_name=stage_name,
+        attempt=0,
+        status="reexecute",
+        details={
+            "replaced_outputs": prior.get("outputs", []),
+            "prior_status": prior.get("status"),
+            "prior_updated_at": prior.get("updated_at"),
+        },
+    )
 
 
 def write_stage_manifest(

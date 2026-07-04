@@ -5,7 +5,11 @@ import json
 import typer
 
 from pipeline.ai.config import load_ai_settings
-from pipeline.common.run_context import ensure_run_context
+from pipeline.common.run_context import (
+    RunArtifactsExistError,
+    ensure_run_context,
+    record_stage_reexecution,
+)
 from pipeline.orchestrator.flow import run_pipeline_flow
 from pipeline.orchestrator.stages import (
     run_addon_bundle_stage,
@@ -69,6 +73,7 @@ def _parse_fact_check_profile(value: str) -> str:
 def ingest(run_id: str | None = typer.Option(default=None, help="Existing run id.")) -> None:
     """Run ingest stage (fetch + normalize)."""
     context = ensure_run_context(run_id)
+    record_stage_reexecution(context, "ingest")
     run_ingest_stage(context)
     _echo_run(context.run_id, "ingest")
 
@@ -77,6 +82,7 @@ def ingest(run_id: str | None = typer.Option(default=None, help="Existing run id
 def discovery(run_id: str = typer.Option(..., help="Existing run id.")) -> None:
     """Run deterministic discovery artifact stage."""
     context = ensure_run_context(run_id)
+    record_stage_reexecution(context, "discovery")
     source_manifest_path = context.stage_dir("ingest") / "source_manifest.json"
     outputs = run_discovery_stage(context, source_manifest_path)
     typer.echo(f"run_id={context.run_id} stage=discovery outputs={len(outputs)}")
@@ -86,6 +92,7 @@ def discovery(run_id: str = typer.Option(..., help="Existing run id.")) -> None:
 def traverse(run_id: str = typer.Option(..., help="Existing run id.")) -> None:
     """Fetch auxiliary wiki pages from discovery targets."""
     context = ensure_run_context(run_id)
+    record_stage_reexecution(context, "traverse_seed")
     outputs = run_traverse_stage(context)
     typer.echo(f"run_id={context.run_id} stage=traverse outputs={len(outputs)}")
 
@@ -94,6 +101,7 @@ def traverse(run_id: str = typer.Option(..., help="Existing run id.")) -> None:
 def discovery_enrich(run_id: str = typer.Option(..., help="Existing run id.")) -> None:
     """Rebuild discovery graphs, decisions, and evidence after traversal."""
     context = ensure_run_context(run_id)
+    record_stage_reexecution(context, "discovery_enrich")
     source_manifest_path = context.stage_dir("ingest") / "source_manifest.json"
     outputs = run_discovery_enrich_stage(context, source_manifest_path)
     typer.echo(f"run_id={context.run_id} stage=discovery_enrich outputs={len(outputs)}")
@@ -103,6 +111,7 @@ def discovery_enrich(run_id: str = typer.Option(..., help="Existing run id.")) -
 def addon_bundle(run_id: str = typer.Option(..., help="Existing run id.")) -> None:
     """Build addon-ingestible data bundle from drafts."""
     context = ensure_run_context(run_id)
+    record_stage_reexecution(context, "addon_bundle")
     output_root = run_addon_bundle_stage(context)
     typer.echo(f"run_id={context.run_id} stage=addon_bundle output={output_root}")
 
@@ -119,6 +128,7 @@ def coalesce(
 ) -> None:
     """Run coalesce stage using ingest output (writes fact packs directly, S6)."""
     context = ensure_run_context(run_id)
+    record_stage_reexecution(context, "coalesce")
     source_manifest_path = context.stage_dir("ingest") / "source_manifest.json"
     fact_pack_paths = run_coalesce_stage(
         context,
@@ -140,6 +150,7 @@ def draft(
 ) -> None:
     """Run draft stage from extracted fact packs."""
     context = ensure_run_context(run_id)
+    record_stage_reexecution(context, "draft")
     extract_dir = context.data_dir / "extracted"
     fact_pack_paths = sorted(extract_dir.glob("*.json"))
     outputs = run_draft_stage(
@@ -156,6 +167,7 @@ def glossary_terms_stage(
 ) -> None:
     """Build run-scoped glossary terms from drafts and discovery artifacts."""
     context = ensure_run_context(run_id)
+    record_stage_reexecution(context, "glossary_terms")
     output = run_glossary_terms_stage(context)
     typer.echo(f"run_id={context.run_id} stage=glossary_terms output={output}")
 
@@ -172,6 +184,8 @@ def link_stage(
 ) -> None:
     """Run glossary linker first pass."""
     context = ensure_run_context(run_id)
+    record_stage_reexecution(context, "glossary_terms")
+    record_stage_reexecution(context, "linker")
     run_glossary_terms_stage(context)
     draft_paths = sorted((context.data_dir / "drafts").glob("*/*.json"))
     output = run_linker_stage(
@@ -238,6 +252,7 @@ def validate(
             "set --no-llm-fact-check for explicit local/dev override"
         )
     context = ensure_run_context(run_id)
+    record_stage_reexecution(context, "validate")
     draft_paths = sorted((context.data_dir / "drafts").glob("*/*.json"))
     linker_report_path = context.stage_dir("linker") / "linker_qa_report.json"
     result = run_validate_stage(
@@ -317,6 +332,14 @@ def run_all(
         "--release-gate",
         help="Apply release-gate validation severity (pointer caps and unresolved overrides hard-fail).",
     ),
+    force_new_suffix: bool = typer.Option(
+        False,
+        "--force-new-suffix",
+        help=(
+            "If the run id already has stage artifacts, auto-suffix a fresh run id "
+            "(-2, -3, ...) instead of failing. Runs are immutable; there is no overwrite."
+        ),
+    ),
 ) -> None:
     """Run ingest->validate orchestration flow."""
     normalized_profile = _parse_fact_check_profile(fact_check_profile)
@@ -329,19 +352,24 @@ def run_all(
             "warn/strict requires LLM adjudication by default; "
             "set --no-llm-fact-check for explicit local/dev override"
         )
-    result = run_pipeline_flow(
-        run_id=run_id,
-        fact_check_profile=normalized_profile,
-        fact_check_web_search=fact_check_web_search,
-        fact_check_max_web_results=fact_check_max_web_results,
-        fact_check_enable_llm=fact_check_enable_llm,
-        no_llm_fact_check=no_llm_fact_check,
-        fact_check_llm_model=fact_check_llm_model,
-        max_entity_concurrency=max_entity_concurrency,
-        retries_per_stage=retries_per_stage,
-        verbose=verbose,
-        release_gate=release_gate,
-    )
+    try:
+        result = run_pipeline_flow(
+            run_id=run_id,
+            fact_check_profile=normalized_profile,
+            fact_check_web_search=fact_check_web_search,
+            fact_check_max_web_results=fact_check_max_web_results,
+            fact_check_enable_llm=fact_check_enable_llm,
+            no_llm_fact_check=no_llm_fact_check,
+            fact_check_llm_model=fact_check_llm_model,
+            max_entity_concurrency=max_entity_concurrency,
+            retries_per_stage=retries_per_stage,
+            verbose=verbose,
+            release_gate=release_gate,
+            force_new_suffix=force_new_suffix,
+        )
+    except RunArtifactsExistError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
     typer.echo(
         f"run_id={result['run_id']} validate_passed={result['validate']['passed']} "
         f"profile={normalized_profile} release_gate={release_gate} retail_only={retail_only} "

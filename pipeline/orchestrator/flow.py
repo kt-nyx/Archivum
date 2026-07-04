@@ -12,6 +12,7 @@ from prefect.runtime import task_run
 
 from pipeline.common.run_context import (
     append_trace_event,
+    create_run_context,
     ensure_run_context,
     write_stage_manifest,
 )
@@ -48,6 +49,7 @@ def _run_stage_with_retry[T](
     Prefect runtime (``task_run.run_count``, 1-based and incremented per attempt) and the
     final-failure manifest is emitted from the task's ``on_failure`` hook.
     """
+    # Attach-only: the flow entry already created (and immutability-checked) this run.
     context = ensure_run_context(run_id)
     last_error: dict[str, BaseException | None] = {"exc": None}
 
@@ -130,9 +132,14 @@ def run_pipeline_flow(
     retries_per_stage: int = 1,
     verbose: bool = False,
     release_gate: bool = False,
+    force_new_suffix: bool = False,
 ) -> dict[str, Any]:
-    """Run staged ingest->validate flow with retries and trace artifacts."""
-    context = ensure_run_context(run_id)
+    """Run staged ingest->validate flow with retries and trace artifacts.
+
+    Runs are immutable: a run id whose directory already holds stage manifests is
+    rejected (or auto-suffixed with ``force_new_suffix=True``) instead of overwritten.
+    """
+    context = create_run_context(run_id, force_new_suffix=force_new_suffix)
 
     ingest_output = _run_stage_with_retry(
         "ingest",

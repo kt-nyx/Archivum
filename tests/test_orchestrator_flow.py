@@ -3,7 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from pipeline.common.run_context import ensure_run_context
+from pipeline.common.run_context import (
+    RunArtifactsExistError,
+    ensure_run_context,
+    write_stage_manifest,
+)
 from pipeline.orchestrator.flow import run_pipeline_flow
 
 
@@ -13,6 +17,10 @@ def test_run_pipeline_flow_passes_linker_report_to_validate(
 ) -> None:
     context = ensure_run_context("run-test-flow-linker-handoff", artifacts_root=tmp_path / "runs")
 
+    monkeypatch.setattr(
+        "pipeline.orchestrator.flow.create_run_context",
+        lambda _run_id=None, **_kw: context,
+    )
     monkeypatch.setattr(
         "pipeline.orchestrator.flow.ensure_run_context",
         lambda _run_id=None: context,
@@ -106,6 +114,10 @@ def test_run_pipeline_flow_passes_linker_report_to_validate(
 def test_run_pipeline_flow_retries_failed_stage_once(tmp_path: Path, monkeypatch) -> None:
     context = ensure_run_context("run-test-flow-retry", artifacts_root=tmp_path / "runs")
     monkeypatch.setattr(
+        "pipeline.orchestrator.flow.create_run_context",
+        lambda _run_id=None, **_kw: context,
+    )
+    monkeypatch.setattr(
         "pipeline.orchestrator.flow.ensure_run_context",
         lambda _run_id=None: context,
     )
@@ -176,6 +188,10 @@ def test_run_pipeline_flow_retries_failed_stage_once(tmp_path: Path, monkeypatch
 def test_run_pipeline_flow_escalates_after_retries_exhausted(tmp_path: Path, monkeypatch) -> None:
     context = ensure_run_context("run-test-flow-escalate", artifacts_root=tmp_path / "runs")
     monkeypatch.setattr(
+        "pipeline.orchestrator.flow.create_run_context",
+        lambda _run_id=None, **_kw: context,
+    )
+    monkeypatch.setattr(
         "pipeline.orchestrator.flow.ensure_run_context",
         lambda _run_id=None: context,
     )
@@ -222,6 +238,10 @@ def test_run_pipeline_flow_orders_enrich_phases_around_quest_traverse(
     monkeypatch,
 ) -> None:
     context = ensure_run_context("run-test-flow-enrich-order", artifacts_root=tmp_path / "runs")
+    monkeypatch.setattr(
+        "pipeline.orchestrator.flow.create_run_context",
+        lambda _run_id=None, **_kw: context,
+    )
     monkeypatch.setattr(
         "pipeline.orchestrator.flow.ensure_run_context",
         lambda _run_id=None: context,
@@ -313,3 +333,26 @@ def test_run_pipeline_flow_orders_enrich_phases_around_quest_traverse(
         < enrich_indices[3]
         < enrich_indices[4]
     )
+
+
+def test_run_pipeline_flow_refuses_run_id_with_existing_stage_artifacts(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Immutable runs: the flow must not silently overwrite an existing run's artifacts."""
+    monkeypatch.setenv("WOW_LORE_ARTIFACTS_ROOT", str(tmp_path / "runs"))
+    context = ensure_run_context("run-test-flow-immutable", artifacts_root=tmp_path / "runs")
+    write_stage_manifest(context, "ingest", status="ok", inputs=[], outputs=[])
+
+    stage_ran = {"ingest": False}
+
+    def unexpected_ingest(_context):
+        stage_ran["ingest"] = True
+        raise AssertionError("ingest must not run against an existing run id")
+
+    monkeypatch.setattr("pipeline.orchestrator.flow.run_ingest_stage", unexpected_ingest)
+
+    with pytest.raises(RunArtifactsExistError, match="runs are immutable"):
+        run_pipeline_flow(run_id=context.run_id, retries_per_stage=0)
+
+    assert stage_ran["ingest"] is False
