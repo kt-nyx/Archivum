@@ -16,6 +16,8 @@ from pipeline.generate.draft.temporal import (
     CanonicalEvidenceRecord,
     TemporalClassification,
     _character_profile_recency_override,
+    _expansion_rank_for_role,
+    _seed_narrative_recency_override,
     enrich_evidence_temporal_metadata,
 )
 
@@ -62,6 +64,148 @@ def test_character_profile_recency_guard_keeps_earlier_and_out_of_scope() -> Non
     record = _character_record(ENTRY_STATE, "the_war_within_edit")
     record.appearances = [{"field_name": "faction_pool", "raw_section_role": "the_war_within_edit"}]
     assert _character_profile_recency_override(record) is None
+
+
+_CATACLYSM_RANK = _expansion_rank_for_role("cataclysm_edit")
+
+
+def _seed_record(
+    scope: str,
+    raw_section_role: str,
+    *,
+    field_name: str = "history_digest",
+    snippet: str = "During the Fourth War, rival expeditions opened new battle fronts.",
+    history_eligibility: str = HISTORY_SETUP_BRIDGE,
+    contract_extra: dict | None = None,
+    active_rank: int | None = _CATACLYSM_RANK,
+    refs: list | None = None,
+) -> CanonicalEvidenceRecord:
+    """A seed-narrative canonical record whose prior classification is a confident LLM boundary
+    verdict, with a Cataclysm active-content expansion unless overridden."""
+    contract: dict = {"name": "Example Zone"}
+    if active_rank is not None:
+        contract["active_expansion"] = {"label": "cataclysm", "rank": active_rank}
+    if contract_extra:
+        contract.update(contract_extra)
+    return CanonicalEvidenceRecord(
+        canonical_evidence_id="s1",
+        subject_id="zone-example",
+        subject_type="zone",
+        source_id="src-zone",
+        source_categories=[],
+        source_title="Example Zone",
+        snippet=snippet,
+        boundary={"boundary_id": "b1", "entry_state_contract": contract},
+        appearances=[{"field_name": field_name, "raw_section_role": raw_section_role}],
+        refs=refs or [],
+        structural_classifications=[],
+        classification=TemporalClassification(
+            scope,
+            0.84,
+            "llm_boundary_classified",
+            "b1",
+            fallback_mode="llm_boundary",
+            history_eligibility=history_eligibility,
+        ),
+    )
+
+
+def test_seed_recency_guard_floors_later_expansion_llm_entry_state() -> None:
+    # A Battle-for-Azeroth seed paragraph confidently classified entry_state by the LLM boundary
+    # pass, with no contract linkage, is floored to post_active_lore (Slice 3 / cause E).
+    record = _seed_record(ENTRY_STATE, "battle_for_azeroth_edit")
+    override = _seed_narrative_recency_override(record)
+    assert override is not None
+    assert override.scope == POST_ACTIVE_LORE
+    assert override.reason == "seed_later_expansion_no_contract_linkage"
+    assert "floored_llm_boundary_entry_state" in override.structural_hint
+
+
+def test_seed_recency_guard_floors_setup_bridge_on_pre_entry_scope() -> None:
+    # history_setup_bridge is floored even when it rides a pre_entry_history scope.
+    record = _seed_record(PRE_ENTRY_HISTORY, "battle_for_azeroth_edit")
+    override = _seed_narrative_recency_override(record)
+    assert override is not None
+    assert override.scope == POST_ACTIVE_LORE
+
+
+def test_seed_recency_guard_spares_contract_linked_prose() -> None:
+    # The escape hatch that keeps expansion chronology soft: a later-expansion paragraph about the
+    # zone's own active conflict survives.
+    record = _seed_record(
+        ENTRY_STATE,
+        "battle_for_azeroth_edit",
+        snippet="Fighting along the Farmstead Front resumed as rival expeditions arrived.",
+        contract_extra={"active_conflicts": [{"label": "Farmstead Front", "source": "quest"}]},
+    )
+    assert _seed_narrative_recency_override(record) is None
+
+
+def test_seed_recency_guard_spares_contract_linked_metadata() -> None:
+    # Linkage may also come from appearance metadata (entity names/ids), not only prose.
+    refs = [
+        {
+            "row": {"field_name": "history_digest", "build_meta": {"location_name": "Old Town"}},
+            "item": {},
+        }
+    ]
+    record = _seed_record(
+        ENTRY_STATE,
+        "battle_for_azeroth_edit",
+        refs=refs,
+        contract_extra={"current_locations": [{"label": "Old Town"}]},
+    )
+    assert _seed_narrative_recency_override(record) is None
+
+
+def test_seed_recency_guard_subject_name_is_not_linkage() -> None:
+    # Every seed paragraph names its own zone; the subject's name never counts as linkage.
+    record = _seed_record(
+        ENTRY_STATE,
+        "battle_for_azeroth_edit",
+        snippet="During the Fourth War, Example Zone became a battleground once more.",
+        contract_extra={"active_conflicts": [{"label": "Example Zone"}]},
+    )
+    override = _seed_narrative_recency_override(record)
+    assert override is not None
+    assert override.scope == POST_ACTIVE_LORE
+
+
+def test_seed_recency_guard_leaves_non_later_recency_untouched() -> None:
+    # same-expansion, earlier-expansion, unranked-section, and unknown-active-expansion paragraphs
+    # are all out of scope for the floor.
+    assert _seed_narrative_recency_override(_seed_record(ENTRY_STATE, "cataclysm_edit")) is None
+    assert (
+        _seed_narrative_recency_override(_seed_record(ENTRY_STATE, "wrath_of_the_lich_king_edit"))
+        is None
+    )
+    assert _seed_narrative_recency_override(_seed_record(ENTRY_STATE, "history")) is None
+    assert (
+        _seed_narrative_recency_override(
+            _seed_record(ENTRY_STATE, "battle_for_azeroth_edit", active_rank=None)
+        )
+        is None
+    )
+
+
+def test_seed_recency_guard_out_of_scope_field_and_labels() -> None:
+    # Bulk entity pools are not seed narrative (they route through their own layers).
+    record = _seed_record(ENTRY_STATE, "battle_for_azeroth_edit")
+    record.appearances = [
+        {"field_name": "faction_pool", "raw_section_role": "battle_for_azeroth_edit"}
+    ]
+    assert _seed_narrative_recency_override(record) is None
+    # A plain background paragraph (neither entry_state nor setup bridge) is untouched.
+    assert (
+        _seed_narrative_recency_override(
+            _seed_record(
+                PRE_ENTRY_HISTORY,
+                "battle_for_azeroth_edit",
+                history_eligibility=HISTORY_BACKGROUND,
+            )
+        )
+        is None
+    )
 
 
 def _row(
@@ -867,3 +1011,79 @@ def test_boundary_rubric_neutralizes_current_entity_pull() -> None:
     assert "retrieve an artifact" in prompt
     assert "non-independent match" in prompt
     assert "not proof that the described event is part of the current entry state" in prompt
+
+
+def test_seed_recency_floor_overrides_confident_llm_boundary_verdict(monkeypatch) -> None:
+    # End-to-end (Slice 3): a battle_for_azeroth_edit seed history paragraph gets a confident
+    # entry_state/history_setup_bridge LLM boundary verdict, but the subject's active-content
+    # expansion is Cataclysm and the paragraph has no contract linkage — the floor rewrites the
+    # routed items and the decisions sidecar to post_active_lore.
+    monkeypatch.setattr(
+        "pipeline.generate.draft.temporal._llm_temporal_adjudication_disabled",
+        lambda: False,
+    )
+
+    def fake_llm_json_with_retry(**kwargs):
+        name = kwargs["response_schema_name"]
+        if name == "wiki_first_active_expansion":
+            return {"expansion": "cataclysm"}
+        assert name == "wiki_first_temporal_boundary_classification"
+        assert "requires strong textual evidence" in kwargs["system_prompt"]
+        items = _prompt_items(kwargs)
+        assert items[0]["expansion_recency"] == "later"
+        return {
+            "classifications": [
+                _classification_for_prompt_item(
+                    items[0],
+                    temporal_scope=ENTRY_STATE,
+                    history_eligibility=HISTORY_SETUP_BRIDGE,
+                    rationale="Reads like current setup framing.",
+                    history_rationale="Bridges into the current state.",
+                )
+            ]
+        }
+
+    monkeypatch.setattr(
+        "pipeline.generate.draft.temporal.llm_json_with_retry", fake_llm_json_with_retry
+    )
+
+    rows = [
+        _row(
+            "at_a_glance_input",
+            "The zone is a blighted region slowly being healed by caretakers.",
+            "lead",
+        ),
+        _row(
+            "history_digest",
+            "During the Fourth War, rival expeditions opened new battle fronts across the farmlands.",
+            "battle_for_azeroth_edit",
+        ),
+    ]
+
+    enriched, decisions, _boundary, canonical = enrich_evidence_temporal_metadata(
+        rows,
+        fact_packs_by_entity={
+            "zone-example": {
+                "entity_id": "zone-example",
+                "entity_type": "zone",
+                "name": "Example Zone",
+            }
+        },
+        run_id="test",
+        return_boundary_decisions=True,
+        return_canonical_decisions=True,
+    )
+
+    # The current-anchor lead paragraph is untouched; the later-expansion history paragraph is
+    # floored despite its confident LLM entry_state verdict.
+    assert _scope(enriched[0]) == ENTRY_STATE
+    assert _scope(enriched[1]) == POST_ACTIVE_LORE
+    assert _history_eligibility(enriched[1]) == HISTORY_EXCLUDED_POST_ACTIVE
+    assert decisions[1]["temporal_reason"] == "seed_later_expansion_no_contract_linkage"
+    floored = next(
+        row
+        for row in canonical
+        if row["temporal_reason"] == "seed_later_expansion_no_contract_linkage"
+    )
+    assert floored["temporal_scope"] == POST_ACTIVE_LORE
+    assert "floored_llm_boundary_entry_state" in floored["temporal_structural_hint"]

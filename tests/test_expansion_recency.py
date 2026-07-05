@@ -106,3 +106,8 @@ def test_rubric_documents_expansion_recency() -> None:
     prompt = _temporal_adjudication_system_prompt(canonical=True)
     assert "expansion_recency" in prompt
     assert "soft prior toward post_active_lore" in prompt
+    # Slice 3 tempering: 'later' with no contract linkage needs strong textual evidence to be
+    # current setup — while the chronology-is-not-the-question framing stays.
+    assert "The key question is not" in prompt
+    assert "requires strong textual evidence" in prompt
+    assert "entry_state or history_setup_bridge" in prompt

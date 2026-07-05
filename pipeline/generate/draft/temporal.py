@@ -14,6 +14,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 from dataclasses import dataclass, field, replace
 from typing import Any, cast
 
@@ -195,6 +196,35 @@ _ACTIVE_CONFLICT_CONTRACT_FIELDS = (
     "active_encounters",
     "current_threats",
 )
+# Contract fields whose entity linkage exempts a later-expansion seed/lore paragraph from the
+# recency floor (Slice 3): the contested/active loci plus the contract's current locations and
+# objectives. Deliberately excludes the pure identity fields (current_factions/inhabitants/
+# controller) — merely NAMING a currently-present entity is identity context, not evidence that a
+# later-expansion event is part of the current entry state (same reasoning as the adjudication
+# rubric's non-independent-match caution).
+_SEED_RECENCY_LINKAGE_CONTRACT_FIELDS = (
+    *_ACTIVE_CONFLICT_CONTRACT_FIELDS,
+    "current_locations",
+    "current_objectives",
+)
+# Seed/lore narrative fields covered by the seed recency floor (Slice 3): the subject's own page
+# narrative (history/currently/at-a-glance) plus the auxiliary lore-page pools. Roster/quest anchor
+# fields (boss_pool, questline_pool) and the bulk entity pools stay out — they are current-content
+# anchors or are handled by their own guards (character_pool has the stricter
+# ``_character_profile_recency_override``, which has no contract-linkage escape hatch).
+_SEED_NARRATIVE_FIELD_NAMES = frozenset(
+    {
+        "history_digest",
+        "currently_input",
+        "at_a_glance_input",
+        "instance_lore_pool",
+        "parent_lore_pool",
+        "related_lore_pool",
+    }
+)
+# Whole-phrase prose matching for contract linkage: casefolded, punctuation collapsed to spaces
+# (apostrophes kept — wiki proper nouns like "Gahrron's" carry them).
+_PROSE_MATCH_STRIP_RE = re.compile(r"[^0-9a-z']+")
 
 
 @dataclass(frozen=True)
@@ -436,11 +466,16 @@ def enrich_evidence_temporal_metadata(
                     appearances=record.appearances,
                 )
 
-    # Fix 1: floor still-living characters' later-expansion profile lines that only survived as
-    # entry_state via "current roster presence" (the Lilian Voss leak). Runs after the LLM pass so it
-    # corrects both deterministic and adjudicated classifications.
+    # Recency floors, after the LLM pass so they correct both deterministic and adjudicated
+    # classifications. Fix 1: still-living characters' later-expansion profile lines that only
+    # survived as entry_state via "current roster presence" (the Lilian Voss leak). Slice 3: the
+    # seed/lore sibling — later-expansion seed narrative with no entry-state contract linkage
+    # (the Fourth-War leak into WPL's currently/history). The stricter character guard wins when
+    # both could apply.
     for record in canonical_records:
         guard = _character_profile_recency_override(record)
+        if guard is None:
+            guard = _seed_narrative_recency_override(record)
         if guard is not None:
             record.classification = _with_canonical_history_defaults(
                 guard,
@@ -903,6 +938,112 @@ def _character_profile_recency_override(
         boundary_id,
         "character_profile_recency_guard",
         event_label=classification.event_label,
+    )
+
+
+def _record_appears_in_seed_narrative_field(record: CanonicalEvidenceRecord) -> bool:
+    return any(
+        str(appearance.get("field_name", "")).strip() in _SEED_NARRATIVE_FIELD_NAMES
+        for appearance in record.appearances
+    )
+
+
+def _normalized_prose_match_text(value: object) -> str:
+    """Casefolded text with punctuation collapsed to single spaces, for whole-phrase matching."""
+    text = str(value or "").replace("_", " ").casefold()
+    return " ".join(_PROSE_MATCH_STRIP_RE.sub(" ", text).split())
+
+
+def _phrase_in_prose(term: str, prose: str) -> bool:
+    return bool(term) and f" {term} " in f" {prose} "
+
+
+def _paragraph_matches_entry_state_contract(record: CanonicalEvidenceRecord) -> bool:
+    """True when the paragraph's entities link it to the contract's active conflicts,
+    current locations, or objectives.
+
+    ``_claim_matches_active_conflict_contract``-style matching lifted to paragraph level: exact
+    normalized contract entry labels/IDs against the paragraph's appearance metadata
+    (faction/location/character names and ids) plus whole-phrase presence in the paragraph text.
+    Deliberately NOT ``_canonical_contract_relation`` — its source_id match would link every seed
+    paragraph trivially (contract anchors come from the seed page itself). The subject's own
+    zone/instance name never counts: every seed paragraph names its subject.
+    """
+    contract = record.boundary.get("entry_state_contract")
+    if not isinstance(contract, dict):
+        return False
+    subject_terms = _subject_name_terms(record)
+    contract_terms: set[str] = set()
+    for contract_field in _SEED_RECENCY_LINKAGE_CONTRACT_FIELDS:
+        values = contract.get(contract_field)
+        if not isinstance(values, list):
+            continue
+        for entry in values:
+            if not isinstance(entry, dict):
+                continue
+            _add_normalized_contract_term(contract_terms, entry.get("label"))
+            for id_key in _CONTRACT_ID_KEYS:
+                _add_normalized_contract_term(contract_terms, entry.get(id_key))
+    contract_terms -= subject_terms
+    if not contract_terms:
+        return False
+    candidate_terms: set[str] = set()
+    for ref in record.refs:
+        labels, identifiers = _contract_candidate_terms(ref["row"], ref["item"])
+        candidate_terms |= labels | identifiers
+    candidate_terms -= subject_terms
+    if candidate_terms & contract_terms:
+        return True
+    prose = _normalized_prose_match_text(record.snippet)
+    return any(
+        _phrase_in_prose(_normalized_prose_match_text(term), prose) for term in contract_terms
+    )
+
+
+def _seed_narrative_recency_override(
+    record: CanonicalEvidenceRecord,
+) -> TemporalClassification | None:
+    """Guard (Slice 3): a seed/lore narrative paragraph from an expansion strictly LATER than the
+    subject's active-content expansion, with no entity linkage to the entry-state contract, cannot
+    stand as entry_state or history_setup_bridge.
+
+    Deterministic floor under boundary authority: a confident LLM boundary verdict remains
+    authoritative in general, but a later-expansion seed paragraph must show contract linkage to
+    claim it describes the current playable state (the Fourth-War "War Frontiers" paragraph that
+    framed WPL's ``currently`` and final history section). Contract linkage is the escape hatch
+    that keeps expansion chronology a soft signal (memory: expansion-chronology-now-soft-signal) —
+    a later-expansion paragraph about the zone's own active conflict survives. Floors to
+    post_active_lore; ``_with_canonical_history_defaults`` then derives
+    history_excluded_post_active for history appearances, and the canonical decisions sidecar
+    records the floor (distinct reason; the structural hint keeps the overridden verdict).
+    """
+    classification = record.classification
+    if classification is None:
+        return None
+    if (
+        classification.scope != ENTRY_STATE
+        and classification.history_eligibility != HISTORY_SETUP_BRIDGE
+    ):
+        return None
+    if not _record_appears_in_seed_narrative_field(record):
+        return None
+    recency = _expansion_recency(
+        _paragraph_expansion_rank(record), _active_expansion_rank(record.boundary)
+    )
+    if recency != "later":
+        return None
+    if _paragraph_matches_entry_state_contract(record):
+        return None
+    boundary_id = str(record.boundary.get("boundary_id", "")).strip()
+    return TemporalClassification(
+        POST_ACTIVE_LORE,
+        max(classification.confidence, 0.6),
+        "seed_later_expansion_no_contract_linkage",
+        boundary_id,
+        "seed_narrative_recency_guard:floored_"
+        f"{classification.fallback_mode}_{classification.scope}",
+        event_label=classification.event_label,
+        history_eligibility="",
     )
 
 
@@ -2695,7 +2836,11 @@ def _temporal_adjudication_system_prompt(*, canonical: bool = False) -> str:
         "signal. Treat 'later' as a soft prior toward post_active_lore unless the paragraph clearly "
         "establishes the current entry state; 'earlier'/'same' leans pre_entry/entry. This is a weak "
         "signal, not a rule — the entry-state contract and source structure still decide, and a "
-        "genuinely older-but-background 'later' paragraph can still be pre_entry_history.\n\n"
+        "genuinely older-but-background 'later' paragraph can still be pre_entry_history. But a "
+        "paragraph marked 'later' whose contract_relation shows no linkage to the contract's active "
+        "conflicts, current locations, or objectives requires strong textual evidence before you "
+        "classify it as current setup (entry_state or history_setup_bridge); without that evidence "
+        "prefer post_active_lore.\n\n"
         "History eligibility labels:\n"
         "- history_background: origin, fall, or background that belongs in a history card.\n"
         "- history_setup_bridge: a transition/setup paragraph that explains the current "
