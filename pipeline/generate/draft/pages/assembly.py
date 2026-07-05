@@ -9,6 +9,7 @@ from typing import Any
 from pipeline.common.content_role import classify_content_role
 from pipeline.common.retail import KNOWN_CLASSIC_ENTITIES
 from pipeline.common.text_normalize import clean_wiki_snippet
+from pipeline.contracts.models import required_pointer_count
 from pipeline.discovery.entity_typing import normalize_title
 from pipeline.discovery.world_registry import entry_kinds
 from pipeline.generate.draft.claim_routing import (
@@ -23,6 +24,7 @@ from pipeline.generate.draft.claim_routing import (
     route_claim_views_for_item,
     safe_paragraph_excerpt,
 )
+from pipeline.generate.draft.evidence_identity import evidence_id_for_item
 from pipeline.generate.draft.lore_selection import (
     dedupe_lore_items,
     filter_relevant_lore_items,
@@ -179,28 +181,40 @@ def _iter_evidence_items(
     return items
 
 
-def _items_for_source_ids(
+def _items_for_evidence_ids(
     items: list[dict[str, Any]],
-    source_ids: list[str],
+    evidence_ids: list[str],
 ) -> list[dict[str, Any]]:
-    wanted = {source_id for source_id in source_ids if source_id}
+    """Pool items cited by ``evidence_ids`` — paragraph-level ``canonical_evidence_id`` values
+    (Slice 7), with ``source_id`` still accepted for synthetic items and offline fallbacks."""
+    wanted = {str(value).strip() for value in evidence_ids if str(value).strip()}
     if not wanted:
         return []
-    return [item for item in items if str(item.get("source_id", "")) in wanted]
+    return [
+        item
+        for item in items
+        if str(item.get("canonical_evidence_id", "")).strip() in wanted
+        or str(item.get("source_id", "")) in wanted
+    ]
 
 
-def _pointers_for_source_ids(
+def _pointers_for_evidence_ids(
     items: list[dict[str, Any]],
-    source_ids: list[str],
+    evidence_ids: list[str],
     revision_map: dict[str, str],
 ) -> list[dict[str, str]]:
-    # Dedupe by excerpt_hash so duplicated evidence rows (a snippet repeated in the
-    # pool) can't yield several pointers with the same hash but incrementing locators
-    # (RC-6). Locator paragraph numbering runs over the *kept* distinct pointers.
+    """Provenance pointers for the paragraphs a synthesis actually cited.
+
+    ``evidence_ids`` are paragraph-level ids (translated ``used_evidence_ids``); each resolves
+    back to its source paragraph's ``(source_id, locator)`` pointer. Dedupe by excerpt_hash so
+    duplicated evidence rows (a snippet repeated in the pool) can't yield several pointers with
+    the same hash but incrementing locators (RC-6). Locator paragraph numbering runs over the
+    *kept* distinct pointers.
+    """
     pointers: list[dict[str, str]] = []
     seen_hashes: set[str] = set()
     index = 1
-    for item in _items_for_source_ids(items, source_ids):
+    for item in _items_for_evidence_ids(items, evidence_ids):
         pointer = _pointer_for_item(item, revision_map, index)
         if pointer is None or pointer["excerpt_hash"] in seen_hashes:
             continue
@@ -263,43 +277,39 @@ def _cap_card_pointers(
     return pointers[:max_count]
 
 
-def _pointer_count_for_words(word_count: int) -> int:
-    if word_count <= 120:
-        return 1
-    if word_count <= 240:
-        return 2
-    return 3
+# Prefix shared by every citation-shortfall retry reason, so audit consumers can tell the soft
+# citation nudge apart from hard editorial failures.
+CITATION_REASON_PREFIX = "cite the evidence ids"
 
 
-def _ensure_pointer_count(
-    pointers: list[dict[str, str]],
+def citation_shortfall_reasons(
     *,
+    text: str,
+    used_ids: list[str],
     pool: list[dict[str, Any]],
-    revision_map: dict[str, str],
-    min_count: int,
-) -> list[dict[str, str]]:
-    if min_count <= 0 or len(pointers) >= min_count:
-        return pointers
-    supplemented = list(pointers)
-    seen = {(pointer["source_id"], pointer["locator"]) for pointer in supplemented}
-    # Also track excerpt_hash so we never supplement with a pointer that repeats an
-    # existing excerpt under a fresh locator (RC-6: same-hash/different-locator dupes).
-    seen_hashes = {pointer["excerpt_hash"] for pointer in supplemented}
-    locator_index = len(supplemented) + 1
-    for item in pool:
-        if len(supplemented) >= min_count:
-            break
-        pointer = _pointer_for_item(item, revision_map, locator_index)
-        if pointer is None:
-            continue
-        key = (pointer["source_id"], pointer["locator"])
-        if key in seen or pointer["excerpt_hash"] in seen_hashes:
-            continue
-        supplemented.append(pointer)
-        seen.add(key)
-        seen_hashes.add(pointer["excerpt_hash"])
-        locator_index += 1
-    return supplemented
+) -> list[str]:
+    """Soft retry reason when a synthesis cites fewer distinct paragraphs than its length needs.
+
+    Replaces the deleted ``_ensure_pointer_count`` backfill (Slice 7): instead of fabricating
+    pointers to satisfy the per-length count, the synthesis driver re-prompts the model to cite
+    the evidence it actually drew on. Capped by the pool's own distinct paragraphs so a small
+    pool can never make the reason unsatisfiable. Returns ``[]`` when the citations suffice.
+    """
+    body = text.strip()
+    if not body:
+        return []
+    available = {
+        evidence_id for item in pool if (evidence_id := evidence_id_for_item(item))
+    }
+    required = min(required_pointer_count(_word_count(body)), len(available))
+    cited = {str(value).strip() for value in used_ids} & available
+    if len(cited) >= required:
+        return []
+    return [
+        f"{CITATION_REASON_PREFIX} each section draws on: only {len(cited)} distinct evidence "
+        f"item(s) cited for {_word_count(body)} words; list the ids of at least {required} "
+        "evidence items whose content the text actually uses in used_evidence_ids"
+    ]
 
 
 def _attach_history_source_refs(

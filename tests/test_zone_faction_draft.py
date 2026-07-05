@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pipeline.generate.draft.faction_lint import lint_faction_summary
 from pipeline.generate.draft.pages import build_zone_page
+from tests.factories.wiki_first_pages import stamp_canonical_evidence_ids
 
 
 def _fact_pack(zone_id: str) -> dict[str, object]:
@@ -18,7 +19,7 @@ def _fact_pack(zone_id: str) -> dict[str, object]:
     }
 
 
-def _minimal_prose_evidence(zone_id: str) -> list[dict[str, object]]:
+def _minimal_prose_evidence_rows(zone_id: str) -> list[dict[str, object]]:
     return [
         {
             "subject_id": zone_id,
@@ -82,7 +83,12 @@ def _minimal_prose_evidence(zone_id: str) -> list[dict[str, object]]:
     ]
 
 
-def _faction_evidence(zone_id: str) -> list[dict[str, object]]:
+def _minimal_prose_evidence(zone_id: str) -> list[dict[str, object]]:
+    # Slice 7: hand-built rows must carry paragraph identity (see stamp helper).
+    return stamp_canonical_evidence_ids(_minimal_prose_evidence_rows(zone_id))
+
+
+def _faction_evidence_rows(zone_id: str) -> list[dict[str, object]]:
     argent_snippet = (
         "The Argent Crusade maintains fortified outposts across Example Zone, "
         "coordinating reclamation efforts against undead forces throughout the ruined frontier."
@@ -129,6 +135,11 @@ def _faction_evidence(zone_id: str) -> list[dict[str, object]]:
             "build_meta": {"source_id": "src-zone", "subject_zone_id": zone_id},
         },
     ]
+
+
+def _faction_evidence(zone_id: str) -> list[dict[str, object]]:
+    # Slice 7: hand-built rows must carry paragraph identity (see stamp helper).
+    return stamp_canonical_evidence_ids(_faction_evidence_rows(zone_id))
 
 
 def _faction_targets(zone_id: str) -> list[dict[str, str]]:

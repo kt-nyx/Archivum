@@ -21,6 +21,7 @@ from pipeline.contracts.models import (
     SubZone,
     Zone,
     ZonePage,
+    required_pointer_count,
 )
 from pipeline.validate.types import ValidationIssue, ValidationSeverity
 
@@ -31,12 +32,9 @@ def _word_count(text: str) -> int:
     return len(WORD_RE.findall(text))
 
 
-def _required_pointer_count(word_count: int) -> int:
-    if word_count <= 120:
-        return 1
-    if word_count <= 240:
-        return 2
-    return 3
+# The per-length pointer recommendation is single-homed in contracts (Slice 7) and shared with
+# the draft-side citation retry reason.
+_required_pointer_count = required_pointer_count
 
 
 def _validate_pointer_set(
@@ -48,12 +46,27 @@ def _validate_pointer_set(
     code: str,
 ) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
-    if len(pointers) < min_count:
+    if not pointers and min_count > 0:
         issues.append(
             ValidationIssue(
                 code=code,
-                message=f"requires at least {min_count} source pointer(s), got {len(pointers)}",
+                message=f"requires at least {min_count} source pointer(s), got 0",
                 severity=ValidationSeverity.HARD_FAIL,
+                path=path,
+            )
+        )
+    elif len(pointers) < min_count:
+        # Slice 7: draft never fabricates pointers to satisfy the per-length count, so a real
+        # (short) pointer list is a WARN-level shortfall, not a hard failure; the retry-time
+        # citation reason and the draft decision record cover the audit trail.
+        issues.append(
+            ValidationIssue(
+                code="provenance.pointer_count_shortfall",
+                message=(
+                    f"has {len(pointers)} source pointer(s) but {min_count} are recommended "
+                    "for its length; pointers are never fabricated to satisfy the count"
+                ),
+                severity=ValidationSeverity.WARN,
                 path=path,
             )
         )

@@ -53,8 +53,9 @@ from pipeline.generate.draft.location_scoring import (
 from pipeline.generate.draft.pages.assembly import (
     _cap_card_pointers,
     _iter_evidence_items,
-    _pointers_for_source_ids,
+    _pointers_for_evidence_ids,
     _word_count,
+    citation_shortfall_reasons,
 )
 from pipeline.generate.draft.prose_election import (
     fallback_history_sections,
@@ -265,7 +266,8 @@ def _finalize_history_sections(
     attempt still fails as a batch, individually-clean LLM sections are salvaged (still LLM prose,
     never a borrow). Below the salvage minimum the field fails explicitly — the verbatim
     ``fallback_history_sections`` / pool borrows are reserved for offline NO_LLM runs.
-    Returns ``(sections, used_source_ids, field_status)``.
+    Returns ``(sections, used_evidence_ids, field_status)`` — used ids are paragraph-level
+    (Slice 7).
     """
     if not history_pool:
         return [], [], FIELD_STATUS_NO_EVIDENCE
@@ -309,6 +311,17 @@ def _finalize_history_sections(
                 if isinstance(row, dict)
             ],
             validate=lambda payload: _batch_reasons(list(payload.get("sections") or [])),
+            # Citation shortfall is a soft retry reason (Slice 7): re-prompt for honest
+            # citations, but never fail the field or fabricate pointers over it.
+            validate_soft=lambda payload: citation_shortfall_reasons(
+                text=" ".join(
+                    str(row.get("body", ""))
+                    for row in (payload.get("sections") or [])
+                    if isinstance(row, dict)
+                ),
+                used_ids=list(payload.get("used") or []),
+                pool=history_pool,
+            ),
             # The driver's own copy check is redundant with _section_gate_reasons (which is
             # source-aware per section); pass None so copy failures surface as gate reasons.
             source_snippets=None,
@@ -424,10 +437,11 @@ def _apply_history_coverage(
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Guarantee eligible setup-bridge claims survive into final history (Slice 7).
 
-    Coverage planning is claim-level only: ``plan_history_coverage`` returns no units for a
-    paragraph-only pool, so the legacy path is untouched. When a required setup-bridge unit is
-    dropped, a live run first retries synthesis with explicit bridge hints; if that still omits the
-    unit (or offline, where the retry is a no-op), a concise deterministic bridge card is appended.
+    Coverage units are paragraph-keyed (``canonical_evidence_id``): claim-view and paragraph-only
+    pools form units the same way, so a required unit exists whenever a setup-bridge paragraph is
+    in the pool. When a required unit is dropped, a live run first retries synthesis with explicit
+    bridge hints; if that still omits the unit (or offline, where the retry is a no-op), a concise
+    deterministic bridge card is appended.
     """
     units = plan_history_coverage(coverage_pool)
     if not units:
@@ -506,8 +520,9 @@ def _append_setup_bridge_cards(
     a sub-floor card), but the cap never justifies dropping a required setup bridge: the hard
     ``MAX_HISTORY_SECTIONS`` ceiling is only exceeded long enough for the budget pass to fold the
     card into adjacent context. Provenance stays on the source paragraph: ``used`` carries the
-    source id, and (when a ``pointer_builder`` is supplied) the bridge card gets an explicit
-    ``source_refs`` pointer so the positional ref attachment downstream does not mis-credit it.
+    unit's paragraph id (``canonical_evidence_id``), and (when a ``pointer_builder`` is supplied)
+    the bridge card gets an explicit ``source_refs`` pointer so the positional ref attachment
+    downstream does not mis-credit it.
     """
     appended_ids: set[str] = set()
     sections = list(sections)
@@ -540,8 +555,8 @@ def _append_setup_bridge_cards(
                     last_refs.append(pointer)
                 last["source_refs"] = last_refs
             sections[-1] = last
-        if unit["source_id"]:
-            used.append(unit["source_id"])
+        if unit["canonical_evidence_id"]:
+            used.append(unit["canonical_evidence_id"])
         appended_ids.add(unit["coverage_id"])
     if not appended_ids:
         return sections, used, appended_ids
@@ -866,7 +881,7 @@ def build_major_factions(
         if card is None:
             continue
         cards.append(card)
-        pointers = _cap_card_pointers(_pointers_for_source_ids(pool, used, revision_map))
+        pointers = _cap_card_pointers(_pointers_for_evidence_ids(pool, used, revision_map))
         if not pointers:
             # The summary's reported used-ids resolved to no pointer — either none were
             # reported, or they reference a related-lore source absent from the page's
@@ -880,7 +895,7 @@ def build_major_factions(
                 if str(item.get("source_id", "")).strip()
             ]
             pointers = _cap_card_pointers(
-                _pointers_for_source_ids(pool, pool_source_ids, revision_map)
+                _pointers_for_evidence_ids(pool, pool_source_ids, revision_map)
             )
         if pointers:
             provenance_map[str(card["id"])] = pointers
@@ -1043,7 +1058,9 @@ def build_location_cards(
             "provenance": [],
         }
         cards.append(card)
-        pointers = _cap_card_pointers(_pointers_for_source_ids(source_pool, used_ids, revision_map))
+        pointers = _cap_card_pointers(
+            _pointers_for_evidence_ids(source_pool, used_ids, revision_map)
+        )
         if pointers:
             provenance_map[candidate.location_id] = pointers
         if len(cards) >= target_count and target_count > 0:

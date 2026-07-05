@@ -11,6 +11,7 @@ from pipeline.generate.draft.prose_lint import (
     lint_history_sections,
     word_count,
 )
+from tests.factories.wiki_first_pages import stamp_canonical_evidence_ids
 
 
 def _fact_pack(zone_id: str) -> dict[str, object]:
@@ -23,7 +24,7 @@ def _fact_pack(zone_id: str) -> dict[str, object]:
     }
 
 
-def _prose_evidence(zone_id: str) -> list[dict[str, object]]:
+def _prose_evidence_rows(zone_id: str) -> list[dict[str, object]]:
     return [
         {
             "subject_id": zone_id,
@@ -113,6 +114,11 @@ def _prose_evidence(zone_id: str) -> list[dict[str, object]]:
             },
         },
     ]
+
+
+def _prose_evidence(zone_id: str) -> list[dict[str, object]]:
+    # Slice 7: hand-built rows must carry paragraph identity (see stamp helper).
+    return stamp_canonical_evidence_ids(_prose_evidence_rows(zone_id))
 
 
 def test_build_zone_page_prose_passes_lint_without_llm(monkeypatch) -> None:

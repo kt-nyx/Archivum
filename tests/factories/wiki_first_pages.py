@@ -5,6 +5,27 @@ from __future__ import annotations
 from typing import Any
 
 
+def stamp_canonical_evidence_ids(evidence_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Mint per-paragraph ``canonical_evidence_id``s like production temporal enrichment does.
+
+    Draft-page tests build evidence rows by hand and call the page builders directly, skipping
+    ``enrich_evidence_temporal_metadata``; Slice 7 makes paragraph identity a hard contract for
+    history pools, so hand-built rows must carry it too. Existing ids are preserved.
+    """
+    counter = 0
+    for row in evidence_rows:
+        if not isinstance(row, dict):
+            continue
+        items = row.get("evidence_items")
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if isinstance(item, dict) and not str(item.get("canonical_evidence_id", "")).strip():
+                counter += 1
+                item["canonical_evidence_id"] = f"canonical-test-{counter:04d}"
+    return evidence_rows
+
+
 def minimal_zone_page_payload(*, zone_id: str = "zone-testlands") -> dict[str, Any]:
     return {
         "zone_id": zone_id,

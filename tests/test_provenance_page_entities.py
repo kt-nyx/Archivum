@@ -5,6 +5,7 @@ from pipeline.generate.draft.provenance import build_revision_index, collect_sou
 from tests.factories.wiki_first_pages import (
     minimal_instance_page_payload,
     minimal_zone_page_payload,
+    stamp_canonical_evidence_ids,
 )
 from tests.test_validation_engine import validate_payload
 
@@ -173,7 +174,7 @@ def test_build_zone_page_uses_snapshot_revision_for_quest_provenance(monkeypatch
             "revision_ids": ["mw:1"],
             "source_urls": {"src-zone": "https://warcraft.wiki.gg/wiki/Example_Zone"},
         },
-        evidence_rows,
+        stamp_canonical_evidence_ids(evidence_rows),
         questline_rows,
         [],
         [],
@@ -247,7 +248,7 @@ def test_build_zone_page_history_provenance_falls_back_when_used_ids_empty(monke
             "revision_ids": ["mw:1"],
             "source_urls": {"src-zone": "https://example.test/zone"},
         },
-        evidence_rows,
+        stamp_canonical_evidence_ids(evidence_rows),
         [],
         [],
         [],

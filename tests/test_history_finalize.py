@@ -10,6 +10,14 @@ def _section(heading: str, body: str) -> dict[str, Any]:
     return {"heading": heading, "body": body, "source_refs": []}
 
 
+# Minimal contract-conforming pool item: paragraph identity is required (Slice 7).
+_POOL_ITEM = {
+    "snippet": "x",
+    "source_id": "src-zone",
+    "canonical_evidence_id": "canonical-x",
+}
+
+
 # Bodies are kept in the validate word budget (40..110) so the pre-lint budget pass does not absorb
 # them — mirroring full-length LLM sections — leaving three distinct clean sections to salvage.
 _CLEAN = [
@@ -69,7 +77,7 @@ def test_history_finalize_salvages_clean_llm_sections(monkeypatch) -> None:
     monkeypatch.setattr(cards, "fallback_history_sections", _sentinel_fallback)
 
     sections, _used, _status = cards._finalize_history_sections(
-        history_pool=[{"text": "x"}], evidence_rows=[], max_history=4
+        history_pool=[_POOL_ITEM], evidence_rows=[], max_history=4
     )
 
     headings = [s["heading"] for s in sections]
@@ -93,7 +101,7 @@ def test_history_finalize_falls_through_when_too_few_clean(monkeypatch) -> None:
     monkeypatch.setattr(cards, "fallback_history_sections", _fallback)
 
     sections, _used, _status = cards._finalize_history_sections(
-        history_pool=[{"text": "x"}], evidence_rows=[], max_history=4
+        history_pool=[_POOL_ITEM], evidence_rows=[], max_history=4
     )
     assert called.get("yes") is True
     assert len(sections) == 3
@@ -130,13 +138,13 @@ def test_history_finalize_retries_on_out_of_budget_section(monkeypatch) -> None:
     def _synth(pool, **kw):
         calls.append(str(kw.get("reinforce", "")))
         if len(calls) == 1:
-            return [_CLEAN[0], _NEAR_CAP, _section("Coda", _SUB_FLOOR_BODY)], ["used"]
-        return _CLEAN, ["used"]
+            return [_CLEAN[0], _NEAR_CAP, _section("Coda", _SUB_FLOOR_BODY)], ["canonical-x"]
+        return _CLEAN, ["canonical-x"]
 
     monkeypatch.setattr(cards, "synthesize_history_sections", _synth)
 
     sections, _used, status = cards._finalize_history_sections(
-        history_pool=[{"text": "x"}], evidence_rows=[], max_history=4
+        history_pool=[_POOL_ITEM], evidence_rows=[], max_history=4
     )
 
     assert len(calls) == 2

@@ -34,6 +34,7 @@ from pipeline.generate.draft.claim_routing import (
     route_claim_views_for_pool,
     safe_paragraph_excerpt,
 )
+from pipeline.generate.draft.evidence_identity import evidence_id_for_item
 from pipeline.generate.draft.instance_lint import (
     MAX_KEY_CHARACTER_WORDS,
     fallback_key_character_summary,
@@ -45,9 +46,8 @@ from pipeline.generate.draft.pages.assembly import (
     _build_instance_evidence_pools,
     _cap_card_pointers,
     _classic_excluded_names,
-    _ensure_pointer_count,
     _extract_instance_structured_links,
-    _pointers_for_source_ids,
+    _pointers_for_evidence_ids,
 )
 from pipeline.generate.draft.prose_gate import prose_gate_violations
 from pipeline.generate.draft.prose_selection import (
@@ -799,23 +799,27 @@ def _finalize_key_characters(
                 if not summary or _summary_reasons(summary, gate_sources=[]):
                     continue
             pointers = _cap_card_pointers(
-                _pointers_for_source_ids(synthesis_items, used, revision_map),
+                _pointers_for_evidence_ids(synthesis_items, used, revision_map),
                 max_count=3,
             )
             if not pointers and boss_pool is not synthesis_items:
                 pointers = _cap_card_pointers(
-                    _pointers_for_source_ids(boss_pool, used, revision_map),
+                    _pointers_for_evidence_ids(boss_pool, used, revision_map),
                     max_count=3,
                 )
             if not pointers:
+                # The reported used-ids resolved to no pointer. Fall back to the pool the card
+                # was actually synthesized from (Slice 6 pattern) — grounded provenance, not a
+                # count backfill — so an emitted card carries >=1 pointer when any pool source
+                # is resolvable; otherwise the candidate is dropped below.
                 best_pool = synthesis_items if synthesis_items else boss_pool
+                pool_ids = [
+                    evidence_id
+                    for item in best_pool
+                    if (evidence_id := evidence_id_for_item(item))
+                ]
                 pointers = _cap_card_pointers(
-                    _ensure_pointer_count(
-                        [],
-                        pool=best_pool,
-                        revision_map=revision_map,
-                        min_count=1,
-                    ),
+                    _pointers_for_evidence_ids(best_pool, pool_ids, revision_map),
                     max_count=3,
                 )
             if not pointers:

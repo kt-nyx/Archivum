@@ -7,6 +7,7 @@ from pipeline.generate.draft.instance_lint import MIN_OVERVIEW_WORDS, lint_overv
 from pipeline.generate.draft.pages import build_instance_page
 from pipeline.generate.draft.pages.key_characters import _finalize_key_characters
 from pipeline.generate.draft.prose_lint import word_count
+from tests.factories.wiki_first_pages import stamp_canonical_evidence_ids
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "instance"
 
@@ -26,7 +27,7 @@ def _long_history_snippet(instance_name: str) -> str:
     )
 
 
-def _instance_evidence(instance_id: str, instance_name: str) -> list[dict[str, object]]:
+def _instance_evidence_rows(instance_id: str, instance_name: str) -> list[dict[str, object]]:
     history = _long_history_snippet(instance_name)
     return [
         {
@@ -66,6 +67,11 @@ def _instance_evidence(instance_id: str, instance_name: str) -> list[dict[str, o
             "build_meta": {"source_id": "src-instance", "source_kind": "seed"},
         },
     ]
+
+
+def _instance_evidence(instance_id: str, instance_name: str) -> list[dict[str, object]]:
+    # Slice 7: hand-built rows must carry paragraph identity (see stamp helper).
+    return stamp_canonical_evidence_ids(_instance_evidence_rows(instance_id, instance_name))
 
 
 def _fact_pack(instance_id: str, instance_name: str) -> dict[str, object]:
@@ -187,7 +193,7 @@ def test_build_scholomance_instance_page_from_faculty_section(monkeypatch) -> No
     }
     draft = build_instance_page(
         fact_pack,
-        evidence,
+        stamp_canonical_evidence_ids(evidence),
         {"lore_source": "instance_page"},
         section_blocks=[{"section_role": "scholomance_faculty", "text": faculty_html}],
     )
@@ -268,7 +274,7 @@ def test_build_instance_page_wires_scoped_links_and_parent_roles(monkeypatch) ->
     ]
     draft = build_instance_page(
         _fact_pack(instance_id, instance_name),
-        evidence,
+        stamp_canonical_evidence_ids(evidence),
         {"lore_source": "instance_page"},
         section_blocks=[
             {
@@ -354,7 +360,9 @@ def test_sparse_instance_fuses_cross_page_lore_with_provenance(monkeypatch) -> N
             "src-parent": "https://warcraft.wiki.gg/wiki/Auchindoun",
         },
     }
-    draft = build_instance_page(fact_pack, evidence, {"lore_source": "instance_page"})
+    draft = build_instance_page(
+        fact_pack, stamp_canonical_evidence_ids(evidence), {"lore_source": "instance_page"}
+    )
     assert not lint_overview(str(draft["overview"]), instance_name=instance_name)
     # Cross-page lore was fused -> source flips to linked_lore_page with a clear reason,
     # and the parent page is cited in story-context provenance.
@@ -426,7 +434,9 @@ def test_sparse_instance_excludes_non_naming_related_lore_offline(monkeypatch) -
         "src-instance": "https://warcraft.wiki.gg/wiki/Mana-Tombs",
         "src-related": "https://warcraft.wiki.gg/wiki/Outland",
     }
-    draft = build_instance_page(fact_pack, evidence, {"lore_source": "instance_page"})
+    draft = build_instance_page(
+        fact_pack, stamp_canonical_evidence_ids(evidence), {"lore_source": "instance_page"}
+    )
     # Related page neither names the instance nor is LLM-affirmed offline -> never fused.
     assert "floating continents" not in str(draft["overview"])
     assert draft["lore_source"] == "instance_page"
@@ -465,7 +475,9 @@ def test_rich_instance_ignores_cross_page_lore(monkeypatch) -> None:
         "src-instance": "https://warcraft.wiki.gg/wiki/Archive_Vault",
         "src-parent": "https://warcraft.wiki.gg/wiki/Citadel",
     }
-    draft = build_instance_page(fact_pack, evidence, {"lore_source": "instance_page"})
+    draft = build_instance_page(
+        fact_pack, stamp_canonical_evidence_ids(evidence), {"lore_source": "instance_page"}
+    )
     assert "unrelated wings" not in str(draft["overview"])
     assert draft["lore_source"] == "instance_page"
     story_sources = {p["source_id"] for p in draft["provenance"]["story_context"]}

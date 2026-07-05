@@ -18,14 +18,13 @@ from pipeline.generate.draft.pages.assembly import (
     _attach_history_source_refs,
     _build_evidence_pools,
     _cap_card_pointers,
-    _ensure_pointer_count,
     _history_pointers_from_sections,
-    _pointer_count_for_words,
     _pointer_for_item,
-    _pointers_for_source_ids,
+    _pointers_for_evidence_ids,
     _sanitize_cluster_title,
     _source_entries,
     _word_count,
+    citation_shortfall_reasons,
 )
 from pipeline.generate.draft.pages.cards import (
     _finalize_history_sections,
@@ -142,6 +141,13 @@ def _finalize_at_a_glance(
         call=_call,
         extract_bodies=lambda payload: [str(payload.get("text", ""))],
         validate=lambda payload: _reasons(str(payload.get("text", ""))),
+        # Citation shortfall is a soft retry reason (Slice 7): re-prompt for honest citations,
+        # never fail the field or fabricate pointers over it.
+        validate_soft=lambda payload: citation_shortfall_reasons(
+            text=str(payload.get("text", "")),
+            used_ids=list(payload.get("used", [])),
+            pool=at_pool,
+        ),
         source_snippets=_evidence_snippets(at_pool),
         label="at_a_glance",
     )
@@ -203,6 +209,12 @@ def _finalize_currently(
         call=_call,
         extract_bodies=lambda payload: [str(payload.get("text", ""))],
         validate=lambda payload: _live_reasons(str(payload.get("text", ""))),
+        # Citation shortfall is a soft retry reason (Slice 7); see _finalize_at_a_glance.
+        validate_soft=lambda payload: citation_shortfall_reasons(
+            text=str(payload.get("text", "")),
+            used_ids=list(payload.get("used", [])),
+            pool=pool,
+        ),
         source_snippets=_evidence_snippets(pool),
         label="currently",
     )
@@ -285,30 +297,19 @@ def build_zone_page(
         pools=pools,
     )
 
+    # Pointers come only from the evidence the synthesis reported using — a shortfall against the
+    # per-length recommendation is retried as a citation reason and otherwise ships short with a
+    # validate WARN (Slice 7); pointers are never fabricated to satisfy a count.
     at_glance_pool = at_pool or pools["at_a_glance_pool"]
-    at_a_glance_pointers = _pointers_for_source_ids(at_glance_pool, at_glance_used, revision_map)
     at_a_glance_pointers = _cap_card_pointers(
-        _ensure_pointer_count(
-            at_a_glance_pointers,
-            pool=at_glance_pool,
-            revision_map=revision_map,
-            min_count=_pointer_count_for_words(_word_count(at_a_glance or "")),
-        ),
+        _pointers_for_evidence_ids(at_glance_pool, at_glance_used, revision_map),
         max_count=3,
     )
     if at_a_glance is None:
         at_a_glance_pointers = []
     currently_pointer_pool = currently_pool or pools["currently_pool"]
-    currently_pointers = _pointers_for_source_ids(
-        currently_pointer_pool, currently_used, revision_map
-    )
     currently_pointers = _cap_card_pointers(
-        _ensure_pointer_count(
-            currently_pointers,
-            pool=currently_pointer_pool,
-            revision_map=revision_map,
-            min_count=_pointer_count_for_words(_word_count(currently or "")),
-        ),
+        _pointers_for_evidence_ids(currently_pointer_pool, currently_used, revision_map),
         max_count=3,
     )
     if currently is None:
@@ -334,23 +335,10 @@ def build_zone_page(
         revision_map,
     )
     history_pointer_pool = draft_history_pool or history_pool or pools["history_pool"]
-    history_pointers = _pointers_for_source_ids(history_pointer_pool, history_used, revision_map)
+    history_pointers = _pointers_for_evidence_ids(history_pointer_pool, history_used, revision_map)
     if not history_pointers:
         history_pointers = _history_pointers_from_sections(history_sections)
-    history_text = " ".join(
-        str(section.get("body", "")).strip()
-        for section in history_sections
-        if isinstance(section, dict)
-    )
-    history_pointers = _cap_card_pointers(
-        _ensure_pointer_count(
-            history_pointers,
-            pool=history_pointer_pool,
-            revision_map=revision_map,
-            min_count=_pointer_count_for_words(_word_count(history_text)),
-        ),
-        max_count=3,
-    )
+    history_pointers = _cap_card_pointers(history_pointers, max_count=3)
     for pointer in history_pointers:
         used_source_ids.add(pointer["source_id"])
 
@@ -617,7 +605,7 @@ def build_zone_page(
         summary = trim_instance_link_summary(summary)
         card = {**candidate, "summary": summary}
         instance_links.append(card)
-        pointers = _cap_card_pointers(_pointers_for_source_ids(scoped, used_ids, revision_map))
+        pointers = _cap_card_pointers(_pointers_for_evidence_ids(scoped, used_ids, revision_map))
         if pointers:
             instance_provenance_map[str(card["id"])] = pointers
             for pointer in pointers:

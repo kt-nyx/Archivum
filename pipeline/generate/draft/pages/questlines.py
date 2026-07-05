@@ -11,10 +11,10 @@ from pipeline.generate.draft.card_lint import (
     lint_cta_hook,
     strip_zone_name_from_cta,
 )
+from pipeline.generate.draft.evidence_identity import evidence_id_for_item
 from pipeline.generate.draft.pages.assembly import (
     _cap_card_pointers,
-    _ensure_pointer_count,
-    _pointers_for_source_ids,
+    _pointers_for_evidence_ids,
 )
 
 _MAX_CLUSTER_CARDS = ZONE_MAX_TOTAL_QUESTLINE_CARDS
@@ -123,15 +123,18 @@ def _append_questline_card(
             "wiki_refs": wiki_refs,
         }
     )
-    pointers = _cap_card_pointers(_pointers_for_source_ids(scoped_pool, cta_used, revision_map))
+    pointers = _cap_card_pointers(_pointers_for_evidence_ids(scoped_pool, cta_used, revision_map))
     if not pointers:
+        # The CTA's reported used-ids resolved to no pointer. Fall back to the scoped lore pool
+        # the hook was synthesized from (Slice 6 pattern) — grounded provenance, not a count
+        # backfill — so an emitted card carries >=1 pointer when any pool source is resolvable.
+        pool_ids = [
+            evidence_id
+            for item in scoped_pool
+            if (evidence_id := evidence_id_for_item(item))
+        ]
         pointers = _cap_card_pointers(
-            _ensure_pointer_count(
-                [],
-                pool=scoped_pool,
-                revision_map=revision_map,
-                min_count=1,
-            )
+            _pointers_for_evidence_ids(scoped_pool, pool_ids, revision_map)
         )
     if pointers:
         bucket = _provenance_bucket_for_faction(faction)

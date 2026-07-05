@@ -692,6 +692,20 @@ SUB_ZONE_MAX_QUESTLINE_CARDS = 3
 ZONE_MIN_QUESTLINE_INCLUSION_SCORE = 8
 SUB_ZONE_MIN_QUESTLINE_INCLUSION_SCORE = 9
 
+
+def required_pointer_count(word_count: int) -> int:
+    """Recommended provenance pointers for a prose section of ``word_count`` words.
+
+    Single home (Slice 7) shared by the draft-side citation retry reason and validate's
+    provenance rule. A shortfall against this count is a WARN, never grounds to fabricate
+    pointers: draft ships the real (short) pointer list and records the shortfall.
+    """
+    if word_count <= 120:
+        return 1
+    if word_count <= 240:
+        return 2
+    return 3
+
 ENTITY_MODEL_MAP: dict[str, type[BaseModel]] = {
     "zone": Zone,
     "sub_zone": SubZone,

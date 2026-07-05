@@ -3,6 +3,7 @@ from __future__ import annotations
 from pipeline.discovery.entity_typing import should_reject_location_title
 from pipeline.generate.draft.location_lint import lint_location_summary
 from pipeline.generate.draft.pages import build_zone_page
+from tests.factories.wiki_first_pages import stamp_canonical_evidence_ids
 
 
 def _fact_pack(zone_id: str) -> dict[str, object]:
@@ -19,7 +20,7 @@ def _fact_pack(zone_id: str) -> dict[str, object]:
     }
 
 
-def _minimal_prose_evidence(zone_id: str) -> list[dict[str, object]]:
+def _minimal_prose_evidence_rows(zone_id: str) -> list[dict[str, object]]:
     return [
         {
             "subject_id": zone_id,
@@ -73,7 +74,12 @@ def _minimal_prose_evidence(zone_id: str) -> list[dict[str, object]]:
     ]
 
 
-def _location_evidence(zone_id: str) -> list[dict[str, object]]:
+def _minimal_prose_evidence(zone_id: str) -> list[dict[str, object]]:
+    # Slice 7: hand-built rows must carry paragraph identity (see stamp helper).
+    return stamp_canonical_evidence_ids(_minimal_prose_evidence_rows(zone_id))
+
+
+def _location_evidence_rows(zone_id: str) -> list[dict[str, object]]:
     northwatch_snippet = (
         "Northwatch Hold is a fortified outpost in Example Zone where alliance patrols coordinate "
         "supply lines, defensive operations, and regional scouting missions across the frontier."
@@ -106,6 +112,11 @@ def _location_evidence(zone_id: str) -> list[dict[str, object]]:
             "evidence_items": [{"snippet": defer_snippet, "section_role": "lead"}],
         },
     ]
+
+
+def _location_evidence(zone_id: str) -> list[dict[str, object]]:
+    # Slice 7: hand-built rows must carry paragraph identity (see stamp helper).
+    return stamp_canonical_evidence_ids(_location_evidence_rows(zone_id))
 
 
 def _location_rows(zone_id: str) -> list[dict[str, object]]:

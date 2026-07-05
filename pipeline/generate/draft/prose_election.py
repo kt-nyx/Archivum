@@ -10,6 +10,7 @@ from pipeline.common.linguistics import tense_profile
 from pipeline.common.wiki_evidence_filters import should_exclude_from_history
 from pipeline.contracts.models import ZONE_PAGE_BUDGET_RULES
 from pipeline.generate.draft.claim_routing import prefer_entry_state_first
+from pipeline.generate.draft.evidence_identity import evidence_id_for_item
 from pipeline.generate.draft.prose_lint import (
     MAX_AT_A_GLANCE_WORDS,
     MAX_HISTORY_SECTIONS,
@@ -426,7 +427,8 @@ def fallback_history_sections(
             str(item.get("raw_section_role", "")),
         )
         sections.append({"heading": heading, "body": snippet, "source_refs": []})
-        source_id = str(item.get("source_id", "")).strip()
-        if source_id:
-            used.append(source_id)
+        # Paragraph-level identity (Slice 7) so offline coverage bookkeeping matches live.
+        evidence_id = evidence_id_for_item(item)
+        if evidence_id:
+            used.append(evidence_id)
     return sections, used

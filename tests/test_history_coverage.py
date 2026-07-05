@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from pipeline.generate.draft.coverage import (
     build_section_coverage_decisions,
     covered_coverage_ids,
@@ -16,14 +18,19 @@ from pipeline.generate.draft.temporal import (
     PRE_ENTRY_HISTORY,
 )
 
+# Production shape (Slice 7): every paragraph of the zone's wiki page shares this ONE source id;
+# only canonical_evidence_id tells paragraphs apart. Keying coverage by source id collapses all
+# units into one covered-by-anything blob — the bug these tests pin down.
+_PAGE_SOURCE_ID = "src-wpl"
+
 
 def _claim_view(
     *,
-    source_id: str,
     claim_id: str,
     claim_text: str,
     block_index: int,
     history_eligibility: str,
+    source_id: str = _PAGE_SOURCE_ID,
     temporal_scope: str = PRE_ENTRY_HISTORY,
     section_role: str = "history",
     raw_section_role: str = "history",
@@ -83,35 +90,30 @@ _BRIDGE_BODY = (
 def _wpl_coverage_pool() -> list[dict[str, Any]]:
     return [
         _claim_view(
-            source_id="src-scourging",
             claim_id="claim-scourging",
             claim_text="The Scourge razed Andorhal during the third war.",
             block_index=1,
             history_eligibility=HISTORY_BACKGROUND,
         ),
         _claim_view(
-            source_id="src-cauldron",
             claim_id="claim-cauldron",
             claim_text="The Argent Dawn established cauldrons across the plaguelands.",
             block_index=2,
             history_eligibility=HISTORY_BACKGROUND,
         ),
         _claim_view(
-            source_id="src-cenarion",
             claim_id="claim-cenarion",
             claim_text="The Cenarion Circle began healing the poisoned fields.",
             block_index=3,
             history_eligibility=HISTORY_BACKGROUND,
         ),
         _claim_view(
-            source_id="src-gahrron",
             claim_id="claim-gahrron",
             claim_text="Gahrron's Withering remained a contested plague cauldron.",
             block_index=4,
             history_eligibility=HISTORY_BACKGROUND,
         ),
         _claim_view(
-            source_id="src-hearthglen",
             claim_id="claim-hearthglen",
             claim_text=_BRIDGE_BODY,
             block_index=5,
@@ -125,13 +127,15 @@ def test_plan_history_coverage_marks_setup_bridge_required() -> None:
     units = plan_history_coverage(_wpl_coverage_pool())
 
     assert len(units) == 5
+    # One unit per paragraph even though every paragraph shares one source id.
+    assert all(unit["source_id"] == _PAGE_SOURCE_ID for unit in units)
     # Source order preserved by block_index.
-    assert [unit["source_id"] for unit in units] == [
-        "src-scourging",
-        "src-cauldron",
-        "src-cenarion",
-        "src-gahrron",
-        "src-hearthglen",
+    assert [unit["canonical_evidence_id"] for unit in units] == [
+        "canonical-claim-scourging",
+        "canonical-claim-cauldron",
+        "canonical-claim-cenarion",
+        "canonical-claim-gahrron",
+        "canonical-claim-hearthglen",
     ]
     bridge = units[-1]
     assert bridge["required"] is True
@@ -141,17 +145,71 @@ def test_plan_history_coverage_marks_setup_bridge_required() -> None:
     assert all(unit["required"] is False for unit in units[:-1])
 
 
-def test_plan_history_coverage_ignores_paragraph_only_pool() -> None:
-    paragraph_pool = [{"snippet": "A paragraph-only history item.", "source_id": "src-x"}]
-    assert plan_history_coverage(paragraph_pool) == []
+def test_plan_history_coverage_paragraph_only_pool_forms_units() -> None:
+    """One coverage path: a paragraph-only pool (no claim views) forms units too."""
+    paragraph_pool = [
+        {
+            "snippet": "A paragraph-only history item.",
+            "source_id": _PAGE_SOURCE_ID,
+            "canonical_evidence_id": "canonical-para-1",
+            "block_index": 1,
+            "history_eligibility": HISTORY_BACKGROUND,
+        },
+        {
+            "snippet": _BRIDGE_BODY,
+            "source_id": _PAGE_SOURCE_ID,
+            "canonical_evidence_id": "canonical-para-2",
+            "block_index": 2,
+            "history_eligibility": HISTORY_SETUP_BRIDGE,
+        },
+    ]
+    units = plan_history_coverage(paragraph_pool)
+    assert [unit["canonical_evidence_id"] for unit in units] == [
+        "canonical-para-1",
+        "canonical-para-2",
+    ]
+    assert [unit["required"] for unit in units] == [False, True]
+    assert units[1]["claim_texts"] == [_BRIDGE_BODY]
+
+
+def test_plan_history_coverage_missing_canonical_id_is_contract_violation() -> None:
+    with pytest.raises(ValueError, match="canonical_evidence_id"):
+        plan_history_coverage(
+            [{"snippet": "A paragraph without identity.", "source_id": _PAGE_SOURCE_ID}]
+        )
 
 
 def test_covered_and_missing_required_units() -> None:
     units = plan_history_coverage(_wpl_coverage_pool())
-    covered = covered_coverage_ids(units, ["src-scourging", "src-cauldron", "src-cenarion"])
+    covered = covered_coverage_ids(
+        units,
+        [
+            "canonical-claim-scourging",
+            "canonical-claim-cauldron",
+            "canonical-claim-cenarion",
+        ],
+    )
 
     missing = missing_required_units(units, covered)
-    assert [unit["source_id"] for unit in missing] == ["src-hearthglen"]
+    assert [unit["canonical_evidence_id"] for unit in missing] == ["canonical-claim-hearthglen"]
+
+
+def test_sibling_paragraph_of_same_source_does_not_cover_required_unit() -> None:
+    """Regression (root cause B): every paragraph shares one source id, so source-keyed coverage
+    marked the setup bridge covered whenever ANY paragraph of the page was used. Using paragraph A
+    must not cover paragraph B's required unit, and the retry hint must carry B's claim texts."""
+    units = plan_history_coverage(_wpl_coverage_pool())
+
+    covered = covered_coverage_ids(units, ["canonical-claim-scourging"])
+    missing = missing_required_units(units, covered)
+    assert [unit["canonical_evidence_id"] for unit in missing] == ["canonical-claim-hearthglen"]
+
+    # A bare source id must not cover anything either — it does not identify a paragraph.
+    assert covered_coverage_ids(units, [_PAGE_SOURCE_ID]) == set()
+
+    from pipeline.generate.draft.coverage import required_event_texts
+
+    assert required_event_texts(missing) == [_BRIDGE_BODY]
 
 
 def test_finalize_appends_missing_setup_bridge(monkeypatch) -> None:
@@ -161,13 +219,23 @@ def test_finalize_appends_missing_setup_bridge(monkeypatch) -> None:
         "synthesize_history_sections",
         lambda pool, **kw: (
             list(_LLM_SECTIONS),
-            ["src-scourging", "src-cauldron", "src-cenarion"],
+            [
+                "canonical-claim-scourging",
+                "canonical-claim-cauldron",
+                "canonical-claim-cenarion",
+            ],
         ),
     )
 
     sink: list[dict[str, Any]] = []
     sections, used, _status = cards._finalize_history_sections(
-        history_pool=[{"snippet": "x", "source_id": "src-scourging"}],
+        history_pool=[
+            {
+                "snippet": "x",
+                "source_id": _PAGE_SOURCE_ID,
+                "canonical_evidence_id": "canonical-claim-scourging",
+            }
+        ],
         evidence_rows=[],
         max_history=3,
         coverage_pool=_wpl_coverage_pool(),
@@ -177,7 +245,7 @@ def test_finalize_appends_missing_setup_bridge(monkeypatch) -> None:
 
     history_text = " ".join(str(section.get("body", "")) for section in sections)
     assert "Argent Crusade fortified Hearthglen" in history_text
-    assert "src-hearthglen" in used
+    assert "canonical-claim-hearthglen" in used
 
     assert len(sink) == 1
     decision = sink[0]
@@ -186,7 +254,9 @@ def test_finalize_appends_missing_setup_bridge(monkeypatch) -> None:
     assert decision["required_covered_count"] == 1
     assert decision["deterministic_bridge_count"] == 1
     bridge_row = next(
-        row for row in decision["coverage_units"] if row["source_id"] == "src-hearthglen"
+        row
+        for row in decision["coverage_units"]
+        if row["canonical_evidence_id"] == "canonical-claim-hearthglen"
     )
     assert bridge_row["deterministic_bridge_appended"] is True
     assert bridge_row["covered"] is True
@@ -199,7 +269,11 @@ def test_finalize_bridge_card_carries_explicit_provenance(monkeypatch) -> None:
         "synthesize_history_sections",
         lambda pool, **kw: (
             list(_LLM_SECTIONS),
-            ["src-scourging", "src-cauldron", "src-cenarion"],
+            [
+                "canonical-claim-scourging",
+                "canonical-claim-cauldron",
+                "canonical-claim-cenarion",
+            ],
         ),
     )
 
@@ -207,7 +281,13 @@ def test_finalize_bridge_card_carries_explicit_provenance(monkeypatch) -> None:
         return {"source_id": str(item.get("source_id", "")), "locator": f"mw:{ordinal}"}
 
     sections, _used, _status = cards._finalize_history_sections(
-        history_pool=[{"snippet": "x", "source_id": "src-scourging"}],
+        history_pool=[
+            {
+                "snippet": "x",
+                "source_id": _PAGE_SOURCE_ID,
+                "canonical_evidence_id": "canonical-claim-scourging",
+            }
+        ],
         evidence_rows=[],
         max_history=3,
         coverage_pool=_wpl_coverage_pool(),
@@ -222,7 +302,7 @@ def test_finalize_bridge_card_carries_explicit_provenance(monkeypatch) -> None:
         if "Argent Crusade fortified Hearthglen" in str(section.get("body", ""))
     )
     refs = bridge["source_refs"]
-    assert refs and refs[0]["source_id"] == "src-hearthglen"
+    assert refs and refs[0]["source_id"] == _PAGE_SOURCE_ID
 
 
 def test_finalize_llm_retry_covers_bridge_without_deterministic_append(monkeypatch) -> None:
@@ -235,17 +315,31 @@ def test_finalize_llm_retry_covers_bridge_without_deterministic_append(monkeypat
     def _synth(pool, **kw):
         calls["n"] += 1
         if calls["n"] == 1:
-            # First pass drops the setup bridge (only the first three sources used).
-            return list(_LLM_SECTIONS), ["src-scourging", "src-cauldron", "src-cenarion"]
-        # Retry must have received the required-event hint and now covers the bridge source.
-        assert kw.get("required_event_texts")
-        return list(_LLM_SECTIONS), ["src-scourging", "src-hearthglen", "src-cenarion"]
+            # First pass drops the setup bridge (only the three background paragraphs used).
+            return list(_LLM_SECTIONS), [
+                "canonical-claim-scourging",
+                "canonical-claim-cauldron",
+                "canonical-claim-cenarion",
+            ]
+        # Retry must have received the required-event hint and now covers the bridge paragraph.
+        assert kw.get("required_event_texts") == [_BRIDGE_BODY]
+        return list(_LLM_SECTIONS), [
+            "canonical-claim-scourging",
+            "canonical-claim-hearthglen",
+            "canonical-claim-cenarion",
+        ]
 
     monkeypatch.setattr(cards, "synthesize_history_sections", _synth)
 
     sink: list[dict[str, Any]] = []
     sections, used, _status = cards._finalize_history_sections(
-        history_pool=[{"snippet": "x", "source_id": "src-scourging"}],
+        history_pool=[
+            {
+                "snippet": "x",
+                "source_id": _PAGE_SOURCE_ID,
+                "canonical_evidence_id": "canonical-claim-scourging",
+            }
+        ],
         evidence_rows=[],
         max_history=3,
         coverage_pool=_wpl_coverage_pool(),
@@ -255,10 +349,12 @@ def test_finalize_llm_retry_covers_bridge_without_deterministic_append(monkeypat
 
     assert calls["n"] == 2  # retry happened
     assert len(sections) == 3  # no deterministic bridge appended
-    assert "src-hearthglen" in used
+    assert "canonical-claim-hearthglen" in used
     assert sink[0]["deterministic_bridge_count"] == 0
     bridge_row = next(
-        row for row in sink[0]["coverage_units"] if row["source_id"] == "src-hearthglen"
+        row
+        for row in sink[0]["coverage_units"]
+        if row["canonical_evidence_id"] == "canonical-claim-hearthglen"
     )
     assert bridge_row["covered"] is True
     assert bridge_row["deterministic_bridge_appended"] is False
@@ -271,13 +367,23 @@ def test_finalize_no_append_when_setup_bridge_already_covered(monkeypatch) -> No
         "synthesize_history_sections",
         lambda pool, **kw: (
             list(_LLM_SECTIONS),
-            ["src-scourging", "src-cauldron", "src-hearthglen"],
+            [
+                "canonical-claim-scourging",
+                "canonical-claim-cauldron",
+                "canonical-claim-hearthglen",
+            ],
         ),
     )
 
     sink: list[dict[str, Any]] = []
     sections, used, _status = cards._finalize_history_sections(
-        history_pool=[{"snippet": "x", "source_id": "src-scourging"}],
+        history_pool=[
+            {
+                "snippet": "x",
+                "source_id": _PAGE_SOURCE_ID,
+                "canonical_evidence_id": "canonical-claim-scourging",
+            }
+        ],
         evidence_rows=[],
         max_history=3,
         coverage_pool=_wpl_coverage_pool(),
@@ -289,31 +395,49 @@ def test_finalize_no_append_when_setup_bridge_already_covered(monkeypatch) -> No
     assert len(sections) == 3
     assert sink[0]["deterministic_bridge_count"] == 0
     bridge_row = next(
-        row for row in sink[0]["coverage_units"] if row["source_id"] == "src-hearthglen"
+        row
+        for row in sink[0]["coverage_units"]
+        if row["canonical_evidence_id"] == "canonical-claim-hearthglen"
     )
     assert bridge_row["covered"] is True
     assert bridge_row["deterministic_bridge_appended"] is False
 
 
-def test_finalize_paragraph_pool_records_no_coverage(monkeypatch) -> None:
-    """A paragraph-only pool yields no coverage units and never touches the sink (legacy path)."""
+def test_finalize_paragraph_pool_records_coverage(monkeypatch) -> None:
+    """A paragraph-only coverage pool forms units on the same path (carve-out deleted)."""
     monkeypatch.setattr(
         cards,
         "synthesize_history_sections",
-        lambda pool, **kw: (list(_LLM_SECTIONS), ["used"]),
+        lambda pool, **kw: (list(_LLM_SECTIONS), ["canonical-para-1"]),
     )
 
     sink: list[dict[str, Any]] = []
     cards._finalize_history_sections(
-        history_pool=[{"snippet": "x", "source_id": "src-x"}],
+        history_pool=[
+            {
+                "snippet": "x",
+                "source_id": "src-x",
+                "canonical_evidence_id": "canonical-para-1",
+            }
+        ],
         evidence_rows=[],
         max_history=3,
-        coverage_pool=[{"snippet": "paragraph only", "source_id": "src-x"}],
+        coverage_pool=[
+            {
+                "snippet": "paragraph only",
+                "source_id": "src-x",
+                "canonical_evidence_id": "canonical-para-1",
+                "history_eligibility": HISTORY_BACKGROUND,
+            }
+        ],
         subject_id="zone-x",
         coverage_sink=sink,
     )
 
-    assert sink == []
+    assert len(sink) == 1
+    assert sink[0]["coverage_unit_count"] == 1
+    assert sink[0]["required_unit_count"] == 0
+    assert sink[0]["coverage_units"][0]["covered"] is True
 
 
 def test_append_setup_bridge_folds_into_last_section_at_ceiling() -> None:
@@ -327,7 +451,9 @@ def test_append_setup_bridge_folds_into_last_section_at_ceiling() -> None:
     )
     full = [_section(f"Era {i}", filler) for i in range(MAX_HISTORY_SECTIONS)]
     units = plan_history_coverage(_wpl_coverage_pool())
-    missing = [unit for unit in units if unit["source_id"] == "src-hearthglen"]
+    missing = [
+        unit for unit in units if unit["canonical_evidence_id"] == "canonical-claim-hearthglen"
+    ]
 
     def _pointer_builder(item: dict[str, Any], ordinal: int) -> dict[str, str]:
         return {"source_id": str(item.get("source_id", "")), "locator": f"mw:{ordinal}"}
@@ -337,15 +463,15 @@ def test_append_setup_bridge_folds_into_last_section_at_ceiling() -> None:
     )
 
     assert len(sections) == MAX_HISTORY_SECTIONS  # ceiling not exceeded
-    assert "src-hearthglen" in used
+    assert "canonical-claim-hearthglen" in used
     assert appended == {missing[0]["coverage_id"]}
     last_refs = sections[-1]["source_refs"]
-    assert any(ref.get("source_id") == "src-hearthglen" for ref in last_refs)
+    assert any(ref.get("source_id") == _PAGE_SOURCE_ID for ref in last_refs)
 
 
 def test_build_section_coverage_decisions_shape() -> None:
     units = plan_history_coverage(_wpl_coverage_pool())
-    covered = covered_coverage_ids(units, ["src-scourging"])
+    covered = covered_coverage_ids(units, ["canonical-claim-scourging"])
     rows = build_section_coverage_decisions("zone-x", units, covered, {"coverage-05"})
 
     assert len(rows) == 1

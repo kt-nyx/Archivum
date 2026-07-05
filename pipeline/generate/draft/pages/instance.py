@@ -24,13 +24,11 @@ from pipeline.generate.draft.pages.assembly import (
     _attach_history_source_refs,
     _build_instance_evidence_pools,
     _cap_card_pointers,
-    _ensure_pointer_count,
     _history_pointers_from_sections,
-    _pointer_count_for_words,
     _pointer_for_item,
-    _pointers_for_source_ids,
+    _pointers_for_evidence_ids,
     _source_entries,
-    _word_count,
+    citation_shortfall_reasons,
 )
 from pipeline.generate.draft.pages.cards import (
     _finalize_history_sections,
@@ -82,8 +80,8 @@ def _finalize_instance_at_a_glance(
 ) -> tuple[str | None, list[str], list[dict[str, Any]], str]:
     """Instance at_a_glance: validation-driven retries, else explicit failure.
 
-    Returns ``(text, used_source_ids, producing_pool, field_status)``. The live path never borrows
-    a source snippet; the offline NO_LLM ladder keeps the sanctioned deterministic borrow.
+    Returns ``(text, used_evidence_ids, producing_pool, field_status)``. The live path never
+    borrows a source snippet; the offline NO_LLM ladder keeps the sanctioned deterministic borrow.
     """
     if not at_pool:
         return None, [], [], FIELD_STATUS_NO_EVIDENCE
@@ -127,6 +125,13 @@ def _finalize_instance_at_a_glance(
         call=_call,
         extract_bodies=lambda payload: [str(payload.get("text", ""))],
         validate=lambda payload: _reasons(str(payload.get("text", ""))),
+        # Citation shortfall is a soft retry reason (Slice 7): re-prompt for honest citations,
+        # never fail the field or fabricate pointers over it.
+        validate_soft=lambda payload: citation_shortfall_reasons(
+            text=str(payload.get("text", "")),
+            used_ids=list(payload.get("used", [])),
+            pool=at_pool,
+        ),
         source_snippets=corpus,
         label="instance_at_a_glance",
     )
@@ -212,10 +217,21 @@ def _finalize_instance_overview(
         ) -> list[str]:
             return _reject_reasons(str(payload.get("text", "")), snippets)
 
+        def _validate_soft(
+            payload: dict[str, Any], pool: list[dict[str, Any]] = pool
+        ) -> list[str]:
+            # Citation shortfall is a soft retry reason (Slice 7); see _finalize_instance_at_a_glance.
+            return citation_shortfall_reasons(
+                text=str(payload.get("text", "")),
+                used_ids=list(payload.get("used", [])),
+                pool=pool,
+            )
+
         result = synthesize_with_validation(
             call=_call,
             extract_bodies=lambda payload: [str(payload.get("text", ""))],
             validate=_validate,
+            validate_soft=_validate_soft,
             # Copy detection runs inside _reject_reasons via the source-aware gate corpus.
             source_snippets=None,
             label="overview",
@@ -365,14 +381,11 @@ def build_instance_page(
             reference_framing=ag_overview_framing,
         )
     )
-    at_pointers = _pointers_for_source_ids(at_producing_pool, at_used, revision_map)
+    # Pointers come only from the evidence the synthesis reported using — a shortfall is retried
+    # as a citation reason and otherwise ships short with a validate WARN (Slice 7); pointers are
+    # never fabricated to satisfy a count.
     at_pointers = _cap_card_pointers(
-        _ensure_pointer_count(
-            at_pointers,
-            pool=at_producing_pool,
-            revision_map=revision_map,
-            min_count=_pointer_count_for_words(_word_count(at_a_glance or "")),
-        ),
+        _pointers_for_evidence_ids(at_producing_pool, at_used, revision_map),
         max_count=3,
     )
     if at_a_glance is None:
@@ -395,14 +408,8 @@ def build_instance_page(
             reference_framing=ag_overview_framing,
         )
     )
-    overview_pointers = _pointers_for_source_ids(overview_pool, overview_used, revision_map)
     overview_pointers = _cap_card_pointers(
-        _ensure_pointer_count(
-            overview_pointers,
-            pool=overview_pool,
-            revision_map=revision_map,
-            min_count=_pointer_count_for_words(_word_count(overview or "")),
-        ),
+        _pointers_for_evidence_ids(overview_pool, overview_used, revision_map),
         max_count=3,
     )
     if overview is None:
@@ -445,20 +452,9 @@ def build_instance_page(
         draft_history_pool
         or history_pool
     )
-    history_pointers = _pointers_for_source_ids(history_pointer_pool, history_used, revision_map)
+    history_pointers = _pointers_for_evidence_ids(history_pointer_pool, history_used, revision_map)
     if not history_pointers:
         history_pointers = _history_pointers_from_sections(history_sections)
-    history_text = " ".join(
-        str(section.get("body", "")).strip()
-        for section in history_sections
-        if isinstance(section, dict)
-    )
-    history_pointers = _ensure_pointer_count(
-        history_pointers,
-        pool=history_pointer_pool,
-        revision_map=revision_map,
-        min_count=_pointer_count_for_words(_word_count(history_text)),
-    )
     used_source_ids.update(pointer["source_id"] for pointer in history_pointers)
 
     blocks = section_blocks if section_blocks is not None else fact_pack.get("section_blocks", [])

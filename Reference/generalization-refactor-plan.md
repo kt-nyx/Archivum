@@ -1,6 +1,6 @@
 # Plan: Generalization Refactor — Registries, Guarantees & Editorial Selection
 
-**Status: IN PROGRESS — Slices 1–6 done (Slice 6: 2026-07-05). Implement remaining slices in the order given.**
+**Status: IN PROGRESS — Slices 1–7 done (Slice 7: 2026-07-05). Implement remaining slices in the order given.**
 
 ## Why this plan exists
 
@@ -555,10 +555,56 @@ biographies.
 zone-role summaries; Alliance either cards or produces an explicit audited drop + coherence WARN.
 Gold instance faction set (Scourge + Cult of the Damned, no Scarlet Crusade) restored.
 
-## Slice 7 — Paragraph-granular evidence identity: prompts, coverage, provenance (B)
+## Slice 7 — Paragraph-granular evidence identity: prompts, coverage, provenance (B) — ✅ DONE (2026-07-05)
 
 **Goal:** `canonical_evidence_id` is the working evidence identity at draft time, making the
 setup-bridge coverage guarantee real and provenance pointers honest.
+
+**Implementation notes (as built):**
+
+- New `pipeline/generate/draft/evidence_identity.py` — the single home for paragraph-level
+  identity: `evidence_id_for_item` (canonical id, else `source_id` for synthetic one-per-source
+  items) and `translate_used_evidence_ids` (alias→paragraph-id resolution; unknown/hallucinated
+  tokens are dropped so they can never become pointers).
+- `_format_evidence_block` labels each emitted line `[p1]..[pN]` and returns
+  `(block, alias_map)`; the map also carries identity entries for the items' own canonical ids
+  and for source ids that name exactly one emitted paragraph (ambiguous shared source ids are
+  omitted). All ten live synthesis workers translate `used_evidence_ids` through the map, so
+  every `used` list is paragraph-level; offline history paths (`synthesize_history_sections`
+  NO_LLM, `fallback_history_sections`) return `evidence_id_for_item` values so offline coverage
+  bookkeeping matches live.
+- `coverage.py` rekeyed: units keyed by `canonical_evidence_id` (unit rows carry it alongside
+  the source id); `covered_coverage_ids` compares used paragraph ids — a sibling paragraph of the
+  same source no longer covers a required unit, and a bare source id covers nothing. The
+  claim-view-only carve-out is deleted: paragraph-only pools form units on the same single path.
+  A history-pool item without a canonical id raises `ValueError` (contract violation — the
+  assembling path must be fixed; draft-page tests now stamp ids via
+  `tests/factories/wiki_first_pages.stamp_canonical_evidence_ids`). The appended bridge card
+  records the unit's canonical id in `used`.
+- `_ensure_pointer_count` deleted. `_pointers_for_source_ids`/`_items_for_source_ids` became
+  `_pointers_for_evidence_ids`/`_items_for_evidence_ids` (match canonical id or source id, so
+  offline source-id citations still resolve). Section pointers come only from the ids the
+  synthesis reported: the per-length recommendation is single-homed as
+  `contracts.models.required_pointer_count` (validate imports it too), and a shortfall is a
+  **soft** retry reason (`assembly.citation_shortfall_reasons`, "cite the evidence ids each
+  section draws on…", capped by the pool's own distinct paragraphs so it is always satisfiable)
+  wired via a new `validate_soft` hook on `synthesize_with_validation` — soft reasons retry with
+  feedback but never fail the field; on exhaustion the hard-clean attempt ships with
+  `soft_reasons` recorded (`synth_guard` outcome `ok_soft` decision record). Validate-side,
+  a real-but-short pointer list is now `provenance.pointer_count_shortfall` (WARN) while an
+  empty pointer set on a non-empty section stays a HARD_FAIL; pointers are never fabricated.
+  The two `min_count=1` card fallbacks that used the backfill (key characters, questline CTA)
+  now cite the pool the card was actually synthesized from (the sanctioned Slice 6 pattern).
+- Tests: `tests/test_history_coverage.py` rewritten to the production shape (every paragraph
+  shares ONE `source_id`; distinct canonical ids; used ids are canonical) with the regression
+  test — using paragraph A does not cover paragraph B's required setup-bridge unit and the
+  coverage retry receives B's claim texts — plus contract-violation and paragraph-only-pool
+  tests. New `tests/test_citation_shortfall.py` (shortfall math, driver soft-retry/ship-short,
+  validate WARN vs HARD_FAIL). Evidence-block and pointer tests updated for aliases/dual-id
+  matching. Verified: `ruff check pipeline tests`, `mypy` on all touched modules, full `pytest`
+  (1062 passed, 5 skipped, 1 xfailed).
+- The expected pilot effect below still needs the next live (`OPENAI_API_KEY`) pilot run to
+  confirm on real output.
 
 - `pipeline/generate/draft/prose_synthesis.py` `_format_evidence_block`: label items with a
   paragraph-unique id (the `canonical_evidence_id`, or a short stable alias `p1..pN` with a

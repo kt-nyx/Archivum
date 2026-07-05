@@ -4,14 +4,18 @@ History synthesis caps the number of sections and lets the LLM choose which evid
 so an eligible ``history_setup_bridge`` claim can silently disappear from the final history even
 though the entry-state contract depends on it (the WPL Hearthglen / Argent Crusade gap).
 
-This module plans deterministic *coverage units* from a claim-level history pool, validates which
-units the synthesized sections actually represent, and lets the finalizer append a concise
-setup-bridge card when a required unit was dropped. It is intentionally claim-level only: a
-paragraph-only history pool (no claim sidecar) produces no units, so the legacy paragraph path is
-left unchanged for rollout compatibility.
+This module plans deterministic *coverage units* from a history pool, validates which units the
+synthesized sections actually represent, and lets the finalizer append a concise setup-bridge card
+when a required unit was dropped. Units are keyed by ``canonical_evidence_id`` — the
+paragraph-level evidence identity — never by ``source_id``: every paragraph of a wiki page shares
+one source id, so source-keyed units collapse to one per page and the setup-bridge guarantee
+becomes vacuous (the Scholomance "Gandling retreat / Last Holdout" beat vanished while coverage
+reported ``covered: true``). There is one coverage path: claim-view pools and paragraph-only pools
+form units the same way, and a history-pool item without a ``canonical_evidence_id`` is a contract
+violation, not a case to degrade around.
 
-Provenance stays source/paragraph based (clarification question 3): coverage decisions reference
-claim IDs for audit, but the appended bridge card still points at the source paragraph.
+Provenance stays source/paragraph based: coverage decisions reference claim IDs for audit, and the
+appended bridge card points at the source paragraph.
 """
 
 from __future__ import annotations
@@ -26,10 +30,6 @@ SETUP_BRIDGE_BUCKET = "setup_bridge"
 BACKGROUND_BUCKET = "background"
 
 
-def _is_claim_view(item: Any) -> bool:
-    return isinstance(item, dict) and bool(item.get("is_claim_view"))
-
-
 def _block_index(item: dict[str, Any]) -> int:
     try:
         return int(item.get("block_index", 0))
@@ -38,37 +38,44 @@ def _block_index(item: dict[str, Any]) -> int:
 
 
 def plan_history_coverage(history_pool: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Group a claim-level history pool into source-ordered coverage units.
+    """Group a history pool into paragraph-keyed, source-ordered coverage units.
 
-    Each unit collects one source's history-eligible claims. A unit is ``required`` when any of its
-    claims is a ``history_setup_bridge`` claim, per the confirmed decision in clarification
-    question 3. Returns ``[]`` when the pool has no claim views, so paragraph-only history keeps its
-    existing behavior.
+    Each unit collects one paragraph's history-eligible material (all claim views of a claim-level
+    pool share their paragraph's ``canonical_evidence_id``; a paragraph-only item is its own unit).
+    A unit is ``required`` when any of its items is a ``history_setup_bridge`` claim. Raises
+    ``ValueError`` when a pool item carries no ``canonical_evidence_id`` — paragraph identity is
+    the coverage contract, and an assembling path that drops it must be fixed, not degraded around.
     """
-    units_by_source: dict[str, dict[str, Any]] = {}
+    units_by_paragraph: dict[str, dict[str, Any]] = {}
     order: list[str] = []
     for item in history_pool:
-        if not _is_claim_view(item):
+        if not isinstance(item, dict):
             continue
-        source_id = str(item.get("source_id", "")).strip()
-        if not source_id:
-            continue
-        unit = units_by_source.get(source_id)
+        canonical_id = str(item.get("canonical_evidence_id", "")).strip()
+        if not canonical_id:
+            raise ValueError(
+                "history coverage pool item is missing canonical_evidence_id "
+                f"(source_id={str(item.get('source_id', '')).strip() or 'unknown'!r}); "
+                "paragraph-level evidence identity is a contract requirement — fix the "
+                "assembling path that produced this item"
+            )
+        unit = units_by_paragraph.get(canonical_id)
         if unit is None:
             unit = {
-                "source_id": source_id,
+                "canonical_evidence_id": canonical_id,
+                "source_id": str(item.get("source_id", "")).strip(),
                 "claim_ids": [],
                 "claim_texts": [],
                 "section_role": str(item.get("section_role", "")).strip(),
                 "raw_section_role": str(item.get("raw_section_role", "")).strip(),
                 "source_order": _block_index(item),
                 "has_setup_bridge": False,
-                # First claim view for this source, kept so a deterministic bridge card can hash the
+                # First item for this paragraph, kept so a deterministic bridge card can hash the
                 # source paragraph for a correct provenance pointer (provenance stays source-based).
                 "representative_item": item,
             }
-            units_by_source[source_id] = unit
-            order.append(source_id)
+            units_by_paragraph[canonical_id] = unit
+            order.append(canonical_id)
         claim_id = str(item.get("claim_id", "")).strip()
         if claim_id and claim_id not in unit["claim_ids"]:
             unit["claim_ids"].append(claim_id)
@@ -79,15 +86,18 @@ def plan_history_coverage(history_pool: list[dict[str, Any]]) -> list[dict[str, 
             unit["has_setup_bridge"] = True
         unit["source_order"] = min(unit["source_order"], _block_index(item))
 
-    ordered_sources = sorted(order, key=lambda sid: (units_by_source[sid]["source_order"], sid))
+    ordered_paragraphs = sorted(
+        order, key=lambda cid: (units_by_paragraph[cid]["source_order"], cid)
+    )
     units: list[dict[str, Any]] = []
-    for index, source_id in enumerate(ordered_sources, start=1):
-        raw = units_by_source[source_id]
+    for index, canonical_id in enumerate(ordered_paragraphs, start=1):
+        raw = units_by_paragraph[canonical_id]
         required = bool(raw["has_setup_bridge"])
         units.append(
             {
                 "coverage_id": f"coverage-{index:02d}",
-                "source_id": source_id,
+                "canonical_evidence_id": canonical_id,
+                "source_id": raw["source_id"],
                 "claim_ids": list(raw["claim_ids"]),
                 "claim_texts": list(raw["claim_texts"]),
                 "required": required,
@@ -105,17 +115,17 @@ def plan_history_coverage(history_pool: list[dict[str, Any]]) -> list[dict[str, 
 
 def covered_coverage_ids(
     units: list[dict[str, Any]],
-    used_source_ids: list[str],
+    used_evidence_ids: list[str],
 ) -> set[str]:
-    """Coverage IDs whose source produced a used history section.
+    """Coverage IDs whose paragraph was actually cited by the synthesized history.
 
-    Coverage is validated at source-paragraph granularity: a unit is covered when its source
-    contributed at least one section, matching the existing history provenance model (``used``
-    drives the section's source pointers). This avoids inventing a second, fuzzier coverage truth
-    from rewritten body text.
+    ``used_evidence_ids`` are the paragraph-level ids the synthesis reported using (translated
+    ``canonical_evidence_id`` values). A unit is covered only when its own paragraph was used —
+    never because a sibling paragraph of the same source page was (the source-id collapse that
+    made the setup-bridge guarantee vacuous in production).
     """
-    used = {str(value).strip() for value in used_source_ids if str(value).strip()}
-    return {unit["coverage_id"] for unit in units if unit["source_id"] in used}
+    used = {str(value).strip() for value in used_evidence_ids if str(value).strip()}
+    return {unit["coverage_id"] for unit in units if unit["canonical_evidence_id"] in used}
 
 
 def missing_required_units(
@@ -164,6 +174,7 @@ def build_section_coverage_decisions(
         unit_rows.append(
             {
                 "coverage_id": unit["coverage_id"],
+                "canonical_evidence_id": unit["canonical_evidence_id"],
                 "source_id": unit["source_id"],
                 "claim_ids": list(unit["claim_ids"]),
                 "required": unit["required"],
