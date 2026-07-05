@@ -27,7 +27,6 @@ from pipeline.generate.draft.faction_scoring import (
     FactionCandidate,
     candidates_for_finalize,
     collect_faction_candidates,
-    fallback_faction_summary,
     finalize_evidence_pools,
 )
 from pipeline.generate.draft.location_lint import (
@@ -683,6 +682,27 @@ def _first_item(
     return items[0]
 
 
+def _record_faction_drop(
+    candidate: FactionCandidate,
+    *,
+    rejected_summary: str,
+    reasons: list[str],
+    attempts: int,
+) -> None:
+    """Audit record for a dropped faction card (Slice 6): the finalize decisions sidecar must
+    show the rejected text and every outstanding reason, keyed by faction id — a silent drop is
+    how run-24 shipped a `currently` naming factions that had no card."""
+    finalize_trace.record(
+        "major_factions.finalize",
+        outcome="dropped",
+        faction_id=candidate.faction_id,
+        faction_name=candidate.name,
+        rejected_summary=rejected_summary,
+        reasons=reasons,
+        attempts=attempts,
+    )
+
+
 def _finalize_faction_card(
     candidate: FactionCandidate,
     *,
@@ -692,12 +712,21 @@ def _finalize_faction_card(
 ) -> tuple[dict[str, Any] | None, list[str], list[dict[str, Any]]]:
     """Faction card: synthesize with validation-driven retries; failure drops the card.
 
-    Live path never borrows a source snippet — a candidate whose summary cannot pass validation
-    after retries is dropped (recorded in the finalize trace) rather than shipped as copy. The
-    offline NO_LLM ladder keeps the sanctioned deterministic borrow.
+    Slice 6: the ranked election survives finalize on one MERGED pool (zone-role evidence first,
+    then profile identity lead items — see ``finalize_evidence_pools``) with the full retry
+    budget, instead of burning retries per-pool on a ladder. Live path never borrows a source
+    snippet — a candidate whose summary cannot pass validation after retries is dropped with an
+    audited decision record (rejected text + reasons) rather than shipped as copy. The offline
+    NO_LLM path keeps the sanctioned deterministic borrow.
     """
-    pools_to_try = finalize_evidence_pools(candidate)
-    if not pools_to_try:
+    pool = finalize_evidence_pools(candidate)
+    if not pool:
+        _record_faction_drop(
+            candidate,
+            rejected_summary="",
+            reasons=["no synthesizable evidence pool"],
+            attempts=0,
+        )
         return None, [], []
 
     def _reasons(summary: str, pool_snippets: list[str] | None) -> list[str]:
@@ -720,65 +749,62 @@ def _finalize_faction_card(
             "wiki_url": candidate.wiki_url,
         }
 
-    live = llm_synthesis_active()
-    for pool_index, pool in enumerate(pools_to_try):
-        pool_snippets = passthrough_corpus(pool)
-        if not live:
-            summary, used = synthesize_faction_summary(
-                pool,
-                faction_name=candidate.name,
-                zone_name=zone_name,
-                max_words=MAX_FACTION_SUMMARY_WORDS,
-                subregion_tokens=subregion_tokens,
-                instance_name=instance_name,
-            )
-            summary = ensure_sentence_terminator(summary)
-            if summary and not _reasons(summary, pool_snippets):
-                return _card(summary), used, pool
-            summary, used = fallback_faction_summary(
-                pool,
-                zone_name=zone_name,
-                subregion_tokens=subregion_tokens,
-                faction_name=candidate.name,
-            )
-            summary = ensure_sentence_terminator(summary)
-            if summary and not _reasons(summary, pool_snippets):
-                return _card(summary), used, pool
-            continue
-
-        def _call(reinforce: str, pool: list[dict[str, Any]] = pool) -> dict[str, Any]:
-            summary, used = synthesize_faction_summary(
-                pool,
-                faction_name=candidate.name,
-                zone_name=zone_name,
-                max_words=MAX_FACTION_SUMMARY_WORDS,
-                subregion_tokens=subregion_tokens,
-                instance_name=instance_name,
-                reinforce=reinforce,
-            )
-            return {"text": ensure_sentence_terminator(summary), "used": used}
-
-        def _validate(
-            payload: dict[str, Any], snippets: list[str] | None = pool_snippets
-        ) -> list[str]:
-            return _reasons(str(payload.get("text", "")), snippets)
-
-        result = synthesize_with_validation(
-            call=_call,
-            extract_bodies=lambda payload: [str(payload.get("text", ""))],
-            validate=_validate,
-            # Copy detection runs inside _reasons via the source-aware gate.
-            source_snippets=None,
-            label=f"faction.{candidate.faction_id}",
-            # Full retries on the primary pool; a single attempt on each rescue pool.
-            max_attempts=SYNTHESIS_MAX_ATTEMPTS if pool_index == 0 else 1,
+    pool_snippets = passthrough_corpus(pool)
+    if not llm_synthesis_active():
+        # Offline, synthesize_faction_summary delegates to the same deterministic borrow as
+        # fallback_faction_summary with identical arguments, so one call covers the old
+        # two-step ladder.
+        summary, used = synthesize_faction_summary(
+            pool,
+            faction_name=candidate.name,
+            zone_name=zone_name,
+            max_words=MAX_FACTION_SUMMARY_WORDS,
+            subregion_tokens=subregion_tokens,
+            instance_name=instance_name,
         )
-        if result.ok:
-            return (
-                _card(str(result.payload.get("text", ""))),
-                list(result.payload.get("used", [])),
-                pool,
-            )
+        summary = ensure_sentence_terminator(summary)
+        reasons = _reasons(summary, pool_snippets) if summary else ["empty synthesis output"]
+        if summary and not reasons:
+            return _card(summary), used, pool
+        _record_faction_drop(candidate, rejected_summary=summary, reasons=reasons, attempts=1)
+        return None, [], []
+
+    def _call(reinforce: str) -> dict[str, Any]:
+        summary, used = synthesize_faction_summary(
+            pool,
+            faction_name=candidate.name,
+            zone_name=zone_name,
+            max_words=MAX_FACTION_SUMMARY_WORDS,
+            subregion_tokens=subregion_tokens,
+            instance_name=instance_name,
+            reinforce=reinforce,
+        )
+        return {"text": ensure_sentence_terminator(summary), "used": used}
+
+    def _validate(payload: dict[str, Any]) -> list[str]:
+        return _reasons(str(payload.get("text", "")), pool_snippets)
+
+    result = synthesize_with_validation(
+        call=_call,
+        extract_bodies=lambda payload: [str(payload.get("text", ""))],
+        validate=_validate,
+        # Copy detection runs inside _reasons via the source-aware gate.
+        source_snippets=None,
+        label=f"faction.{candidate.faction_id}",
+        max_attempts=SYNTHESIS_MAX_ATTEMPTS,
+    )
+    if result.ok:
+        return (
+            _card(str(result.payload.get("text", ""))),
+            list(result.payload.get("used", [])),
+            pool,
+        )
+    _record_faction_drop(
+        candidate,
+        rejected_summary=str(result.last_payload.get("text", "")),
+        reasons=result.last_reasons,
+        attempts=result.attempts,
+    )
     return None, [], []
 
 
@@ -815,6 +841,16 @@ def build_major_factions(
         candidates,
         zone_name=zone_name,
         subregion_tokens=subregion_tokens,
+    )
+    # The page's own faction world model, recorded for validate's uncarded-current-actor
+    # coherence WARN (Slice 6; the Slice 12 organization registry replaces this as match source).
+    finalize_trace.record(
+        "major_factions.candidates",
+        zone_id=zone_id,
+        candidates=[
+            {"faction_id": candidate.faction_id, "name": candidate.name}
+            for candidate in candidates
+        ],
     )
     cards: list[dict[str, Any]] = []
     provenance_map: dict[str, list[dict[str, str]]] = {}

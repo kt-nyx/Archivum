@@ -169,6 +169,15 @@ def _phrase_is_faction(phrase: str, single: frozenset[str], multi: frozenset[str
     return any(token in low for token in multi)
 
 
+# The instance's own-subject evidence fields (its page prose, lore page, and boss sections).
+# Instance faction harvesting is restricted to these: cross-page biography pools —
+# ``character_pool`` (crawled character biographies) and the faction/parent/related profile
+# pools — describe *other* subjects, so a faction that saturates a character's biography
+# (Scarlet Crusade in Lilian Voss's) must not mint an instance faction card (Slice 6).
+_INSTANCE_OWN_EVIDENCE_FIELDS = frozenset(
+    {"history_digest", "at_a_glance_input", "boss_pool", "instance_lore_pool"}
+)
+
 _LEADING_QUALIFIER_RE = re.compile(r"^[A-Z][A-Za-z']+\s+of\s+(?:the\s+)?([A-Z][A-Za-z'].*)$")
 _ROLE_ALIAS_RE = re.compile(r"^([A-Z][A-Za-z']+)\s+of\s+(?:the\s+)?([A-Z][A-Za-z']+)$")
 _GENERIC_ROLE_ALIAS_HEADS = frozenset(
@@ -263,7 +272,13 @@ def harvest_instance_faction_targets(
     profile-target rows scoped to ``instance_id`` plus a flattened seed-mention role pool, which the
     existing faction scorer + summary path consumes unchanged. Returns ``([], [])`` when nothing
     clears ``min_mentions`` (callers then fall back to the parent-zone targets).
+
+    Mention counting and role-pool building are scoped to the instance's OWN evidence
+    (``_INSTANCE_OWN_EVIDENCE_FIELDS`` unless the caller narrows further): cross-page biography
+    pools must never mint an instance faction (Slice 6).
     """
+    if field_names is None:
+        field_names = _INSTANCE_OWN_EVIDENCE_FIELDS
     single, multi = _faction_token_set()
     role_pool: list[dict[str, Any]] = []
     counts: dict[str, int] = {}
@@ -272,7 +287,7 @@ def harvest_instance_faction_targets(
     display: dict[str, str] = {}
     instance_low = instance_name.strip().lower()
     for row in evidence_rows:
-        if field_names and str(row.get("field_name", "")).strip() not in field_names:
+        if str(row.get("field_name", "")).strip() not in field_names:
             continue
         section_role = str(row.get("section_role", row.get("field_name", "")))
         build_meta = row.get("build_meta") or {}
@@ -446,12 +461,7 @@ def _eligible_structured_link_contexts(
         if not source_id:
             continue
         field_name = str(row.get("field_name", "")).strip()
-        if field_name not in {
-            "history_digest",
-            "at_a_glance_input",
-            "boss_pool",
-            "instance_lore_pool",
-        }:
+        if field_name not in _INSTANCE_OWN_EVIDENCE_FIELDS:
             continue
         for item in row.get("evidence_items", []) or []:
             if not isinstance(item, dict):
@@ -1013,15 +1023,48 @@ def candidates_for_finalize(
     return target_count, _suppress_umbrella_factions(queue)
 
 
-def finalize_evidence_pools(candidate: FactionCandidate) -> list[list[dict[str, Any]]]:
-    pools: list[list[dict[str, Any]]] = []
-    if candidate.profile_items:
-        pools.append(candidate.profile_items)
-    if candidate.seed_mentions and (
-        not candidate.profile_items or candidate.seed_mentions != candidate.profile_items
-    ):
-        pools.append(candidate.seed_mentions)
-    return pools
+# How many profile-page items join the merged finalize pool as identity context (Slice 6:
+# "1-2 profile identity lead items").
+_PROFILE_IDENTITY_LEAD_ITEMS = 2
+
+
+def finalize_evidence_pools(candidate: FactionCandidate) -> list[dict[str, Any]]:
+    """Merge a candidate's evidence into ONE synthesis pool: zone-role evidence first (Slice 6).
+
+    The old profile-first pool ladder burned every synthesis retry on the faction's generic
+    profile biography and left a single attempt for the zone-role evidence, so a validly-elected
+    faction could drop because its *profile* prose never mentions the zone (Cause A). The merged
+    pool leads with the zone-role evidence (seed mentions: history/currently/questline/
+    at-a-glance claim views naming the faction) and appends 1-2 profile *lead* items as identity
+    context, so one full-retry synthesis call sees both. When the profile carries no lede-role
+    item, its leading items stand in — a profile-only candidate must still reach synthesis
+    rather than silently losing its pool.
+    """
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def _add(item: dict[str, Any]) -> bool:
+        key = (str(item.get("source_id", "")), str(item.get("snippet", "")))
+        if key in seen:
+            return False
+        seen.add(key)
+        merged.append(item)
+        return True
+
+    for item in candidate.seed_mentions:
+        _add(item)
+    lead_items = [
+        item
+        for item in candidate.profile_items
+        if _normalize_role(str(item.get("section_role", ""))) in _LEDE_ROLES
+    ] or candidate.profile_items
+    added = 0
+    for item in lead_items:
+        if added >= _PROFILE_IDENTITY_LEAD_ITEMS:
+            break
+        if _add(item):
+            added += 1
+    return merged
 
 
 def fallback_faction_summary(

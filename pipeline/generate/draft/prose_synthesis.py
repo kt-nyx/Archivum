@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from pipeline.ai.config import load_ai_settings
@@ -281,13 +281,17 @@ class SynthesisAttemptResult:
 
     ``payload`` is the best attempt's raw payload even on failure, so field-specific salvage
     (e.g. keeping individually-clean history sections) can inspect it. ``reasons`` are the best
-    attempt's outstanding validation failures (empty when ``ok``).
+    attempt's outstanding validation failures (empty when ``ok``). ``last_payload`` and
+    ``last_reasons`` preserve the final rejected attempt for audit records that need to show what
+    actually exhausted the retry budget.
     """
 
     ok: bool
     payload: dict[str, Any]
     reasons: list[str]
     attempts: int
+    last_payload: dict[str, Any] = field(default_factory=dict)
+    last_reasons: list[str] = field(default_factory=list)
 
 
 def synthesize_with_validation(
@@ -332,19 +336,22 @@ def synthesize_with_validation(
 
     best_payload: dict[str, Any] = {}
     best_reasons: list[str] | None = None
+    last_payload: dict[str, Any] = {}
+    last_reasons: list[str] = []
     feedback = ""
     attempts = 0
     for attempt in range(1, max(1, max_attempts) + 1):
         attempts = attempt
         payload = call(feedback)
         reasons, copied = _reasons_for(payload)
+        last_payload, last_reasons = payload, reasons
         if not reasons:
             finalize_trace.record(
                 f"{label}.synth_guard",
                 outcome="ok",
                 attempts=attempt,
             )
-            return SynthesisAttemptResult(True, payload, [], attempt)
+            return SynthesisAttemptResult(True, payload, [], attempt, payload, [])
         if best_reasons is None or len(reasons) < len(best_reasons):
             best_payload, best_reasons = payload, reasons
         feedback = ""
@@ -359,7 +366,14 @@ def synthesize_with_validation(
         attempts=attempts,
         reasons=(best_reasons or [])[:8],
     )
-    return SynthesisAttemptResult(False, best_payload, best_reasons or [], attempts)
+    return SynthesisAttemptResult(
+        False,
+        best_payload,
+        best_reasons or [],
+        attempts,
+        last_payload,
+        last_reasons,
+    )
 
 
 def synthesize_at_a_glance(

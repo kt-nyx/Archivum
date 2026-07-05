@@ -1535,6 +1535,44 @@ def test_zone_page_currently_temporal_drift_and_overlap_warns() -> None:
     assert "structure.zone_page_currently_history_overlap" in codes
 
 
+def test_zone_page_warns_when_currently_names_uncarded_faction_candidate() -> None:
+    payload = _validation_ready_zone_page_payload()
+    report = validate_payload(
+        "zone_page",
+        payload,
+        validation_context={"faction_candidate_names": ["Argent Crusade"]},
+    )
+
+    issues = [
+        issue for issue in report.issues if issue.code == "structure.uncarded_current_actor"
+    ]
+    assert len(issues) == 1
+    assert issues[0].severity == ValidationSeverity.WARN
+    assert issues[0].path == "$.currently"
+    assert report.passed is True
+
+
+def test_instance_page_warns_when_overview_names_uncarded_faction_candidate() -> None:
+    payload = _valid_instance_page_payload()
+    payload["overview"] = (
+        "Adventurers assault Scholomance while the Scarlet Crusade remains a nearby political "
+        "pressure point in the surrounding ruins, forcing local defenders to track undead threats "
+        "and hostile crusader movements at the same time."
+    )
+    report = validate_payload(
+        "instance_page",
+        payload,
+        validation_context={"faction_candidate_names": ["Scarlet Crusade"]},
+    )
+
+    issues = [
+        issue for issue in report.issues if issue.code == "structure.uncarded_current_actor"
+    ]
+    assert len(issues) == 1
+    assert issues[0].severity == ValidationSeverity.WARN
+    assert issues[0].path == "$.overview"
+
+
 def test_zone_page_missing_currently_provenance_hard_fails() -> None:
     payload = _valid_zone_page_payload()
     payload["provenance"]["currently"] = []

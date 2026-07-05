@@ -22,6 +22,10 @@ class ValidationRunResources:
     fact_check_target_entity_ids: list[str] = field(default_factory=list)
     fact_check_target_reasons: dict[str, list[str]] = field(default_factory=dict)
     linker_manual_review_by_entity: dict[str, int] = field(default_factory=dict)
+    # Per-page faction-candidate names from the draft's ``major_factions.candidates`` finalize
+    # decision — the match source for structure.uncarded_current_actor until the Slice 12
+    # organization registry lands.
+    faction_candidate_names_by_entity: dict[str, list[str]] = field(default_factory=dict)
 
 
 def resolve_draft_entity_id(draft_path: Path, payload: dict[str, Any]) -> str:
@@ -98,6 +102,27 @@ def load_validation_run_resources(run_root: Path) -> ValidationRunResources:
     resources.fact_check_target_reasons = {
         entity_id: sorted(reasons) for entity_id, reasons in fact_check_target_reasons.items()
     }
+
+    prose_finalize_path = run_root / "data" / "decisions" / "prose_finalize_decisions.json"
+    if prose_finalize_path.exists():
+        blob = json.loads(prose_finalize_path.read_text(encoding="utf-8"))
+        if isinstance(blob, list):
+            for row in blob:
+                if not isinstance(row, dict):
+                    continue
+                if str(row.get("stage", "")) != "major_factions.candidates":
+                    continue
+                entity_id = row.get("entity_id")
+                if not isinstance(entity_id, str) or not entity_id:
+                    continue
+                names = resources.faction_candidate_names_by_entity.setdefault(entity_id, [])
+                candidates = row.get("candidates")
+                for candidate in candidates if isinstance(candidates, list) else []:
+                    if not isinstance(candidate, dict):
+                        continue
+                    name = str(candidate.get("name", "")).strip()
+                    if name and name not in names:
+                        names.append(name)
 
     questline_decisions_path = (
         run_root / "data" / "decisions" / "questline_inclusion_decisions.json"
@@ -201,6 +226,7 @@ def build_entity_validation_context(
         "fact_check_source_snapshots": resources.source_snapshots,
         "fact_check_target_entity_ids": resources.fact_check_target_entity_ids,
         "fact_check_target_reasons": resources.fact_check_target_reasons,
+        "faction_candidate_names": resources.faction_candidate_names_by_entity.get(entity_id, []),
         "similarity_require_snapshots": normalized_profile in {"warn", "strict"},
         **wiki_first_entity_flags(
             entity_id,

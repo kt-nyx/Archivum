@@ -34,3 +34,42 @@ def test_release_gate_validate_fails_wrong_pilot_anchor(tmp_path: Path) -> None:
     )
     codes = {issue.code for issue in report.issues}
     assert "questline_promotion.pilot_start_anchor" in codes
+
+
+def test_validation_context_loads_faction_candidates_from_finalize_decisions(
+    tmp_path: Path,
+) -> None:
+    run_root = _write_wpl_run(tmp_path, questlines=[])
+    decisions_dir = run_root / "data" / "decisions"
+    decisions_dir.mkdir(parents=True, exist_ok=True)
+    (decisions_dir / "prose_finalize_decisions.json").write_text(
+        json.dumps(
+            [
+                {
+                    "entity_id": "zone-western-plaguelands",
+                    "stage": "major_factions.candidates",
+                    "candidates": [
+                        {"faction_id": "faction-argent-crusade", "name": "Argent Crusade"},
+                        {"faction_id": "faction-argent-crusade", "name": "Argent Crusade"},
+                    ],
+                },
+                {
+                    "entity_id": "zone-western-plaguelands",
+                    "stage": "currently.finalize",
+                    "candidates": [{"name": "Ignored Stage"}],
+                },
+            ],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    resources = load_validation_run_resources(run_root)
+    context = build_entity_validation_context(
+        entity_id="zone-western-plaguelands",
+        fact_check_profile="off",
+        release_gate=False,
+        resources=resources,
+    )
+
+    assert context["faction_candidate_names"] == ["Argent Crusade"]

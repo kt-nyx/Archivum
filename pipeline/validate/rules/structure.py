@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic import BaseModel
@@ -62,6 +63,52 @@ def _required_section_issue(
         severity=ValidationSeverity.HARD_FAIL,
         path=path,
     )
+
+
+def _uncarded_current_actor_issues(
+    *,
+    sections: tuple[tuple[str, str | None], ...],
+    carded_names: set[str],
+    validation_context: dict[str, Any] | None,
+) -> list[ValidationIssue]:
+    """WARN when a page's prose names an organization the page never cards (Slice 6).
+
+    The match source is the page's own faction-candidate names recorded in the draft's
+    ``major_factions.candidates`` finalize decision (via ``faction_candidate_names`` in the
+    validation context) — the Slice 12 organization registry replaces it once it exists.
+    Matching is case-sensitive whole-phrase: organization names are proper nouns, and
+    "a horde of zombies" must not match the candidate "Horde". WARN-only: an uncarded actor
+    can be a deliberate editorial drop, but it must stay permanently visible.
+    """
+    context = validation_context or {}
+    candidate_names = [
+        str(name).strip()
+        for name in context.get("faction_candidate_names", []) or []
+        if str(name).strip()
+    ]
+    if not candidate_names:
+        return []
+    carded_lowered = {name.strip().lower() for name in carded_names}
+    issues: list[ValidationIssue] = []
+    for name in candidate_names:
+        if name.lower() in carded_lowered:
+            continue
+        pattern = re.compile(rf"\b{re.escape(name)}\b")
+        for path, text in sections:
+            if not text or not pattern.search(text):
+                continue
+            issues.append(
+                ValidationIssue(
+                    code="structure.uncarded_current_actor",
+                    message=(
+                        f"'{name}' is named in {path.removeprefix('$.')} but has no "
+                        "major_factions card"
+                    ),
+                    severity=ValidationSeverity.WARN,
+                    path=path,
+                )
+            )
+    return issues
 
 
 def _validate_enriched_glossary_refs(
@@ -513,6 +560,16 @@ def _validate_zone_page(
             )
         )
     issues.extend(
+        _uncarded_current_actor_issues(
+            sections=(
+                ("$.at_a_glance", zone_page.at_a_glance),
+                ("$.currently", zone_page.currently),
+            ),
+            carded_names={card.name for card in zone_page.major_factions},
+            validation_context=validation_context,
+        )
+    )
+    issues.extend(
         _validate_enriched_glossary_refs(
             zone_page.glossary_refs,
             path_prefix="$.glossary_refs",
@@ -541,7 +598,11 @@ def _validate_zone_page(
     return issues
 
 
-def _validate_instance_page(instance_page: InstancePage) -> list[ValidationIssue]:
+def _validate_instance_page(
+    instance_page: InstancePage,
+    *,
+    validation_context: dict[str, Any] | None = None,
+) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
     for section_name in ("at_a_glance", "overview"):
         issue = _required_section_issue(
@@ -614,6 +675,16 @@ def _validate_instance_page(instance_page: InstancePage) -> list[ValidationIssue
                 )
             )
     issues.extend(
+        _uncarded_current_actor_issues(
+            sections=(
+                ("$.at_a_glance", instance_page.at_a_glance),
+                ("$.overview", instance_page.overview),
+            ),
+            carded_names={card.name for card in instance_page.major_factions},
+            validation_context=validation_context,
+        )
+    )
+    issues.extend(
         _validate_enriched_glossary_refs(
             instance_page.glossary_refs,
             path_prefix="$.glossary_refs",
@@ -654,5 +725,5 @@ def validate_structural_rules(
             if isinstance(parsed_entity, InstancePage)
             else InstancePage.model_validate(parsed_entity)
         )
-        return _validate_instance_page(instance_page)
+        return _validate_instance_page(instance_page, validation_context=validation_context)
     return []

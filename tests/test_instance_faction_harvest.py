@@ -170,6 +170,36 @@ def test_harvest_skips_temporally_excluded_instance_evidence() -> None:
     assert pool == []
 
 
+def test_harvest_ignores_biography_only_mentions_for_instance_factions() -> None:
+    rows = [
+        _row(
+            "The Scourge raised the dead beneath Scholomance.",
+            "The Scourge defended the academy's halls.",
+            "The Scourge still occupies the ruined school.",
+            field_name="history_digest",
+            section_role="history",
+        ),
+        _row(
+            "Lilian Voss was trained by the Scarlet Crusade.",
+            "The Scarlet Crusade hunted Lilian Voss after her undeath.",
+            "Scarlet Crusade zealots shaped Lilian Voss's early biography.",
+            field_name="character_pool",
+            section_role="character_biography",
+        ),
+    ]
+
+    targets, pool = harvest_instance_faction_targets(
+        instance_id="instance-scholomance",
+        instance_name="Scholomance",
+        evidence_rows=rows,
+    )
+
+    names = {target["name"] for target in targets}
+    assert "Scourge" in names
+    assert "Scarlet Crusade" not in names
+    assert all("Scarlet Crusade" not in item["snippet"] for item in pool)
+
+
 def test_harvest_allows_multiword_faction_with_eligible_history_support() -> None:
     rows = [
         _row(
