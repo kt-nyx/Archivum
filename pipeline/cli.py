@@ -5,6 +5,7 @@ import json
 import typer
 
 from pipeline.ai.config import load_ai_settings
+from pipeline.common.linguistics import describe
 from pipeline.common.run_context import (
     RunArtifactsExistError,
     ensure_run_context,
@@ -159,6 +160,17 @@ def draft(
         max_entity_concurrency=max_entity_concurrency,
     )
     typer.echo(f"run_id={context.run_id} stage=draft outputs={len(outputs)}")
+
+
+@app.command(name="debug-linguistics")
+def debug_linguistics(
+    text: str = typer.Argument(..., help="Text sample to analyze."),
+) -> None:
+    """Print the NLP wrapper's analysis (sentences, token features, tense profile).
+
+    Reviewer diagnostics for tense/parse disagreements — see pipeline/common/linguistics.py.
+    """
+    typer.echo(describe(text))
 
 
 @app.command(name="glossary-terms")

@@ -20,6 +20,14 @@ dependencies = [
   "beautifulsoup4>=4.13",
   "networkx>=3.3",
   "rapidfuzz>=3.9",
+  # NLP substrate (generalization refactor Slice 4): deliberately exact-pinned — grammar
+  # feature output must be reproducible across dev/CI, and the trained model below must
+  # match this spaCy minor version. Bump both together, deliberately.
+  "spacy==3.8.13",
+  # The trained English pipeline is not published on PyPI; pin the GitHub release wheel
+  # matching the pinned spaCy minor version. Standard dev/CI dependency: tests run real
+  # segmentation/tagging, never a fallback.
+  "en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
 ]
 
 [dependency-groups]
