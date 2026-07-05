@@ -44,7 +44,3 @@ def expansion_release_order() -> tuple[str, ...]:
     means a later expansion. Used as a soft relative recency signal in temporal classification.
     """
     return _tokens("expansion_release_order")
-
-
-def historical_framing_markers() -> tuple[str, ...]:
-    return _tokens("historical_framing_markers")

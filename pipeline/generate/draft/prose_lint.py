@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from pipeline.common.draft_vocab import historical_framing_markers
+from pipeline.common.linguistics import tense_profile
 from pipeline.common.text_sim import token_jaccard
 from pipeline.contracts.models import ZONE_PAGE_BUDGET_RULES
 from pipeline.discovery.world_registry import entry_kinds
@@ -21,36 +21,11 @@ MAX_HISTORY_SECTIONS = 8
 AT_A_GLANCE_CURRENTLY_OVERLAP_THRESHOLD = 0.55
 _SHORT_TEXT_PRESENT_CARVEOUT_WORDS = 8
 
-# WS-C: prose-text historical-framing markers externalized to
-# pipeline/data/draft_classification_vocab.v1.json (D-6).
-_HISTORICAL_MARKERS = historical_framing_markers()
-
 _CURRENTLY_META_RE = re.compile(
     r"\breputation with\b|\bachievement\b|\bplayers can\b|\bbreadcrumb\b",
     re.IGNORECASE,
 )
 _ADP_DATE_RE = re.compile(r"\b(?:year\s+)?\d{1,3}\s+(?:A|B)DP\b", re.IGNORECASE)
-
-_PAST_TENSE_RE = re.compile(
-    r"\b(was|were|had been|became|fell|destroyed|invaded|established|founded|consumed|overran|collapsed|remained)\b",
-    re.IGNORECASE,
-)
-
-# Generic English past-tense/participle morphology (regular -ed / -en endings on a word stem).
-# Used only for history-section *framing* detection — a domain-general grammar signal, not a lore
-# vocabulary list — so legitimate past-tense narration (razed, marched, perished, abandoned, …) is
-# recognized without enumerating zone verbs. Present-dominant sections that happen to contain an
-# -ed adjective are still caught by `has_dominant_present_tense` (the framing check's `elif` branch).
-_PAST_TENSE_MORPH_RE = re.compile(r"\b[a-z]{2,}(?:ed|en)\b", re.IGNORECASE)
-
-_PRESENT_TENSE_RE = re.compile(
-    r"\b("
-    r"is|are|remains|remain|continues|continue|stands|stand|holds|hold|"
-    r"maintains|maintain|struggles|struggle|heals|heal|clashes|clash|patrols|patrol|"
-    r"works|work|contests|contest|coordinates|coordinate|guards|guard"
-    r")\b",
-    re.IGNORECASE,
-)
 
 _LOCATION_LIST_RE = re.compile(
     r"(?:[A-Z][a-z]+(?:'s)?(?:,\s*)?){3,}[A-Z][a-z]+",
@@ -59,9 +34,10 @@ _LOCATION_LIST_RE = re.compile(
 # Player-facing quest-directive voice. `currently` / `at_a_glance` describe the world in-universe,
 # not what the player is sent to do, yet quest-objective evidence ("Adventurers are tasked with...",
 # "Aid the Argent Crusade...", "See <zone> storyline") otherwise slips into the currently pool and
-# wins on length. This is a *voice/address* signal (second person, player-as-tasked-agent, bare
-# imperative opener, or a wiki cross-reference directive) — general English quest phrasing, not a
-# zone vocabulary list — so it generalizes across zones without hardcoding any one zone's content.
+# wins on length. This regex covers the *voice/address* half of the signal (second person,
+# player-as-tasked-agent, or a wiki cross-reference directive); the bare-imperative half
+# ("Aid...", "Slay...") comes from the grammar substrate's imperative shape in
+# `has_player_directive`, not an enumerated verb list.
 _PLAYER_DIRECTIVE_RE = re.compile(
     r"\b(?:you|your|yourself)\b"
     r"|\b(?:adventurers?|heroes?|champions?|players?)\s+"
@@ -79,14 +55,6 @@ _PLAYER_META_RE = re.compile(
     r"\bplayers?\b|\byou\b|\byour\b|\byourself\b",
     re.IGNORECASE,
 )
-_QUEST_IMPERATIVE_OPENER_RE = re.compile(
-    r"^\s*(?:aid|help|assist|defeat|slay|kill|destroy|stop|halt|find|seek|locate|travel|journey|"
-    r"venture|head|go|return|report|speak|talk|meet|escort|rescue|free|gather|collect|retrieve|"
-    r"deliver|bring|clear|defend|protect|investigate|search|beware|be\s+warned)\b",
-    re.IGNORECASE,
-)
-
-
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.?!])\s+")
 
 
@@ -157,40 +125,45 @@ def trim_words(text: str, max_words: int, *, ensure_terminal_punct: bool = False
     return result
 
 
-def tense_marker_counts(text: str) -> tuple[int, int]:
-    past = len(_PAST_TENSE_RE.findall(text))
-    present = len(_PRESENT_TENSE_RE.findall(text))
-    return past, present
+# Tense home (Slice 5): every tense/voice judgment below delegates to the NLP grammar
+# substrate (pipeline.common.linguistics.tense_profile). The hand-enumerated past/present
+# verb regexes are gone; past participles and adjectival participles ("ruined",
+# "plague-scarred", "fallen") never count as finite past narration.
 
 
-def has_dominant_present_tense(
-    text: str, *, short_text_word_limit: int = _SHORT_TEXT_PRESENT_CARVEOUT_WORDS
-) -> bool:
-    past, present = tense_marker_counts(text)
-    if present == 0:
-        return False
-    if past == 0 and word_count(text) < short_text_word_limit:
-        return False
-    return present > past or (present >= 1 and past == 0)
+def has_dominant_present_tense(text: str) -> bool:
+    """True when the finite present spine outweighs the finite past spine."""
+    profile = tense_profile(text)
+    return profile.present_count > profile.past_count
 
 
 def past_marker_score(text: str) -> int:
-    past, present = tense_marker_counts(text)
-    return past * 2 - present
+    profile = tense_profile(text)
+    return profile.past_count * 2 - profile.present_count
 
 
 def has_past_tense_signal(text: str) -> bool:
-    """Generic past-tense signal: a common irregular past verb or regular -ed/-en morphology.
+    """Positive past evidence: a finite past verb spine or past/adjectival participles.
 
-    Domain-general grammar rule (no lore/proper-noun tokens) used for history-section framing, so a
-    legitimate past-tense section is not rejected merely for avoiding the small irregular-verb list.
+    Used for history-section framing, where participial scarring ("the ruined countryside")
+    legitimately carries the past even in a sentence without a finite past verb.
     """
-    return bool(_PAST_TENSE_RE.search(text)) or bool(_PAST_TENSE_MORPH_RE.search(text))
+    profile = tense_profile(text)
+    return profile.past_count > 0 or bool(profile.past_participles)
 
 
-def has_historical_framing(text: str) -> bool:
-    lowered = text.lower()
-    return any(marker in lowered for marker in _HISTORICAL_MARKERS)
+def is_past_dominant_narration(text: str) -> bool:
+    """True when the text's only finite narration is past, and there is enough of it to be a spine.
+
+    This is the deterministic "reads as history, not a present-state description" floor: at least
+    two finite past verbs/auxiliaries and no finite present at all. The >=2 floor is deliberate —
+    the pinned sm model can erase a lone present verb through a noun mis-tag ("control", "labors"),
+    and a single subordinate past fact inside an otherwise nominal/present summary is legitimate
+    supporting detail (the gold Forsaken card shape). Gates built on this reject on positive past
+    evidence; they never require positive present evidence.
+    """
+    profile = tense_profile(text)
+    return profile.present_count == 0 and profile.past_count >= 2
 
 
 def has_currently_meta(text: str) -> bool:
@@ -222,11 +195,19 @@ def is_self_negating_non_answer(text: str) -> bool:
 
 
 def has_player_directive(text: str) -> bool:
-    """True when the text reads as a player-facing quest directive rather than in-universe prose."""
+    """True when the text reads as a player-facing quest directive rather than in-universe prose.
+
+    Two signals: the explicit player/meta frame regex (second person, player-as-tasked-agent,
+    wiki cross-reference directive — mechanical frame guards), and the grammar substrate's
+    imperative shape (a subjectless base-form clause head: "Slay the necromancers", "Be warned"),
+    which replaces the old enumerated quest-verb opener list.
+    """
     cleaned = text.strip()
     if not cleaned:
         return False
-    return bool(_PLAYER_DIRECTIVE_RE.search(cleaned) or _QUEST_IMPERATIVE_OPENER_RE.search(cleaned))
+    if _PLAYER_DIRECTIVE_RE.search(cleaned):
+        return True
+    return tense_profile(cleaned).imperative_like
 
 
 def has_player_meta_reference(text: str) -> bool:
@@ -239,8 +220,8 @@ def has_player_meta_reference(text: str) -> bool:
 
 
 def has_present_state_framing(text: str) -> bool:
-    """True when the text carries present-tense active-state framing (is/remains/holds/...)."""
-    return bool(_PRESENT_TENSE_RE.search(text))
+    """True when the text carries a finite present verb or present copula/auxiliary spine."""
+    return tense_profile(text).present_framed
 
 
 def has_geography_hub_in_text(text: str) -> bool:
@@ -273,9 +254,11 @@ def lint_at_a_glance(text: str, *, zone_name: str = "") -> list[str]:
     # events. Reject a caption whose verb spine is dominantly past tense (it reads as a history blurb);
     # a present/atemporal or nominal caption — including the all-participle gold shape — is fine. This
     # gates on finite past-tense verbs only, so past-participle adjectives never trip it.
-    past, present = tense_marker_counts(text)
-    if words >= _SHORT_TEXT_PRESENT_CARVEOUT_WORDS and past > present:
-        issues.append("at_a_glance reads as past-tense narration")
+    if words >= _SHORT_TEXT_PRESENT_CARVEOUT_WORDS and tense_profile(text).past_dominant:
+        issues.append(
+            "at_a_glance reads as past-tense narration: describe what the zone is now, "
+            "carrying its history in adjectives rather than past-tense events"
+        )
     if is_self_negating_non_answer(text):
         issues.append("at_a_glance asserts absence of content instead of describing the subject")
     issues.extend(lint_adp_date_style(text))
@@ -302,10 +285,11 @@ def lint_currently(text: str, *, zone_name: str = "", at_a_glance: str = "") -> 
         if overlap >= AT_A_GLANCE_CURRENTLY_OVERLAP_THRESHOLD:
             issues.append("currently substantially overlaps at_a_glance")
     words = word_count(text)
-    if words >= _SHORT_TEXT_PRESENT_CARVEOUT_WORDS and not _PRESENT_TENSE_RE.search(text):
-        issues.append("currently lacks present-tense active-state framing")
-    elif has_historical_framing(text) and not _PRESENT_TENSE_RE.search(text):
-        issues.append("currently uses historical-era framing without present tense")
+    if words >= _SHORT_TEXT_PRESENT_CARVEOUT_WORDS and not has_present_state_framing(text):
+        issues.append(
+            "currently lacks present-tense active-state framing: describe the zone's "
+            "ongoing state in present tense"
+        )
     issues.extend(lint_adp_date_style(text))
     return issues
 
@@ -338,11 +322,16 @@ def lint_history_sections(
         # never exempt (a one-section "history" must still read as past background).
         is_present_state_bridge = index == final_index and len(sections) > 1
         if not is_present_state_bridge:
-            has_framing = has_past_tense_signal(body) or has_historical_framing(body)
-            if not has_framing:
-                issues.append(f"history_sections[{index}] lacks past-tense historical framing")
-            elif has_dominant_present_tense(body, short_text_word_limit=0):
-                issues.append(f"history_sections[{index}] uses dominant present tense")
+            if has_dominant_present_tense(body):
+                issues.append(
+                    f"history_sections[{index}] uses dominant present tense: "
+                    "narrate this era's completed events in past tense"
+                )
+            elif not has_past_tense_signal(body):
+                issues.append(
+                    f"history_sections[{index}] lacks past-tense historical framing: "
+                    "narrate the era's events in past tense"
+                )
         for adp_issue in lint_adp_date_style(body):
             issues.append(f"history_sections[{index}] {adp_issue}")
     return issues

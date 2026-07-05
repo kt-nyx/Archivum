@@ -7,12 +7,12 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from pipeline.common import wiki_html
+from pipeline.common.linguistics import tense_profile
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.contracts.models import INSTANCE_BUDGET_RULES
 from pipeline.generate.draft.prose_gate import detect_list_shape
 from pipeline.generate.draft.prose_lint import (
     has_currently_meta,
-    has_historical_framing,
     lint_adp_date_style,
     split_sentences,
     trim_words,
@@ -139,7 +139,7 @@ def lint_overview(text: str, *, instance_name: str = "") -> list[str]:
         issues.append("overview contains quest walkthrough or player meta")
     if instance_name and instance_name.lower() not in cleaned.lower():
         issues.append("overview lacks instance anchor")
-    if has_historical_framing(cleaned) and words < MIN_OVERVIEW_WORDS // 2:
+    if words < MIN_OVERVIEW_WORDS // 2 and tense_profile(cleaned).past_dominant:
         issues.append("overview reads like thin historical fragment")
     issues.extend(lint_adp_date_style(cleaned))
     return issues

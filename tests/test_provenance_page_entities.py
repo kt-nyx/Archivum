@@ -92,7 +92,7 @@ def test_build_zone_page_uses_snapshot_revision_for_quest_provenance(monkeypatch
                 {
                     "source_url": "https://warcraft.wiki.gg/wiki/Example_Zone",
                     "source_title": "Example Zone",
-                    "snippet": "The zone was ravaged by war before patrols reclaimed key routes.",
+                    "snippet": "The zone is a war-ravaged frontier where patrols secure the reclaimed key routes.",
                     "section_role": "lead",
                     "confidence": 1.0,
                 }
@@ -204,7 +204,7 @@ def test_build_zone_page_history_provenance_falls_back_when_used_ids_empty(monke
             "field_name": "at_a_glance_input",
             "evidence_items": [
                 {
-                    "snippet": "The zone was ravaged by war before patrols reclaimed key routes.",
+                    "snippet": "The zone is a war-ravaged frontier where patrols secure the reclaimed key routes.",
                     "section_role": "lead",
                 }
             ],

@@ -7,7 +7,7 @@ import re
 from pipeline.contracts.models import ZONE_PAGE_BUDGET_RULES
 from pipeline.generate.draft.prose_lint import (
     has_currently_meta,
-    has_historical_framing,
+    is_past_dominant_narration,
     is_self_negating_non_answer,
     lint_adp_date_style,
     split_sentences,
@@ -34,24 +34,6 @@ def strip_faction_label_prefix(text: str, faction_name: str = "") -> str:
     if name and cleaned.lower().startswith(f"{name.lower()}:"):
         return cleaned[len(name) + 1 :].lstrip()
     return cleaned
-
-# One remaining vacuous-identity pattern. The old canned-template phrasings ("appears in this
-# zone's active conflicts", "political narrative") were removed as redundant: they carry no
-# present-role predicate, so the positive substance gate (role framing + subject mention + zone
-# anchor + non-answer detection) already rejects them.
-_GENERIC_FILLER_PATTERNS = (
-    re.compile(r"\bis a .+ faction\b", re.IGNORECASE),
-)
-
-_PRESENT_ROLE_RE = re.compile(
-    r"\b("
-    r"is|are|remains|remain|continues|continue|holds|hold|operates|operate|controls|control|"
-    r"maintains|maintain|coordinates|coordinate|patrols|patrol|guards|guard|"
-    r"pushes|push|sends|send|defends|defend|occupies|occupy|uses|use|serves|serve|"
-    r"trains|train|raises|raise"
-    r")\b",
-    re.IGNORECASE,
-)
 
 
 def ensure_sentence_terminator(text: str) -> str:
@@ -104,17 +86,6 @@ def trim_faction_summary(text: str, max_words: int = MAX_FACTION_SUMMARY_WORDS) 
     return ensure_sentence_terminator(" ".join(kept).strip())
 
 
-def is_generic_faction_summary(text: str) -> bool:
-    cleaned = text.strip()
-    if not cleaned:
-        return True
-    return any(pattern.search(cleaned) for pattern in _GENERIC_FILLER_PATTERNS)
-
-
-def has_zone_role_framing(text: str) -> bool:
-    return bool(_PRESENT_ROLE_RE.search(text)) or has_historical_framing(text)
-
-
 def summary_has_zone_anchor(text: str, *, zone_name: str, subregion_tokens: list[str]) -> bool:
     cleaned = text.strip()
     if not cleaned:
@@ -158,30 +129,55 @@ def lint_faction_summary(
     subregion_tokens: list[str] | None = None,
     faction_name: str = "",
 ) -> list[str]:
+    """Deterministic floor for a faction-card summary (Slice 5 recomposition).
+
+    Checks only what is deterministically checkable: word budget, terminal punctuation,
+    zone/subregion anchor, subject mention, the self-negating non-answer category,
+    past-dominant narration (from the NLP tense home), and currently-meta framing. There is
+    no role-verb whitelist; editorial voice lives in the synthesis prompts, and every reason
+    string here states what to do so the synthesis driver's retry can act on it.
+    """
     issues: list[str] = []
     cleaned = text.strip()
+    subject = faction_name.strip() or "the faction"
+    place = zone_name.strip() or "the zone"
     if not cleaned:
-        issues.append("faction summary is empty")
+        issues.append(
+            f"faction summary is empty: write 1-2 sentences on what {subject} does in {place}"
+        )
         return issues
     words = word_count(cleaned)
     if words < MIN_FACTION_SUMMARY_WORDS:
-        issues.append(f"faction summary below {MIN_FACTION_SUMMARY_WORDS} words ({words})")
+        issues.append(
+            f"faction summary is {words} words: expand to at least "
+            f"{MIN_FACTION_SUMMARY_WORDS} words on {subject}'s role in {place}"
+        )
     if words > MAX_FACTION_SUMMARY_WORDS:
-        issues.append(f"faction summary exceeds {MAX_FACTION_SUMMARY_WORDS} words ({words})")
+        issues.append(
+            f"faction summary is {words} words: tighten to at most "
+            f"{MAX_FACTION_SUMMARY_WORDS} words"
+        )
     if cleaned[-1] not in ".?!":
-        issues.append("faction summary does not end with sentence punctuation")
-    if is_generic_faction_summary(cleaned):
-        issues.append("faction summary reads like generic filler")
+        issues.append("faction summary must end with sentence punctuation: finish the sentence")
     if has_currently_meta(cleaned):
-        issues.append("faction summary contains reputation/achievement/player meta")
+        issues.append(
+            "faction summary contains reputation/achievement/player meta: "
+            "describe the world in-universe instead"
+        )
     if is_self_negating_non_answer(cleaned):
-        issues.append("faction summary asserts absence of content instead of a role (non-answer)")
+        issues.append(
+            "faction summary asserts absence of content instead of a role (non-answer): "
+            f"state what {subject} actually does in {place}"
+        )
     if faction_name and not summary_mentions_subject(cleaned, faction_name):
-        issues.append("faction summary never names the faction it describes")
-    if zone_name and zone_name.lower() in cleaned.lower() and words < MIN_FACTION_SUMMARY_WORDS:
-        issues.append("faction summary reads like bare zone-description filler")
-    if words >= MIN_FACTION_SUMMARY_WORDS and not has_zone_role_framing(cleaned):
-        issues.append("faction summary lacks zone role framing")
+        issues.append(
+            f"faction summary never names the faction it describes: name {faction_name} explicitly"
+        )
+    if is_past_dominant_narration(cleaned):
+        issues.append(
+            f"write in present tense: describe what {subject} does now in {place}, "
+            "not its past history"
+        )
     issues.extend(lint_adp_date_style(cleaned))
     tokens = subregion_tokens or []
     if (
@@ -193,5 +189,8 @@ def lint_faction_summary(
             subregion_tokens=tokens,
         )
     ):
-        issues.append("faction summary lacks zone or subregion anchor")
+        issues.append(
+            "faction summary lacks zone or subregion anchor: "
+            f"name {zone_name} or one of its subregions"
+        )
     return issues

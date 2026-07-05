@@ -45,7 +45,9 @@ def test_discovery_vocab_loaders_return_expected_shapes() -> None:
 
 
 def test_draft_vocab_loaders_return_expected_shapes() -> None:
-    for loader in (draft_vocab.era_section_role_tokens, draft_vocab.historical_framing_markers):
+    # historical_framing_markers was retired in Slice 5 (tense judgments moved to the NLP
+    # grammar substrate); era tokens remain the draft path's only externalized vocab.
+    for loader in (draft_vocab.era_section_role_tokens, draft_vocab.expansion_release_order):
         value = loader()
         assert isinstance(value, tuple) and value, loader.__name__
 
@@ -58,4 +60,3 @@ def test_vocab_values_preserved_from_pre_externalization() -> None:
     assert "hero's call" in discovery_vocab.entry_quest_title_keywords()
     assert "the burning legion" in discovery_vocab.non_person_narrative_titles()
     assert "cataclysm" in draft_vocab.era_section_role_tokens()
-    assert "formerly" in draft_vocab.historical_framing_markers()

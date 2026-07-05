@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from pipeline.generate.draft.faction_lint import (
     ensure_sentence_terminator,
     lint_faction_summary,
@@ -7,6 +10,8 @@ from pipeline.generate.draft.faction_lint import (
     trim_faction_summary,
 )
 from pipeline.generate.draft.prose_lint import word_count
+
+_PILOT_FIXTURES = Path(__file__).parent / "fixtures" / "pilot"
 
 
 def test_trim_faction_summary_adds_terminal_punctuation_when_truncated() -> None:
@@ -68,21 +73,90 @@ def test_lint_faction_summary_accepts_uses_and_serves_role_prose() -> None:
     )
 
 
-def test_lint_faction_summary_rejects_old_canned_template_via_positive_gate() -> None:
-    # The one-off filler regexes for this phrasing were removed (RC6): the positive substance gate
-    # rejects it structurally — no present-role predicate and no real content.
-    issues = lint_faction_summary(
-        "The Argent Crusade appears in this zone's shifting active conflicts and its broader "
-        "political narrative across the region."
+def test_lint_faction_summary_accepts_previously_whitelist_rejected_verbs() -> None:
+    # Slice 5 regression set: valid present-role summaries whose predicates ("heals",
+    # "works to further heal", "labors to restore") fell outside the deleted verb whitelist
+    # and were rejected as lacking "zone role framing". The gate no longer pins verbs; it
+    # only rejects positive past evidence ("labors" is even mis-tagged as a noun by the sm
+    # model, so this also proves the gate never *requires* positive present evidence).
+    heals = (
+        "The Argent Crusade heals the land around Hearthglen, tending plague-blighted farmsteads "
+        "across Western Plaguelands while its crusaders hold the line against lingering Scourge "
+        "remnants."
     )
-    assert any("zone role framing" in issue for issue in issues)
+    works = (
+        "The Cenarion Circle works to further heal the plaguelands, guiding new growth through "
+        "Western Plaguelands' blighted soil as its druids tend the recovering groves."
+    )
+    labors = (
+        "The Cenarion Circle labors to restore the blighted soil of Western Plaguelands, "
+        "coaxing green shoots from dead earth while crusaders guard the recovering farmland."
+    )
+    for summary, faction in (
+        (heals, "Argent Crusade"),
+        (works, "Cenarion Circle"),
+        (labors, "Cenarion Circle"),
+    ):
+        assert not lint_faction_summary(
+            summary, zone_name="Western Plaguelands", faction_name=faction
+        )
 
 
-def test_lint_faction_summary_rejects_vacuous_identity_filler() -> None:
-    issues = lint_faction_summary(
-        "The Argent Crusade is a well-known neutral faction with a long and storied history."
+def test_lint_faction_summary_rejects_org_history_lede_on_past_dominance() -> None:
+    # A generic organization-history lede (pure finite-past spine, no present anchoring)
+    # reads as history, not a present-role summary; the reason tells the model what to do.
+    lede = (
+        "The Argent Dawn was founded after the Third War and fought across the Western "
+        "Plaguelands, and its veterans campaigned through the plaguelands before the order "
+        "dissolved at Light's Hope Chapel."
     )
-    assert any("generic filler" in issue for issue in issues)
+    issues = lint_faction_summary(
+        lede, zone_name="Western Plaguelands", faction_name="Argent Dawn"
+    )
+    assert issues == [
+        "write in present tense: describe what Argent Dawn does now in Western Plaguelands, "
+        "not its past history"
+    ]
+
+
+def test_lint_faction_summary_tolerates_past_supporting_detail() -> None:
+    # The gold Forsaken card shape: a present-role description whose *supporting* sentence
+    # recounts one past fact. A single subordinate past verb must not fail the card.
+    summary = (
+        "The Forsaken control Andorhal in the Western Plaguelands after driving out the Alliance "
+        "and ending Scourge presence there. Sylvanas Windrunner and Koltira Deathweaver "
+        "commanded their forces in that battle."
+    )
+    assert not lint_faction_summary(
+        summary, zone_name="Western Plaguelands", faction_name="Forsaken"
+    )
+
+
+def _gold_faction_cards(fixture_name: str) -> list[dict[str, str]]:
+    payload = json.loads((_PILOT_FIXTURES / fixture_name).read_text(encoding="utf-8"))
+    return [card for card in payload["major_factions"] if isinstance(card, dict)]
+
+
+def test_all_gold_faction_summaries_pass_the_recomposed_gate() -> None:
+    # The slice's acceptance floor: every gold faction summary — five WPL zone cards and both
+    # Scholomance instance cards — passes the whitelist-free gate.
+    zone_cards = _gold_faction_cards("zone_page_western_plaguelands_gold.json")
+    assert len(zone_cards) == 5
+    for card in zone_cards:
+        assert not lint_faction_summary(
+            card["summary"],
+            zone_name="Western Plaguelands",
+            faction_name=card["name"],
+        ), card["name"]
+    instance_cards = _gold_faction_cards("instance_page_scholomance_gold.json")
+    assert len(instance_cards) == 2
+    for card in instance_cards:
+        assert not lint_faction_summary(
+            card["summary"],
+            zone_name="Scholomance",
+            subregion_tokens=["Caer Darrow"],
+            faction_name=card["name"],
+        ), card["name"]
 
 
 def test_lint_faction_summary_rejects_self_negating_non_answer() -> None:

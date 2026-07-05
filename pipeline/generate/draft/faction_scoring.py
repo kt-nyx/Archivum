@@ -1069,8 +1069,9 @@ def fallback_faction_summary(
         summary = trim_faction_summary(source or snippet, max_words)
         return summary if summary and not detect_list_shape(summary) else ""
 
-    # First pass: prefer a snippet whose summary actually clears BOTH the faction lint (zone anchor +
-    # role framing) and the deterministic prose gate — the same checks the card finalizer applies.
+    # First pass: prefer a snippet whose summary actually clears BOTH the faction lint (zone anchor,
+    # subject mention, tense floor) and the deterministic prose gate — the same checks the card
+    # finalizer applies.
     # The deterministic path must reliably yield a publishable card when the evidence supports one,
     # rather than depending on the LLM summary passing: instance factions (Scourge, Cult of the
     # Damned) otherwise drop to [] on an unlucky LLM phrasing.

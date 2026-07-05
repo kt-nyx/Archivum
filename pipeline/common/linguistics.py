@@ -115,7 +115,10 @@ class TenseProfile:
       past narration on the finite auxiliary, so these count toward the tense scores.
     - ``past_participles`` — past/perfect participles including adjectival uses ("ruined",
       "plague-scarred", "fallen"). Reported but **never** counted as finite past narration:
-      a participial caption has no finite verb spine.
+      a participial caption has no finite verb spine. A verb whose dependency is ``amod``
+      (attributive modifier — "fortified holdings") lands here too even when the sm model's
+      morphology calls it finite: an adjectival modifier is not narration, and the mis-parse
+      would otherwise inject phantom finite-past counts.
     - ``imperative_roots`` — clause heads of subjectless base-form verb clauses (quest-style
       directives: "Slay the necromancers", "Be warned"). Infinitival fragments introduced
       by "to" and modal-bearing fragments ("Can be found in...") are excluded.
@@ -200,29 +203,53 @@ def _clause_heads(doc: Doc) -> list[Token]:
     return heads
 
 
+def _conjunction_chain(token: Token) -> list[Token]:
+    """The token plus every conjunction head above it ("recruit" → ["recruit", "spy"]).
+
+    A conjoined verb shares its subject and modals with the head it is conjoined to
+    ("they spy … and recruit …"), so imperative detection must look up the chain rather
+    than only at the token's own children.
+    """
+    chain = [token]
+    head = token
+    while head.dep_ == "conj" and head.head is not head:
+        head = head.head
+        chain.append(head)
+    return chain
+
+
 def _is_imperative_clause_head(token: Token) -> bool:
     """Subjectless base-form verb clause — the grammatical shape of a quest directive.
 
     Excludes infinitival fragments ("to restore the land": a ``to`` particle attaches to the
     verb), any clause with an explicit subject, and any clause carrying a modal (imperatives
     never take modals — "Can be found in..." is a subjectless wiki fragment, not a directive).
+    Subjects and modals are inherited through the conjunction chain, so "they spy … and
+    recruit …" is finite narration, while "Aid X and slay Y" stays a two-verb directive.
     Covers the bare-auxiliary participle form ("Be warned") where the base-form verb is the
     auxiliary, not the clause head itself.
     """
     if token.pos_ not in {"VERB", "AUX"}:
         return False
+    for clause in _conjunction_chain(token):
+        children = list(clause.children)
+        if any(child.dep_ in _SUBJECT_DEPS for child in children):
+            return False
+        if any(child.tag_ in {"TO", "MD"} for child in children):
+            return False
     children = list(token.children)
-    if any(child.dep_ in _SUBJECT_DEPS for child in children):
-        return False
-    if any(child.tag_ in {"TO", "MD"} for child in children):
-        return False
     if token.tag_ == "VB":
         return True
     return any(child.dep_ in {"aux", "auxpass"} and child.tag_ == "VB" for child in children)
 
 
+@lru_cache(maxsize=4096)
 def tense_profile(text: str) -> TenseProfile:
-    """Bucket the text's verb spine by tense/finiteness and derive the tense scores."""
+    """Bucket the text's verb spine by tense/finiteness and derive the tense scores.
+
+    Cached: the draft lint gates (Slice 5) profile the same snippet from several predicates
+    while ranking/filtering evidence pools, and the result is a small frozen dataclass.
+    """
     doc = _analyze(text)
     past_finite_verbs: list[str] = []
     present_finite_verbs: list[str] = []
@@ -232,12 +259,17 @@ def tense_profile(text: str) -> TenseProfile:
 
     for token in doc:
         if token.pos_ == "VERB":
-            if _is_finite(token):
+            # An attributive modifier ("fortified holdings", "ruined farms") functions as an
+            # adjective regardless of its tense morphology; the sm model sometimes reports such
+            # tokens as finite past, which would inject phantom narration counts.
+            if _is_finite(token) and token.dep_ != "amod":
                 if _tense(token) == "Past":
                     past_finite_verbs.append(token.text)
                 elif _tense(token) == "Pres":
                     present_finite_verbs.append(token.text)
-            elif token.morph.get("VerbForm", []) == ["Part"] and _tense(token) == "Past":
+            elif _tense(token) == "Past" and (
+                token.morph.get("VerbForm", []) == ["Part"] or token.dep_ == "amod"
+            ):
                 past_participles.append(token.text)
         elif token.pos_ == "AUX" and _is_finite(token):
             if _tense(token) == "Past":

@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from pipeline.common.draft_vocab import era_section_role_tokens
+from pipeline.common.linguistics import tense_profile
 from pipeline.common.wiki_evidence_filters import should_exclude_from_history
 from pipeline.contracts.models import ZONE_PAGE_BUDGET_RULES
 from pipeline.generate.draft.claim_routing import prefer_entry_state_first
@@ -14,7 +15,6 @@ from pipeline.generate.draft.prose_lint import (
     MAX_HISTORY_SECTIONS,
     has_currently_meta,
     has_geography_hub_in_text,
-    has_historical_framing,
     has_location_list_dump,
     has_player_directive,
     has_present_state_framing,
@@ -71,7 +71,9 @@ def _is_excluded_currently_snippet(snippet: str, *, zone_name: str = "") -> bool
         return True
     if has_player_directive(text):
         return True
-    if has_historical_framing(text):
+    # A snippet whose finite verb spine is dominantly past narrates history; it cannot seed the
+    # currently field. Mixed past/present snippets ("Formerly X, now Y holds Z") stay eligible.
+    if tense_profile(text).past_dominant:
         return True
     if has_geography_hub_in_text(text):
         return True
@@ -91,7 +93,7 @@ def _is_present_state_lore(snippet: str) -> bool:
         return False
     if has_currently_meta(text) or has_player_directive(text):
         return False
-    if has_historical_framing(text) or has_location_list_dump(text):
+    if tense_profile(text).past_dominant or has_location_list_dump(text):
         return False
     return True
 
@@ -243,8 +245,17 @@ def _tier_latest_era_history(
     if not era_items:
         return []
     last_item = era_items[-1]
-    snippet = str(last_item.get("snippet", ""))
-    if _is_excluded_currently_snippet(snippet, zone_name=zone_name):
+    snippet = str(last_item.get("snippet", "")).strip()
+    # Content-frame checks only. This tier deliberately borrows a *history* paragraph — the
+    # latest era is legitimately narrated in past voice, the LLM currently-worker rewrites
+    # voice, and the deterministic borrow path is still gated by lint_currently — so the
+    # tense-voice exclusion in _is_excluded_currently_snippet must not veto it.
+    if (
+        not snippet
+        or has_currently_meta(snippet)
+        or has_player_directive(snippet)
+        or has_geography_hub_in_text(snippet)
+    ):
         return []
     return [last_item]
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pipeline.common.text_sim import token_jaccard
 from pipeline.generate.draft.prose_lint import (
     AT_A_GLANCE_CURRENTLY_OVERLAP_THRESHOLD,
+    has_player_directive,
     has_player_meta_reference,
     lint_at_a_glance,
     lint_currently,
@@ -254,6 +255,20 @@ def test_history_non_final_present_section_is_still_flagged() -> None:
     issues = lint_history_sections(sections)
     assert any("dominant present tense" in issue and "history_sections[0]" in issue for issue in issues)
     assert not any("history_sections[1]" in issue for issue in issues)
+
+
+def test_player_directive_catches_imperatives_outside_any_verb_list() -> None:
+    # Slice 5: imperative detection is the grammar substrate's clause shape, not an opener
+    # whitelist — "purge" and "cleanse" were never in the deleted list. In-universe
+    # present-tense prose with the same verbs is not a directive.
+    assert has_player_directive(
+        "Purge the academy of its necromancers and cleanse the cauldrons of Andorhal."
+    )
+    assert not has_player_directive("The Argent Crusade cleanses the cauldrons of Andorhal.")
+    issues = lint_currently(
+        "Purge the academy of its necromancers and cleanse the cauldrons of Andorhal."
+    )
+    assert any("player-facing quest directive" in issue for issue in issues)
 
 
 def test_currently_requires_present_markers() -> None:

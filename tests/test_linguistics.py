@@ -132,6 +132,14 @@ def test_tense_profile_conjoined_imperative() -> None:
     assert profile.imperative_like
 
 
+def test_tense_profile_conjoined_finite_verb_inherits_subject() -> None:
+    # "recruit" carries no subject child of its own, but it is conjoined to "spy", whose
+    # subject ("they") it shares — finite narration, not a directive. Without conjunction-chain
+    # inheritance this false-positives as an imperative (the gold Cult of the Damned card shape).
+    profile = tense_profile("They also spy in settlements and recruit the living into the Cult.")
+    assert not profile.imperative_like
+
+
 def test_tense_profile_bare_auxiliary_imperative() -> None:
     # "Be warned" parses as a participial root with a bare-form auxiliary spine.
     profile = tense_profile("Be warned: the Scourge remains active.")
@@ -150,6 +158,18 @@ def test_tense_profile_modal_passive_fragment_not_imperative() -> None:
     # so these must not be flagged despite the bare-form "be" auxiliary.
     assert not tense_profile("Can be found in Scholomance.").imperative_like
     assert not tense_profile("Will be destroyed by the plague.").imperative_like
+
+
+def test_tense_profile_attributive_amod_verb_is_not_finite_narration() -> None:
+    # sm-model mis-parse: "fortified" in "fortified holdings" is reported as a *finite* past
+    # verb (dep=amod). An attributive modifier functions as an adjective, so it must land in
+    # past_participles, never in the finite past counts — otherwise a present-role sentence
+    # gains a phantom past spine.
+    profile = tense_profile("The Scarlet Crusade maintains fortified holdings across the zone.")
+    assert profile.present_finite_verbs == ("maintains",)
+    assert profile.past_count == 0
+    assert "fortified" in profile.past_participles
+    assert not profile.past_dominant
 
 
 def test_tense_profile_participial_caption_has_no_finite_spine() -> None:
