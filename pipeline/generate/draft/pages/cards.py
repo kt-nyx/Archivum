@@ -57,6 +57,8 @@ from pipeline.generate.draft.pages.assembly import (
     _word_count,
     citation_shortfall_reasons,
 )
+from pipeline.generate.draft.point_of_use_temporal import adjudicate_card_pool
+from pipeline.generate.draft.pool_policy import filter_card_pool
 from pipeline.generate.draft.prose_election import (
     fallback_history_sections,
     history_section_cap,
@@ -719,6 +721,27 @@ def _record_faction_drop(
     )
 
 
+def _vet_card_pools(candidates: list[Any], *, label: str) -> None:
+    """Temporally vet the elected candidates' synthesis pools at point of use (Slice 9, Cause C).
+
+    The bulk faction/location profile pools are cost-scoped out of the enrich-time LLM temporal
+    pass, so their paragraphs stay ``ambiguous_temporal``. Here — the elected set is bounded — the
+    still-ambiguous paragraphs are re-adjudicated (no-op offline / without records), then the shared
+    exclusion policy is applied so no unvetted, post-active, outcome, or non-canon paragraph reaches
+    a card's synthesis prompt. Works for both ``FactionCandidate`` and ``LocationCandidate`` (both
+    carry ``profile_items`` / ``seed_mentions``).
+    """
+    pool_items = [
+        item
+        for candidate in candidates
+        for item in (*candidate.profile_items, *candidate.seed_mentions)
+    ]
+    adjudicate_card_pool(pool_items, label=label)
+    for candidate in candidates:
+        candidate.profile_items = filter_card_pool(candidate.profile_items)
+        candidate.seed_mentions = filter_card_pool(candidate.seed_mentions)
+
+
 def _finalize_faction_card(
     candidate: FactionCandidate,
     *,
@@ -868,6 +891,7 @@ def build_major_factions(
             for candidate in candidates
         ],
     )
+    _vet_card_pools(queue, label=f"faction.{zone_id}")
     cards: list[dict[str, Any]] = []
     provenance_map: dict[str, list[dict[str, str]]] = {}
     for candidate in queue:
@@ -1040,6 +1064,7 @@ def build_location_cards(
         location_profile_targets=location_profile_targets,
     )
     target_count, queue = location_candidates_for_finalize(candidates)
+    _vet_card_pools(queue, label=f"location.{zone_id}")
     cards: list[dict[str, Any]] = []
     provenance_map: dict[str, list[dict[str, str]]] = {}
     for candidate in queue:

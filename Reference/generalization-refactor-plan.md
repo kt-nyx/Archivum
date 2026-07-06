@@ -1,6 +1,6 @@
 # Plan: Generalization Refactor — Registries, Guarantees & Editorial Selection
 
-**Status: IN PROGRESS — Slices 1–8 done (Slice 8: 2026-07-06). Implement remaining slices in the order given.**
+**Status: IN PROGRESS — Slices 1–9 done (Slice 9: 2026-07-06). Implement remaining slices in the order given.**
 
 ## Why this plan exists
 
@@ -748,10 +748,75 @@ layers.
 **No pilot-run dependency. This is not a replacement for Slice 15's assertion-level fact-check; it
 just makes deterministic fallback and LLM-call triage less brittle.**
 
-## Slice 9 — Point-of-use temporal adjudication for card pools; one exclusion policy (C)
+## Slice 9 — Point-of-use temporal adjudication for card pools; one exclusion policy (C) — ✅ DONE (2026-07-06)
 
 **Goal:** evidence that feeds *rendered cards* is always temporally adjudicated; "ambiguous"
 means excluded, everywhere.
+
+**Implementation notes (as built, 2026-07-06):**
+
+- New `pipeline/generate/draft/pool_policy.py` is the single home for the temporal exclusion
+  policy: `EXCLUDED_CARD_POOL_SCOPES = {post_active_lore, active_storyline_outcome,
+  excluded_noncanon, ambiguous_temporal}` (the plan's exact set) plus `card_pool_scope`
+  (item scope with `build_meta` fallback), `is_excluded_from_card_pool`,
+  `filter_card_pool` (drops excluded; unscoped kept), and `row_has_admissible_item`. `active_storyline`
+  (an active belligerent's ongoing conflict) is deliberately NOT excluded — the Slice 6 reconciliation:
+  only the *outcome* (spoiler resolution) is filtered, so a seed-only active combatant keeps the
+  current-conflict evidence that justifies its card.
+- `faction_scoring` single-homed onto it: `_EXCLUDED_TEMPORAL_SCOPES` (the drifted 3-scope set,
+  missing `active_storyline_outcome`), `_item_temporally_excluded`, and
+  `_row_has_temporally_allowed_item` were **deleted**; the four call sites now import
+  `is_excluded_from_card_pool` / `row_has_admissible_item`. Net effect on discovery/scoring:
+  `active_storyline_outcome` is now excluded there too (a correct tightening — an outcome should not
+  count as a faction mention or seed the identity summary).
+- Point-of-use worker `adjudicate_pool_items_point_of_use(items, records_by_canonical_id)` in
+  `temporal.py`: collects the still-`ambiguous_temporal` paragraphs among `items` (deduped by
+  `canonical_evidence_id`), runs the **existing** `adjudicate_canonical_temporal_classifications_llm`
+  batching over just their canonical records, applies `_with_canonical_history_defaults`, writes the
+  resolved scope back onto every matching item, and returns one decision row per adjudicated
+  paragraph (carrying the rejected snippet + prior/new scope). No-op when the LLM is disabled
+  (offline / no key) or a record is missing, so offline runs keep their ambiguous scope and are then
+  dropped by `filter_card_pool` — behaviour-neutral. It does **not** know the exclusion set (that
+  concept lives only in `pool_policy`, avoiding a temporal↔pool_policy import cycle).
+- `pipeline/generate/draft/point_of_use_temporal.py` wires it in via a contextvar registry
+  (`begin`/`clear`/`adjudicate_card_pool`), mirroring `finalize_trace` so the card builders need no
+  signature plumbing. `enrich_evidence_temporal_metadata` gained `return_canonical_records=True`;
+  `draft_writer` builds the `{canonical_evidence_id: record}` map once after enrich and calls
+  `point_of_use_temporal.begin(...)` **inside `_write`** (the per-entity worker thread — a
+  `ThreadPoolExecutor` does not copy contextvars, same reason `finalize_trace.begin` lives there).
+- Each adjudicated paragraph is recorded to the per-entity finalize trace
+  (`data/decisions/prose_finalize_decisions.json`) under stage `temporal.point_of_use` with the
+  `point_of_use` marker and an `excluded_from_synthesis` flag (derived in the orchestration layer
+  from `pool_policy`). **Deliberate deviation from the spec's "same decisions sidecar":** point-of-use
+  is a draft-time, per-page decision, so it uses the existing draft-decision recorder
+  (`finalize_trace`) rather than the enrich-time temporal sidecar; the enrich verdict stays in
+  `canonical_temporal_decisions.json` and the override is joinable by `canonical_evidence_id`. This
+  avoids a new sidecar and heavy return-plumbing while keeping the drop fully auditable (policy 5).
+- Assembly (`pages/assembly.py`): the bulk **profile** pools now retain ambiguous paragraphs into
+  the card builders — `_FACTION_PROFILE_TEMPORAL_SCOPES = {pre_entry, entry_state, ambiguous}` and
+  `_LOCATION_PROFILE_TEMPORAL_SCOPES = {pre_entry, entry_state, active_storyline, ambiguous}` — so
+  point-of-use has something to adjudicate. The already-vetted whitelists for the claim-eligible
+  page-prose pools (at_a_glance / currently / history / boss / instance-lore) are unchanged: those
+  fields were adjudicated at enrich time and are a separate concern from Cause C's faction/location
+  cards. This is the plan's "discovery/scoring may keep looser admission, but synthesis input is
+  uniformly filtered" split.
+- The synthesis-input boundary is one shared seam: `cards._vet_card_pools(queue, label=...)` — called
+  in `build_major_factions` and `build_location_cards` **after election, before the finalize loop** —
+  runs point-of-use over the elected (bounded) candidates' pools, then applies `filter_card_pool` to
+  each candidate's `profile_items` / `seed_mentions` (before `finalize_evidence_pools` merges/leads,
+  so a resolved-post-active paragraph never takes a lead slot). Un-elected candidates are never
+  vetted (the cost bound). No claim-eligible page-prose whitelist was replaced; only the
+  faction/location card path — the exact bypass Cause C names.
+- Tests (`tests/test_point_of_use_temporal.py`, 11): `pool_policy` (four-scope floor, drop/keep incl.
+  unscoped, `build_meta` fallback, `row_has_admissible_item`); the worker (adjudicate+write-back with
+  auditable rejected text, offline no-op, orphan-id skip, non-ambiguous untouched);
+  `adjudicate_card_pool` records the `excluded_from_synthesis` flag to the finalize trace;
+  `_vet_card_pools` adjudicates-then-filters an elected candidate and leaves an un-elected candidate's
+  paragraphs un-adjudicated (cost bound); and a post-active location paragraph never reaches the
+  location-summary prompt (captured pool). Verified: `ruff check pipeline tests`, `mypy` on the seven
+  touched production modules (tests follow the repo convention of unannotated `monkeypatch`/helpers,
+  as the existing temporal tests do), full `pytest` green (exit 0). The [LIVE] pilot effect below is
+  pending the next OpenAI-backed pilot run.
 
 - After faction/location candidate election (in `pages/cards.py` build paths, before finalize),
   collect the elected candidates' pool paragraphs that are still `needs_llm`/`ambiguous_temporal`

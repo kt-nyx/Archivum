@@ -416,8 +416,15 @@ def enrich_evidence_temporal_metadata(
     return_canonical_decisions: bool = False,
     return_claim_decisions: bool = False,
     return_claim_temporal_decisions: bool = False,
+    return_canonical_records: bool = False,
 ) -> tuple[Any, ...]:
-    """Return evidence rows plus temporal and content-boundary decision rows."""
+    """Return evidence rows plus temporal and content-boundary decision rows.
+
+    When ``return_canonical_records`` is set, the classified ``CanonicalEvidenceRecord`` list is
+    appended last so the draft stage can re-adjudicate a bounded, elected subset at point of use
+    (Slice 9): the bulk faction/location pools are cost-scoped out of the enrich-time LLM pass and
+    would otherwise stay permanently ``ambiguous_temporal``.
+    """
     snapshot_categories = _snapshot_categories_by_source(source_snapshots or [])
     card_index = _quest_card_index(questline_card_metadata or {})
     contracts, entry_state_contract_decisions = build_entry_state_contracts(
@@ -557,6 +564,8 @@ def enrich_evidence_temporal_metadata(
         outputs.append(claim_decisions)
     if return_claim_temporal_decisions:
         outputs.append(claim_temporal_decisions)
+    if return_canonical_records:
+        outputs.append(canonical_records)
     return tuple(outputs)
 
 
@@ -2706,6 +2715,83 @@ def adjudicate_canonical_temporal_classifications_llm(
                 history_rationale[:260],
             )
     return overrides
+
+
+def adjudicate_pool_items_point_of_use(
+    items: list[dict[str, Any]],
+    records_by_canonical_id: dict[str, CanonicalEvidenceRecord],
+    *,
+    marker: str = "point_of_use",
+) -> list[dict[str, Any]]:
+    """Vet still-``ambiguous_temporal`` card-pool paragraphs at their point of use (Slice 9).
+
+    The enrich-time canonical LLM pass is cost-scoped to claim-eligible fields, so the bulk
+    faction/location pools stay ``ambiguous_temporal``. Here — after the elected candidates are
+    known, so the set is bounded (≈ cards × pool cap) — the same canonical boundary adjudication
+    is run over just the ambiguous paragraphs among ``items``, the resolved scope is written back
+    onto every matching item, and one decision row per adjudicated paragraph is returned (tagged
+    ``marker``). A no-op offline / without an OpenAI key: the items keep their ambiguous scope and
+    the shared exclusion policy drops them, exactly as before.
+    """
+    ambiguous_records: list[CanonicalEvidenceRecord] = []
+    seen_ids: set[str] = set()
+    for item in items:
+        if str(item.get("temporal_scope", "")).strip() != AMBIGUOUS_TEMPORAL:
+            continue
+        canonical_id = str(item.get("canonical_evidence_id", "")).strip()
+        if not canonical_id or canonical_id in seen_ids:
+            continue
+        record = records_by_canonical_id.get(canonical_id)
+        if record is None or record.classification is None:
+            continue
+        seen_ids.add(canonical_id)
+        ambiguous_records.append(record)
+    if not ambiguous_records or _llm_temporal_adjudication_disabled():
+        return []
+
+    overrides = adjudicate_canonical_temporal_classifications_llm(ambiguous_records)
+    decisions: list[dict[str, Any]] = []
+    resolved_ids: set[str] = set()
+    for record in ambiguous_records:
+        override = overrides.get(record.canonical_evidence_id)
+        if override is None:
+            continue
+        prior = record.classification
+        classification = _with_canonical_history_defaults(
+            override, appearances=record.appearances
+        )
+        record.classification = classification
+        resolved_ids.add(record.canonical_evidence_id)
+        decisions.append(
+            {
+                "marker": marker,
+                "canonical_evidence_id": record.canonical_evidence_id,
+                "source_id": record.source_id,
+                "source_title": record.source_title,
+                "snippet": record.snippet[:_PROMPT_SNIPPET_LIMIT],
+                "prior_temporal_scope": prior.scope if prior else "",
+                "temporal_scope": classification.scope,
+                "temporal_reason": classification.reason,
+                "temporal_event_label": classification.event_label,
+                "history_eligibility": classification.history_eligibility,
+            }
+        )
+
+    if resolved_ids:
+        for item in items:
+            canonical_id = str(item.get("canonical_evidence_id", "")).strip()
+            if canonical_id not in resolved_ids:
+                continue
+            resolved = records_by_canonical_id[canonical_id].classification
+            if resolved is None:
+                continue
+            item["temporal_scope"] = resolved.scope
+            item["temporal_confidence"] = resolved.confidence
+            item["temporal_reason"] = resolved.reason
+            item["temporal_event_label"] = resolved.event_label
+            item["history_eligibility"] = resolved.history_eligibility
+            item["history_reason"] = resolved.history_reason
+    return decisions
 
 
 def _canonical_llm_groups(

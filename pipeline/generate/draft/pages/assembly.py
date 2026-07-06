@@ -33,6 +33,7 @@ from pipeline.generate.draft.lore_selection import (
 from pipeline.generate.draft.temporal import (
     ACTIVE_STORYLINE,
     ACTIVE_STORYLINE_OUTCOME,
+    AMBIGUOUS_TEMPORAL,
     ENTRY_STATE,
     PRE_ENTRY_HISTORY,
     filter_history_items,
@@ -49,6 +50,18 @@ from pipeline.generate.draft.temporal import (
 # happens to sit on its profile page (e.g. an unrelated nobleman's raid on Andorhal).
 _FACTION_ROLE_TEMPORAL_SCOPES = frozenset(
     {PRE_ENTRY_HISTORY, ENTRY_STATE, ACTIVE_STORYLINE, ACTIVE_STORYLINE_OUTCOME}
+)
+
+# Slice 9: the bulk faction/location PROFILE pools are cost-scoped out of the enrich-time LLM
+# temporal pass, so their paragraphs stay ``ambiguous_temporal``. Rather than silently dropping every
+# such paragraph here (Cause C), retain the ambiguous ones into the card builders, which re-adjudicate
+# the elected candidates' ambiguous paragraphs at point of use and then apply the shared exclusion
+# policy (``pool_policy.filter_card_pool``) at synthesis input. The already-vetted scopes stay exactly
+# as before, so offline runs (point-of-use disabled) are behaviour-neutral: the retained ambiguous
+# items are dropped again by ``filter_card_pool``.
+_FACTION_PROFILE_TEMPORAL_SCOPES = frozenset({PRE_ENTRY_HISTORY, ENTRY_STATE, AMBIGUOUS_TEMPORAL})
+_LOCATION_PROFILE_TEMPORAL_SCOPES = frozenset(
+    {PRE_ENTRY_HISTORY, ENTRY_STATE, ACTIVE_STORYLINE, AMBIGUOUS_TEMPORAL}
 )
 
 
@@ -418,11 +431,11 @@ def _build_evidence_pools(evidence_rows: list[dict[str, Any]]) -> dict[str, list
     quest_lore_pool = _iter_evidence_items(evidence_rows, {"quest_lore"})
     faction_pool = filter_temporal_items(
         _iter_evidence_items(evidence_rows, {"faction_pool"}, claim_route=FACTION_CONTEXT_ROUTE),
-        {PRE_ENTRY_HISTORY, ENTRY_STATE},
+        _FACTION_PROFILE_TEMPORAL_SCOPES,
     )
     location_pool = filter_temporal_items(
         _iter_evidence_items(evidence_rows, {"location_pool"}, claim_route=LOCATION_CONTEXT_ROUTE),
-        {PRE_ENTRY_HISTORY, ENTRY_STATE, ACTIVE_STORYLINE},
+        _LOCATION_PROFILE_TEMPORAL_SCOPES,
     )
     location_seed_pool = _build_location_seed_pool(evidence_rows)
     instance_pool = filter_temporal_items(
@@ -540,7 +553,7 @@ def _build_instance_evidence_pools(
     zone_mention_pool = _build_zone_mention_pool(instance_name, parent_zone_evidence_rows or [])
     faction_pool = filter_temporal_items(
         _iter_evidence_items(evidence_rows, {"faction_pool"}, claim_route=FACTION_CONTEXT_ROUTE),
-        {PRE_ENTRY_HISTORY, ENTRY_STATE},
+        _FACTION_PROFILE_TEMPORAL_SCOPES,
     )
     faction_role_pool = _iter_evidence_items(
         evidence_rows,

@@ -14,14 +14,13 @@ from pipeline.generate.draft.faction_lint import (
     MIN_FACTION_SUMMARY_WORDS,
     trim_faction_summary,
 )
+from pipeline.generate.draft.pool_policy import (
+    is_excluded_from_card_pool,
+    row_has_admissible_item,
+)
 from pipeline.generate.draft.prose_gate import detect_list_shape
 from pipeline.generate.draft.prose_lint import has_currently_meta, split_sentences, word_count
-from pipeline.generate.draft.temporal import (
-    AMBIGUOUS_TEMPORAL,
-    EXCLUDED_NONCANON,
-    HISTORY_ELIGIBLE,
-    POST_ACTIVE_LORE,
-)
+from pipeline.generate.draft.temporal import HISTORY_ELIGIBLE
 
 MIN_FACTION_CARDS = 2
 MAX_FACTION_CARDS = 7
@@ -42,7 +41,6 @@ _ERA_TOKENS = era_section_role_tokens()
 
 _HIGH_WEIGHT_ROLES = frozenset({"quests_edit", "quests", "quests_or_storyline"})
 _LEDE_ROLES = frozenset({"lead", "introduction"})
-_EXCLUDED_TEMPORAL_SCOPES = frozenset({AMBIGUOUS_TEMPORAL, EXCLUDED_NONCANON, POST_ACTIVE_LORE})
 
 _BINDING_BY_FACTION_ID: dict[str, frozenset[str]] = {
     "faction-alliance": frozenset({"alliance"}),
@@ -300,7 +298,7 @@ def harvest_instance_faction_targets(
         for item in row.get("evidence_items", []) or []:
             if not isinstance(item, dict):
                 continue
-            if _item_temporally_excluded(item, row=row):
+            if is_excluded_from_card_pool(item, row=row):
                 continue
             snippet = str(item.get("snippet", ""))
             if not snippet:
@@ -466,7 +464,7 @@ def _eligible_structured_link_contexts(
         for item in row.get("evidence_items", []) or []:
             if not isinstance(item, dict):
                 continue
-            if _item_temporally_excluded(item, row=row):
+            if is_excluded_from_card_pool(item, row=row):
                 continue
             scope = str(item.get("temporal_scope", build_meta.get("temporal_scope", ""))).strip()
             if field_name == "history_digest" and not _item_history_eligible(item, row=row):
@@ -546,7 +544,7 @@ def harvest_instance_anchor_tokens(
         for item in row.get("evidence_items", []) or []:
             if not isinstance(item, dict):
                 continue
-            if _item_temporally_excluded(item, row=row):
+            if is_excluded_from_card_pool(item, row=row):
                 continue
             for match in _FACTION_NAME_RE.finditer(str(item.get("snippet", ""))):
                 phrase = re.sub(
@@ -589,7 +587,7 @@ def _candidates_from_evidence(
     for row in evidence_rows:
         if str(row.get("field_name", "")) != "faction_pool":
             continue
-        if not _row_has_temporally_allowed_item(row):
+        if not row_has_admissible_item(row):
             continue
         build_meta = row.get("build_meta") or {}
         subject_zone = str(build_meta.get("subject_zone_id", row.get("subject_id", ""))).strip()
@@ -608,14 +606,6 @@ def _candidates_from_evidence(
             "wiki_url": "",
         }
     return discovered
-
-
-def _item_temporally_excluded(item: dict[str, Any], *, row: dict[str, Any] | None = None) -> bool:
-    build_meta = (row or {}).get("build_meta") if isinstance(row, dict) else {}
-    if not isinstance(build_meta, dict):
-        build_meta = {}
-    scope = str(item.get("temporal_scope", build_meta.get("temporal_scope", ""))).strip()
-    return scope in _EXCLUDED_TEMPORAL_SCOPES
 
 
 def _item_history_eligible(item: dict[str, Any], *, row: dict[str, Any] | None = None) -> bool:
@@ -645,20 +635,6 @@ def _instance_faction_required_mentions(
     if min_mentions > 2 and history_support_count > 0 and " " in name.strip():
         return 2
     return min_mentions
-
-
-def _row_has_temporally_allowed_item(row: dict[str, Any]) -> bool:
-    items = row.get("evidence_items")
-    if not isinstance(items, list):
-        return True
-    saw_item = False
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        saw_item = True
-        if not _item_temporally_excluded(item, row=row):
-            return True
-    return not saw_item
 
 
 def _candidates_from_high_weight_seed_mentions(

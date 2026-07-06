@@ -15,7 +15,12 @@ from pipeline.common.text_normalize import normalize_display_payload
 from pipeline.discovery.instance_bosses import classify_character_role
 from pipeline.discovery.questline_card_polish import load_questline_card_metadata
 from pipeline.discovery.questline_significance import load_included_cluster_ids_by_zone
-from pipeline.generate.draft import finalize_trace, generate_entity_draft, is_valid_draft
+from pipeline.generate.draft import (
+    finalize_trace,
+    generate_entity_draft,
+    is_valid_draft,
+    point_of_use_temporal,
+)
 from pipeline.generate.draft.claim_routing import (
     apply_claim_views_to_evidence_rows,
     build_claim_view_routing_decisions,
@@ -238,6 +243,7 @@ def run_draft_writer(
             if entity_id:
                 fact_packs_by_entity[entity_id] = fact_pack
     temporal_decisions: list[dict[str, Any]] = []
+    point_of_use_records: dict[str, Any] = {}
     entry_state_contract_decisions: list[dict[str, Any]] = []
     content_boundary_decisions: list[dict[str, Any]] = []
     canonical_temporal_decisions: list[dict[str, Any]] = []
@@ -253,6 +259,7 @@ def run_draft_writer(
             canonical_temporal_decisions,
             canonical_claim_decisions,
             claim_temporal_decisions,
+            canonical_records,
         ) = enrich_evidence_temporal_metadata(
             evidence_rows,
             fact_packs_by_entity=fact_packs_by_entity,
@@ -265,9 +272,19 @@ def run_draft_writer(
             return_canonical_decisions=True,
             return_claim_decisions=True,
             return_claim_temporal_decisions=True,
+            return_canonical_records=True,
         )
         evidence_rows = apply_claim_views_to_evidence_rows(evidence_rows, claim_temporal_decisions)
         claim_view_routing_decisions = build_claim_view_routing_decisions(evidence_rows)
+        # Slice 9: keep the classified canonical records so the card builders can re-adjudicate
+        # elected faction/location pools' still-ambiguous paragraphs at point of use. Registered per
+        # worker thread inside ``_write`` (a ThreadPoolExecutor does not copy contextvars), mirroring
+        # ``finalize_trace.begin``.
+        point_of_use_records = {
+            record.canonical_evidence_id: record
+            for record in canonical_records
+            if record.canonical_evidence_id
+        }
 
     # Carry each traversed location page's own MediaWiki categories onto its candidate row so the
     # draft can type the card from the authoritative wiki signal (e.g. Andorhal -> "Destroyed
@@ -292,6 +309,7 @@ def run_draft_writer(
         entity_id = str(fact_pack.get("entity_id", path.stem))
         if entity_type in {"zone", "instance"} and evidence_rows:
             finalize_trace.begin(entity_id)
+            point_of_use_temporal.begin(point_of_use_records)
             instance_key_character_decisions: dict[str, Any] | None = None
             scoped_evidence = [
                 row for row in evidence_rows if str(row.get("subject_id", "")).strip() == entity_id
