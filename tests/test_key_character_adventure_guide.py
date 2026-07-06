@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pipeline.common.linguistics import sentence_spans
 from pipeline.discovery.adventure_guide import AdventureGuideEntry, AdventureGuideInstance
 from pipeline.discovery.instance_bosses import BossCandidate
 from pipeline.generate.draft.claim_routing import CLAIM_VIEW_KEY
@@ -21,10 +22,12 @@ def _candidate(name: str) -> BossCandidate:
 
 
 def _ag_item(text: str, *, safe: bool = True) -> dict:
+    span = sentence_spans(text)[0]
     view = {
         "canonical_evidence_id": "ag-1",
         "source_excerpt": text,
         "source_sentence_indexes": [0],
+        "source_char_spans": [[span.start, span.end]],
         "temporal_scope": "entry_state" if safe else "active_storyline_outcome",
         "spoiler_safety": "safe_entry_context" if safe else "active_outcome",
         "claim_text": text,

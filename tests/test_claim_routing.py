@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 
+from pipeline.common.linguistics import sentence_spans
 from pipeline.generate.draft.claim_routing import (
     ACTIVE_MECHANICS_STATE,
     ACTIVE_OUTCOME,
@@ -447,11 +448,18 @@ _RECON_PARAGRAPH = (
 )
 
 
+def _recon_spans() -> list[list[int]]:
+    # Real NLP segmentation (never a hand-typed offset table): views carry the same
+    # character offsets claim extraction would have stored.
+    return [[span.start, span.end] for span in sentence_spans(_RECON_PARAGRAPH)]
+
+
 def _recon_claim(sentence_index: int, *, scope: str, safety: str, text: str) -> dict:
     return {
         "canonical_evidence_id": "c1",
         "source_excerpt": _RECON_PARAGRAPH,
         "source_sentence_indexes": [sentence_index],
+        "source_char_spans": [_recon_spans()[sentence_index]],
         "temporal_scope": scope,
         "spoiler_safety": safety,
         "claim_text": text,
@@ -465,7 +473,7 @@ def test_safe_paragraph_excerpt_keeps_safe_sentences_drops_spoiler() -> None:
         _recon_claim(1, scope="active_storyline_outcome", safety="active_outcome", text="Beta"),
         _recon_claim(2, scope="pre_entry_history", safety="safe_background", text="Gamma"),
     ]
-    excerpt = safe_paragraph_excerpt(views, KEY_CHARACTER_ROUTE)
+    excerpt = safe_paragraph_excerpt(views, KEY_CHARACTER_ROUTE, paragraph_text=_RECON_PARAGRAPH)
     assert "Alpha happened first." in excerpt
     assert "Gamma is safe background." in excerpt
     assert "Beta" not in excerpt  # the spoiler-outcome sentence is dropped
@@ -479,17 +487,29 @@ def test_safe_paragraph_excerpt_drops_contaminated_sentence() -> None:
         _recon_claim(0, scope="active_storyline_outcome", safety="active_outcome", text="Alpha-bad"),
         _recon_claim(2, scope="pre_entry_history", safety="safe_background", text="Gamma"),
     ]
-    excerpt = safe_paragraph_excerpt(views, KEY_CHARACTER_ROUTE)
+    excerpt = safe_paragraph_excerpt(views, KEY_CHARACTER_ROUTE, paragraph_text=_RECON_PARAGRAPH)
     assert "Alpha" not in excerpt
     assert "Gamma is safe background." in excerpt
 
 
+def test_safe_paragraph_excerpt_requires_offsets() -> None:
+    # A view without stored character offsets makes the contaminated set unknowable: the
+    # reconstruction refuses (callers fall back to claim-text fragments) rather than guessing
+    # by re-splitting and substring-matching.
+    view = _recon_claim(0, scope="pre_entry_history", safety="safe_background", text="Alpha")
+    del view["source_char_spans"]
+    assert (
+        safe_paragraph_excerpt([view], KEY_CHARACTER_ROUTE, paragraph_text=_RECON_PARAGRAPH) == ""
+    )
+
+
 def test_reconstruct_safe_paragraph_excerpts_maps_by_canonical_id() -> None:
     item = {
+        "snippet": _RECON_PARAGRAPH,
         CLAIM_VIEW_KEY: [
             _recon_claim(0, scope="pre_entry_history", safety="safe_background", text="Alpha"),
             _recon_claim(1, scope="active_storyline_outcome", safety="active_outcome", text="Beta"),
-        ]
+        ],
     }
     excerpts = reconstruct_safe_paragraph_excerpts([item], KEY_CHARACTER_ROUTE)
     assert set(excerpts) == {"c1"}
@@ -516,3 +536,33 @@ def test_order_key_character_views_is_stable_and_paragraph_safe() -> None:
     ordered = _order_key_character_summary_views(views, instance_name="Scholomance")
 
     assert [view["snippet"] for view in ordered] == ["first paragraph", "second paragraph"]
+
+
+def test_claim_views_carry_source_char_spans() -> None:
+    """Slice 8: stored character offsets survive the claim -> view translation so excerpt
+    reconstruction never re-splits and substring-matches."""
+    paragraph = "The Cenarion Circle begins healing the fields."
+    span = sentence_spans(paragraph)[0]
+    routed_rows = apply_claim_views_to_evidence_rows(
+        [_row("history_digest", "canonical-spans", paragraph)],
+        [
+            _claim_decision(
+                "canonical-spans",
+                paragraph,
+                [
+                    {
+                        "claim_id": "claim-spans",
+                        "claim_text": paragraph,
+                        "claim_type": "state",
+                        "temporal_scope": ENTRY_STATE,
+                        "history_eligibility": HISTORY_SETUP_BRIDGE,
+                        "spoiler_safety": SAFE_ENTRY_CONTEXT,
+                        "source_sentence_indexes": [0],
+                        "source_char_spans": [[span.start, span.end]],
+                    }
+                ],
+            )
+        ],
+    )
+    view = routed_rows[0]["evidence_items"][0][CLAIM_VIEW_KEY][0]
+    assert view["source_char_spans"] == [[span.start, span.end]]

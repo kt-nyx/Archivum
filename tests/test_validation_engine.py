@@ -1658,3 +1658,26 @@ def test_zone_page_glossary_ref_missing_wiki_url_hard_fails() -> None:
     report = validate_payload("zone_page", payload)
     assert report.passed is False
     assert any(issue.code == "structure.glossary_ref_missing_wiki_url" for issue in report.issues)
+
+
+def test_fact_check_support_score_lemma_fallback() -> None:
+    """Slice 8: the deterministic support score gains a lemmatized fallback for inflected
+    paraphrase, while an already-supported surface score is returned untouched and the raw
+    evidence text (proper nouns, exact prepositions) is what the report rows carry."""
+    from pipeline.validate.rules.fact_check import _support_score, _text_overlap_score
+
+    # Fully inflected paraphrase: zero surface overlap (below every support threshold), but
+    # the lemma fallback recognizes the same predications.
+    claim = "The ghouls prowled granaries, spirits haunted chapels, and cultists desecrated graves."
+    evidence = (
+        "A ghoul prowls each granary; a spirit haunts every chapel; "
+        "a cultist desecrates each grave."
+    )
+    assert _text_overlap_score(claim, evidence) == 0.0
+    assert _support_score(claim, evidence) > 0.5
+
+    # Surface score already clears every support threshold: the fallback never re-scores it,
+    # so an inverted spatial relation gains nothing from lemmatization here.
+    above = "The academy was built above Caer Darrow."
+    beneath = "The academy was built beneath Caer Darrow."
+    assert _support_score(above, beneath) == _text_overlap_score(above, beneath)

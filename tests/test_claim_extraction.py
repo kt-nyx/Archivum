@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from hashlib import sha256
 
+from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.generate.draft.temporal import enrich_evidence_temporal_metadata
 
 
@@ -692,3 +693,160 @@ def test_claim_extraction_is_opt_in_for_temporal_enrichment(monkeypatch) -> None
     )
 
     assert len(outputs) == 2
+
+
+# --- Slice 8: NLP triage, deterministic micro-split, provenance offsets ---
+
+
+def test_semicolon_single_event_sentence_stays_one_deterministic_claim(monkeypatch) -> None:
+    """A semicolon-heavy but single-event sentence has one finite predication: no LLM candidate
+    reason fires (the retired proxy would have flagged the semicolons) and the sentence stays one
+    deterministic claim."""
+    monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
+    rows = [
+        _row(
+            "history_digest",
+            "The Argent Crusade rebuilt the chapel walls with timber; stone; and consecrated iron.",
+        )
+    ]
+
+    _enriched, claim_decisions = _enrich_with_claims(rows)
+
+    decision = claim_decisions[0]
+    assert decision["extraction_mode"] == "deterministic_sentence"
+    assert decision["candidate_reasons"] == []
+    assert len(decision["claims"]) == 1
+
+
+def test_multi_event_sentence_triggers_llm_candidate_reason(monkeypatch) -> None:
+    """A short sentence with two finite predications (no semicolon, under the old word threshold)
+    is flagged for LLM semantic splitting by the grammar features, not by length."""
+    monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
+    rows = [
+        _row(
+            "history_digest",
+            "The Scourge razed Andorhal and the Alliance rebuilt the western gate.",
+        )
+    ]
+
+    _enriched, claim_decisions = _enrich_with_claims(rows)
+
+    decision = claim_decisions[0]
+    assert "sentence_level_claim_may_contain_multiple_events" in decision["candidate_reasons"]
+    assert decision["extraction_mode"] == "sentence_fallback"
+
+
+def test_micro_split_coordinated_clauses_with_own_subjects(monkeypatch) -> None:
+    """An unambiguous coordination of finite clauses is split deterministically — two claims from
+    one sentence, no LLM candidate reason left behind, both anchored to the same sentence."""
+    monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
+    sentence = "The Argent Dawn purified the cauldrons, and the Cenarion Circle healed the fields."
+    rows = [_row("history_digest", sentence)]
+
+    _enriched, claim_decisions = _enrich_with_claims(rows)
+
+    decision = claim_decisions[0]
+    assert decision["extraction_mode"] == "deterministic_sentence"
+    assert decision["candidate_reasons"] == []
+    claims = decision["claims"]
+    assert [claim["claim_text"] for claim in claims] == [
+        "The Argent Dawn purified the cauldrons",
+        "the Cenarion Circle healed the fields.",
+    ]
+    assert all(claim["extraction_reason"] == "deterministic_clause_split" for claim in claims)
+    assert all(claim["source_sentence_indexes"] == [0] for claim in claims)
+    assert all(claim["source_excerpt"] == sentence for claim in claims)
+    assert len({claim["claim_id"] for claim in claims}) == 2
+
+
+def test_micro_split_shared_subject_copies_subject(monkeypatch) -> None:
+    monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
+    rows = [
+        _row(
+            "history_digest",
+            "The keep fell during the war and later anchored the faction's frontier.",
+        )
+    ]
+
+    _enriched, claim_decisions = _enrich_with_claims(rows)
+
+    claims = claim_decisions[0]["claims"]
+    assert [claim["claim_text"] for claim in claims] == [
+        "The keep fell during the war",
+        "The keep later anchored the faction's frontier.",
+    ]
+
+
+def test_claim_offsets_round_trip_within_run(monkeypatch) -> None:
+    """Slice 8 provenance invariant: slicing the cleaned paragraph at each claim's stored
+    character spans reproduces its source sentences exactly, and the row's segmentation record
+    pins the model that drew the boundaries."""
+    monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
+    snippet = (
+        "The Argent Dawn neutralized plague cauldrons. "
+        "The fields slowly recovered."
+    )
+    rows = [_row("history_digest", snippet)]
+
+    _enriched, claim_decisions = _enrich_with_claims(rows)
+
+    decision = claim_decisions[0]
+    cleaned = clean_wiki_snippet(decision["source_excerpt"])
+    segmentation = decision["segmentation"]
+    assert segmentation["model"]["model_name"] == "en_core_web_sm"
+    assert segmentation["model"]["model_version"]
+    sentence_texts = [cleaned[start:end] for start, end in segmentation["sentence_spans"]]
+    assert sentence_texts == [
+        "The Argent Dawn neutralized plague cauldrons.",
+        "The fields slowly recovered.",
+    ]
+    for claim in decision["claims"]:
+        slices = [cleaned[start:end] for start, end in claim["source_char_spans"]]
+        assert " ".join(slices) == claim["source_excerpt"]
+        assert [segmentation["sentence_spans"][index] for index in claim["source_sentence_indexes"]] == [
+            list(span) for span in claim["source_char_spans"]
+        ]
+
+
+def test_llm_claims_carry_sentence_offsets(monkeypatch) -> None:
+    monkeypatch.delenv("WOW_LORE_WIKI_FIRST_NO_LLM", raising=False)
+    monkeypatch.setattr(
+        "pipeline.generate.draft.claims._llm_claim_extraction_disabled",
+        lambda: False,
+    )
+
+    def fake_llm_json_with_retry(**_kwargs):
+        return {
+            "claims": [
+                {
+                    "claim_text": "The battle later ends with one faction claiming Andorhal.",
+                    "claim_type": "event",
+                    "source_sentence_indexes": [1],
+                    "entities": [],
+                    "extraction_reason": "Second sentence.",
+                }
+            ]
+        }
+
+    monkeypatch.setattr(
+        "pipeline.generate.draft.claims.llm_json_with_retry",
+        fake_llm_json_with_retry,
+    )
+    snippet = (
+        "The Cenarion Circle begins healing the fields. "
+        "The battle later ends with one faction claiming Andorhal."
+    )
+    rows = [
+        _row("history_digest", snippet),
+        _row("currently_input", snippet),
+    ]
+
+    _enriched, claim_decisions = _enrich_with_claims(rows)
+
+    decision = claim_decisions[0]
+    assert decision["extraction_mode"] == "llm_semantic"
+    cleaned = clean_wiki_snippet(decision["source_excerpt"])
+    llm_claim = decision["claims"][0]
+    assert llm_claim["source_sentence_indexes"] == [1]
+    (start, end), = llm_claim["source_char_spans"]
+    assert cleaned[start:end] == "The battle later ends with one faction claiming Andorhal."

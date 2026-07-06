@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pipeline.common.text_sim import (
+    lemma_support_containment,
+    lemma_support_ratio,
     max_shingle_containment_against_sources,
     shingle_containment,
     whitespace_jaccard,
@@ -39,3 +41,31 @@ def test_max_shingle_containment_picks_best_source() -> None:
     assert (
         max_shingle_containment_against_sources(body, ["wholly unrelated text", body], k=5) == 1.0
     )
+
+
+# --- Slice 8: lemmatized support scoring ---
+
+_INFLECTED_CLAIM = "Necromancers were slain beneath the academy."
+_INFLECTED_EVIDENCE = "The crusaders slay every necromancer beneath the academy's vaults."
+_ABOVE = "The academy was built above Caer Darrow."
+_BENEATH = "The academy was built beneath Caer Darrow."
+
+
+def test_lemma_support_containment_bridges_inflection() -> None:
+    # Surface tokens miss "slain"/"slay" and "necromancers"/"necromancer"; lemmas do not.
+    assert lemma_support_containment(_INFLECTED_CLAIM, _INFLECTED_EVIDENCE) == 1.0
+    assert lemma_support_containment("", _INFLECTED_EVIDENCE) == 0.0
+    assert lemma_support_containment(_INFLECTED_CLAIM, "") == 0.0
+
+
+def test_lemma_support_keeps_inverted_spatial_relations_distinguishable() -> None:
+    # "above" vs "beneath" stay in the token set (surface adpositions), so an inverted spatial
+    # assertion is never a perfect lemma-level match — the fallback cannot silently equate them.
+    assert lemma_support_containment(_ABOVE, _BENEATH) < 1.0
+    assert lemma_support_ratio(_ABOVE, _BENEATH) < 1.0
+
+
+def test_lemma_support_ratio_deterministic_and_bounded() -> None:
+    first = lemma_support_ratio(_INFLECTED_CLAIM, _INFLECTED_EVIDENCE)
+    assert first == lemma_support_ratio(_INFLECTED_CLAIM, _INFLECTED_EVIDENCE)
+    assert 0.0 < first <= 1.0

@@ -13,6 +13,12 @@ token-set similarity. The token-set score is:
 - **deterministic** — rapidfuzz returns bit-identical floats for identical
   inputs, so selection is reproducible run-to-run.
 
+Slice 8 layers a lemmatized fallback over the surface score: the final score is the max of
+the surface token-set ratio and :func:`pipeline.common.text_sim.lemma_support_ratio`, so
+inflection ("gained"/"gain") no longer penalizes an otherwise-supportive source. The lemma
+variant keeps proper nouns and adpositions as surface text, so it is a ranking/support
+signal only — it never collapses "above"/"beneath" into the same assertion.
+
 The selector keeps the established tie-break chain unchanged:
 ``claim score → priority → source_class → contradiction bias (revision)``.
 """
@@ -23,17 +29,21 @@ from typing import Any
 
 from rapidfuzz import fuzz
 
+from pipeline.common.text_sim import lemma_support_ratio
+
 
 def score_claim_against_source(claim: str, body: str) -> float:
     """Deterministic ``[0.0, 1.0]`` support score of ``body`` for ``claim``.
 
+    Max of the surface token-set ratio and the lemmatized support ratio (Slice 8).
     Returns ``0.0`` when either side is blank (an empty claim cannot be
     supported, matching the old overlap behaviour where it scored every source
     ``0.0`` and fell through to the tie-break chain).
     """
     if not claim.strip() or not body.strip():
         return 0.0
-    return fuzz.token_set_ratio(claim, body) / 100.0
+    surface = fuzz.token_set_ratio(claim, body) / 100.0
+    return max(surface, lemma_support_ratio(claim, body))
 
 
 def _priority_rank(row: dict[str, Any]) -> int:

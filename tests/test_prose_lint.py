@@ -8,6 +8,7 @@ from pipeline.generate.draft.prose_lint import (
     lint_at_a_glance,
     lint_currently,
     lint_history_sections,
+    split_sentences,
     trim_words,
     word_count,
 )
@@ -324,3 +325,13 @@ def test_currently_rejects_at_a_glance_overlap() -> None:
         "overlaps at_a_glance" in issue
         for issue in lint_currently(currently, at_a_glance=at_a_glance)
     )
+
+
+def test_split_sentences_respects_abbreviations_and_adp_dates() -> None:
+    # Slice 8: model-derived boundaries — the old regex split after every ".", severing
+    # abbreviations. Positions are not exposed here; lint/trim paths only need the texts.
+    assert split_sentences("The town of St. Albus fell to the Scourge. It never recovered.") == [
+        "The town of St. Albus fell to the Scourge.",
+        "It never recovered.",
+    ]
+    assert split_sentences("") == []

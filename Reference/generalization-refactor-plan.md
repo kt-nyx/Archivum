@@ -1,6 +1,6 @@
 # Plan: Generalization Refactor — Registries, Guarantees & Editorial Selection
 
-**Status: IN PROGRESS — Slices 1–7 done (Slice 7: 2026-07-05). Implement remaining slices in the order given.**
+**Status: IN PROGRESS — Slices 1–8 done (Slice 8: 2026-07-06). Implement remaining slices in the order given.**
 
 ## Why this plan exists
 
@@ -635,11 +635,70 @@ setup-bridge coverage guarantee real and provenance pointers honest.
 material as its final pre-MoP section (coverage retry now demands it); provenance pointers vary
 by section instead of uniform `lead paragraph:1..3` fill.
 
-## Slice 8 — NLP sentence boundaries, claim triggers, and lemmatized fallback scoring (B/F support)
+## Slice 8 — NLP sentence boundaries, claim triggers, and lemmatized fallback scoring (B/F support) — ✅ DONE (2026-07-06)
 
 **Goal:** use the NLP substrate for text-boundary and retrieval-support work where it is stronger
 than punctuation/token regexes, while keeping semantic adjudication in the existing claim/LLM
 layers.
+
+**Implementation notes (as built):**
+
+- `pipeline/common/linguistics.py` additions (still the only spaCy importer):
+  `sentence_spans` is now lru-cached (frozen `SentenceSpan` tuples) since every lint/trim/claim
+  path segments through it; `finite_clause_count(text)` counts finite clause predicates
+  (verb/aux clause heads that are finite themselves or via a finite aux child; `aux`/`auxpass`/
+  `amod` tokens never count) — the grammar replacement for the semicolon/word-count triage
+  proxies; `coordinated_finite_clause_split(sentence)` implements the deterministic micro-split
+  (single sentence, finite root with subject, exactly one finite verbal conjunct, explicit
+  CCONJ junction, positional clause separation, shared-subject copy, PROPN-preservation guard —
+  every uncertain shape returns `[]`); `support_tokens(text)` produces the lemmatized support
+  token set with proper nouns and adpositions kept as surface text (so "above"≠"beneath").
+- `prose_lint.split_sentences` delegates to `linguistics.sentence_spans` (regex and
+  `_SENTENCE_SPLIT_RE` deleted; no punctuation fallback — a model failure raises
+  `LinguisticsModelError`). The one remaining duplicated sentence-split regex
+  (`faction_scoring._faction_focused_excerpt`) now imports `split_sentences` (one-home rule).
+  All other consumers (`pages/cards.py`, `card_lint.py`, `instance_lint.py`, `faction_lint.py`,
+  CTA finalizer) consume sentence texts only and needed no change.
+- `claims.py`: extraction is span-based. `EvidenceClaim` gained `source_char_spans`
+  (offsets into `clean_wiki_snippet(paragraph)`, parallel to `source_sentence_indexes`;
+  invariant: joining the offset slices reproduces `source_excerpt`). Unambiguous coordinated
+  finite clauses micro-split into per-clause claims (`deterministic_clause_split`, same
+  sentence index/span/excerpt, no LLM call). `_llm_candidate_reasons` flags
+  `sentence_level_claim_may_contain_multiple_events` via `finite_clause_count >= 2` on the
+  deterministic claims (micro-split output, so resolved coordinations no longer trigger);
+  `_LONG_SENTENCE_WORD_THRESHOLD` deleted, paragraph-level `long_paragraph` telemetry and its
+  never-sufficient-alone guard kept. `_extract_claims_llm` prompts with the real sentence list
+  (spans), so LLM indexes stay in sentence space regardless of micro-splits, and LLM claims get
+  spans derived from their indexes. Each decision row records `segmentation`
+  (`linguistics.model_info()` pin + per-sentence offsets), audit-only.
+- `temporal._claim_temporal_decision_row` and `claim_routing._claim_view_for_item` pass
+  `source_char_spans` through; `pages/cards.py` strips it with the other claim-only keys when
+  consolidating history slots. `safe_paragraph_excerpt(views, route, *, paragraph_text)` now
+  slices the cleaned paragraph at stored offsets (no re-split/re-find); a view without
+  in-bounds offsets makes it return `""` (fragments fallback) since the contaminated set would
+  be unknowable. `reconstruct_safe_paragraph_excerpts` supplies each item's `snippet` as the
+  paragraph text; the `assembly.py`/`key_characters.py` call sites pass it explicitly.
+- Lemmatized fallback scoring, one home in `pipeline/common/text_sim.py`
+  (`lemma_support_containment`, `lemma_support_ratio`, both over `support_tokens` filtered to
+  >= 3 chars so ubiquitous "of"/"in" cannot inflate support): `coalesce/claim_scoring.
+  score_claim_against_source` = max(surface token-set ratio, lemma ratio);
+  `validate/rules/fact_check._support_score` = surface containment with the lemma containment
+  fallback only when surface is below every support threshold (thresholds now named constants
+  `LOCAL_SUPPORT_THRESHOLD`/`WEB_SUPPORT_THRESHOLD`). Support signals only — contradiction
+  still comes solely from the LLM adjudicator/markers, and report evidence rows keep raw text.
+- Tests: `test_linguistics.py` (abbreviation/ADP-date boundaries, finite-clause counts,
+  micro-split accept/refuse shapes, support tokens), `test_claim_extraction.py` (semicolon
+  single-event stays one deterministic claim with no candidate reasons; short two-predication
+  sentence triggers the LLM reason; own-/shared-subject micro-splits; offsets round-trip with
+  the segmentation record; LLM claims carry spans), `test_claim_routing.py` /
+  `test_evidence_block_reconstruction.py` / `test_key_character_adventure_guide.py` fixtures
+  carry real-segmentation offsets (plus a refuses-without-offsets test),
+  `test_text_sim.py` / `test_claim_scoring.py` / `test_validation_engine.py` (inflection
+  bridged, inverted spatial relation never a perfect lemma match, already-supported surface
+  scores untouched). Known sm-model weakness noted: "War rages…" tags *rages* as a noun, so
+  its clause count is 0 — conservative direction (no LLM call), same class as the documented
+  "labors" case. Verified: `ruff check pipeline tests`, `mypy` on all twelve touched modules,
+  full `pytest` (1085 passed, 5 skipped, 1 xfailed).
 
 - In `pipeline/generate/draft/prose_lint.py`, make `split_sentences` delegate to
   `linguistics.sentence_spans` while preserving the current public return type (`list[str]`).

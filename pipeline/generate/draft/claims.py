@@ -18,9 +18,16 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from pipeline.ai.config import load_ai_settings
+from pipeline.common.linguistics import (
+    SentenceSpan,
+    coordinated_finite_clause_split,
+    finite_clause_count,
+    model_info,
+    sentence_spans,
+)
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.generate.draft.llm import llm_json_with_retry
-from pipeline.generate.draft.prose_lint import split_sentences, word_count
+from pipeline.generate.draft.prose_lint import word_count
 
 _CLAIM_EXTRACTOR_VERSION = "evidence_claim_sentence_v1"
 _LLM_CLAIM_EXTRACTOR_VERSION = "evidence_claim_llm_v1"
@@ -28,7 +35,6 @@ _LLM_CLAIM_EXTRACTOR_VERSION = "evidence_claim_llm_v1"
 CLAIM_EXTRACTOR_VERSION = _CLAIM_EXTRACTOR_VERSION
 LLM_CLAIM_EXTRACTOR_VERSION = _LLM_CLAIM_EXTRACTOR_VERSION
 _LONG_PARAGRAPH_WORD_THRESHOLD = 70
-_LONG_SENTENCE_WORD_THRESHOLD = 32
 # Claim-level LLM work (semantic extraction + needs-LLM temporal adjudication) is scoped to the
 # evidence fields whose claim views are actually consumed by a claim_route during page assembly
 # (see pipeline/generate/draft/pages/assembly.py and pages/key_characters.py). The bulk descriptive
@@ -120,6 +126,10 @@ class EvidenceClaim:
     claim_type: str
     entities: list[dict[str, str]]
     source_sentence_indexes: list[int]
+    # Character offsets into ``clean_wiki_snippet(<paragraph snippet>)``, parallel to
+    # ``source_sentence_indexes`` — the honest within-run provenance coordinate (Slice 8):
+    # joining the offset slices reconstructs ``source_excerpt`` exactly.
+    source_char_spans: list[list[int]]
     source_excerpt: str
     extraction_confidence: float
     extraction_reason: str
@@ -137,6 +147,7 @@ class EvidenceClaim:
             "claim_type": self.claim_type,
             "entities": self.entities,
             "source_sentence_indexes": self.source_sentence_indexes,
+            "source_char_spans": self.source_char_spans,
             "source_excerpt": self.source_excerpt,
             "extraction_confidence": self.extraction_confidence,
             "extraction_reason": self.extraction_reason,
@@ -155,6 +166,7 @@ def extract_canonical_claim_decision_rows(
     budget = _claim_llm_call_budget()
     llm_calls = 0
     budget_exhausted_logged = False
+    segmentation_model: dict[str, str] | None = None
     for record in canonical_records:
         canonical_evidence_id = str(getattr(record, "canonical_evidence_id", "")).strip()
         snippet = str(getattr(record, "snippet", "")).strip()
@@ -164,6 +176,9 @@ def extract_canonical_claim_decision_rows(
         source_id = str(getattr(record, "source_id", "")).strip()
         source_title = str(getattr(record, "source_title", "")).strip()
         appearances = _record_appearances(record)
+        if segmentation_model is None:
+            segmentation_model = model_info()
+        spans = _paragraph_sentence_spans(clean_wiki_snippet(snippet))
         sentence_claims = extract_sentence_claims(
             canonical_evidence_id=canonical_evidence_id,
             subject_id=subject_id,
@@ -213,7 +228,7 @@ def extract_canonical_claim_decision_rows(
                         source_title=source_title,
                         snippet=snippet,
                         appearances=appearances,
-                        sentence_claims=sentence_claims,
+                        spans=spans,
                         candidate_reasons=candidate_reasons,
                     )
                 except Exception as exc:  # pragma: no cover - provider failures use fallback
@@ -254,6 +269,14 @@ def extract_canonical_claim_decision_rows(
                 ),
                 "extraction_mode": extraction_mode,
                 "extraction_reason": extraction_reason,
+                # Audit-only segmentation record (Slice 8): the pinned model that drew the
+                # sentence boundaries, plus each sentence's character offsets into
+                # ``clean_wiki_snippet(source_excerpt)``. Offsets are within-run provenance
+                # coordinates — old sidecars are regenerated, never reinterpreted.
+                "segmentation": {
+                    "model": segmentation_model,
+                    "sentence_spans": [[span.start, span.end] for span in spans],
+                },
                 "candidate_reasons": candidate_reasons,
                 "llm_error": llm_error,
                 "sentence_backfill_count": sentence_backfill_count,
@@ -262,6 +285,14 @@ def extract_canonical_claim_decision_rows(
             }
         )
     return rows
+
+
+def _paragraph_sentence_spans(cleaned: str) -> list[SentenceSpan]:
+    """NLP sentence spans of a cleaned paragraph, with a whole-text span as the empty-parse guard."""
+    spans = sentence_spans(cleaned)
+    if not spans and cleaned:
+        return [SentenceSpan(start=0, end=len(cleaned), text=cleaned)]
+    return spans
 
 
 def extract_sentence_claims(
@@ -273,44 +304,61 @@ def extract_sentence_claims(
     snippet: str,
     appearances: list[dict[str, Any]],
 ) -> list[EvidenceClaim]:
-    """Return one conservative evidence claim for each sentence in ``snippet``."""
+    """Return conservative deterministic evidence claims for each sentence in ``snippet``.
+
+    Sentence boundaries and character offsets come from the NLP substrate (Slice 8). A sentence
+    of unambiguously coordinated finite clauses is micro-split into one claim per clause —
+    deterministic, so no LLM call is spent on it; both clause claims keep the whole sentence as
+    their ``source_excerpt`` and offsets. Anything the parser is less sure about stays one
+    sentence claim for the LLM semantic splitter.
+    """
     cleaned = clean_wiki_snippet(snippet)
-    sentences = split_sentences(cleaned)
-    if not sentences and cleaned:
-        sentences = [cleaned]
+    spans = _paragraph_sentence_spans(cleaned)
     claim_type = _infer_claim_type(appearances)
     entities = _entities_from_appearances(subject_id=subject_id, appearances=appearances)
     claims: list[EvidenceClaim] = []
-    for sentence_index, sentence in enumerate(sentences):
-        claim_text = sentence.strip()
-        if not claim_text:
+    for sentence_index, span in enumerate(spans):
+        sentence_text = span.text
+        if not sentence_text.strip():
             continue
+        clause_texts = coordinated_finite_clause_split(sentence_text)
+        if len(clause_texts) >= 2:
+            claim_texts = clause_texts
+            extraction_reason = "deterministic_clause_split"
+            extraction_confidence = 0.7
+        else:
+            claim_texts = [sentence_text.strip()]
+            extraction_reason = "deterministic_sentence_split"
+            extraction_confidence = 0.72
         source_sentence_indexes = [sentence_index]
-        passthrough_risk, passthrough_reason = _source_passthrough_check(
-            claim_text, [claim_text], extraction_mode="deterministic_sentence"
-        )
-        claims.append(
-            EvidenceClaim(
-                claim_id=_claim_id(
-                    canonical_evidence_id=canonical_evidence_id,
-                    claim_text=claim_text,
-                    source_sentence_indexes=source_sentence_indexes,
-                ),
-                canonical_evidence_id=canonical_evidence_id,
-                subject_id=subject_id,
-                source_id=source_id,
-                source_title=source_title,
-                claim_text=claim_text,
-                claim_type=claim_type,
-                entities=entities,
-                source_sentence_indexes=source_sentence_indexes,
-                source_excerpt=claim_text,
-                extraction_confidence=0.72,
-                extraction_reason="deterministic_sentence_split",
-                source_passthrough_risk=passthrough_risk,
-                source_passthrough_reason=passthrough_reason,
+        source_char_spans = [[span.start, span.end]]
+        for claim_text in claim_texts:
+            passthrough_risk, passthrough_reason = _source_passthrough_check(
+                claim_text, [sentence_text], extraction_mode="deterministic_sentence"
             )
-        )
+            claims.append(
+                EvidenceClaim(
+                    claim_id=_claim_id(
+                        canonical_evidence_id=canonical_evidence_id,
+                        claim_text=claim_text,
+                        source_sentence_indexes=source_sentence_indexes,
+                    ),
+                    canonical_evidence_id=canonical_evidence_id,
+                    subject_id=subject_id,
+                    source_id=source_id,
+                    source_title=source_title,
+                    claim_text=claim_text,
+                    claim_type=claim_type,
+                    entities=entities,
+                    source_sentence_indexes=source_sentence_indexes,
+                    source_char_spans=source_char_spans,
+                    source_excerpt=sentence_text,
+                    extraction_confidence=extraction_confidence,
+                    extraction_reason=extraction_reason,
+                    source_passthrough_risk=passthrough_risk,
+                    source_passthrough_reason=passthrough_reason,
+                )
+            )
     return claims
 
 
@@ -345,10 +393,12 @@ def _extract_claims_llm(
     source_title: str,
     snippet: str,
     appearances: list[dict[str, Any]],
-    sentence_claims: list[EvidenceClaim],
+    spans: list[SentenceSpan],
     candidate_reasons: list[str],
 ) -> list[EvidenceClaim]:
-    sentences = [claim.claim_text for claim in sentence_claims]
+    # The prompt's sentence list and the returned indexes are in real *sentence* space (the
+    # NLP spans), never in claim space — micro-split clause claims must not shift indexing.
+    sentences = [span.text for span in spans]
     result = llm_json_with_retry(
         required_keys=("claims",),
         response_json_schema=_claim_extraction_schema(),
@@ -419,6 +469,9 @@ def _extract_claims_llm(
                 claim_type=claim_type,
                 entities=entities,
                 source_sentence_indexes=sentence_indexes,
+                source_char_spans=[
+                    [spans[index].start, spans[index].end] for index in sentence_indexes
+                ],
                 source_excerpt=source_excerpt,
                 extraction_confidence=0.82 if not passthrough_risk else 0.7,
                 extraction_reason=extraction_reason or "llm_semantic_split",
@@ -470,10 +523,12 @@ def _llm_candidate_reasons(record: Any, sentence_claims: list[EvidenceClaim]) ->
     snippet = str(getattr(record, "snippet", "")).strip()
     if word_count(snippet) >= _LONG_PARAGRAPH_WORD_THRESHOLD:
         reasons.append("long_paragraph")
-    if any(
-        ";" in claim.claim_text or word_count(claim.claim_text) >= _LONG_SENTENCE_WORD_THRESHOLD
-        for claim in sentence_claims
-    ):
+    # Grammar-substrate triage (Slice 8), replacing the semicolon/word-count proxies: an LLM
+    # semantic split is warranted when a deterministic claim still carries several finite
+    # event/state predications. A long or semicolon-heavy but single-event claim counts one
+    # finite clause and spends nothing; a micro-split already resolved the unambiguous
+    # coordinations, so whatever still counts >= 2 here is genuinely entangled.
+    if any(finite_clause_count(claim.claim_text) >= 2 for claim in sentence_claims):
         reasons.append("sentence_level_claim_may_contain_multiple_events")
     if _matches_setup_and_outcome_context(record):
         reasons.append("matches_setup_and_outcome_boundary_context")

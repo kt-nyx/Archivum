@@ -15,7 +15,7 @@ from pipeline.generate.draft.faction_lint import (
     trim_faction_summary,
 )
 from pipeline.generate.draft.prose_gate import detect_list_shape
-from pipeline.generate.draft.prose_lint import has_currently_meta, word_count
+from pipeline.generate.draft.prose_lint import has_currently_meta, split_sentences, word_count
 from pipeline.generate.draft.temporal import (
     AMBIGUOUS_TEMPORAL,
     EXCLUDED_NONCANON,
@@ -1150,11 +1150,7 @@ def _faction_focused_excerpt(
 ) -> str:
     if not faction_name or not _name_in_text(faction_name, snippet):
         return snippet
-    sentences = [
-        sentence.strip()
-        for sentence in re.split(r"(?<=[.!?])\s+", snippet.strip())
-        if sentence.strip()
-    ]
+    sentences = split_sentences(snippet.strip())
     if len(sentences) <= 1:
         return snippet
     faction_index = next(

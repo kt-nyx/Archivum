@@ -7,12 +7,23 @@ behaviours are preserved under explicit names:
   structure anti-repetition checks.
 - :func:`whitespace_jaccard` — whitespace-split Jaccard with ``1.0`` for two empty
   inputs, used by the anti-verbatim source comparison.
+
+Slice 8 adds the lemmatized *support* variants (:func:`lemma_support_containment`,
+:func:`lemma_support_ratio`) — the one home for lemma-level fallback scoring used by the
+fact-check pass and the coalesce claim-source selector. They score retrieval support only,
+never contradiction, and their token set keeps proper nouns and adpositions as surface text
+(see :func:`pipeline.common.linguistics.support_tokens`) so spatial assertions like
+"above"/"beneath" stay distinguishable.
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Iterable
+
+from rapidfuzz import fuzz
+
+from pipeline.common.linguistics import support_tokens
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 
@@ -44,6 +55,42 @@ def whitespace_jaccard(lhs: str, rhs: str) -> float:
 def max_similarity_against_sources(text: str, source_snippets: Iterable[str]) -> float:
     """Highest :func:`whitespace_jaccard` of ``text`` against any source snippet."""
     return max((whitespace_jaccard(text, snippet) for snippet in source_snippets), default=0.0)
+
+
+def _significant_support_tokens(text: str) -> list[str]:
+    """Lemmatized support tokens, minus the short function words the surface heuristics also
+    drop (>= 3 chars keeps "above"/"beneath"/"near" but sheds "of"/"in"/"by", whose ubiquity
+    would inflate every support score)."""
+    return [token for token in support_tokens(text) if len(token) >= 3]
+
+
+def lemma_support_containment(claim: str, evidence: str) -> float:
+    """Fraction of the claim's lemmatized support tokens found in the evidence's.
+
+    Deterministic fallback support signal for inflection/paraphrase cases the surface
+    overlap misses ("gained"/"gain", "necromancers"/"necromancer"); ``0.0`` when either
+    side has no support tokens. Never a contradiction judge.
+    """
+    claim_tokens = set(_significant_support_tokens(claim))
+    if not claim_tokens:
+        return 0.0
+    evidence_tokens = set(_significant_support_tokens(evidence))
+    if not evidence_tokens:
+        return 0.0
+    return len(claim_tokens & evidence_tokens) / len(claim_tokens)
+
+
+def lemma_support_ratio(claim: str, evidence: str) -> float:
+    """rapidfuzz ``token_set_ratio`` over lemmatized support tokens, in ``[0.0, 1.0]``.
+
+    The lemma-level sibling of the coalesce selector's surface token-set score; same
+    determinism guarantees (identical inputs give bit-identical floats).
+    """
+    claim_tokens = _significant_support_tokens(claim)
+    evidence_tokens = _significant_support_tokens(evidence)
+    if not claim_tokens or not evidence_tokens:
+        return 0.0
+    return fuzz.token_set_ratio(" ".join(claim_tokens), " ".join(evidence_tokens)) / 100.0
 
 
 def _word_shingles(value: str, k: int) -> list[tuple[str, ...]]:

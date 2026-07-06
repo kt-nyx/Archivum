@@ -513,7 +513,9 @@ def _build_adventure_guide_framing(
             continue
         views = item.get(CLAIM_VIEW_KEY)
         if isinstance(views, list) and views:
-            excerpt = safe_paragraph_excerpt(views, KEY_CHARACTER_ROUTE)
+            excerpt = safe_paragraph_excerpt(
+                views, KEY_CHARACTER_ROUTE, paragraph_text=str(item.get("snippet", ""))
+            )
         else:
             excerpt = clean_wiki_snippet(str(item.get("snippet", "")))
         if excerpt:

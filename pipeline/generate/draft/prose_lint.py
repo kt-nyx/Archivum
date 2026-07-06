@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from pipeline.common.linguistics import tense_profile
+from pipeline.common.linguistics import sentence_spans, tense_profile
 from pipeline.common.text_sim import token_jaccard
 from pipeline.contracts.models import ZONE_PAGE_BUDGET_RULES
 from pipeline.discovery.world_registry import entry_kinds
@@ -55,16 +55,21 @@ _PLAYER_META_RE = re.compile(
     r"\bplayers?\b|\byou\b|\byour\b|\byourself\b",
     re.IGNORECASE,
 )
-_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.?!])\s+")
 
 
 def split_sentences(text: str) -> list[str]:
-    """Split on sentence-terminal punctuation, returning stripped, non-empty sentences.
+    """Model-derived sentence boundaries, returning stripped, non-empty sentence texts.
 
-    Single source of truth for the ``(?<=[.?!])\\s+`` split used by the CTA finalizer and the
-    key-character sentence-borrow fallback (formerly a duplicated regex in each).
+    Single source of truth for sentence splitting in lint/trim paths (Slice 8): delegates to
+    the NLP substrate (:func:`pipeline.common.linguistics.sentence_spans`), which handles
+    abbreviations ("St. Albus") and ADP-date periods the old ``(?<=[.?!])\\s+`` regex split
+    apart. There is deliberately **no punctuation fallback** — the model is a standard dev/CI
+    dependency, and a load failure must surface as ``LinguisticsModelError``, not as silently
+    different sentence boundaries. This convenience API returns texts only; paths that need
+    positions (claim extraction, claim-view excerpts, provenance sidecars) must call
+    ``linguistics.sentence_spans`` directly for its offsets.
     """
-    return [chunk.strip() for chunk in _SENTENCE_SPLIT_RE.split(text) if chunk.strip()]
+    return [span.text.strip() for span in sentence_spans(text) if span.text.strip()]
 
 
 def word_count(text: str) -> int:

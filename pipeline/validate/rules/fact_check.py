@@ -14,12 +14,17 @@ from pydantic import BaseModel
 
 from pipeline.ai.config import AISettings, load_ai_settings
 from pipeline.ai.openai_client import chat_json_completion
+from pipeline.common.text_sim import lemma_support_containment
 from pipeline.validate.profiles import FactCheckProfile, parse_fact_check_profile
 from pipeline.validate.types import ValidationIssue, ValidationSeverity
 
 WORD_RE = re.compile(r"[a-z0-9']+")
 HTML_TAG_RE = re.compile(r"<[^>]+>")
 HISTORY_SECTION_BODY_RE = re.compile(r"^history_sections\[(?P<index>\d+)\]\.body$")
+
+# Deterministic support thresholds for the token-overlap heuristics (previously inline).
+LOCAL_SUPPORT_THRESHOLD = 0.08
+WEB_SUPPORT_THRESHOLD = 0.12
 
 
 def _section_claims(entity_type: str, payload: dict[str, Any]) -> list[tuple[str, str]]:
@@ -68,6 +73,21 @@ def _text_overlap_score(claim_text: str, evidence_text: str) -> float:
         return 0.0
     overlap = len(claim_tokens.intersection(evidence_tokens))
     return overlap / float(len(claim_tokens))
+
+
+def _support_score(claim_text: str, evidence_text: str) -> float:
+    """Surface token containment with a lemmatized fallback (Slice 8).
+
+    The lemma variant only runs when the surface score is below every support threshold
+    (spaCy over full page bodies is not free), and the result is the max of the two. This is
+    a *support* signal only: it can raise a paraphrased/inflected claim to "supported", but
+    contradiction is still decided solely by the LLM adjudicator / explicit markers — and the
+    lemma token set keeps prepositions visible, so it never equates "above" with "beneath".
+    """
+    surface = _text_overlap_score(claim_text, evidence_text)
+    if surface >= max(LOCAL_SUPPORT_THRESHOLD, WEB_SUPPORT_THRESHOLD):
+        return surface  # already supported at every threshold; the fallback can't matter
+    return max(surface, lemma_support_containment(claim_text, evidence_text))
 
 
 def _clean_snippet(text: str, *, max_len: int = 280) -> str:
@@ -408,7 +428,7 @@ def validate_fact_check_rules(
             source_snapshot = source_map.get(source_id)
             if source_snapshot is None:
                 continue
-            score = _text_overlap_score(claim_text, source_snapshot["body"])
+            score = _support_score(claim_text, source_snapshot["body"])
             local_best_score = max(local_best_score, score)
             evidence_rows.append(
                 {
@@ -416,10 +436,12 @@ def validate_fact_check_rules(
                     "source_id": source_id,
                     "url": source_snapshot["url"],
                     "score": round(score, 3),
+                    # Raw source text (tags stripped only): proper nouns and exact location
+                    # prepositions stay visible for downstream assertion adjudication.
                     "snippet": _clean_snippet(source_snapshot["body"]),
                 }
             )
-            if score >= 0.08:
+            if score >= LOCAL_SUPPORT_THRESHOLD:
                 local_supported = True
 
         if claim_status not in {"contradicted"}:
@@ -455,7 +477,7 @@ def validate_fact_check_rules(
                 )
             web_best_score = 0.0
             for hit in web_hits:
-                score = _text_overlap_score(claim_text, hit["snippet"])
+                score = _support_score(claim_text, hit["snippet"])
                 web_best_score = max(web_best_score, score)
                 evidence_rows.append(
                     {
@@ -466,7 +488,7 @@ def validate_fact_check_rules(
                         "snippet": hit["snippet"],
                     }
                 )
-            if web_best_score >= 0.12:
+            if web_best_score >= WEB_SUPPORT_THRESHOLD:
                 claim_status = "supported"
                 claim_confidence = max(claim_confidence, min(0.9, 0.5 + web_best_score))
 

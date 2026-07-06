@@ -11,7 +11,6 @@ from collections.abc import Iterable
 from typing import Any
 
 from pipeline.common.text_normalize import clean_wiki_snippet
-from pipeline.generate.draft.prose_lint import split_sentences
 from pipeline.generate.draft.temporal import (
     ACTIVE_STORYLINE,
     ACTIVE_STORYLINE_OUTCOME,
@@ -266,54 +265,53 @@ def route_claim_views_for_item(item: dict[str, Any], route: str) -> list[dict[st
     return [view for view in views if _claim_allowed_for_route(view, route)]
 
 
-def _sentence_indexes(view: dict[str, Any]) -> list[int]:
-    raw = view.get("source_sentence_indexes")
+def _char_spans(view: dict[str, Any]) -> list[tuple[int, int]]:
+    """The view's sentence character spans (offsets into the cleaned paragraph text)."""
+    raw = view.get("source_char_spans")
     if not isinstance(raw, list):
         return []
-    out: list[int] = []
+    out: list[tuple[int, int]] = []
     for value in raw:
-        if isinstance(value, bool):
-            continue
-        if isinstance(value, int):
-            out.append(value)
+        if (
+            isinstance(value, (list, tuple))
+            and len(value) == 2
+            and all(isinstance(bound, int) and not isinstance(bound, bool) for bound in value)
+        ):
+            out.append((value[0], value[1]))
     return out
 
 
-def safe_paragraph_excerpt(claim_views: list[dict[str, Any]], route: str) -> str:
+def safe_paragraph_excerpt(
+    claim_views: list[dict[str, Any]], route: str, *, paragraph_text: str
+) -> str:
     """Rebuild a source paragraph from only its route-safe sentences.
 
     Claims are atomized for fine-grained temporal/spoiler classification, but that shreds the
-    synthesizer's input into fragments. This reconstructs contiguous prose from the original
-    ``source_excerpt``, keeping a sentence only when it is covered by a route-safe claim AND by no
-    filtered claim — so a sentence that produced any future/spoiler claim is dropped whole and no
-    unsafe content leaks back in. Returns ``""`` when the paragraph text or sentence indexes are
-    unavailable, so callers fall back to claim-text fragments.
+    synthesizer's input into fragments. This reconstructs contiguous prose by slicing
+    ``clean_wiki_snippet(paragraph_text)`` at the claims' stored character offsets (Slice 8 —
+    no re-splitting and substring re-finding), keeping a sentence only when it is covered by a
+    route-safe claim AND by no filtered claim — so a sentence that produced any future/spoiler
+    claim is dropped whole and no unsafe content leaks back in. Returns ``""`` when the
+    paragraph text is unavailable or any view lacks in-bounds offsets (the contaminated set
+    would be unknowable), so callers fall back to claim-text fragments.
     """
-    source_excerpt = ""
-    for view in claim_views:
-        candidate = str(view.get("source_excerpt", "")).strip()
-        if candidate:
-            source_excerpt = candidate
-            break
-    if not source_excerpt:
+    cleaned = clean_wiki_snippet(paragraph_text)
+    if not cleaned:
         return ""
-    sentences = split_sentences(clean_wiki_snippet(source_excerpt))
-    if not sentences:
-        return ""
-    safe_idx: set[int] = set()
-    filtered_idx: set[int] = set()
+    safe_spans: set[tuple[int, int]] = set()
+    filtered_spans: set[tuple[int, int]] = set()
     for view in claim_views:
-        indexes = _sentence_indexes(view)
+        spans = _char_spans(view)
+        if not spans or any(
+            not (0 <= start < end <= len(cleaned)) for start, end in spans
+        ):
+            return ""
         if _claim_allowed_for_route(view, route):
-            safe_idx.update(indexes)
+            safe_spans.update(spans)
         else:
-            filtered_idx.update(indexes)
-    include = [
-        index
-        for index in sorted(safe_idx)
-        if index not in filtered_idx and 0 <= index < len(sentences)
-    ]
-    return " ".join(sentences[index].strip() for index in include).strip()
+            filtered_spans.update(spans)
+    include = sorted(span for span in safe_spans if span not in filtered_spans)
+    return " ".join(cleaned[start:end].strip() for start, end in include).strip()
 
 
 def reconstruct_safe_paragraph_excerpts(
@@ -322,9 +320,11 @@ def reconstruct_safe_paragraph_excerpts(
     """Map each source paragraph (canonical_evidence_id) to its route-safe reconstructed excerpt.
 
     Operates on the full evidence items (which carry every claim view for the paragraph, safe and
-    unsafe), so the safe/filtered sentence split is computed against the complete claim set.
+    unsafe), so the safe/filtered sentence split is computed against the complete claim set. The
+    item's ``snippet`` is the paragraph text the claim offsets index into.
     """
-    by_paragraph: dict[str, list[dict[str, Any]]] = {}
+    views_by_paragraph: dict[str, list[dict[str, Any]]] = {}
+    text_by_paragraph: dict[str, str] = {}
     for item in source_pool:
         views = item.get(CLAIM_VIEW_KEY)
         if not isinstance(views, list):
@@ -335,10 +335,13 @@ def reconstruct_safe_paragraph_excerpts(
             canonical_id = str(view.get("canonical_evidence_id", "")).strip()
             if not canonical_id:
                 continue
-            by_paragraph.setdefault(canonical_id, []).append(view)
+            views_by_paragraph.setdefault(canonical_id, []).append(view)
+            text_by_paragraph.setdefault(canonical_id, str(item.get("snippet", "")))
     excerpts: dict[str, str] = {}
-    for canonical_id, claim_views in by_paragraph.items():
-        excerpt = safe_paragraph_excerpt(claim_views, route)
+    for canonical_id, claim_views in views_by_paragraph.items():
+        excerpt = safe_paragraph_excerpt(
+            claim_views, route, paragraph_text=text_by_paragraph.get(canonical_id, "")
+        )
         if excerpt:
             excerpts[canonical_id] = excerpt
     return excerpts
@@ -414,6 +417,7 @@ def _claim_view_for_item(
         "history_reason": str(claim.get("history_rationale", "")).strip(),
         "temporal_event_label": str(claim.get("event_label", "")).strip(),
         "source_sentence_indexes": claim.get("source_sentence_indexes", []),
+        "source_char_spans": claim.get("source_char_spans", []),
         "entities": claim.get("entities", []),
         "source_refs": [
             {

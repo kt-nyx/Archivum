@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pipeline.common.linguistics import sentence_spans
 from pipeline.generate.draft.evidence_identity import translate_used_evidence_ids
 from pipeline.generate.draft.pages.assembly import _iter_evidence_items
 from pipeline.generate.draft.prose_synthesis import _format_evidence_block
@@ -68,11 +69,16 @@ def test_translate_used_evidence_ids_maps_aliases_and_drops_unknown() -> None:
     assert used == ["canonical-b", "canonical-a"]
 
 
+_VIEW_PARAGRAPH = "Alpha first. Beta spoiler. Gamma safe."
+
+
 def _claim_view(sentence_index: int, *, scope: str, safety: str, text: str) -> dict:
+    span = sentence_spans(_VIEW_PARAGRAPH)[sentence_index]
     return {
         "canonical_evidence_id": "c1",
-        "source_excerpt": "Alpha first. Beta spoiler. Gamma safe.",
+        "source_excerpt": _VIEW_PARAGRAPH,
         "source_sentence_indexes": [sentence_index],
+        "source_char_spans": [[span.start, span.end]],
         "temporal_scope": scope,
         "spoiler_safety": safety,
         "claim_text": text,

@@ -1760,6 +1760,7 @@ def _claim_temporal_decision_row(
         "claim_text": str(claim.get("claim_text", "")).strip(),
         "claim_type": str(claim.get("claim_type", "")).strip(),
         "source_sentence_indexes": claim.get("source_sentence_indexes", []),
+        "source_char_spans": claim.get("source_char_spans", []),
         "source_excerpt": str(claim.get("source_excerpt", "")).strip(),
         "entities": claim.get("entities", []),
         "temporal_scope": classification.temporal_scope,

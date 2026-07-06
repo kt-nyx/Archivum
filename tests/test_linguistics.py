@@ -14,11 +14,14 @@ case) so any behaviour change on a model/library bump is caught deliberately.
 from __future__ import annotations
 
 from pipeline.common.linguistics import (
+    coordinated_finite_clause_split,
     describe,
+    finite_clause_count,
     lemmatized_content_tokens,
     linguistic_tokens,
     model_info,
     sentence_spans,
+    support_tokens,
     tense_profile,
 )
 
@@ -210,3 +213,111 @@ def test_describe_renders_full_analysis() -> None:
     assert "tense profile:" in rendered
     assert "heals | heal | VERB | VBZ | ROOT" in rendered
     assert "present_framed=True" in rendered
+
+
+# --- Slice 8: sentence boundaries, clause features, micro-split, support tokens ---
+
+
+def test_sentence_spans_do_not_split_abbreviations_or_adp_dates() -> None:
+    # The retired ``(?<=[.?!])\s+`` regex split after every period; the model must not.
+    abbrev = "The town of St. Albus fell to the Scourge. It never recovered."
+    spans = sentence_spans(abbrev)
+    assert [span.text for span in spans] == [
+        "The town of St. Albus fell to the Scourge.",
+        "It never recovered.",
+    ]
+    dated = "The keep was raised in year 20 ADP. The plague arrived soon after."
+    assert [span.text for span in sentence_spans(dated)] == [
+        "The keep was raised in year 20 ADP.",
+        "The plague arrived soon after.",
+    ]
+
+
+def test_finite_clause_count_single_event_despite_semicolons() -> None:
+    # Semicolon-heavy but single-event: one finite predicate, however long the list runs.
+    text = "The Argent Crusade rebuilt the chapel walls with timber; stone; and consecrated iron."
+    assert finite_clause_count(text) == 1
+
+
+def test_finite_clause_count_multiple_predications() -> None:
+    # Passive main clause + finite temporal subordinate = two event/state predications.
+    assert finite_clause_count("The old road was fortified before the current fighting began.") == 2
+    # Semicolon-joined independent finite clauses.
+    assert (
+        finite_clause_count(
+            "The Cenarion Circle begins healing the fields; "
+            "the battle later ends with one faction claiming Andorhal."
+        )
+        == 2
+    )
+
+
+def test_finite_clause_count_nonfinite_material_is_not_a_predication() -> None:
+    # Infinitive/gerund complements ride their finite head ("begins healing" = one predication);
+    # bare imperatives have no finite spine at all.
+    assert finite_clause_count("The Cenarion Circle begins healing the fields.") == 1
+    assert finite_clause_count("Aid the Argent Crusade and slay the necromancers.") == 0
+
+
+def test_coordinated_split_own_subject_clauses() -> None:
+    clauses = coordinated_finite_clause_split(
+        "The Argent Dawn purified the cauldrons, and the Cenarion Circle healed the fields."
+    )
+    assert clauses == [
+        "The Argent Dawn purified the cauldrons",
+        "the Cenarion Circle healed the fields.",
+    ]
+
+
+def test_coordinated_split_shared_subject_copies_subject() -> None:
+    clauses = coordinated_finite_clause_split(
+        "The keep fell during the war and later anchored the faction's frontier."
+    )
+    assert clauses == [
+        "The keep fell during the war",
+        "The keep later anchored the faction's frontier.",
+    ]
+
+
+def test_coordinated_split_preserves_proper_nouns() -> None:
+    clauses = coordinated_finite_clause_split(
+        "Kel'Thuzad founded the school and Gandling now leads it."
+    )
+    assert clauses == ["Kel'Thuzad founded the school", "Gandling now leads it."]
+
+
+def test_coordinated_split_refuses_uncertain_shapes() -> None:
+    # Shared-auxiliary VP coordination: "rebuilt" has no finite spine of its own.
+    assert coordinated_finite_clause_split("The town was razed and rebuilt.") == []
+    # Object-NP coordination: no verbal conjunct at all.
+    assert coordinated_finite_clause_split("He razed Andorhal and Hearthglen.") == []
+    # Semicolon parataxis: no coordinating conjunction — the LLM splitter owns it.
+    assert (
+        coordinated_finite_clause_split(
+            "The Cenarion Circle begins healing the fields; "
+            "the battle later ends with one faction claiming Andorhal."
+        )
+        == []
+    )
+    # Subjectless imperative coordination stays whole.
+    assert coordinated_finite_clause_split("Aid the Argent Crusade and slay the necromancers.") == []
+    # More than one sentence is never split.
+    assert (
+        coordinated_finite_clause_split("The wall fell and the town burned. The keep held.") == []
+    )
+
+
+def test_support_tokens_lemmatize_content_keep_names_and_prepositions() -> None:
+    # Content words are lemmatized ("gained" -> "gain"); proper nouns and adpositions stay
+    # surface so spatial assertions remain distinguishable for downstream adjudication.
+    assert support_tokens("The Forsaken gained control of Andorhal.") == [
+        "forsaken",
+        "gain",
+        "control",
+        "of",
+        "andorhal",
+    ]
+    above = support_tokens("The academy was built above Caer Darrow.")
+    beneath = support_tokens("The academy was built beneath Caer Darrow.")
+    assert "above" in above and "beneath" in beneath
+    assert set(above) != set(beneath)

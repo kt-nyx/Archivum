@@ -198,6 +198,7 @@ def _consolidate_history_views(items: list[dict[str, Any]]) -> list[dict[str, An
                     "_claim_views",
                     "source_refs",
                     "source_sentence_indexes",
+                    "source_char_spans",
                     "claim_type",
                     "entities",
                 }

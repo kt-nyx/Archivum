@@ -108,7 +108,9 @@ def _iter_evidence_items(
                 # sentences are excluded.
                 all_views = item.get(CLAIM_VIEW_KEY)
                 excerpt = (
-                    safe_paragraph_excerpt(all_views, claim_route)
+                    safe_paragraph_excerpt(
+                        all_views, claim_route, paragraph_text=str(item.get("snippet", ""))
+                    )
                     if safe_views and isinstance(all_views, list)
                     else ""
                 )

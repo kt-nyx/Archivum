@@ -111,3 +111,18 @@ def test_selection_is_reproducible_across_runs() -> None:
     first = select_source_for_claim(_CLAIM, rows, contradiction_bias="prefer_higher_revision_id")
     second = select_source_for_claim(_CLAIM, rows, contradiction_bias="prefer_higher_revision_id")
     assert (first[0]["source_id"], first[1]) == (second[0]["source_id"], second[1])
+
+
+def test_lemma_fallback_bridges_inflection_without_equating_inverted_relations() -> None:
+    """Slice 8: the lemmatized support layer lifts an inflected paraphrase above its surface
+    score, but adpositions stay visible so "above"/"beneath" never become a perfect match."""
+    from rapidfuzz import fuzz
+
+    claim = "Necromancers were slain beneath the academy."
+    evidence = "The crusaders slay every necromancer beneath the academy's vaults."
+    surface = fuzz.token_set_ratio(claim, evidence) / 100.0
+    assert score_claim_against_source(claim, evidence) > surface
+
+    above = "The academy was built above Caer Darrow."
+    beneath = "The academy was built beneath Caer Darrow."
+    assert score_claim_against_source(above, beneath) < 1.0
