@@ -1,8 +1,8 @@
 """Build run-scoped glossary terms from wiki-first drafts and discovery artifacts.
 
-Terms and aliases are derived from run signals so a per-zone glossary is
-comprehensive without leaning on the static ``dictionary/glossary_aliases.v1.json``
-fallback. Three run-derived sources feed the accumulator:
+Terms and aliases are derived from run signals only — there is no static dictionary
+fallback (Slice 11): a run without run-terms degrades to metadata-less glossary refs
+plus a trace event. Three run-derived sources feed the accumulator:
 
 * **Drafts** — the selected zone/instance cards (factions, locations, key
   characters, instance links).

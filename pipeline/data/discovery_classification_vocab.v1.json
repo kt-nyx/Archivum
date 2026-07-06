@@ -154,13 +154,10 @@
   },
   "entry_quest_title_keywords": {
     "_why_no_structural_signal": "Chain heads are computed structurally (indegree 0); this list only PREFERS the player-facing breadcrumb quest among heads, judged on the quest title. No structural signal distinguishes a breadcrumb from another head.",
-    "_pilot_bias_note": "MIXED: \"hero's call\"/\"warchief's command\" are the universal Alliance/Horde zone-breadcrumb quests (cross-zone); \"new era for the plaguelands\"/\"audience with the highlord\" are WPL-specific and MUST be revisited for the cross-zone smoke test (likely move to per-zone config or derive from breadcrumb structure in S5).",
+    "_pilot_bias_note": "Game-wide conventions only: \"hero's call\"/\"warchief's command\" are the universal Alliance/Horde zone-breadcrumb quest series. Zone-specific quest titles were evicted (generalization refactor Slice 11); registry start_anchor overrides cover curated pilot arcs.",
     "tokens": [
       "hero's call",
-      "warchief's command",
-      "new era for the plaguelands",
-      "audience with the highlord",
-      "an audience with the highlord"
+      "warchief's command"
     ]
   },
   "non_canon_body_markers": {

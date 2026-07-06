@@ -9,8 +9,8 @@ from pipeline.discovery.questline_cluster import normalize_quest_title, resolve_
 
 # WS-C: externalized to pipeline/data/discovery_classification_vocab.v1.json (D-6).
 # Chain heads are computed structurally (indegree 0); this list only PREFERS the
-# breadcrumb head by title. NOTE: contains WPL-specific titles flagged for the
-# cross-zone smoke test (likely S5 reconciliation).
+# breadcrumb head by title. Game-wide breadcrumb conventions only (Slice 11 evicted
+# the zone-specific titles); curated registry arcs carry their own start_anchor.
 ENTRY_QUEST_TITLE_KEYWORDS = entry_quest_title_keywords()
 
 

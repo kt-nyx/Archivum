@@ -38,14 +38,14 @@ AT_A_GLANCE_VOICE = (
     "Stay on essence, not events: this is NOT a report of who is fighting, holding, defending, or "
     "recovering the zone right now (that belongs in 'currently'), and NOT a roster of towns, keeps, or "
     "landmarks (those belong in the location cards). Do not name leaders or characters. You may evoke "
-    "the defining force whose legacy still hangs over the land (e.g. the Scourge's blight) as part of "
-    "the atmosphere, but only as mood and legacy, never as an actor doing something now. "
+    "the defining force whose legacy still hangs over the land (e.g. the Hollow Court's blight) as part "
+    "of the atmosphere, but only as mood and legacy, never as an actor doing something now. "
     "Keep it present and timeless; carry history through scarring/legacy phrasing rather than a "
-    "play-by-play. Do NOT narrate the past with finite past-tense verbs (avoid 'the Scourge invaded', "
-    "'the farms fell', 'it was consumed'). "
-    'Example shape: "The Scourge is gone, but its blight is not. Across fallen Lordaeron\'s heartland, '
-    "poisoned fields and silent ruins still ache with rot — even as the first green pushes back through "
-    "the dead soil.\""
+    "play-by-play. Do NOT narrate the past with finite past-tense verbs (avoid 'the Hollow Court "
+    "invaded', 'the farms fell', 'it was consumed'). "
+    'Example shape: "The Hollow Court is gone, but its blight is not. Across fallen Vellmire\'s '
+    "heartland, poisoned fields and silent ruins still ache with rot — even as the first green pushes "
+    "back through the dead soil.\""
 )
 
 CURRENTLY_VOICE = (
@@ -54,7 +54,7 @@ CURRENTLY_VOICE = (
     "rather than fixating on a single battle or questline. "
     "Favor short, direct sentences; let strong verbs carry the tension rather than stacked adjectives. "
     "Do not restate the historical identity arc from at_a_glance. Name factions explicitly when describing conflict. "
-    'Example shape: "The Argent Crusade and Cenarion Circle work to heal the blighted soil while Horde and Alliance forces contest..."'
+    'Example shape: "The Lantern Wardens and the Emberwake Pact work to heal the blighted soil while Horde and Alliance forces contest..."'
 )
 
 HISTORY_VOICE = (
@@ -67,10 +67,10 @@ HISTORY_VOICE = (
     "for the upper end of the length range when the evidence supports it. Do not dramatize — avoid "
     "literary flourishes, mood-setting adjectives, and reflective 'what it all meant' summations. Let "
     "each section end on its last concrete fact rather than a thematic closing flourish. "
-    'Example shape: "During the Scourging of Lordaeron, Ner\'zhul placed plague energies into '
-    "portable cauldrons and tasked Kel'Thuzad with hiding them in cult-controlled villages. The Cult "
-    "of the Damned tainted grain from Andorhal and positioned four large cauldrons among the region's "
-    'major farmsteads." '
+    'Example shape: "During the Breaking of Vellmire, the magister Ordan Veil bound curse energies '
+    "into portable reliquaries and tasked Archivist Maelor with hiding them in court-controlled "
+    "villages. The Hollow Court tainted grain from Maelor's Crossing and positioned four large "
+    'reliquaries among the region\'s major farmsteads." '
     "Never use present-activity verbs (maintains, struggles, continues to hold) in the past-tense "
     "background sections. One exception: if the final section is the present-state bridge — the "
     "chronicle reaching the zone's current, ongoing condition as it currently stands in the content "
@@ -103,9 +103,9 @@ INSTANCE_AT_A_GLANCE_VOICE = (
     "this place is and why it matters — fast. Be direct: lead with a plain-spoken declarative line and "
     "let strong nouns and verbs carry the weight instead of stacked adjectives. State its nature and "
     "significance, not its mechanics; do not list bosses, wings, or factions. Hit hard and stop. "
-    'Example shape: "Scholomance is the Scourge\'s school for necromancers. Built into the bones of '
-    "House Barov above drowned Caer Darrow, it turns out masters of undeath — and rarely lets the dead "
-    "rest.\""
+    'Example shape: "The Archive Vault is the Hollow Court\'s school for curse-binders. Built into '
+    "the bones of House Veldar above drowned Maelor's Crossing, it turns out masters of forbidden "
+    "script — and rarely lets its dead rest.\""
 )
 
 INSTANCE_OVERVIEW_VOICE = (

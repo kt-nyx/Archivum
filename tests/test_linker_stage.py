@@ -8,7 +8,29 @@ from pipeline.linker.linker import run_glossary_linker
 from pipeline.validate.engine import validate_payload
 
 
-def test_linker_adds_glossary_links_and_zone_provenance(tmp_path: Path) -> None:
+def test_linker_adds_glossary_links_and_zone_provenance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "pipeline.linker.linker._load_alias_dictionary",
+        lambda _context=None: [
+            {
+                "term_id": "term-scourge",
+                "alias": "Scourge",
+                "alias_type": "canonical",
+                "case_rule": "insensitive",
+                "category": "faction",
+            },
+            {
+                "term_id": "term-western-plaguelands",
+                "alias": "Western Plaguelands",
+                "alias_type": "canonical",
+                "case_rule": "insensitive",
+                "category": "place",
+            },
+        ],
+    )
     context = ensure_run_context("run-test-linker-provenance", artifacts_root=tmp_path / "runs")
     draft_dir = context.data_dir / "drafts" / "zone"
     draft_dir.mkdir(parents=True, exist_ok=True)
@@ -73,6 +95,47 @@ def test_linker_adds_glossary_links_and_zone_provenance(tmp_path: Path) -> None:
     for term_id in linked_term_ids:
         assert term_id in updated_draft["provenance"]["glossary"]
         assert updated_draft["provenance"]["glossary"][term_id]
+
+
+def test_linker_degrades_to_no_aliases_when_no_run_terms(tmp_path: Path) -> None:
+    """No run-derived terms: no links, no static pilot dictionary, degraded trace event."""
+    context = ensure_run_context("run-test-linker-no-terms", artifacts_root=tmp_path / "runs")
+    draft_dir = context.data_dir / "drafts" / "zone"
+    draft_dir.mkdir(parents=True, exist_ok=True)
+    draft_path = draft_dir / "zone-western-plaguelands.json"
+    draft_path.write_text(
+        json.dumps(
+            {
+                "id": "zone-western-plaguelands",
+                "at_a_glance": "The Scourge continues to pressure the Western Plaguelands.",
+                "currently": "",
+                "history": "",
+                "glossary": [],
+                "sources": [],
+                "provenance": {"at_a_glance": [], "glossary": {}},
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    output_path = run_glossary_linker(context, [draft_path], max_entity_concurrency=1)
+    report = json.loads(output_path.read_text(encoding="utf-8"))
+    updated_draft = json.loads(draft_path.read_text(encoding="utf-8"))
+
+    # Pilot terms must never appear from a static fallback.
+    assert report["linked_terms"] == {}
+    assert updated_draft["glossary"] == []
+    trace_lines = context.trace_log_path().read_text(encoding="utf-8").splitlines()
+    events = [json.loads(line) for line in trace_lines if line.strip()]
+    degraded = [
+        event
+        for event in events
+        if event.get("details", {}).get("glossary") == "empty_run_terms"
+    ]
+    assert degraded
+    assert degraded[0]["status"] == "degraded"
+    assert degraded[0]["details"]["reason"] == "run_terms_empty"
 
 
 def test_linker_routes_ambiguous_alias_to_manual_review(

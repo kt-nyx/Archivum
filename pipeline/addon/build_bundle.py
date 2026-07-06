@@ -34,59 +34,23 @@ def _omit_failed_prose_fields(payload: Any) -> Any:
     }
 
 
-def _load_static_glossary_term_metadata() -> dict[str, dict[str, str]]:
-    dictionary_path = (
-        Path(__file__).resolve().parents[2] / "dictionary" / "glossary_aliases.v1.json"
-    )
-    if not dictionary_path.exists():
-        return {}
-    payload = _load_json(dictionary_path)
-    aliases = payload.get("aliases", []) if isinstance(payload, dict) else []
-    metadata: dict[str, dict[str, str]] = {}
-    if not isinstance(aliases, list):
-        return metadata
-    for row in aliases:
-        if not isinstance(row, dict):
-            continue
-        term_id = str(row.get("term_id", "")).strip()
-        alias = str(row.get("alias", "")).strip()
-        alias_type = str(row.get("alias_type", "")).strip().lower()
-        category = str(row.get("category", "")).strip().lower()
-        if not term_id or not alias:
-            continue
-        existing = metadata.get(term_id)
-        if existing and alias_type != "canonical":
-            continue
-        wiki_slug = alias.replace(" ", "_")
-        metadata[term_id] = {
-            "term_id": term_id,
-            "label": alias,
-            "wiki_url": f"https://warcraft.wiki.gg/wiki/{wiki_slug}",
-            "category": category,
-        }
-    return metadata
-
-
 def _load_glossary_term_metadata(context: RunContext) -> dict[str, dict[str, Any]]:
     metadata = run_terms_metadata_map(load_run_terms(context))
     if metadata:
         return metadata
-    # Last resort: no run-derived terms exist for this run. Fall back to the
-    # static dictionary and record the degraded path on the run trace.
-    static = _load_static_glossary_term_metadata()
-    if static:
-        append_trace_event(
-            context,
-            stage_name="addon_bundle",
-            attempt=1,
-            status="degraded",
-            details={
-                "glossary": "static_dictionary_fallback",
-                "reason": "run_terms_empty",
-                "term_count": len(static),
-            },
-        )
-    return static
+    # No run-derived terms exist for this run: glossary refs ship metadata-less
+    # (no static dictionary fallback — Slice 11). Record the degraded path.
+    append_trace_event(
+        context,
+        stage_name="addon_bundle",
+        attempt=1,
+        status="degraded",
+        details={
+            "glossary": "metadata_less_refs",
+            "reason": "run_terms_empty",
+        },
+    )
+    return {}
 
 
 def _metadata_for_ref(
@@ -123,7 +87,6 @@ def build_addon_bundle(context: RunContext) -> Path:
     location_cards: dict[str, dict[str, Any]] = {}
     glossary_refs: dict[str, dict[str, Any]] = {}
     glossary_term_metadata = _load_glossary_term_metadata(context)
-    static_metadata = _load_static_glossary_term_metadata()
     nav_edges: list[dict[str, str]] = []
 
     for zone_path in zone_pages:
@@ -168,26 +131,6 @@ def build_addon_bundle(context: RunContext) -> Path:
                     ref,
                     metadata=glossary_term_metadata,
                 )
-
-    static_filled: list[str] = []
-    for term_id, row in glossary_refs.items():
-        if "wiki_url" not in row and term_id in static_metadata:
-            fallback = static_metadata[term_id]
-            row.setdefault("label", fallback.get("label", term_id))
-            row.setdefault("wiki_url", fallback.get("wiki_url", ""))
-            row.setdefault("category", fallback.get("category", ""))
-            static_filled.append(term_id)
-    if static_filled:
-        append_trace_event(
-            context,
-            stage_name="addon_bundle",
-            attempt=1,
-            status="degraded",
-            details={
-                "glossary": "static_dictionary_fill",
-                "term_ids": sorted(static_filled),
-            },
-        )
 
     write_json((lookup_dir / "location_cards.json"), location_cards)
     write_json((lookup_dir / "glossary_refs.json"), glossary_refs)

@@ -1,20 +1,20 @@
 """Map Slice B clusters to stable questline card ids (ql-*).
 
-Generalized (run review): clusters are matched to registry arcs by **quest-membership
-overlap** rather than zone-specific keyword tables. The registry arc supplies the stable
-``ql-*`` id, display title, and start anchor. Clusters that match no included arc are
-dropped (no raw ``cluster-*`` id is ever emitted for a pilot zone). Zones without a
-registry fall back to a generic ``ql-<slug>`` minted from the cluster identity.
+The generic ``ql-<slug>`` path minted from the cluster identity is the **general
+path** — it must work for every zone. The curated pilot registry (see
+``pipeline.discovery.pilot_questline_registry``) is gold/QA scaffolding for pilot
+zones only: when present, clusters are matched to its arcs by quest-membership
+overlap (never keyword tables) and the arc supplies the stable ``ql-*`` id, display
+title, and start anchor; clusters matching no included arc are dropped (no raw
+``cluster-*`` id is ever emitted for a pilot zone).
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from pipeline.discovery.pilot_questline_registry import WPL_ZONE_ID, load_registry
+from pipeline.discovery.pilot_questline_registry import load_registry
 from pipeline.discovery.storyline_html import _slugify
-
-_WPL_ZONE_ID = WPL_ZONE_ID
 
 # Minimum cluster<->arc node-id overlap required to bind a cluster to a registry arc.
 _MIN_ARC_OVERLAP = 2

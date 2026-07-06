@@ -6,7 +6,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from pipeline.discovery.questline_anchor import resolve_cluster_start_anchor
+from pipeline.discovery.questline_anchor import (
+    ENTRY_QUEST_TITLE_KEYWORDS,
+    resolve_cluster_start_anchor,
+)
 from pipeline.discovery.questline_arc_map import (
     load_pilot_questline_registry,
     map_cluster_to_card_id,
@@ -103,10 +106,7 @@ def build_zone_questline_card_metadata(
                     break
         if registry_arc_id:
             mapped_registry_count += 1
-        if any(
-            keyword in start_anchor.lower()
-            for keyword in ("hero's call", "warchief", "new era", "audience")
-        ):
+        if any(keyword in start_anchor.lower() for keyword in ENTRY_QUEST_TITLE_KEYWORDS):
             entry_anchor_count += 1
         metadata_rows.append(
             {

@@ -6,7 +6,7 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import Any, TypedDict
 
 from pipeline.common.config_loading import coerce_float, load_yaml_mapping
 from pipeline.common.io import write_json
@@ -53,66 +53,8 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _load_static_alias_dictionary() -> list[dict[str, str]]:
-    dictionary_path = _repo_root() / "dictionary" / "glossary_aliases.v1.json"
-    if not dictionary_path.exists():
-        return []
-    payload = json.loads(dictionary_path.read_text(encoding="utf-8"))
-    aliases = payload.get("aliases", []) if isinstance(payload, dict) else []
-    normalized: list[dict[str, str]] = []
-    if isinstance(aliases, list):
-        for row in aliases:
-            if not isinstance(row, dict):
-                continue
-            term_id = str(row.get("term_id", "")).strip()
-            alias = str(row.get("alias", "")).strip()
-            if not term_id or not alias:
-                continue
-            normalized.append(
-                {
-                    "term_id": term_id,
-                    "alias": alias,
-                    "alias_type": str(row.get("alias_type", "canonical")).strip().lower(),
-                    "case_rule": str(row.get("case_rule", "insensitive")).strip().lower(),
-                    "category": str(row.get("category", "")).strip().lower(),
-                }
-            )
-        return normalized
-    if isinstance(aliases, dict):
-        legacy_aliases = cast(dict[str, object], aliases)
-        # Backward compatibility path for older dictionary shape.
-        for term_id, value in legacy_aliases.items():
-            if not isinstance(term_id, str):
-                continue
-            category = ""
-            raw_aliases: list[object] = []
-            if isinstance(value, list):
-                raw_aliases = value
-            elif isinstance(value, dict):
-                aliases_value = value.get("aliases")
-                if isinstance(aliases_value, list):
-                    raw_aliases = aliases_value
-                category_value = value.get("category")
-                if isinstance(category_value, str):
-                    category = category_value.strip().lower()
-            for alias_value in raw_aliases:
-                alias_text = str(alias_value).strip()
-                if not alias_text:
-                    continue
-                normalized.append(
-                    {
-                        "term_id": term_id.strip(),
-                        "alias": alias_text,
-                        "alias_type": "legacy",
-                        "case_rule": "insensitive",
-                        "category": category,
-                    }
-                )
-    return normalized
-
-
-def _log_static_fallback(context: RunContext | None, surface: str) -> None:
-    """Record that the static glossary dictionary was used as a last resort."""
+def _log_empty_run_terms(context: RunContext | None, surface: str) -> None:
+    """Record that no run-derived glossary terms exist (the linker degrades to no aliases)."""
     if context is None:
         return
     append_trace_event(
@@ -121,7 +63,7 @@ def _log_static_fallback(context: RunContext | None, surface: str) -> None:
         attempt=1,
         status="degraded",
         details={
-            "glossary": "static_dictionary_fallback",
+            "glossary": "empty_run_terms",
             "surface": surface,
             "reason": "run_terms_empty",
         },
@@ -133,32 +75,18 @@ def _load_alias_dictionary(context: RunContext | None = None) -> list[dict[str, 
         run_terms = load_run_terms(context)
         if run_terms:
             return run_terms_to_alias_dictionary(run_terms)
-    _log_static_fallback(context, "alias_dictionary")
-    return _load_static_alias_dictionary()
+    # No run-derived terms: degrade to an empty alias set plus a trace event —
+    # never to a static dictionary of pilot terms (Slice 11).
+    _log_empty_run_terms(context, "alias_dictionary")
+    return []
 
 
 def _load_term_metadata(context: RunContext) -> dict[str, dict[str, str]]:
     run_terms = load_run_terms(context)
     if run_terms:
         return run_terms_metadata_map(run_terms)
-    _log_static_fallback(context, "term_metadata")
-    static_rows = _load_static_alias_dictionary()
-    metadata: dict[str, dict[str, str]] = {}
-    for row in static_rows:
-        term_id = str(row.get("term_id", "")).strip()
-        alias = str(row.get("alias", "")).strip()
-        if not term_id or not alias:
-            continue
-        if row.get("alias_type", "") != "canonical" and term_id in metadata:
-            continue
-        wiki_slug = alias.replace(" ", "_")
-        metadata[term_id] = {
-            "term_id": term_id,
-            "label": alias,
-            "wiki_url": f"https://warcraft.wiki.gg/wiki/{wiki_slug}",
-            "category": str(row.get("category", "")).strip().lower(),
-        }
-    return metadata
+    _log_empty_run_terms(context, "term_metadata")
+    return {}
 
 
 def _preference_entity_type(entity_type: str) -> str:

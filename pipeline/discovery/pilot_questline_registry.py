@@ -1,4 +1,13 @@
-"""Pilot questline registry loader (runtime-safe paths for WPL promotion gates)."""
+"""Pilot questline registry loader — gold/QA scaffolding, NOT the general path.
+
+The curated registry exists only for pilot zones (WPL): it is a *validator/override*
+that pins the gold card set for promotion gates and supplies curated arc ids, titles,
+and start anchors. The general questline path (structural clustering -> significance
+scoring -> cap trim -> generic ``ql-<slug>`` ids) must produce structurally valid
+cards for any zone **without** a registry; ``tests/test_questline_general_path.py``
+guards that. Never add registry data for non-pilot zones to make output "right" —
+fix the general path instead.
+"""
 
 from __future__ import annotations
 

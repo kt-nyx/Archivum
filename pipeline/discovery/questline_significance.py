@@ -16,8 +16,6 @@ from pipeline.discovery.questline_arc_map import (
 )
 
 _ALGORITHM_VERSION = "v2-questline-structural"
-_WPL_PILOT_ZONE_ID = "zone-western-plaguelands"
-_WPL_PILOT_MAX_CARDS = 4
 
 _CRITERIA = (
     "narrative_centrality",
@@ -190,9 +188,7 @@ def _score_single_cluster(
 def _apply_cap_trim(
     scored: list[dict[str, Any]],
     *,
-    zone_id: str,
     max_cards: int,
-    pilot_cap: int | None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     included = [row for row in scored if str(row.get("final_decision", "")) == "include"]
     included.sort(
@@ -202,12 +198,7 @@ def _apply_cap_trim(
             str(row.get("subject_id", "")),
         )
     )
-    cap = max_cards
-    trim_reason = "zone_questline_cap_trimming"
-    if pilot_cap is not None:
-        cap = min(cap, pilot_cap)
-        trim_reason = "pilot_cap_trimming"
-    kept_ids = [str(row.get("subject_id", "")) for row in included[:cap]]
+    kept_ids = [str(row.get("subject_id", "")) for row in included[:max_cards]]
     kept_set = set(kept_ids)
     for row in scored:
         cluster_id = str(row.get("subject_id", ""))
@@ -216,7 +207,9 @@ def _apply_cap_trim(
         if cluster_id in kept_set:
             continue
         row["final_decision"] = "exclude"
-        row["reason_codes"] = list(row.get("reason_codes") or []) + [trim_reason]
+        row["reason_codes"] = list(row.get("reason_codes") or []) + [
+            "zone_questline_cap_trimming"
+        ]
     return scored, kept_ids
 
 
@@ -264,7 +257,6 @@ def score_zone_questline_clusters(
     seed_text: str = "",
     storyline_html: str = "",
     run_id: str = "",
-    pilot_max_cards: int | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Return (decision_artifacts incl. zone gate, zone_ranking_payload)."""
     records_by_node = {
@@ -351,15 +343,9 @@ def score_zone_questline_clusters(
                 row["final_decision"] = "exclude"
                 row["reason_codes"] = ["superseded_by_richer_arc_cluster", f"arc:{arc_id}"]
 
-    effective_pilot_cap = pilot_max_cards
-    if zone_id == _WPL_PILOT_ZONE_ID and effective_pilot_cap is None:
-        effective_pilot_cap = _WPL_PILOT_MAX_CARDS
-
     scored, included_ids = _apply_cap_trim(
         scored,
-        zone_id=zone_id,
         max_cards=ZONE_MAX_TOTAL_QUESTLINE_CARDS,
-        pilot_cap=effective_pilot_cap,
     )
 
     rankings: list[dict[str, Any]] = []

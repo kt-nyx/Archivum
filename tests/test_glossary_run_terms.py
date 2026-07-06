@@ -613,7 +613,7 @@ def test_glossary_pipeline_terms_link_validate_bundle(
         assert str(glossary_lookup[term_id].get("wiki_url", "")).startswith("http")
 
 
-def test_build_bundle_logs_static_dictionary_fallback_when_no_run_terms(tmp_path: Path) -> None:
+def test_build_bundle_degrades_to_metadata_less_refs_when_no_run_terms(tmp_path: Path) -> None:
     from pipeline.addon.build_bundle import build_addon_bundle
 
     context = ensure_run_context("run-test-glossary-static-log", artifacts_root=tmp_path / "runs")
@@ -626,14 +626,20 @@ def test_build_bundle_logs_static_dictionary_fallback_when_no_run_terms(tmp_path
                 "name": "Example Zone",
                 "location_cards": [],
                 "instance_links": [],
-                "glossary_refs": [{"term_id": "term-scourge"}],
+                "glossary_refs": [{"term_id": "term-example-order"}],
             },
             indent=2,
         ),
         encoding="utf-8",
     )
-    # No run_terms.jsonl is written, so metadata must fall back to the static dict.
-    build_addon_bundle(context)
+    # No run_terms.jsonl is written: refs ship metadata-less (never static pilot terms)
+    # and the degraded path lands on the run trace.
+    bundle_root = build_addon_bundle(context)
+    glossary_lookup = json.loads(
+        (bundle_root / "lookup" / "glossary_refs.json").read_text(encoding="utf-8")
+    )
+    assert set(glossary_lookup) == {"term-example-order"}
+    assert "wiki_url" not in glossary_lookup["term-example-order"]
     trace_path = context.trace_log_path()
     assert trace_path.exists()
     trace_lines = trace_path.read_text(encoding="utf-8").splitlines()
@@ -641,10 +647,11 @@ def test_build_bundle_logs_static_dictionary_fallback_when_no_run_terms(tmp_path
     fallback_events = [
         event
         for event in events
-        if event.get("details", {}).get("glossary") == "static_dictionary_fallback"
+        if event.get("details", {}).get("glossary") == "metadata_less_refs"
     ]
-    assert fallback_events, "expected a degraded trace event for the static-dictionary fallback"
+    assert fallback_events, "expected a degraded trace event for the metadata-less glossary path"
     assert fallback_events[0]["status"] == "degraded"
+    assert fallback_events[0]["details"]["reason"] == "run_terms_empty"
 
 
 def _term_ids(output_path: Path) -> set[str]:

@@ -1,6 +1,6 @@
 # Plan: Generalization Refactor — Registries, Guarantees & Editorial Selection
 
-**Status: IN PROGRESS — Slices 1–10 done (Slice 10: 2026-07-06). Implement remaining slices in the order given.**
+**Status: IN PROGRESS — Slices 1–11 done (Slice 11: 2026-07-06). Implement remaining slices in the order given.**
 
 ## Why this plan exists
 
@@ -916,9 +916,72 @@ with wiki categories first.
 **Expected pilot effect [LIVE]:** Uther's Tomb `significance_tag` correct; no other regressions
 expected on pilot (categories carry most cases).
 
-## Slice 11 — Pilot eviction from shared code, data, and prompts (H-4)
+## Slice 11 — Pilot eviction from shared code, data, and prompts (H-4) — ✅ DONE (2026-07-06)
 
 **Goal:** zero pilot facts outside `tests/fixtures/pilot/`; a guard that keeps it that way.
+
+**Implementation notes (as built, 2026-07-06):**
+
+- `questline_significance.py`: `_WPL_PILOT_ZONE_ID` / `_WPL_PILOT_MAX_CARDS`, the `if zone_id`
+  branch, and the whole `pilot_max_cards` / `pilot_cap` parameter plumbing deleted (production
+  never passed it; only a test did). Card count = clusters clearing the threshold (or the
+  registry oracle where one exists), capped by `ZONE_MAX_TOTAL_QUESTLINE_CARDS`. **Pilot
+  output unchanged** — the WPL registry still yields exactly gold's 4 cards, so no gold
+  reconciliation was needed; the cap was dead belt-and-suspenders.
+- Vocab: all three WPL tokens removed from `entry_quest_title_keywords` (the plan named two;
+  the file held both `'audience with the highlord'` variants) — only `"hero's call"` /
+  `"warchief's command"` remain. WPL gold anchors are unaffected: all four gold arcs are
+  registry-mapped and `questline_card_polish` overrides their `start_anchor` from the registry.
+  `questline_card_polish`'s entry-anchor telemetry now imports `ENTRY_QUEST_TITLE_KEYWORDS`
+  (one home) instead of its own drifted copy that still contained `"new era"`/`"audience"`.
+- Prompt exemplars replaced with an invented-lore family extending the tests' Archive Vault /
+  Archivist Maelor convention (zone *Vellmire*, force *the Hollow Court*, factions *Lantern
+  Wardens* / *Emberwake Pact*, town *Maelor's Crossing*, family *House Veldar*, event *Breaking
+  of Vellmire*, headings like *Rise of the Curse-Bound*): `compendium_voice.py`
+  (`AT_A_GLANCE_VOICE`, `CURRENTLY_VOICE`, `HISTORY_VOICE`, `INSTANCE_AT_A_GLANCE_VOICE`) and
+  `prose_synthesis.py` (at-a-glance force reference, currently faction-precision exemplar,
+  history heading exemplars, relabel-headings exemplars). Same shapes conveyed. Code *comments*
+  that cite pilot lore as documentation of gold/defects were deliberately left (they are not
+  prompts and not decision inputs; the vocab files' `_pilot_bias_note` fields set precedent).
+- Guard: new `tests/test_pilot_prompt_leak_guard.py` harvests forbidden names from
+  `tests/fixtures/pilot/` (zone/instance names, faction/location/key-character card names,
+  questline titles *and* start anchors, gold history headings; `Alliance`/`Horde` excluded as
+  game-wide) and renders **every** prompt site in the pipeline for an invented subject by
+  monkeypatching each module's LLM entry point with a recorder: all 12 `prose_synthesis`
+  synth calls, 4 `prose_selection` selectors, 3 `workers`, 2 `planner`, all 6 `legacy`
+  generators, `temporal` (claim-temporal + adjudication builders, active-expansion,
+  contract-distillation), `claims` extraction, `fact_check` adjudication, `resolve_entities`
+  coalesce, and the `compendium_voice` fragments. Every renderer must capture ≥1 prompt
+  (coverage can't silently rot); a leak names the renderer and the pilot string.
+  Negative-tested by reinjecting `"the Scourge's blight"` — the guard fails, restored it
+  passes. `_FORBIDDEN_PILOT_PROMPT_STRINGS` and its single-prompt test deleted.
+- `world_registry.py`: `_is_instance_parent` (40+ name markers incl. `'scholomance'`) deleted.
+  `build_world_registry` now ingests the article-category seeds (Dungeons/Raids/Instances →
+  `instance`) *before* the Subzones sweep, and `_parent_kind_from_entries` classifies a
+  subzone parent by looking up its already-ingested entry kinds — the in-build equivalent of
+  an `entry_kinds` lookup (the on-disk `entry_kinds()` would be self-referential during a
+  rebuild). Unknown parents default to `zone`. Committed `world_registry.json` is untouched;
+  the change takes effect on the next registry rebuild.
+- Glossary: static `dictionary/glossary_aliases.v1.json` (pure WPL/Scholomance terms) deleted.
+  Fallback paths removed from `build_bundle.py` **and** `linker/linker.py` (the plan named
+  build_bundle/run_terms, but the linker also consumed the file — required for "remove the
+  dictionary if nothing else consumes it"); `run_terms.py` docstring updated. Missing
+  run-terms now degrades to metadata-less refs (bundle: `glossary: metadata_less_refs`) or an
+  empty alias set (linker: `glossary: empty_run_terms`), each with a `degraded` trace event —
+  never to WPL terms.
+- `pilot_questline_registry.py` / `questline_arc_map.py` docstrings reclassify the registry as
+  gold/QA scaffolding (pilot-only validator/override; the generic `ql-<slug>` path is the
+  general path). The runtime copy stays in `pipeline/data/pilot/` because the validate-stage
+  promotion gates load it at runtime — it is pilot-only scaffolding by contract, not general
+  pipeline data. New `tests/test_questline_general_path.py` builds WPL questlines with all
+  three registry loaders disabled and asserts structurally valid cards (non-empty, capped,
+  score/borderline inclusion reasons, generic `ql-*` ids, non-empty titles/anchors, zero
+  registry-mapped/unmapped counts). Also new: linker/bundle degraded-path tests and a
+  `_parent_kind_from_entries` unit test; `test_linker_stage.py`'s first test now injects its
+  alias dictionary like its siblings instead of relying on the deleted static fallback.
+- Verified: `ruff check pipeline tests`, `mypy` on the twelve touched production modules, full
+  `pytest` (1096 passed, 5 skipped, 1 xfailed). Offline pilot output is unchanged (gold
+  questline/anchor tests green), matching the expected-effect note below.
 
 - `pipeline/discovery/questline_significance.py`: **delete** `_WPL_PILOT_ZONE_ID` /
   `_WPL_PILOT_MAX_CARDS` and the `if zone_id == …` branch. Card count = clusters clearing the

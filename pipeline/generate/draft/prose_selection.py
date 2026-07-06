@@ -129,12 +129,6 @@ _POOL_SELECTION_JSON_SCHEMA: dict[str, Any] = {
 _POOL_SELECTION_SNIPPET_MAX_CHARS = 200
 _POOL_SELECTION_CONTEXT_MAX_CHARS = 800
 
-_FORBIDDEN_PILOT_PROMPT_STRINGS = (
-    "Scholomance",
-    "Western Plaguelands",
-    "western plaguelands",
-)
-
 
 def _wiki_path_for_prompt(wiki_url: str) -> str:
     value = str(wiki_url).strip()

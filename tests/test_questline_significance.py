@@ -108,7 +108,6 @@ def test_cap_trim_limits_included_clusters() -> None:
         v3_rows=rows,
         quest_records=records,
         run_id="test-run",
-        pilot_max_cards=ZONE_MAX_TOTAL_QUESTLINE_CARDS,
     )
     assert len(ranking["included_cluster_ids"]) <= ZONE_MAX_TOTAL_QUESTLINE_CARDS
 

@@ -177,60 +177,17 @@ def _should_skip_registry_title(title: str) -> bool:
     return False
 
 
-def _is_instance_parent(name: str, subcategory_title: str) -> bool:
-    lowered = name.lower()
-    sub_lower = subcategory_title.lower()
-    instance_markers = (
-        "scholomance",
-        "stratholme",
-        "deadmines",
-        " citadel",
-        " raid",
-        " dungeon",
-        " depths",
-        " throne",
-        " palace",
-        " sanctum",
-        " nexus",
-        " vault",
-        " hold",
-        " lair",
-        " mine",
-        " foundry",
-        " terrace",
-        " crypts",
-        " karazhan",
-        " naxxramas",
-        " ulduar",
-        " molten core",
-        " blackwing",
-        " scholomance",
-        " stratholme",
-        " dire maul",
-        " maraudon",
-        " ragefire",
-        " deadmines",
-        " stockade",
-        " gnomeregan",
-        " scarlet ",
-        " abyssal",
-        " operation:",
-        " liberation of",
-        " assault on",
-        " siege of",
-        " battle of ",
-        " warfront",
-        " island expedition",
-        " proving ground",
-    )
-    if any(marker in lowered for marker in instance_markers):
-        return True
-    if "subzones" in sub_lower and any(
-        token in lowered
-        for token in ("sanctum", "citadel", "raid", "dungeon", "depths", "spire", "vault")
-    ):
-        return True
-    return False
+def _parent_kind_from_entries(entries: dict[str, RegistryEntry], parent_title: str) -> str:
+    """Classify a ``<X> subzones`` category parent from already-ingested entries.
+
+    Instance-ness flows from the wiki's own category memberships (Category:Dungeons /
+    Category:Raids / Category:Instances seeds, ingested before the Subzones sweep) —
+    never from name markers. A parent the wiki does not class as an instance is a zone.
+    """
+    existing = entries.get(_normalize_title(parent_title))
+    if existing is not None and "instance" in existing.kinds:
+        return "instance"
+    return "zone"
 
 
 def _load_category_cache(path: Path | None = None) -> dict[str, list[dict[str, Any]]]:
@@ -381,35 +338,9 @@ def build_world_registry(
     entries: dict[str, RegistryEntry] = {}
     cache = _load_category_cache(cache_path) if use_cache else {}
 
-    subcats = _fetch_category_members(
-        "Category:Subzones",
-        cmtype="subcat",
-        sleep_seconds=sleep_seconds,
-        cache=cache,
-        cache_path=cache_path,
-    )
-    for row in subcats:
-        subcat_title = str(row.get("title", "")).strip()
-        match = _SUBZONE_PARENT_RE.match(subcat_title)
-        if not match:
-            continue
-        parent = _canonical_zone_title(match.group(1))
-        kind = "instance" if _is_instance_parent(parent, subcat_title) else "zone"
-        _merge_entry(entries, title=parent, kind=kind, source_category="Category:Subzones")
-        for page_row in _fetch_category_members(
-            subcat_title,
-            cmtype="page",
-            sleep_seconds=sleep_seconds,
-            cache=cache,
-            cache_path=cache_path,
-        ):
-            if int(page_row.get("ns", -1)) != 0:
-                continue
-            page_title = str(page_row.get("title", "")).strip()
-            if not page_title:
-                continue
-            _merge_entry(entries, title=page_title, kind="place", source_category=subcat_title)
-
+    # Category seeds first: they carry the wiki's own kind signal (Category:Dungeons /
+    # Category:Raids / Category:Instances -> "instance"), which the Subzones sweep below
+    # consults to classify subzone parents — no hardcoded name markers.
     for category, kind in _ARTICLE_CATEGORY_SEEDS:
         _ingest_category_pages(
             entries,
@@ -433,6 +364,35 @@ def build_world_registry(
         cache=cache,
         cache_path=cache_path,
     )
+
+    subcats = _fetch_category_members(
+        "Category:Subzones",
+        cmtype="subcat",
+        sleep_seconds=sleep_seconds,
+        cache=cache,
+        cache_path=cache_path,
+    )
+    for row in subcats:
+        subcat_title = str(row.get("title", "")).strip()
+        match = _SUBZONE_PARENT_RE.match(subcat_title)
+        if not match:
+            continue
+        parent = _canonical_zone_title(match.group(1))
+        kind = _parent_kind_from_entries(entries, parent)
+        _merge_entry(entries, title=parent, kind=kind, source_category="Category:Subzones")
+        for page_row in _fetch_category_members(
+            subcat_title,
+            cmtype="page",
+            sleep_seconds=sleep_seconds,
+            cache=cache,
+            cache_path=cache_path,
+        ):
+            if int(page_row.get("ns", -1)) != 0:
+                continue
+            page_title = str(page_row.get("title", "")).strip()
+            if not page_title:
+                continue
+            _merge_entry(entries, title=page_title, kind="place", source_category=subcat_title)
 
     sorted_entries = [entries[key].to_dict() for key in sorted(entries)]
     return {

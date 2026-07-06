@@ -7,7 +7,12 @@ from pipeline.discovery.entity_typing import (
     should_reject_location_title,
     should_skip_registry_traversal,
 )
-from pipeline.discovery.world_registry import load_world_registry, registry_index
+from pipeline.discovery.world_registry import (
+    RegistryEntry,
+    _parent_kind_from_entries,
+    load_world_registry,
+    registry_index,
+)
 
 
 @pytest.fixture(scope="module")
@@ -122,3 +127,29 @@ def test_location_title_rejects_dating_convention_pages() -> None:
     reject, reasons = should_reject_location_title("Third War (28 ADP)")
     assert reject
     assert "dating_convention" in reasons
+
+
+def _entry(title: str, kinds: tuple[str, ...]) -> RegistryEntry:
+    normalized = title.lower()
+    return RegistryEntry(
+        title=title,
+        normalized_title=normalized,
+        wiki_path=f"/wiki/{title.replace(' ', '_')}",
+        kinds=kinds,
+        source_categories=("Category:Test",),
+    )
+
+
+def test_parent_kind_from_entries_uses_category_kinds_not_name_markers() -> None:
+    """Slice 11: subzone parents classify from wiki category seeds, never name tokens."""
+    entries = {
+        "example depths": _entry("Example Depths", ("instance",)),
+        "example vale": _entry("Example Vale", ("zone",)),
+    }
+    # An instance-kind entry classifies as instance regardless of its name.
+    assert _parent_kind_from_entries(entries, "Example Depths") == "instance"
+    # A zone-kind entry stays a zone even when its name carries an old marker token
+    # ("Vale" carried no marker, "Depths" did — the lookup ignores both).
+    assert _parent_kind_from_entries(entries, "Example Vale") == "zone"
+    # Unknown parents (not in any seeded category) default to zone.
+    assert _parent_kind_from_entries(entries, "Uncatalogued Hollow") == "zone"

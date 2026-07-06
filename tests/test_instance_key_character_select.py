@@ -122,15 +122,8 @@ def test_format_prompt_snippet_cap() -> None:
     assert "x" * 200 in prompt
 
 
-def test_prompt_has_no_pilot_zone_strings() -> None:
-    system = workers._pool_selection_system_prompt(instance_name="Archive Vault", max_count=5)
-    user = workers._format_pool_selection_user_prompt(
-        [_candidate("Archivist Maelor", snippets=["Guards the stacks."])],
-        "A hidden vault beneath the mountains.",
-    )
-    combined = system + user
-    for forbidden in workers._FORBIDDEN_PILOT_PROMPT_STRINGS:
-        assert forbidden not in combined
+# The single-prompt pilot-string check moved to tests/test_pilot_prompt_leak_guard.py,
+# which renders every prompt builder against names harvested from the gold fixtures.
 
 
 def test_llm_path_uses_pool_selection_substep(monkeypatch) -> None:

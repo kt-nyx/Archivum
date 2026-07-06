@@ -485,7 +485,7 @@ def synthesize_at_a_glance(
                 "language and few adjectives, not a report of current events. Do NOT name factions, "
                 "leaders, or characters, do NOT say who holds or contests the zone, and do NOT list "
                 "towns, keeps, or landmarks; that detail belongs in other fields. You may reference "
-                "the force whose legacy haunts the land (e.g. 'the Scourge') only as atmosphere, "
+                "the force whose legacy haunts the land (e.g. 'the Hollow Court') only as atmosphere, "
                 "never as an actor acting now. No patch/reputation meta. No extrapolation."
             )
             + reinforce,
@@ -557,8 +557,8 @@ def synthesize_currently(
             task_lines=(
                 f"Write a 'currently' zone summary using ONLY evidence snippets. "
                 f"Maximum {max_words} words. Describe active conflict or state. "
-                "Name the precise faction or actor the evidence specifies (e.g. 'Forsaken', not the "
-                "generic 'Horde'; 'Scarlet Crusade', not 'humans'). "
+                "Name the precise faction or actor the evidence specifies (e.g. 'the Emberwake "
+                "Pact', not the generic 'Horde'; 'the Hollow Court', not 'cultists'). "
                 "Do not write quest walkthrough steps, reputation/achievement meta, adjacent-zone geography hubs, "
                 "or out-of-universe player instructions."
             )
@@ -610,8 +610,8 @@ def synthesize_history_sections(
         "Produce chronological historical arc sections from evidence only. "
         f"Up to {max_sections} sections. "
         "Each heading must be a short (2–5 word) thematic title that names the event or "
-        "turning point described in that section's body (e.g. 'Scourging of Lordaeron', "
-        "'Coming of the Argent Dawn', 'Battle for Andorhal'). Never use bare expansion or "
+        "turning point described in that section's body (e.g. 'Breaking of Vellmire', "
+        "'Coming of the Lantern Wardens', \"Battle for Maelor's Crossing\"). Never use bare expansion or "
         "era labels as headings (no 'History', 'World of Warcraft', 'Cataclysm', 'Legion', "
         "'Exploring Azeroth'). "
         "Do not list locations. Cover only background that happened before the player enters "
@@ -803,8 +803,8 @@ def relabel_history_headings(
             task_lines=(
                 "You are titling history sections. For each numbered body, write a short (2–5 word) "
                 "thematic title that names the central event or turning point it narrates, in "
-                "Title Case (e.g. 'Before the Scourge', 'Coming of the Argent Dawn', "
-                "'Rise of the Dead', 'Battle for Andorhal'). Ground the title strictly in that "
+                "Title Case (e.g. 'Before the Hollow Court', 'Coming of the Lantern Wardens', "
+                "'Rise of the Curse-Bound', \"Battle for Maelor's Crossing\"). Ground the title strictly in that "
                 "body's content. Never return a bare expansion or era label "
                 "('History', 'World of Warcraft', 'Cataclysm', 'Legion', 'Exploring Azeroth'). "
                 "Return one heading per input index."
