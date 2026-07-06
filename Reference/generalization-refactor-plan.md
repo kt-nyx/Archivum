@@ -1,6 +1,6 @@
 # Plan: Generalization Refactor — Registries, Guarantees & Editorial Selection
 
-**Status: IN PROGRESS — Slices 1–9 done (Slice 9: 2026-07-06). Implement remaining slices in the order given.**
+**Status: IN PROGRESS — Slices 1–10 done (Slice 10: 2026-07-06). Implement remaining slices in the order given.**
 
 ## Why this plan exists
 
@@ -836,10 +836,62 @@ means excluded, everywhere.
 **Expected pilot effect [LIVE]:** the Hearthglen card loses the unvetted BfA transit sentence;
 card pools shrink to vetted evidence (watch for newly-thin pools — that is signal, not noise).
 
-## Slice 10 — Location & boss-role classification via structured outputs (H-3)
+## Slice 10 — Location & boss-role classification via structured outputs (H-3) — ✅ DONE (2026-07-06)
 
 **Goal:** delete the first-match keyword ladders; classification enums ride existing LLM calls,
 with wiki categories first.
+
+**Implementation notes (as built, 2026-07-06):**
+
+- **Location typing** is now `location_scoring.location_type_from_signals(categories, *, infobox,
+  llm_type)` — one home, structured signals only: `_category_type` (the kept `_CATEGORY_TYPE_RULES`)
+  → `_infobox_location_type` (reads an infobox `type`/`location_type` field, inert until the Slice 12
+  re-crawl populates `infobox`) → the LLM's own enum → `major_location`. **Deleted:** `_TYPE_NAME_TOKENS`
+  (name-token ladder), `_RUINS_TEXT_RE`/`_TOWN_TEXT_RE` (evidence-text overrides), `_CURRENT_SETTLEMENT_TYPES`.
+  The old signature `(name, evidence_text, categories)` is gone; the routing *classification* enum stays a
+  discovery signal, never the card type.
+- **Location significance** is `location_significance_from_signals(*, llm_tag)` — LLM enum → `major_location`.
+  No MediaWiki category or infobox field maps onto the significance vocabulary (they describe *what* a place
+  is, not *why it matters*), so — unlike type — significance has no structural source; it is purely the LLM's
+  classification, else the default. **Deleted:** `location_significance_tag` (the keyword ladder) and its
+  helper `_category_text`. `collect_location_candidates` no longer sets `candidate.significance_tag`; the
+  selection-time default stands (the `_is_contained_location` quest-hub/instance-anchor exemption that relied
+  on the keyword ladder is retired with it — an edge case, no pilot regression expected), and the tag is
+  finalized at card-build time.
+- **`synthesize_location_summary`** now returns `(summary, used, location_type, significance_tag)`; the two
+  enums ride the existing LLM call as required, schema-`enum`-constrained (LocationType values /
+  `SIGNIFICANCE_TAGS`) with a prompt line "classify, from the evidence, this place's location_type … and its
+  significance_tag …". Offline / no-LLM returns both enums empty — deterministic card typing never depends on
+  a keyword guess. `pages/cards.py` `_finalize_location_card` threads the enums through the offline path and
+  the live `synthesize_with_validation` payload; `_build_location_card_body` applies the precedence
+  (categories → infobox → LLM → default). `_location_evidence_text` deleted (no keyword detection left);
+  `LocationCandidate` gained an inert `infobox` field (populated from the candidate-map row, empty pre-Slice-12).
+- **Boss/character role**: `instance_bosses.classify_character_role` now always returns
+  `("uncertain", "no_signal")` — role (enemy/ally/neutral) is a semantic LLM judgment, so the emit path's
+  existing `if role == "uncertain": classify_key_character_role_llm(...)` makes the LLM primary for **every**
+  emitted card, and offline the role is honestly `uncertain`. **Deleted:** `_ENEMY_DESCRIPTORS` /
+  `_ALLY_DESCRIPTORS` / `_NEUTRAL_DESCRIPTORS`, the `_ENEMY_LEAN_TOKENS` / `_NPC_LEAN_TOKENS` lean-token
+  scoring, and `_candidate_profile_text`. Structural signals (boss-section membership, Adventure Guide,
+  roster links) are untouched and now drive **presence/eligibility only** (`is_high_confidence_boss_section`,
+  `must_include_key_character_names`, `_significance_score`/`_section_weight` ranking). `draft_writer`'s
+  sidecar dropped its now-vacuous `classify_character_role` fallback (and the unused `instance_name` param).
+- **Offline / [LIVE] split:** offline, the retired ladders mean location cards get category-or-default
+  types and `major_location` significance, and bosses get `uncertain` roles — behaviour-neutral against the
+  suite (no offline test compares generated type/significance/role to the WPL gold; gold is the live-regen
+  target per memory `draft-stage-requires-openai`). Two known offline divergences are now [LIVE]-only: Caer
+  Darrow's gold `ruins` (its category is a keep/fortress, so offline yields `fortress`; the LLM reads the
+  ruined description) and every non-default significance tag (Uther's Tomb `sacred_landmark`, Andorhal
+  `battlefield`, Hearthglen `faction_stronghold`, Caer Darrow `instance_anchor`) — all pending the next
+  OpenAI-backed pilot run.
+- Tests: `test_location_type_significance.py` rewritten to the structured-signal precedence (category
+  authoritative + first-match, category-beats-LLM, infobox-when-no-category, LLM-when-no-category/infobox,
+  invalid-enum-ignored, default) + a card-body Uther's-Tomb test (`sacred_landmark`, never `battlefield`)
+  and a category-wins-over-LLM card test; keyword-ladder tests deleted. `test_wiki_first_workers.py` updated
+  for the 4-tuple + a mocked-LLM test asserting the enums flow out. `test_instance_bosses.py` collapsed the
+  three descriptor role tests into one "always uncertain deterministically". `test_instance_page_draft.py`
+  faculty-roster assertion flipped from all-`enemy` to all-`uncertain` (offline). Verified: `ruff check
+  pipeline tests`, `mypy` on the five touched production modules, full `pytest` (1092 passed, 5 skipped,
+  1 xfailed).
 
 - `pipeline/generate/draft/prose_synthesis.py` `synthesize_location_summary`: add `location_type`
   and `significance_tag` (existing enums) to the response JSON schema and prompt ("classify from

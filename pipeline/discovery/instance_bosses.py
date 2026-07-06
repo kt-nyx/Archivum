@@ -293,68 +293,6 @@ def _profile_pool_for_boss(
     return pool
 
 
-# Section roles whose membership implies hostility (boss/encounter rosters), versus
-# roles that merely list characters and need descriptor evidence to classify.
-# "force"/"faction" rosters are intentionally excluded: pages like Culling of
-# Stratholme list Alliance allies and Scourge enemies under the same heading, so
-# membership alone is not a hostility signal - those defer to descriptors/LLM.
-_ENEMY_LEAN_TOKENS = (
-    "boss",
-    "encounter",
-    "denizen",
-    "inhabit",
-    "monster",
-    "faculty",
-    "dungeon_journal",
-    "adventure_guide",
-    "walkthrough",
-    "layout",
-)
-_NPC_LEAN_TOKENS = ("npc", "notable", "character", "ally", "allies", "friendly")
-
-# Per-character hostility markers only. Broad scourge/corruption words are excluded
-# because they appear in shared instance context and would tag every candidate.
-_ENEMY_DESCRIPTORS = (
-    "final boss",
-    "boss of",
-    "is a boss",
-    "is the boss",
-    "must be defeated",
-    "must be slain",
-    "servant of",
-    "minion of",
-    "commander of the scourge",
-)
-_ALLY_DESCRIPTORS = (
-    "aids the",
-    "assists the",
-    "fights alongside",
-    "ally of",
-    "allied with",
-    "helps the",
-    "must be escorted",
-    "must be rescued",
-    "is rescued",
-    "rescued by",
-    "to rescue",
-    "freed by",
-    "joins the",
-)
-_NEUTRAL_DESCRIPTORS = (
-    "merchant",
-    "vendor",
-    "innkeeper",
-    "quest giver",
-    "questgiver",
-    "trainer",
-    "flight master",
-    "banker",
-    "auctioneer",
-    "repair",
-    "reagent",
-)
-
-
 def _section_weight(section_role: str) -> int:
     role = _normalize_role(section_role)
     if any(token in role for token in ("boss", "encounter", "dungeon_journal", "adventure_guide")):
@@ -379,43 +317,21 @@ def _significance_score(candidate: BossCandidate) -> float:
     return weight * 100 + min(len(pool), 10) * 5 + min(mentions, 20)
 
 
-def _candidate_profile_text(candidate: BossCandidate) -> str:
-    return " ".join(
-        _plain_snippet(str(item.get("snippet", ""))) for item in candidate.profile_pool or []
-    ).lower()
-
-
 def classify_character_role(
     candidate: BossCandidate, *, instance_name: str = ""
 ) -> tuple[str, str]:
-    """Deterministically classify a character's role from section + descriptor signals.
+    """Return the deterministic role verdict, which is always ``("uncertain", "no_signal")``.
 
-    Returns ``(role, reason_code)``. ``"uncertain"`` is returned when there is no
-    signal or signals conflict (a tie), deferring those cases to the LLM tiebreaker.
+    Slice 10 (H-3): character role — enemy / ally / neutral — is a semantic judgment, not one a
+    keyword ladder can make reliably (a boss-section roster mixes Scourge enemies with escorted
+    allies; "war" prose tags a memorial as a battlefield). The descriptor/lean-token scoring was
+    retired here; structural signals (boss-section membership, Adventure Guide, roster links) now
+    drive only *presence/eligibility* (see ``is_high_confidence_boss_section`` /
+    ``must_include_key_character_names``). Role is deferred to the LLM classifier for every emitted
+    card; offline the role stays honestly ``uncertain`` rather than keyword-guessed. ``candidate``
+    and ``instance_name`` are retained for call-site symmetry.
     """
-    section = _normalize_role(candidate.source_section_role)
-    text = _candidate_profile_text(candidate)
-
-    enemy = sum(1 for kw in _ENEMY_DESCRIPTORS if kw in text)
-    ally = sum(1 for kw in _ALLY_DESCRIPTORS if kw in text)
-    neutral = sum(1 for kw in _NEUTRAL_DESCRIPTORS if kw in text)
-
-    # With no per-character descriptor evidence, only an unambiguous hostile section
-    # (boss/encounter rosters) is enough to classify; everything else stays uncertain
-    # so the LLM tiebreaker can resolve it without us guessing wrong.
-    if not (enemy or ally or neutral):
-        if any(token in section for token in _ENEMY_LEAN_TOKENS):
-            return "enemy", "enemy_section"
-        return "uncertain", "no_signal"
-
-    # Descriptor evidence present: decide among the three on that evidence alone, so an
-    # explicit ally/neutral marker is never overridden by mere roster membership.
-    scores = {"enemy": enemy, "ally": ally, "neutral": neutral}
-    ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
-    if ranked[0][1] == ranked[1][1]:
-        return "uncertain", "conflicting_signal"
-    best_role = ranked[0][0]
-    return best_role, f"{best_role}_descriptor"
+    return "uncertain", "no_signal"
 
 
 def _rank_candidates(candidates: list[BossCandidate], *, instance_name: str) -> list[BossCandidate]:

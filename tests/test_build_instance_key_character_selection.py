@@ -218,7 +218,6 @@ def test_sidecar_rows_include_merge_rank() -> None:
     )
     row = _build_key_character_decision_row(
         instance_id="instance-test",
-        instance_name="Test Keep",
         selection=selection,
         emitted_cards=[{"name": "Floor Boss"}],
     )

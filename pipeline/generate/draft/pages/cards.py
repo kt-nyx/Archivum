@@ -42,6 +42,7 @@ from pipeline.generate.draft.location_scoring import (
     _decision_reason_codes,
     collect_location_candidates,
     extract_subregion_tokens,
+    location_significance_from_signals,
     location_type_from_signals,
 )
 from pipeline.generate.draft.location_scoring import (
@@ -948,21 +949,24 @@ def _finalize_location_card(
         return reasons
 
     def _built(
-        summary: str, pool: list[dict[str, Any]]
+        summary: str,
+        *,
+        llm_location_type: str = "",
+        llm_significance_tag: str = "",
     ) -> dict[str, Any] | None:
         return _build_location_card_body(
             candidate,
             summary=summary,
-            pool=pool,
-            zone_name=zone_name,
             reason_codes=reason_codes,
+            llm_location_type=llm_location_type,
+            llm_significance_tag=llm_significance_tag,
         )
 
     live = llm_synthesis_active()
     for pool_index, pool in enumerate(pools_to_try):
         pool_snippets = passthrough_corpus(pool)
         if not live:
-            summary, used = synthesize_location_summary(
+            summary, used, loc_type, sig_tag = synthesize_location_summary(
                 pool,
                 location_name=candidate.name,
                 zone_name=zone_name,
@@ -970,7 +974,11 @@ def _finalize_location_card(
             )
             summary = ensure_location_sentence_terminator(summary)
             if summary and not _reasons(summary, pool_snippets):
-                return _built(summary, pool), used, pool
+                return (
+                    _built(summary, llm_location_type=loc_type, llm_significance_tag=sig_tag),
+                    used,
+                    pool,
+                )
             summary, used = fallback_location_summary(
                 pool,
                 zone_name=zone_name,
@@ -978,18 +986,23 @@ def _finalize_location_card(
             )
             summary = ensure_location_sentence_terminator(summary)
             if summary and not _reasons(summary, pool_snippets):
-                return _built(summary, pool), used, pool
+                return _built(summary), used, pool
             continue
 
         def _call(reinforce: str, pool: list[dict[str, Any]] = pool) -> dict[str, Any]:
-            summary, used = synthesize_location_summary(
+            summary, used, loc_type, sig_tag = synthesize_location_summary(
                 pool,
                 location_name=candidate.name,
                 zone_name=zone_name,
                 max_words=50,
                 reinforce=reinforce,
             )
-            return {"text": ensure_location_sentence_terminator(summary), "used": used}
+            return {
+                "text": ensure_location_sentence_terminator(summary),
+                "used": used,
+                "location_type": loc_type,
+                "significance_tag": sig_tag,
+            }
 
         def _validate(
             payload: dict[str, Any], snippets: list[str] | None = pool_snippets
@@ -1006,32 +1019,33 @@ def _finalize_location_card(
         )
         if result.ok:
             return (
-                _built(str(result.payload.get("text", "")), pool),
+                _built(
+                    str(result.payload.get("text", "")),
+                    llm_location_type=str(result.payload.get("location_type", "")),
+                    llm_significance_tag=str(result.payload.get("significance_tag", "")),
+                ),
                 list(result.payload.get("used", [])),
                 pool,
             )
     return None, [], []
 
 
-def _location_evidence_text(pool: list[dict[str, Any]]) -> str:
-    """Concatenate the pool's snippets for deterministic type/significance signal detection."""
-    return " ".join(str(item.get("snippet", "")) for item in pool if item.get("snippet"))
-
-
 def _build_location_card_body(
     candidate: LocationCandidate,
     *,
     summary: str,
-    pool: list[dict[str, Any]],
-    zone_name: str,
     reason_codes: list[str],
+    llm_location_type: str = "",
+    llm_significance_tag: str = "",
 ) -> dict[str, Any]:
-    # Real place type from the location's own categories + name + evidence (not the routing enum).
-    evidence_text = _location_evidence_text(pool)
+    # Structured-signal precedence (Slice 10): wiki categories → infobox → the LLM's own
+    # classification riding the summary call → default. No name/evidence keyword ladders.
     location_type = location_type_from_signals(
-        candidate.name, evidence_text, candidate.categories
+        candidate.categories,
+        infobox=candidate.infobox,
+        llm_type=llm_location_type,
     )
-    significance_tag = candidate.significance_tag or "major_location"
+    significance_tag = location_significance_from_signals(llm_tag=llm_significance_tag)
     return {
         "id": candidate.location_id,
         "name": candidate.name,

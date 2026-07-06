@@ -3,80 +3,97 @@ from __future__ import annotations
 import pipeline.generate.draft.prose_synthesis as synth
 from pipeline.generate.draft.location_scoring import (
     LocationCandidate,
+    location_significance_from_signals,
     location_type_from_signals,
     score_location_candidate,
 )
+from pipeline.generate.draft.pages.cards import _build_location_card_body
 from pipeline.generate.draft.prose_synthesis import synthesize_location_significance
 
-# --- location_type_from_signals -------------------------------------------------------------
+# --- location_type_from_signals: structured-signal precedence (Slice 10) ---------------------
+# Precedence is wiki categories -> infobox type -> LLM enum -> major_location default. No
+# name/evidence-text keyword ladders remain.
 
 
-def test_type_tomb_is_landmark_even_when_ruined() -> None:
-    assert location_type_from_signals("Uther's Tomb", "the ruined tomb of the Lightbringer") == "landmark"
+def test_type_category_is_authoritative_and_first_match_wins() -> None:
+    # Andorhal is co-tagged Cities + Destroyed settlements; the destruction category wins.
+    assert location_type_from_signals(["Cities", "Destroyed settlements"]) == "ruins"
+    assert location_type_from_signals(["Towns"]) == "town"
+    assert location_type_from_signals(["Villages"]) == "town"
 
 
-def test_type_ruined_keep_resolves_to_ruins() -> None:
-    # "Caer" is not an English keep token, so the ruined-evidence signal wins.
-    assert location_type_from_signals("Caer Darrow", "the ruined Barov keep on Darrowmere Lake") == "ruins"
+def test_type_category_wins_over_llm_enum() -> None:
+    # An authoritative category is never overridden by the model's own classification.
+    assert location_type_from_signals(["Towns"], llm_type="ruins") == "town"
 
 
-def test_type_destroyed_town_resolves_to_ruins() -> None:
-    assert location_type_from_signals("Andorhal", "Andorhal was destroyed and now lies in ruins") == "ruins"
+def test_type_infobox_used_when_no_category() -> None:
+    assert location_type_from_signals([], infobox={"type": "fortress"}) == "fortress"
+    # A category still beats the infobox.
+    assert location_type_from_signals(["Towns"], infobox={"type": "fortress"}) == "town"
 
 
-def test_type_town_from_seat_of_evidence() -> None:
-    assert location_type_from_signals("Hearthglen", "the seat of the regional administration") == "town"
+def test_type_llm_enum_used_when_no_category_or_infobox() -> None:
+    assert location_type_from_signals([], llm_type="landmark") == "landmark"
 
 
-def test_type_natural_feature_from_name() -> None:
-    assert location_type_from_signals("Darrowmere River", "a river running south") == "natural_feature"
-
-
-def test_type_outpost_from_name() -> None:
-    assert location_type_from_signals("Felstone Field", "a quiet farmstead") == "outpost"
+def test_type_invalid_llm_enum_falls_back_to_default() -> None:
+    assert location_type_from_signals([], llm_type="not_a_type") == "major_location"
 
 
 def test_type_falls_back_to_major_location() -> None:
-    assert location_type_from_signals("Mysterious Place", "an indistinct area") == "major_location"
+    assert location_type_from_signals([]) == "major_location"
 
 
-# --- category-first typing (authoritative wiki signal) --------------------------------------
+# --- location_significance_from_signals: no category rule, LLM enum -> default ---------------
 
 
-def test_category_destroyed_settlement_is_ruins_over_cities() -> None:
-    # Andorhal is co-tagged Cities + Destroyed settlements; the destruction category wins.
-    assert (
-        location_type_from_signals(
-            "Andorhal", "the granary of Lordaeron", ["Cities", "Destroyed settlements"]
-        )
-        == "ruins"
+def test_significance_llm_enum_used_and_invalid_ignored() -> None:
+    assert location_significance_from_signals(llm_tag="sacred_landmark") == "sacred_landmark"
+    assert location_significance_from_signals(llm_tag="not_a_tag") == "major_location"
+    assert location_significance_from_signals() == "major_location"
+
+
+# --- card body: LLM enum rides through, categories still win (Slice 10) ----------------------
+
+
+def _card_candidate(name: str, categories: list[str]) -> LocationCandidate:
+    return LocationCandidate(
+        location_id=f"location-{name.lower().replace(' ', '-')}",
+        name=name,
+        wiki_url=f"https://warcraft.wiki.gg/wiki/{name.replace(' ', '_')}",
+        categories=categories,
     )
 
 
-def test_category_town_beats_contextual_ruin_words() -> None:
-    # Hearthglen is a current town; ruin words in the surrounding plague prose must not retype it.
-    assert (
-        location_type_from_signals(
-            "Hearthglen",
-            "the plagued ruined countryside around the reclaimed base",
-            ["Western Plaguelands subzones", "Towns"],
-        )
-        == "town"
+def test_card_uthers_tomb_is_sacred_landmark_never_battlefield() -> None:
+    # Tomb evidence that mentions a war: the retired keyword ladder read "war" as a battlefield.
+    # With the LLM enum riding the summary call, the model's sacred_landmark verdict is published.
+    candidate = _card_candidate("Uther's Tomb", categories=[])
+    card = _build_location_card_body(
+        candidate,
+        summary="Uther's Tomb honors the fallen Lightbringer near the war-scarred fields.",
+        reason_codes=["include"],
+        llm_location_type="landmark",
+        llm_significance_tag="sacred_landmark",
     )
+    assert card is not None
+    assert card["significance_tag"] == "sacred_landmark"
+    assert card["significance_tag"] != "battlefield"
+    assert card["location_type"] == "landmark"
 
 
-def test_ruined_evidence_overrides_non_settlement_category() -> None:
-    # Caer Darrow's category is "Keeps" but the keep is described as ruined -> ruins.
-    assert (
-        location_type_from_signals(
-            "Caer Darrow", "the ruined Barov keep on the lake", ["Keeps", "Islands"]
-        )
-        == "ruins"
+def test_card_category_rule_still_wins_over_llm() -> None:
+    candidate = _card_candidate("Andorhal", categories=["Cities", "Destroyed settlements"])
+    card = _build_location_card_body(
+        candidate,
+        summary="Andorhal lies in ruins after the plague consumed the granary of Lordaeron.",
+        reason_codes=["include"],
+        llm_location_type="city",
+        llm_significance_tag="settlement_hub",
     )
-
-
-def test_category_village_is_town() -> None:
-    assert location_type_from_signals("Cinderhome", "", ["Villages"]) == "town"
+    assert card is not None
+    assert card["location_type"] == "ruins"  # category beats the LLM's "city"
 
 
 # --- significance synthesis (never the routing enum) ----------------------------------------

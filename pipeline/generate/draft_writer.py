@@ -12,7 +12,6 @@ from pipeline.ai.openai_client import chat_json_completion
 from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext
 from pipeline.common.text_normalize import normalize_display_payload
-from pipeline.discovery.instance_bosses import classify_character_role
 from pipeline.discovery.questline_card_polish import load_questline_card_metadata
 from pipeline.discovery.questline_significance import load_included_cluster_ids_by_zone
 from pipeline.generate.draft import (
@@ -52,7 +51,6 @@ def _decision_name_key(value: str) -> str:
 def _build_key_character_decision_row(
     *,
     instance_id: str,
-    instance_name: str,
     selection: InstanceKeyCharacterSelection,
     emitted_cards: list,
 ) -> dict[str, Any]:
@@ -72,9 +70,9 @@ def _build_key_character_decision_row(
     candidates = []
     for candidate in selection.pool:
         emitted = _decision_name_key(candidate.name) in emitted_keys
+        # Role is an LLM judgment (Slice 10): the deterministic classifier is honestly
+        # ``uncertain``, so the sidecar records the pool candidate's role as set during emit.
         role = candidate.role or "uncertain"
-        if role == "uncertain":
-            role, _reason = classify_character_role(candidate, instance_name=instance_name)
         row = {
             "name": candidate.name,
             "role": role,
@@ -412,7 +410,6 @@ def run_draft_writer(
                 if selection_sink:
                     instance_key_character_decisions = _build_key_character_decision_row(
                         instance_id=entity_id,
-                        instance_name=str(enriched_fact_pack.get("name", entity_id)),
                         selection=selection_sink[0],
                         emitted_cards=draft.get("key_characters", []),
                     )

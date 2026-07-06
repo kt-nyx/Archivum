@@ -312,7 +312,7 @@ def test_post_active_location_paragraph_never_reaches_the_summary_prompt(monkeyp
 
     def _capture_summary(pool, **kwargs):
         captured_pools.append(list(pool))
-        return "", []
+        return "", [], "", ""
 
     monkeypatch.setattr(cards, "synthesize_location_summary", _capture_summary)
     monkeypatch.setattr(cards, "fallback_location_summary", lambda pool, **kwargs: ("", []))

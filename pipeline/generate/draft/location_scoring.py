@@ -33,43 +33,6 @@ def classification_to_location_type(classification: str) -> str:
     return LocationType.MAJOR_LOCATION.value
 
 
-# Name-token → LocationType, checked in priority order (most specific first). The discovery
-# *classification* enum is a routing signal, not a real place type, so the published card type is
-# derived from the place's own name + evidence instead (WS-3). Matched as whole words.
-_TYPE_NAME_TOKENS: tuple[tuple[str, frozenset[str]], ...] = (
-    (LocationType.LANDMARK.value, frozenset(
-        {"tomb", "grave", "crypt", "barrow", "monument", "shrine", "statue", "obelisk",
-         "memorial", "tower"}
-    )),
-    (LocationType.FORTRESS.value, frozenset(
-        {"keep", "fortress", "citadel", "bastion", "stronghold", "spire", "hold"}
-    )),
-    (LocationType.CITY.value, frozenset({"city", "capital"})),
-    (LocationType.TOWN.value, frozenset({"town", "village", "hamlet", "burg", "borough"})),
-    (LocationType.OUTPOST.value, frozenset(
-        {"outpost", "camp", "post", "garrison", "encampment", "farm", "field", "fields",
-         "mill", "orchard", "stead", "village area"}
-    )),
-    (LocationType.NATURAL_FEATURE.value, frozenset(
-        {"river", "lake", "hill", "hills", "woods", "wood", "forest", "cave", "glade", "vale",
-         "valley", "peak", "isle", "island", "dell", "grove", "pass", "marsh", "swamp",
-         "mountain", "ridge", "haunt", "cove", "shore", "lakeshore"}
-    )),
-)
-
-# Evidence-text markers that override a generic name (a "keep" described as ruined is ruins).
-_RUINS_TEXT_RE = re.compile(
-    r"\b(ruin|ruins|ruined|razed|destroyed|abandoned|rubble|crumbling|derelict|burned[- ]out|"
-    r"shattered remains|in ruins)\b",
-    re.IGNORECASE,
-)
-_TOWN_TEXT_RE = re.compile(
-    r"\b(seat of|town of|village of|settlement|populated|inhabitants|townsfolk|"
-    r"regional administration|the capital of)\b",
-    re.IGNORECASE,
-)
-
-
 def _name_has_token(name: str, tokens: frozenset[str]) -> bool:
     words = set(re.findall(r"[a-z]+", name.lower()))
     return bool(words & tokens)
@@ -89,9 +52,6 @@ _CATEGORY_TYPE_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
         "islands", "lakes", "rivers", "mountains", "hills", "forests", "caves", "valley",
     )),
 )
-# Category buckets that name a *current settlement*; trusted over contextual ruin words in the
-# surrounding prose (a town described next to plagued ruins is still a town).
-_CURRENT_SETTLEMENT_TYPES = frozenset({LocationType.CITY.value, LocationType.TOWN.value})
 SIGNIFICANCE_TAGS = frozenset(
     {
         "active_quest_hub",
@@ -106,6 +66,10 @@ SIGNIFICANCE_TAGS = frozenset(
         "major_location",
     }
 )
+_VALID_LOCATION_TYPES = frozenset(member.value for member in LocationType)
+# Infobox keys carrying a place-type hint. Empty until the Slice 12 re-crawl populates
+# ``infobox`` on the snapshot; the type precedence below simply skips a missing field.
+_INFOBOX_TYPE_KEYS = ("type", "location_type")
 
 
 def _category_type(categories: list[str] | None) -> str:
@@ -118,36 +82,57 @@ def _category_type(categories: list[str] | None) -> str:
     return ""
 
 
-def location_type_from_signals(
-    name: str, evidence_text: str = "", categories: list[str] | None = None
-) -> str:
-    """Derive a published LocationType from the place's own categories, name, and evidence.
+def _infobox_location_type(infobox: dict[str, Any] | None) -> str:
+    """A published LocationType read directly from an infobox ``type`` field, when present.
 
-    Priority: a Tomb-named place is a landmark even in ruins; then the page's own wiki categories
-    (authoritative — an explicit destruction category reads ``ruins``, a current-settlement category
-    is trusted over contextual ruin words); then self-referential ruination in the evidence overrides
-    a non-settlement category (a "keep" described as ruined is ruins); then name tokens and town-text;
-    finally ``major_location`` when nothing is distinctive.
+    Returns ``""`` when there is no infobox or no recognized value — before the Slice 12
+    re-crawl there is no infobox on the snapshot, so this step is simply skipped.
     """
-    # Strong name signals that ruination should not override (a Tomb is a landmark even in ruins).
-    for location_type, tokens in _TYPE_NAME_TOKENS[:1]:
-        if _name_has_token(name, tokens):
-            return location_type
+    for key in _INFOBOX_TYPE_KEYS:
+        value = str((infobox or {}).get(key, "")).strip().lower().replace(" ", "_")
+        if value in _VALID_LOCATION_TYPES:
+            return value
+    return ""
+
+
+def location_type_from_signals(
+    categories: list[str] | None = None,
+    *,
+    infobox: dict[str, Any] | None = None,
+    llm_type: str = "",
+) -> str:
+    """Publish a LocationType from structured signals only (Slice 10 — no keyword ladders).
+
+    Precedence: the page's own MediaWiki categories (authoritative wiki structure), then an
+    infobox ``type`` field when the snapshot carries one (Slice 12), then the LLM's own
+    classification riding the summary call, then ``major_location`` when nothing is distinctive.
+    Name/evidence-text keyword ladders were retired here; the routing *classification* enum
+    remains a discovery signal, never the published card type.
+    """
     cat_type = _category_type(categories)
-    if cat_type == LocationType.RUINS.value:
-        return cat_type
-    if cat_type in _CURRENT_SETTLEMENT_TYPES:
-        return cat_type
-    if evidence_text and _RUINS_TEXT_RE.search(evidence_text):
-        return LocationType.RUINS.value
     if cat_type:
         return cat_type
-    for location_type, tokens in _TYPE_NAME_TOKENS[1:]:
-        if _name_has_token(name, tokens):
-            return location_type
-    if evidence_text and _TOWN_TEXT_RE.search(evidence_text):
-        return LocationType.TOWN.value
+    infobox_type = _infobox_location_type(infobox)
+    if infobox_type:
+        return infobox_type
+    if llm_type in _VALID_LOCATION_TYPES:
+        return llm_type
     return LocationType.MAJOR_LOCATION.value
+
+
+def location_significance_from_signals(*, llm_tag: str = "") -> str:
+    """Publish a significance tag from structured signals only (Slice 10 — no keyword ladders).
+
+    Neither a MediaWiki category nor an infobox field maps onto the significance vocabulary
+    (categories/infobox type describe *what* a place is, not *why it matters*), so significance
+    is the LLM's own classification riding the summary call, else the ``major_location`` default.
+    Offline this is always the default — never a keyword guess.
+    """
+    if llm_tag in SIGNIFICANCE_TAGS:
+        return llm_tag
+    return "major_location"
+
+
 _LEDE_ROLES = frozenset({"lead", "introduction"})
 _HIGH_WEIGHT_ROLES = frozenset({"maps_subregions", "geography_edit", "geography", "subregion"})
 _MEDIUM_WEIGHT_ROLES = frozenset({"history_edit", "history"})
@@ -181,6 +166,9 @@ class LocationCandidate:
     # The location page's own MediaWiki categories (authoritative type signal); empty when the page
     # was not traversed/snapshotted. Populated from the snapshot map in draft_writer.
     categories: list[str] = field(default_factory=list)
+    # The location page's own infobox fields (type/affiliation), when the snapshot carries one.
+    # Empty until the Slice 12 re-crawl; the type/significance precedence skips a missing infobox.
+    infobox: dict[str, Any] = field(default_factory=dict)
     significance_tag: str = "major_location"
 
 
@@ -244,35 +232,6 @@ def location_zone_relevant(
         if _name_in_text(token, cleaned):
             return True
     return False
-
-
-def _category_text(categories: list[str] | None) -> str:
-    return " ".join(str(category).replace("_", " ").casefold() for category in categories or [])
-
-
-def location_significance_tag(candidate: LocationCandidate, evidence_text: str = "") -> str:
-    """Controlled reason a location is significant enough for a card."""
-    role = _normalize_role(candidate.source_section_role)
-    combined = f"{_category_text(candidate.categories)} {role.replace('_', ' ')} {evidence_text}".casefold()
-    if "instance" in combined or "dungeon" in combined or "raid" in combined:
-        return "instance_anchor"
-    if role in {"quests", "quests_edit", "quests_or_storyline"} or "quest hub" in combined:
-        return "active_quest_hub"
-    if any(token in combined for token in ("battle", "war", "battlefield", "battleground")):
-        return "battlefield"
-    if any(token in combined for token in ("tomb", "grave", "shrine", "memorial", "sacred")):
-        return "sacred_landmark"
-    if any(token in combined for token in ("fort", "fortress", "keep", "stronghold", "bastion", "citadel")):
-        return "faction_stronghold"
-    if any(token in combined for token in ("cult", "scourge", "demon", "legion", "necromanc", "villain")):
-        return "villain_base"
-    if any(token in combined for token in ("restore", "restoration", "reclaimed", "healed", "recovery")):
-        return "restoration_site"
-    if any(token in combined for token in ("city", "town", "village", "settlement", "capital")):
-        return "settlement_hub"
-    if candidate.lore_significant or role.startswith("history"):
-        return "historical_turning_point"
-    return "major_location"
 
 
 def _profile_items_for_location(
@@ -353,6 +312,7 @@ def collect_location_candidates(
                     for category in (candidate_map_row.get("categories") or [])
                     if str(category).strip()
                 ],
+                infobox=dict(candidate_map_row.get("infobox") or {}),
             )
         else:
             row = by_id[location_id]
@@ -443,7 +403,8 @@ def collect_location_candidates(
                 "strict_generation_category_exclusion"
             ]
             continue
-        candidate.significance_tag = location_significance_tag(candidate, evidence_text)
+        # significance_tag is finalized at card-build time from structured signals + the LLM's
+        # own classification (Slice 10); the selection-time default stands until then.
         candidate.zone_relevant = location_zone_relevant(
             evidence_text,
             zone_name=zone_name,

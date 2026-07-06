@@ -109,7 +109,7 @@ def test_workers_return_empty_for_empty_pools(monkeypatch) -> None:
     ) == ("", [])
     assert synthesize_location_summary(
         [], location_name="Northwatch Hold", zone_name="Example Zone"
-    ) == ("", [])
+    ) == ("", [], "", "")
 
 
 def test_location_summary_deterministic_respects_max_words(monkeypatch) -> None:
@@ -118,7 +118,7 @@ def test_location_summary_deterministic_respects_max_words(monkeypatch) -> None:
         "Northwatch Hold is a fortified outpost in Example Zone where alliance patrols coordinate "
         "supply lines, defensive operations, and regional scouting missions across the frontier."
     )
-    summary, used = synthesize_location_summary(
+    summary, used, location_type, significance_tag = synthesize_location_summary(
         [{"source_id": "src-location", "snippet": snippet}],
         location_name="Northwatch Hold",
         zone_name="Example Zone",
@@ -127,6 +127,38 @@ def test_location_summary_deterministic_respects_max_words(monkeypatch) -> None:
     assert summary
     assert used == ["src-location"]
     assert word_count(summary) <= 50
+    # Offline never guesses the classification enums from keywords.
+    assert location_type == ""
+    assert significance_tag == ""
+
+
+def test_location_summary_llm_returns_classification_enums(monkeypatch) -> None:
+    # Slice 10: the type/significance enums ride the summary call and are returned to the caller.
+    monkeypatch.delenv("WOW_LORE_WIKI_FIRST_NO_LLM", raising=False)
+    import pipeline.generate.draft.prose_synthesis as workers
+
+    monkeypatch.setattr(
+        workers, "load_ai_settings", lambda: type("S", (), {"openai_ready": True})()
+    )
+    monkeypatch.setattr(
+        workers,
+        "llm_json_with_retry",
+        lambda **kwargs: {
+            "summary": "Uther's Tomb honors the fallen Lightbringer.",
+            "used_evidence_ids": ["p1"],
+            "location_type": "landmark",
+            "significance_tag": "sacred_landmark",
+        },
+    )
+    summary, _used, location_type, significance_tag = synthesize_location_summary(
+        [{"source_id": "src-tomb", "snippet": "The tomb of Uther near the war-scarred fields."}],
+        location_name="Uther's Tomb",
+        zone_name="Example Zone",
+        max_words=50,
+    )
+    assert summary
+    assert location_type == "landmark"
+    assert significance_tag == "sacred_landmark"
 
 
 def test_faction_summary_deterministic_respects_max_words(monkeypatch) -> None:

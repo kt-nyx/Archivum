@@ -301,41 +301,20 @@ def _candidate(name: str, role: str, snippets: list[str]) -> BossCandidate:
     return cand
 
 
-def test_classify_role_enemy_from_boss_section() -> None:
-    cand = _candidate("Loken", "bosses", ["Loken is the final boss of the instance."])
-    role, reason = classify_character_role(cand, instance_name="Halls of Lightning")
-    assert role == "enemy"
-    assert reason
-
-
-def test_classify_role_neutral_from_vendor_descriptor() -> None:
-    # Listed in a denizens roster but the evidence marks them as a vendor.
-    cand = _candidate(
-        "Provisioner Stonepath",
-        "denizens",
-        ["Provisioner Stonepath is a merchant and reagent vendor stationed at the entrance."],
-    )
-    role, _reason = classify_character_role(cand, instance_name="Some Instance")
-    assert role == "neutral"
-
-
-def test_classify_role_ally_from_rescue_descriptor() -> None:
-    cand = _candidate(
-        "Captain Helaina",
-        "npcs",
-        ["Captain Helaina must be rescued and then fights alongside the adventurers."],
-    )
-    role, _reason = classify_character_role(cand, instance_name="Some Instance")
-    assert role == "ally"
-
-
-def test_classify_role_uncertain_without_signal() -> None:
-    cand = _candidate(
-        "Mysterious Figure", "narrative_fallback", ["Mysterious Figure is mentioned once."]
-    )
-    role, reason = classify_character_role(cand, instance_name="Some Instance")
-    assert role == "uncertain"
-    assert reason == "no_signal"
+def test_classify_role_is_always_uncertain_deterministically() -> None:
+    # Slice 10 (H-3): role is a semantic LLM judgment. The deterministic classifier no longer
+    # keyword-guesses from boss sections or descriptor phrases — even a "final boss of" roster
+    # entry or a vendor descriptor stays honestly uncertain, deferred to the LLM classifier.
+    for role_section, snippets in (
+        ("bosses", ["Loken is the final boss of the instance."]),
+        ("denizens", ["Provisioner Stonepath is a merchant and reagent vendor."]),
+        ("npcs", ["Captain Helaina must be rescued and then fights alongside adventurers."]),
+        ("narrative_fallback", ["Mysterious Figure is mentioned once."]),
+    ):
+        cand = _candidate("Someone", role_section, snippets)
+        role, reason = classify_character_role(cand, instance_name="Some Instance")
+        assert role == "uncertain"
+        assert reason == "no_signal"
 
 
 def test_significance_orders_bosses_ahead_of_trash() -> None:

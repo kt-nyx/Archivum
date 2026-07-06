@@ -9,7 +9,11 @@ from typing import Any
 
 from pipeline.ai.config import load_ai_settings
 from pipeline.common.text_normalize import clean_wiki_snippet
-from pipeline.contracts.models import INSTANCE_BUDGET_RULES, ZONE_PAGE_BUDGET_RULES
+from pipeline.contracts.models import (
+    INSTANCE_BUDGET_RULES,
+    ZONE_PAGE_BUDGET_RULES,
+    LocationType,
+)
 from pipeline.generate.draft import finalize_trace
 from pipeline.generate.draft.card_lint import finalize_cta_hook
 from pipeline.generate.draft.compendium_voice import (
@@ -911,9 +915,18 @@ def synthesize_location_summary(
     zone_name: str,
     max_words: int = 50,
     reinforce: str = "",
-) -> tuple[str, list[str]]:
+) -> tuple[str, list[str], str, str]:
+    """Return ``(summary, used_evidence_ids, location_type, significance_tag)``.
+
+    The classification enums ride this existing LLM call (Slice 10): the model classifies the
+    place's type and significance from the evidence, and the card builder folds them into the
+    wiki-category → infobox → LLM → default precedence. Offline / no-LLM leaves both enums empty
+    so the deterministic card typing never depends on keyword guesses.
+    """
+    from pipeline.generate.draft.location_scoring import SIGNIFICANCE_TAGS
+
     if not items:
-        return "", []
+        return "", [], "", ""
     settings = load_ai_settings()
     if not settings.openai_ready or os.environ.get("WOW_LORE_WIKI_FIRST_NO_LLM", "").lower() in {
         "1",
@@ -931,27 +944,38 @@ def synthesize_location_summary(
                 continue
             summary = trim_location_summary(snippet, max_words)
             if summary:
-                return summary, [str(item.get("source_id", ""))]
-        return "", []
+                return summary, [str(item.get("source_id", ""))], "", ""
+        return "", [], "", ""
     from pipeline.generate.draft.location_lint import trim_location_summary
 
+    location_type_values = sorted(member.value for member in LocationType)
+    significance_values = sorted(SIGNIFICANCE_TAGS)
     evidence_block, alias_map = _format_evidence_block(items)
     result = llm_json_with_retry(
-        required_keys=("summary", "used_evidence_ids"),
+        required_keys=("summary", "used_evidence_ids", "location_type", "significance_tag"),
         response_json_schema={
             "type": "object",
             "additionalProperties": False,
-            "required": ["summary", "used_evidence_ids"],
+            "required": [
+                "summary",
+                "used_evidence_ids",
+                "location_type",
+                "significance_tag",
+            ],
             "properties": {
                 "summary": {"type": "string"},
                 "used_evidence_ids": {"type": "array", "items": {"type": "string"}},
+                "location_type": {"type": "string", "enum": location_type_values},
+                "significance_tag": {"type": "string", "enum": significance_values},
             },
         },
         system_prompt=(
             f"Write an in-zone landmark summary for '{location_name}' in zone '{zone_name}' using ONLY evidence. "
             f"Maximum {max_words} words. Describe what this place is and does within this zone. "
             "Use encyclopedic tone. Do not copy generic wiki ledes, faction lists, adjacent-zone geography, "
-            "dating conventions, reputation/achievement meta, or out-of-zone plot."
+            "dating conventions, reputation/achievement meta, or out-of-zone plot. Also classify, from the "
+            f"evidence, this place's 'location_type' (one of: {', '.join(location_type_values)}) and its "
+            f"'significance_tag' — why it matters to the zone (one of: {', '.join(significance_values)})."
             + reinforce
         ),
         user_prompt=f"Evidence:\n{evidence_block}",
@@ -960,8 +984,10 @@ def synthesize_location_summary(
     )
     summary = trim_location_summary(clean_wiki_snippet(str(result.get("summary", ""))), max_words)
     used = translate_used_evidence_ids(result.get("used_evidence_ids", []), alias_map)
+    location_type = str(result.get("location_type", "")).strip().lower()
+    significance_tag = str(result.get("significance_tag", "")).strip().lower()
     # Empty result = failed attempt; the finalize-level driver retries or drops the card.
-    return summary, used
+    return summary, used, location_type, significance_tag
 
 
 def _readable_location_type(location_type: str) -> str:
