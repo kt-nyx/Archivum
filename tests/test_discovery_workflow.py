@@ -11,6 +11,7 @@ from pipeline.discovery.workflow import (
     _section_role,
     run_discovery_workflow,
 )
+from tests.factories.snapshots import with_required_snapshot_schema
 
 ZONE_ID = "zone-example"
 ZONE_NAME = "Example Zone"
@@ -57,7 +58,7 @@ def test_discovery_workflow_emits_required_artifacts(tmp_path: Path) -> None:
     manifest_path = ingest_dir / "source_manifest.json"
     snapshots_path.write_text(
         json.dumps(
-            [
+            with_required_snapshot_schema([
                 {
                     "entity_id": ZONE_ID,
                     "entity_type": "zone",
@@ -78,7 +79,7 @@ def test_discovery_workflow_emits_required_artifacts(tmp_path: Path) -> None:
                         "/wiki/Capital_City",
                     ],
                 }
-            ],
+            ]),
             indent=2,
         ),
         encoding="utf-8",
@@ -111,7 +112,7 @@ def test_discovery_workflow_detects_instances_and_storylines_without_noisy_links
     manifest_path = ingest_dir / "source_manifest.json"
     snapshots_path.write_text(
         json.dumps(
-            [
+            with_required_snapshot_schema([
                 {
                     "entity_id": ZONE_ID,
                     "entity_type": "zone",
@@ -142,7 +143,7 @@ def test_discovery_workflow_detects_instances_and_storylines_without_noisy_links
                     "section_blocks": [],
                     "wiki_links": [],
                 },
-            ],
+            ]),
             indent=2,
         ),
         encoding="utf-8",
@@ -190,7 +191,7 @@ def test_discovery_workflow_emits_typed_traversal_targets(tmp_path: Path) -> Non
     manifest_path = ingest_dir / "source_manifest.json"
     snapshots_path.write_text(
         json.dumps(
-            [
+            with_required_snapshot_schema([
                 {
                     "entity_id": ZONE_ID,
                     "entity_type": "zone",
@@ -224,7 +225,7 @@ def test_discovery_workflow_emits_typed_traversal_targets(tmp_path: Path) -> Non
                     "section_blocks": [],
                     "wiki_links": [],
                 },
-            ],
+            ]),
             indent=2,
         ),
         encoding="utf-8",
@@ -283,7 +284,7 @@ def test_discovery_workflow_types_links_by_section_role_not_keywords(tmp_path: P
     manifest_path = ingest_dir / "source_manifest.json"
     snapshots_path.write_text(
         json.dumps(
-            [
+            with_required_snapshot_schema([
                 {
                     "entity_id": ZONE_ID,
                     "entity_type": "zone",
@@ -305,7 +306,7 @@ def test_discovery_workflow_types_links_by_section_role_not_keywords(tmp_path: P
                         {"href": "/wiki/Brill", "section_role": "Geography", "label": "Brill"},
                     ],
                 }
-            ],
+            ]),
             indent=2,
         ),
         encoding="utf-8",
@@ -337,7 +338,7 @@ def test_discovery_workflow_hard_rejects_meta_pages_from_maps_section(tmp_path: 
     manifest_path = ingest_dir / "source_manifest.json"
     snapshots_path.write_text(
         json.dumps(
-            [
+            with_required_snapshot_schema([
                 {
                     "entity_id": ZONE_ID,
                     "entity_type": "zone",
@@ -371,7 +372,7 @@ def test_discovery_workflow_hard_rejects_meta_pages_from_maps_section(tmp_path: 
                         },
                     ],
                 }
-            ],
+            ]),
             indent=2,
         ),
         encoding="utf-8",
@@ -453,7 +454,7 @@ def test_discovery_workflow_extracts_marquee_landmarks_from_mixed_sections(tmp_p
     manifest_path = ingest_dir / "source_manifest.json"
     snapshots_path.write_text(
         json.dumps(
-            [
+            with_required_snapshot_schema([
                 {
                     "entity_id": ZONE_ID,
                     "entity_type": "zone",
@@ -486,7 +487,7 @@ def test_discovery_workflow_extracts_marquee_landmarks_from_mixed_sections(tmp_p
                         },
                     ],
                 }
-            ],
+            ]),
             indent=2,
         ),
         encoding="utf-8",
@@ -575,7 +576,7 @@ def test_discovery_workflow_excludes_cast_named_in_history_and_characters(tmp_pa
     manifest_path = ingest_dir / "source_manifest.json"
     snapshots_path.write_text(
         json.dumps(
-            [
+            with_required_snapshot_schema([
                 {
                     "entity_id": ZONE_ID,
                     "entity_type": "zone",
@@ -617,7 +618,7 @@ def test_discovery_workflow_excludes_cast_named_in_history_and_characters(tmp_pa
                         },
                     ],
                 }
-            ],
+            ]),
             indent=2,
         ),
         encoding="utf-8",

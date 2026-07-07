@@ -11,6 +11,7 @@ from pipeline.glossary.run_terms import (
     run_terms_metadata_map,
     run_terms_to_alias_dictionary,
 )
+from tests.factories.snapshots import with_required_snapshot_schema
 
 
 def test_build_run_terms_from_zone_and_instance_drafts(tmp_path: Path) -> None:
@@ -140,7 +141,7 @@ def _write_snapshots(context, snapshots: list[dict]) -> None:
     ingest_dir = context.data_dir / "ingest"
     ingest_dir.mkdir(parents=True, exist_ok=True)
     (ingest_dir / "source_snapshots.json").write_text(
-        json.dumps(snapshots, indent=2), encoding="utf-8"
+        json.dumps(with_required_snapshot_schema(snapshots), indent=2), encoding="utf-8"
     )
 
 

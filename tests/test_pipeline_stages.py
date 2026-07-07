@@ -20,6 +20,7 @@ from pipeline.orchestrator.stages import (
     run_validate_stage,
 )
 from tests.draft_llm_mocks import fake_draft_chat_by_schema
+from tests.factories.snapshots import with_required_snapshot_schema
 
 STORYLINE_HTML = Path("tests/fixtures/storyline/western_plaguelands_storyline.html").read_text(
     encoding="utf-8"
@@ -444,7 +445,7 @@ def test_coalesce_prefers_manifest_priority_for_tie_break(
     snapshots_path = ingest_dir / "source_snapshots.json"
     snapshots_path.write_text(
         json.dumps(
-            [
+            with_required_snapshot_schema([
                 {
                     "entity_id": "zone-priority",
                     "entity_type": "zone",
@@ -485,7 +486,7 @@ def test_coalesce_prefers_manifest_priority_for_tie_break(
                     "requested_revision_id": "",
                     "priority": 5,
                 },
-            ]
+            ])
         ),
         encoding="utf-8",
     )
@@ -514,7 +515,7 @@ def test_normalize_source_uses_deterministic_fallback_priority_when_missing_or_i
     snapshots_path = context.stage_dir("ingest") / "source_snapshots.json"
     snapshots_path.write_text(
         json.dumps(
-            [
+            with_required_snapshot_schema([
                 {
                     "entity_id": "zone-one",
                     "entity_type": "zone",
@@ -574,7 +575,7 @@ def test_normalize_source_uses_deterministic_fallback_priority_when_missing_or_i
                     "requested_revision_id": "",
                     "priority": 2,
                 },
-            ]
+            ])
         ),
         encoding="utf-8",
     )

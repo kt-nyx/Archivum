@@ -6,55 +6,108 @@
         "section_role": "lead",
         "parent_section_role": "lead",
         "text": "Bosses",
-        "block_type": "table_cell"
+        "block_type": "table_cell",
+        "links": []
       },
       {
         "section_role": "lead",
         "parent_section_role": "lead",
         "text": "General Bjarngrim Loken",
-        "block_type": "table_cell"
+        "block_type": "table_cell",
+        "links": [
+          {
+            "anchor_text": "General Bjarngrim",
+            "href": "/wiki/General_Bjarngrim"
+          },
+          {
+            "anchor_text": "Loken",
+            "href": "/wiki/Loken"
+          }
+        ]
       },
       {
         "section_role": "lead",
         "parent_section_role": "lead",
         "text": "The Halls of Lightning is a five-man wing where Loken made his last stand.",
-        "block_type": "paragraph"
+        "block_type": "paragraph",
+        "links": [
+          {
+            "anchor_text": "Loken",
+            "href": "/wiki/Loken"
+          }
+        ]
       },
       {
         "section_role": "bosses",
         "parent_section_role": "dungeon_denizens",
         "text": "General Bjarngrim",
-        "block_type": "list_item"
+        "block_type": "list_item",
+        "links": [
+          {
+            "anchor_text": "General Bjarngrim",
+            "href": "/wiki/General_Bjarngrim"
+          }
+        ]
       },
       {
         "section_role": "bosses",
         "parent_section_role": "dungeon_denizens",
         "text": "Volkhan",
-        "block_type": "list_item"
+        "block_type": "list_item",
+        "links": [
+          {
+            "anchor_text": "Volkhan",
+            "href": "/wiki/Volkhan"
+          }
+        ]
       },
       {
         "section_role": "bosses",
         "parent_section_role": "dungeon_denizens",
         "text": "Ionar",
-        "block_type": "list_item"
+        "block_type": "list_item",
+        "links": [
+          {
+            "anchor_text": "Ionar",
+            "href": "/wiki/Ionar"
+          }
+        ]
       },
       {
         "section_role": "bosses",
         "parent_section_role": "dungeon_denizens",
         "text": "Loken",
-        "block_type": "list_item"
+        "block_type": "list_item",
+        "links": [
+          {
+            "anchor_text": "Loken",
+            "href": "/wiki/Loken"
+          }
+        ]
       },
       {
         "section_role": "encounters",
         "parent_section_role": "dungeon_denizens",
         "text": "General Bjarngrim",
-        "block_type": "table_cell"
+        "block_type": "table_cell",
+        "links": [
+          {
+            "anchor_text": "General Bjarngrim",
+            "href": "/wiki/General_Bjarngrim"
+          }
+        ]
       },
       {
         "section_role": "encounters",
         "parent_section_role": "dungeon_denizens",
         "text": "Stormforged Reaver",
-        "block_type": "table_cell"
+        "block_type": "table_cell",
+        "links": [
+          {
+            "anchor_text": "Stormforged Reaver",
+            "href": "/wiki/Stormforged_Reaver"
+          }
+        ]
       }
     ],
     "links": [
@@ -130,13 +183,15 @@
         "section_role": "lead",
         "parent_section_role": "lead",
         "text": "Foo & Bar baz 'q'",
-        "block_type": "paragraph"
+        "block_type": "paragraph",
+        "links": []
       },
       {
         "section_role": "history",
         "parent_section_role": "history",
         "text": "A&B and C D",
-        "block_type": "paragraph"
+        "block_type": "paragraph",
+        "links": []
       }
     ],
     "links": [],
@@ -151,13 +206,15 @@
         "section_role": "roster",
         "parent_section_role": "roster",
         "text": "Alpha Beta",
-        "block_type": "list_item"
+        "block_type": "list_item",
+        "links": []
       },
       {
         "section_role": "roster",
         "parent_section_role": "roster",
         "text": "Gamma",
-        "block_type": "list_item"
+        "block_type": "list_item",
+        "links": []
       }
     ],
     "links": [],
@@ -172,13 +229,15 @@
         "section_role": "in_the_rpg_lore",
         "parent_section_role": "in_the_rpg",
         "text": "rpg paragraph text",
-        "block_type": "paragraph"
+        "block_type": "paragraph",
+        "links": []
       },
       {
         "section_role": "history",
         "parent_section_role": "history",
         "text": "real history",
-        "block_type": "paragraph"
+        "block_type": "paragraph",
+        "links": []
       }
     ],
     "links": [],
@@ -193,13 +252,15 @@
         "section_role": "lead",
         "parent_section_role": "lead",
         "text": "Introductory prose about the instance.",
-        "block_type": "paragraph"
+        "block_type": "paragraph",
+        "links": []
       },
       {
         "section_role": "history",
         "parent_section_role": "history",
         "text": "History prose.",
-        "block_type": "paragraph"
+        "block_type": "paragraph",
+        "links": []
       }
     ],
     "links": [],
@@ -214,19 +275,22 @@
         "section_role": "lead",
         "parent_section_role": "lead",
         "text": "First para.",
-        "block_type": "paragraph"
+        "block_type": "paragraph",
+        "links": []
       },
       {
         "section_role": "history",
         "parent_section_role": "history",
         "text": "Second & para.",
-        "block_type": "paragraph"
+        "block_type": "paragraph",
+        "links": []
       },
       {
         "section_role": "history",
         "parent_section_role": "history",
         "text": "Third para.",
-        "block_type": "paragraph"
+        "block_type": "paragraph",
+        "links": []
       }
     ],
     "links": [],
@@ -241,7 +305,8 @@
         "section_role": "denizens",
         "parent_section_role": "denizens",
         "text": "Outer NESTED_CHROME tail",
-        "block_type": "table_cell"
+        "block_type": "table_cell",
+        "links": []
       }
     ],
     "links": [],
@@ -256,7 +321,17 @@
         "section_role": "lead",
         "parent_section_role": "lead",
         "text": "good full ext frag",
-        "block_type": "paragraph"
+        "block_type": "paragraph",
+        "links": [
+          {
+            "anchor_text": "good",
+            "href": "/wiki/Good_Link"
+          },
+          {
+            "anchor_text": "full",
+            "href": "/wiki/Full"
+          }
+        ]
       }
     ],
     "links": [

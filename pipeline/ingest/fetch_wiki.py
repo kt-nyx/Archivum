@@ -51,7 +51,7 @@ class FetchedSource:
     body: str
     revision_id: str
     locator: str
-    section_blocks: list[dict[str, str]]
+    section_blocks: list[dict[str, Any]]
     wiki_links: list[str]
     structured_links: list[dict[str, str]]
     html: str
@@ -178,7 +178,7 @@ class SourceSnapshot(TypedDict):
     captured_at: str
     locator: str
     body: str
-    section_blocks: list[dict[str, str]]
+    section_blocks: list[dict[str, Any]]
     wiki_links: list[str]
     structured_links: list[dict[str, str]]
     categories: list[str]
@@ -354,7 +354,7 @@ def _wiki_href_label(href: str) -> str:
 
 
 def build_structured_links_from_sections(
-    section_blocks: list[dict[str, str]],
+    section_blocks: list[dict[str, Any]],
     wiki_links: list[str],
 ) -> list[dict[str, str]]:
     """Attach section context to wiki links when href appears in section text.
@@ -422,8 +422,8 @@ _BLOCK_TYPE_BY_TAG = {"p": "paragraph", "li": "list_item", "td": "table_cell", "
 
 def _extract_sections_and_links(
     html: str, *, max_links: int = 300
-) -> tuple[list[dict[str, str]], list[str], list[dict[str, str]]]:
-    sections: list[dict[str, str]] = []
+) -> tuple[list[dict[str, Any]], list[str], list[dict[str, str]]]:
+    sections: list[dict[str, Any]] = []
     current_section = "lead"
     current_top_section = "lead"
     in_rpg = False
@@ -460,6 +460,9 @@ def _extract_sections_and_links(
                 "parent_section_role": parent_section_role,
                 "text": cleaned,
                 "block_type": _BLOCK_TYPE_BY_TAG[tag],
+                # Slice 12: the block's own inline article links (order kept, deduped
+                # per block, empty when the paragraph has none) — required schema.
+                "links": block.get("links", []),
             }
         )
     links = wiki_html.extract_links(html, max_links=max_links)
@@ -599,6 +602,22 @@ def _fetch_url_text(
         raise RuntimeError(f"unable to fetch source url '{url}': {exc!r}") from exc
 
 
+def _snapshot_section_blocks(section_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Guarantee the required block shape on write: every block carries ``links``.
+
+    The extractor always emits ``links`` (Slice 12); this is the writer-side
+    invariant for any other ``FetchedSource`` producer, mirroring the traverse
+    path's ``_persist_section_block``.
+    """
+    normalized: list[dict[str, Any]] = []
+    for block in section_blocks:
+        if not isinstance(block, dict):
+            continue
+        raw_links = block.get("links")
+        normalized.append({**block, "links": raw_links if isinstance(raw_links, list) else []})
+    return normalized
+
+
 def _build_revision_pinned_url(url: str, requested_revision_id: str) -> str:
     revision = requested_revision_id.strip()
     if not revision:
@@ -633,7 +652,7 @@ def run_fetch_wiki(context: RunContext) -> Path:
         body = fetched.body
         revision_id = fetched.revision_id
         locator = fetched.locator
-        section_blocks = fetched.section_blocks
+        section_blocks = _snapshot_section_blocks(fetched.section_blocks)
         wiki_links = fetched.wiki_links
         structured_links = fetched.structured_links
         raw_html = fetched.html

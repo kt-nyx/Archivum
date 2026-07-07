@@ -33,6 +33,15 @@ def test_type_infobox_used_when_no_category() -> None:
     assert location_type_from_signals(["Towns"], infobox={"type": "fortress"}) == "town"
 
 
+def test_type_infobox_matches_wiki_cased_labels() -> None:
+    # Slice 12: parse_infobox preserves the wiki's own label casing ("Type"), so the
+    # infobox step must match keys case-insensitively or it silently never fires.
+    assert location_type_from_signals([], infobox={"Type": "Fortress"}) == "fortress"
+    assert (
+        location_type_from_signals([], infobox={"_title": "Caer Darrow", "Type": "Town"}) == "town"
+    )
+
+
 def test_type_llm_enum_used_when_no_category_or_infobox() -> None:
     assert location_type_from_signals([], llm_type="landmark") == "landmark"
 

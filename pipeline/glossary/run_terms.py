@@ -34,6 +34,7 @@ from pipeline.generate.draft.temporal import (
     POST_ACTIVE_LORE,
     strict_generation_category_signal,
 )
+from pipeline.ingest.snapshots import load_source_snapshots
 
 WIKI_BASE = "https://warcraft.wiki.gg/wiki"
 _LINK_CATEGORY_CACHE_NAME = "link_category_cache.json"
@@ -249,12 +250,7 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
 
 def _load_snapshots(context: RunContext) -> list[dict[str, Any]]:
     snapshots_path = context.data_dir / "ingest" / "source_snapshots.json"
-    if not snapshots_path.exists():
-        return []
-    blob = _load_json(snapshots_path)
-    if not isinstance(blob, list):
-        return []
-    return [snapshot for snapshot in blob if isinstance(snapshot, dict)]
+    return load_source_snapshots(snapshots_path, missing_ok=True)
 
 
 def _load_link_category_cache(context: RunContext) -> dict[str, dict[str, Any]]:

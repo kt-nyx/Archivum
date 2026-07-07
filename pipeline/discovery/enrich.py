@@ -39,6 +39,7 @@ from pipeline.discovery.questline_significance import (
 )
 from pipeline.discovery.storyline_html import parse_storyline_html, v3_to_legacy_v1
 from pipeline.discovery.workflow import _effective_section_slug, _load_json, _section_role
+from pipeline.ingest.snapshots import load_source_snapshots
 
 # "roster" (pre-traverse): build the flat, UNCLUSTERED quest graph + zone-level
 # questline decision; clustering is deferred until quest pages exist (Slice B).
@@ -75,6 +76,22 @@ _HISTORY_DIGEST_EXCLUDED = frozenset(
         "maps_subregions",
     }
 )
+
+
+def _block_evidence_links(block: dict[str, Any]) -> list[dict[str, str]]:
+    """Return the block's well-formed inline links for the evidence item (Slice 12)."""
+    raw = block.get("links")
+    if not isinstance(raw, list):
+        return []
+    links: list[dict[str, str]] = []
+    for row in raw:
+        if not isinstance(row, dict):
+            continue
+        href = str(row.get("href", "")).strip()
+        if not href:
+            continue
+        links.append({"anchor_text": str(row.get("anchor_text", "")), "href": href})
+    return links
 
 
 def _is_seed_snapshot(snapshot: dict[str, Any]) -> bool:
@@ -299,6 +316,7 @@ def _build_evidence_packs(
                                 _section_role(str(snippet_row.get("section_role", "other"))),
                                 str(snippet_row.get("parent_section_role", "")),
                             ),
+                            "links": _block_evidence_links(snippet_row),
                             "confidence": 1.0,
                         }
                     ],
@@ -495,6 +513,7 @@ def _build_evidence_packs(
                                 "raw_section_role": raw_section,
                                 "content_role": content_role,
                                 "block_index": block_index,
+                                "links": _block_evidence_links(block),
                                 "confidence": 1.0,
                             }
                         ],
@@ -615,9 +634,7 @@ def run_discovery_enrich(
     """Rebuild quest graphs, inclusion decisions, and evidence from full snapshot set."""
     _ = source_manifest_path
     snapshots_path = context.stage_dir("ingest") / "source_snapshots.json"
-    snapshots = _load_json(snapshots_path)
-    if not isinstance(snapshots, list):
-        raise RuntimeError("source_snapshots.json must be a JSON array")
+    snapshots: list[dict[str, Any]] = load_source_snapshots(snapshots_path)
 
     discovery_dir = context.data_dir / "discovery"
     decisions_dir = context.data_dir / "decisions"

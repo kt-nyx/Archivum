@@ -16,6 +16,7 @@ from pipeline.coalesce.fact_packs import write_fact_packs
 from pipeline.common.config_loading import coerce_float, load_yaml_mapping
 from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext
+from pipeline.ingest.snapshots import load_source_snapshots
 
 
 def _load_merge_rules() -> dict[str, object]:
@@ -225,7 +226,7 @@ def run_resolve_entities(
     """
     source_manifest = json.loads(source_manifest_path.read_text(encoding="utf-8"))
     snapshots_path = context.stage_dir("ingest") / "source_snapshots.json"
-    snapshots = json.loads(snapshots_path.read_text(encoding="utf-8"))
+    snapshots = load_source_snapshots(snapshots_path)
     sources_by_id = {entry["source_id"]: entry for entry in snapshots}
 
     grouped: dict[str, list[dict[str, Any]]] = {}

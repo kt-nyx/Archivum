@@ -103,22 +103,69 @@ def _drop_chrome_tables(root: BeautifulSoup) -> None:
         element.decompose()
 
 
-def content_blocks(html: str, *, drop_chrome: bool = True) -> list[dict[str, str]]:
+def wiki_article_href(href: str) -> str:
+    """Normalize an anchor href to a site-relative ``/wiki/...`` path.
+
+    Absolute ``warcraft.wiki.gg/wiki/...`` links lose their origin and every link
+    loses its fragment, so the same article resolves to one comparable path.
+    Returns ``""`` for non-article links (external, ``#frag``, edit/redlinks).
+    """
+    value = str(href or "").strip()
+    if value.startswith("/wiki/"):
+        path = value
+    elif "warcraft.wiki.gg/wiki/" in value:
+        path = "/wiki/" + value.split("warcraft.wiki.gg/wiki/", 1)[1]
+    else:
+        return ""
+    path = path.split("#", 1)[0]
+    return path if len(path) > len("/wiki/") else ""
+
+
+def _block_inline_links(element: Tag) -> list[dict[str, str]]:
+    """Return the block's inline article links: ``[{anchor_text, href}]``.
+
+    Document order, deduped per block by resolved href (first anchor wins).
+    Text-less anchors (icon/image wrappers) are skipped — they are not inline
+    prose links even when they target an article.
+    """
+    links: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for anchor in element.find_all("a", href=True):
+        anchor_text = _collapse(anchor.get_text(" "))
+        if not anchor_text:
+            continue
+        href = wiki_article_href(str(anchor["href"]))
+        if not href or href in seen:
+            continue
+        seen.add(href)
+        links.append({"anchor_text": anchor_text, "href": href})
+    return links
+
+
+def content_blocks(html: str, *, drop_chrome: bool = True) -> list[dict[str, Any]]:
     """Return top-most content blocks in document order.
 
-    Each block is ``{"tag": <element name>, "text": <decoded collapsed text>}`` for
-    the outermost ``h1..h6 / p / li / td / th`` elements (nested blocks are folded
-    into their ancestor's text, never emitted twice). Empty-text blocks are included
-    so callers can apply their own section/skip logic.
+    Each block is ``{"tag": <element name>, "text": <decoded collapsed text>,
+    "links": [{anchor_text, href}]}`` for the outermost ``h1..h6 / p / li / td / th``
+    elements (nested blocks are folded into their ancestor's text and links, never
+    emitted twice). ``links`` holds the block's inline article links in order,
+    deduped per block (empty list when the block has none). Empty-text blocks are
+    included so callers can apply their own section/skip logic.
     """
     root = soup(html)
     if drop_chrome:
         _drop_chrome_tables(root)
-    blocks: list[dict[str, str]] = []
+    blocks: list[dict[str, Any]] = []
     for element in root.find_all(_BLOCK_TAGS):
         if element.find_parent(_BLOCK_TAGS) is not None:
             continue  # nested inside another block; folded into the ancestor's text
-        blocks.append({"tag": element.name.lower(), "text": _collapse(element.get_text(" "))})
+        blocks.append(
+            {
+                "tag": element.name.lower(),
+                "text": _collapse(element.get_text(" ")),
+                "links": _block_inline_links(element),
+            }
+        )
     return blocks
 
 
@@ -157,7 +204,12 @@ def parse_infobox(html: str) -> dict[str, str]:
     """Return label→value pairs from the first ``infobox`` table, decoded and collapsed.
 
     Only rows carrying both a header cell and a value cell are kept; the first value
-    wins on duplicate labels. Returns ``{}`` when no infobox is present.
+    wins on duplicate labels. The infobox's own title — a leading header-only row
+    (``<th>`` without a ``<td>``, how the wiki renders the subject name banner) — is
+    stored under the reserved ``"_title"`` key, which cannot collide with wiki labels
+    (a character infobox's real ``Title`` row keeps its own key). Header-only rows
+    after the first field are in-box section headers ("Bosses"), not the title, and
+    are skipped. Returns ``{}`` when no infobox is present.
     """
     root = soup(html)
     table = next(
@@ -170,7 +222,12 @@ def parse_infobox(html: str) -> dict[str, str]:
     for row in table.find_all("tr"):
         header = row.find("th")
         value = row.find("td")
-        if header is None or value is None:
+        if header is None:
+            continue
+        if value is None:
+            title = _collapse(header.get_text(" "))
+            if title and not fields:
+                fields["_title"] = title
             continue
         key = _collapse(header.get_text(" "))
         if key and key not in fields:

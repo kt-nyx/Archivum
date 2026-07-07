@@ -34,6 +34,7 @@ from pipeline.discovery.lore_sources import (
     compute_instance_lore_density,
 )
 from pipeline.discovery.world_registry import entry_kinds
+from pipeline.ingest.snapshots import load_source_snapshots
 
 _CLASSIC_ONLY_MARKERS = ("classic", "classic-only", "vanilla")
 _NON_RETAIL_MARKERS = ("warcraft iii", "removed", "undisplayed", "lore location")
@@ -557,10 +558,8 @@ def _collapse_location_variants(
 
 def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> dict[str, Path]:
     """Build deterministic discovery artifacts from ingest snapshots."""
-    snapshots = _load_json(context.stage_dir("ingest") / "source_snapshots.json")
+    snapshots = load_source_snapshots(context.stage_dir("ingest") / "source_snapshots.json")
     manifest_rows = _load_json(source_manifest_path)
-    if not isinstance(snapshots, list):
-        raise RuntimeError("source_snapshots.json must be a JSON array")
     if not isinstance(manifest_rows, list):
         raise RuntimeError("source_manifest.json must be a JSON array")
 

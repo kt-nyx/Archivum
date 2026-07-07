@@ -9,6 +9,7 @@ from pipeline.discovery.entity_typing import (
 )
 from pipeline.discovery.world_registry import (
     RegistryEntry,
+    _ingest_organization_categories,
     _parent_kind_from_entries,
     load_world_registry,
     registry_index,
@@ -138,6 +139,70 @@ def _entry(title: str, kinds: tuple[str, ...]) -> RegistryEntry:
         kinds=kinds,
         source_categories=("Category:Test",),
     )
+
+
+def test_registry_includes_organization_kind_with_affiliations(registry_loaded: None) -> None:
+    """Slice 12: the committed registry always carries organization entries."""
+    index = registry_index()
+    orgs = [row for row in index.values() if "organization" in row.get("kinds", [])]
+    assert len(orgs) > 100, "expected the rebuilt registry to seed organization entries"
+    crusade = index.get("argent crusade")
+    assert crusade is not None and "organization" in crusade["kinds"]
+    # Umbrella affiliations come from Alliance/Horde faction category membership.
+    silver_covenant = index.get("silver covenant")
+    assert silver_covenant is not None
+    assert "alliance" in silver_covenant.get("affiliations", [])
+
+
+def test_ingest_organization_categories_seeds_kinds_and_affiliations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Org seeds produce kind="organization" entries; umbrella affiliations come from
+    Alliance/Horde faction category memberships; racial org categories are swept from
+    the wiki's own Category:Organizations by race subcategory list; concept/list
+    articles ("Faction", "Alliance organizations") never become entries."""
+    members_by_category: dict[str, list[dict[str, object]]] = {
+        "Category:Organizations": [
+            {"ns": 0, "title": "Faction"},
+            {"ns": 0, "title": "Alliance organizations"},
+            {"ns": 0, "title": "Alliance of Lordaeron"},
+        ],
+        "Category:Factions": [
+            {"ns": 0, "title": "Alliance"},
+            {"ns": 0, "title": "Argent Crusade"},
+            {"ns": 0, "title": "Silver Covenant"},
+            {"ns": 14, "title": "Category:Alliance factions"},
+        ],
+        "Category:Alliance factions": [{"ns": 0, "title": "Silver Covenant"}],
+        "Category:Horde factions": [{"ns": 0, "title": "Defilers"}],
+        "Category:Organizations by race": [
+            {"ns": 14, "title": "Category:Troll organizations"},
+            {"ns": 0, "title": "Stray article"},
+        ],
+        "Category:Troll organizations": [{"ns": 0, "title": "Darkspear tribe"}],
+    }
+
+    def fake_fetch(category: str, **_kwargs: object) -> list[dict[str, object]]:
+        return members_by_category.get(category, [])
+
+    monkeypatch.setattr(
+        "pipeline.discovery.world_registry._fetch_category_members", fake_fetch
+    )
+    entries: dict[str, RegistryEntry] = {}
+    _ingest_organization_categories(entries, sleep_seconds=0, cache={}, cache_path=None)
+
+    assert "faction" not in entries
+    assert "alliance organizations" not in entries
+    assert entries["alliance of lordaeron"].kinds == ("organization",)
+    assert entries["alliance of lordaeron"].affiliations == ()
+    assert entries["argent crusade"].affiliations == ()  # neutral = no umbrella category
+    # Membership in both Category:Factions and Category:Alliance factions unions.
+    assert entries["silver covenant"].kinds == ("organization",)
+    assert entries["silver covenant"].affiliations == ("alliance",)
+    assert entries["defilers"].affiliations == ("horde",)
+    # Racial org categories are discovered from the subcat sweep, never hand-listed.
+    assert entries["darkspear tribe"].kinds == ("organization",)
+    assert entries["darkspear tribe"].source_categories == ("Category:Troll organizations",)
 
 
 def test_parent_kind_from_entries_uses_category_kinds_not_name_markers() -> None:

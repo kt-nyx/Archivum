@@ -34,6 +34,7 @@ from pipeline.generate.draft.pages import (
 )
 from pipeline.generate.draft.temporal import enrich_evidence_temporal_metadata
 from pipeline.generate.draft.trace import DraftTraceContext
+from pipeline.ingest.snapshots import load_source_snapshots
 
 # Re-export for tests that patch chat_json_completion on this module.
 __all__ = [
@@ -224,12 +225,8 @@ def run_draft_writer(
         targets_blob = json.loads(location_targets_path.read_text(encoding="utf-8"))
         if isinstance(targets_blob, list):
             location_profile_targets = [row for row in targets_blob if isinstance(row, dict)]
-    source_snapshots: list[dict[str, Any]] = []
     snapshots_path = context.data_dir / "ingest" / "source_snapshots.json"
-    if snapshots_path.exists():
-        snapshots_blob = json.loads(snapshots_path.read_text(encoding="utf-8"))
-        if isinstance(snapshots_blob, list):
-            source_snapshots = [row for row in snapshots_blob if isinstance(row, dict)]
+    source_snapshots: list[dict[str, Any]] = load_source_snapshots(snapshots_path, missing_ok=True)
 
     fact_packs_by_entity: dict[str, dict[str, Any]] = {}
     for fact_path in fact_pack_paths:
@@ -284,16 +281,23 @@ def run_draft_writer(
             if record.canonical_evidence_id
         }
 
-    # Carry each traversed location page's own MediaWiki categories onto its candidate row so the
-    # draft can type the card from the authoritative wiki signal (e.g. Andorhal -> "Destroyed
-    # settlements" -> ruins; Hearthglen -> "Towns" -> town) instead of fragile evidence-text words.
+    # Carry each traversed location page's own MediaWiki categories and infobox onto its
+    # candidate row so the draft can type the card from the authoritative wiki signals
+    # (e.g. Andorhal -> "Destroyed settlements" -> ruins; Hearthglen -> "Towns" -> town;
+    # infobox "Type" as the Slice 10 category -> infobox -> LLM precedence's second step)
+    # instead of fragile evidence-text words.
     for snapshot in source_snapshots:
         if str(snapshot.get("auxiliary_role", "")).strip() != "location_profile":
             continue
         location_id = str(snapshot.get("auxiliary_target_id", "")).strip()
+        if not location_id or location_id not in location_candidate_map:
+            continue
         categories = snapshot.get("categories") or []
-        if location_id and categories and location_id in location_candidate_map:
+        if categories:
             location_candidate_map[location_id]["categories"] = list(categories)
+        infobox = snapshot.get("infobox")
+        if isinstance(infobox, dict) and infobox:
+            location_candidate_map[location_id]["infobox"] = dict(infobox)
 
     def _write(
         path: Path,

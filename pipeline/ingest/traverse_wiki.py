@@ -44,6 +44,7 @@ from pipeline.ingest.fetch_wiki import (
     fetch_categories_for_titles,
 )
 from pipeline.ingest.normalize_source import run_normalize_source
+from pipeline.ingest.snapshots import load_source_snapshots
 
 _WARCRAFT_WIKI_ORIGIN = "https://warcraft.wiki.gg"
 _MAX_STORYLINE = 1
@@ -199,7 +200,7 @@ def _build_manifest_row(
     return row
 
 
-def _persist_section_block(block: dict[str, str]) -> dict[str, str]:
+def _persist_section_block(block: dict[str, Any]) -> dict[str, Any]:
     """Serialize a section block for the snapshot, preserving parent nesting.
 
     ``parent_section_role`` carries the enclosing top-level (H2) heading of a nested
@@ -207,10 +208,15 @@ def _persist_section_block(block: dict[str, str]) -> dict[str, str]:
     so an unrecognized or era-named subsection ("Cataclysm" under "Biography") inherits
     its parent's narrative/history role instead of collapsing to "other". Dropping it
     here silently disabled that inheritance for every crawled profile page.
+
+    ``links`` (the block's inline article links) is required snapshot schema from
+    Slice 12 on and is always emitted, empty when the block has none.
     """
-    persisted: dict[str, str] = {
+    raw_links = block.get("links")
+    persisted: dict[str, Any] = {
         "section_role": str(block.get("section_role", "other")),
         "text": clean_wiki_snippet(str(block.get("text", ""))),
+        "links": raw_links if isinstance(raw_links, list) else [],
     }
     parent = str(block.get("parent_section_role", "")).strip()
     if parent:
@@ -224,7 +230,7 @@ def _snapshot_from_fetch(
     body: str,
     revision_id: str,
     locator: str,
-    section_blocks: list[dict[str, str]],
+    section_blocks: list[dict[str, Any]],
     wiki_links: list[str],
     structured_links: list[dict[str, str]],
     captured_at: str,
@@ -232,10 +238,10 @@ def _snapshot_from_fetch(
     infobox: dict[str, str] | None = None,
     parse_html: str = "",
     parse_html_truncated: bool = False,
-    quest_lore_blocks: list[dict[str, str]] | None = None,
+    quest_lore_blocks: list[dict[str, Any]] | None = None,
     quest_record: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    cleaned_blocks: list[dict[str, str]] = [
+    cleaned_blocks: list[dict[str, Any]] = [
         _persist_section_block(block) for block in section_blocks
     ]
     snapshot = {
@@ -499,7 +505,7 @@ def _fetch_and_append(
     structured_links = structured_from_fetch or build_structured_links_from_sections(
         section_blocks, wiki_links
     )
-    quest_lore_blocks: list[dict[str, str]] | None = None
+    quest_lore_blocks: list[dict[str, Any]] | None = None
     quest_record: dict[str, Any] | None = None
     if auxiliary_role == "quest":
         lore_record = build_quest_lore_record(
@@ -568,11 +574,10 @@ def _load_traverse_state(
     manifest_path = ingest_dir / "source_manifest.json"
     if not snapshots_path.exists() or not manifest_path.exists():
         raise RuntimeError("traverse requires ingest snapshots and source_manifest.json")
-    snapshots_blob = _load_json(snapshots_path)
+    snapshots: list[dict[str, Any]] = load_source_snapshots(snapshots_path)
     manifest_blob = _load_json(manifest_path)
-    if not isinstance(snapshots_blob, list) or not isinstance(manifest_blob, list):
+    if not isinstance(manifest_blob, list):
         raise RuntimeError("ingest artifacts must be JSON arrays")
-    snapshots: list[dict[str, Any]] = [row for row in snapshots_blob if isinstance(row, dict)]
     manifest_rows: list[dict[str, Any]] = [row for row in manifest_blob if isinstance(row, dict)]
     report_path = context.data_dir / "ingest" / "traversal_report.json"
     report_rows: list[dict[str, Any]] = []

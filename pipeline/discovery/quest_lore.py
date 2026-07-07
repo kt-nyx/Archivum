@@ -75,9 +75,13 @@ def _is_boilerplate(text: str) -> bool:
     return False
 
 
-def extract_quest_lore(section_blocks: list[dict[str, Any]]) -> list[dict[str, str]]:
-    """Return narrative snippets suitable for quest lore evidence."""
-    snippets: list[dict[str, str]] = []
+def extract_quest_lore(section_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return narrative snippets suitable for quest lore evidence.
+
+    Each snippet keeps its source block's inline article ``links`` (Slice 12
+    required schema — empty list when the block has none).
+    """
+    snippets: list[dict[str, Any]] = []
     for block in section_blocks:
         if not isinstance(block, dict):
             continue
@@ -89,11 +93,18 @@ def extract_quest_lore(section_blocks: list[dict[str, Any]]) -> list[dict[str, s
             continue
         if not _is_lore_section(raw_role):
             continue
-        snippets.append({"section_role": raw_role, "text": text})
+        raw_links = block.get("links")
+        snippets.append(
+            {
+                "section_role": raw_role,
+                "text": text,
+                "links": raw_links if isinstance(raw_links, list) else [],
+            }
+        )
     return snippets
 
 
-def lore_word_count(snippets: list[dict[str, str]]) -> int:
+def lore_word_count(snippets: list[dict[str, Any]]) -> int:
     return sum(len(str(row.get("text", "")).split()) for row in snippets)
 
 

@@ -10,6 +10,7 @@ from typing import Any
 from pipeline.common.run_context import RunContext
 from pipeline.discovery.pilot_questline_registry import structural_expectations_for_zone
 from pipeline.discovery.questline_significance import load_included_cluster_ids_by_zone
+from pipeline.ingest.snapshots import load_source_snapshots
 
 
 @dataclass
@@ -23,8 +24,8 @@ class ValidationRunResources:
     fact_check_target_reasons: dict[str, list[str]] = field(default_factory=dict)
     linker_manual_review_by_entity: dict[str, int] = field(default_factory=dict)
     # Per-page faction-candidate names from the draft's ``major_factions.candidates`` finalize
-    # decision — the match source for structure.uncarded_current_actor until the Slice 12
-    # organization registry lands.
+    # decision — the match source for structure.uncarded_current_actor until Slice 13 re-points
+    # it at the Slice 12 organization registry.
     faction_candidate_names_by_entity: dict[str, list[str]] = field(default_factory=dict)
 
 
@@ -41,10 +42,7 @@ def load_validation_run_resources(run_root: Path) -> ValidationRunResources:
     """Load ingest snapshots, decisions, and fact-check targets from a run root."""
     resources = ValidationRunResources()
     snapshots_path = run_root / "data" / "ingest" / "source_snapshots.json"
-    if snapshots_path.exists():
-        blob = json.loads(snapshots_path.read_text(encoding="utf-8"))
-        if isinstance(blob, list):
-            resources.source_snapshots = [row for row in blob if isinstance(row, dict)]
+    resources.source_snapshots = load_source_snapshots(snapshots_path, missing_ok=True)
 
     linker_report_path = run_root / "data" / "linker" / "linker_qa_report.json"
     if linker_report_path.exists():

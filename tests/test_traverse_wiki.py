@@ -15,6 +15,7 @@ from pipeline.ingest.traverse_wiki import (
     run_traverse_quests,
     run_traverse_seed,
 )
+from tests.factories.snapshots import with_required_snapshot_schema
 
 STORYLINE_HTML = Path("tests/fixtures/storyline/western_plaguelands_storyline.html").read_text(
     encoding="utf-8"
@@ -97,7 +98,7 @@ def _write_ingest_fixtures(context, ingest_dir: Path) -> None:
         }
     ]
     (ingest_dir / "source_snapshots.json").write_text(
-        json.dumps(snapshots, indent=2), encoding="utf-8"
+        json.dumps(with_required_snapshot_schema(snapshots), indent=2), encoding="utf-8"
     )
     (ingest_dir / "source_manifest.json").write_text(
         json.dumps(manifest, indent=2), encoding="utf-8"
@@ -580,7 +581,7 @@ def test_traverse_fetches_linked_lore_page_not_instance_page_source(
         },
     ]
     (ingest_dir / "source_snapshots.json").write_text(
-        json.dumps(snapshots, indent=2), encoding="utf-8"
+        json.dumps(with_required_snapshot_schema(snapshots), indent=2), encoding="utf-8"
     )
     (ingest_dir / "source_manifest.json").write_text(
         json.dumps(manifest, indent=2), encoding="utf-8"

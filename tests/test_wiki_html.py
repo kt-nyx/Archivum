@@ -79,6 +79,53 @@ def test_content_blocks_keeps_plain_content_divs() -> None:
     assert any("keep fell to the Scourge" in b["text"] for b in blocks)
 
 
+def test_content_blocks_records_inline_links_per_block() -> None:
+    # Slice 12: every block carries its own inline article links in document order,
+    # deduped per block; absolute wiki links normalize to site-relative paths and
+    # fragments are stripped; non-article links are excluded.
+    html = (
+        "<p>The <a href='/wiki/Argent_Crusade'>Argent Crusade</a> and the "
+        "<a href='https://warcraft.wiki.gg/wiki/Cenarion_Circle#History'>Cenarion Circle</a> "
+        "heal the land. The <a href='/wiki/Argent_Crusade'>crusade</a> stays; "
+        "<a href='https://example.com/offsite'>offsite</a> and <a href='#frag'>frag</a> "
+        "do not count.</p>"
+        "<p>No links here.</p>"
+    )
+    blocks = wiki_html.content_blocks(html)
+    assert blocks[0]["links"] == [
+        {"anchor_text": "Argent Crusade", "href": "/wiki/Argent_Crusade"},
+        {"anchor_text": "Cenarion Circle", "href": "/wiki/Cenarion_Circle"},
+    ]
+    assert blocks[1]["links"] == []
+
+
+def test_content_blocks_skips_textless_icon_anchors_and_folds_nested_links() -> None:
+    html = (
+        "<ul><li><a href='/wiki/File:IconSmall.gif'><img src='x.gif'/></a>"
+        "<a href='/wiki/Loken'>Loken</a>"
+        "<ul><li><a href='/wiki/Volkhan'>Volkhan</a></li></ul></li></ul>"
+    )
+    blocks = wiki_html.content_blocks(html)
+    # One outer block: nested list folded in, icon-only anchor skipped, nested link kept.
+    assert [b["links"] for b in blocks] == [
+        [
+            {"anchor_text": "Loken", "href": "/wiki/Loken"},
+            {"anchor_text": "Volkhan", "href": "/wiki/Volkhan"},
+        ]
+    ]
+
+
+def test_wiki_article_href_normalizes_and_rejects() -> None:
+    assert wiki_html.wiki_article_href("/wiki/Andorhal#History") == "/wiki/Andorhal"
+    assert (
+        wiki_html.wiki_article_href("https://warcraft.wiki.gg/wiki/Andorhal") == "/wiki/Andorhal"
+    )
+    assert wiki_html.wiki_article_href("https://example.com/wiki/Andorhal") == ""
+    assert wiki_html.wiki_article_href("#history") == ""
+    assert wiki_html.wiki_article_href("/wiki/") == ""
+    assert wiki_html.wiki_article_href("") == ""
+
+
 def test_parse_infobox_extracts_label_value_rows() -> None:
     html = (
         '<table class="infobox darktable">'
@@ -90,6 +137,26 @@ def test_parse_infobox_extracts_label_value_rows() -> None:
     )
     assert wiki_html.parse_infobox(html) == {"Type": "Dungeon", "Expansion": "Cataclysm"}
     assert wiki_html.parse_infobox("<p>no infobox</p>") == {}
+
+
+def test_parse_infobox_captures_leading_banner_title() -> None:
+    # Slice 12: the leading header-only row is the infobox's subject banner and is
+    # stored under the reserved "_title" key; a real "Title" label keeps its own key,
+    # and a header-only row after fields is an in-box section header, not the title.
+    html = (
+        '<table class="infobox">'
+        '<tr class="above-header"><th colspan="2">Argent Crusade</th></tr>'
+        '<tr><td colspan="2">image row</td></tr>'
+        "<tr><th>Title</th><td>Highlord</td></tr>"
+        "<tr><th>Affiliation</th><td>Independent</td></tr>"
+        "<tr><th>Bosses</th></tr>"
+        "</table>"
+    )
+    assert wiki_html.parse_infobox(html) == {
+        "_title": "Argent Crusade",
+        "Title": "Highlord",
+        "Affiliation": "Independent",
+    }
 
 
 def test_iter_headings_and_list_items() -> None:

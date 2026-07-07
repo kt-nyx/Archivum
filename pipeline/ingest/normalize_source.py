@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
 from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext
+from pipeline.ingest.snapshots import load_source_snapshots
 
 
 def _normalized_priority(value: object) -> int | None:
@@ -30,7 +30,7 @@ def _fallback_priority(row_index: int) -> int:
 
 def run_normalize_source(context: RunContext, snapshots_path: Path) -> Path:
     """Convert raw snapshots into a normalized source manifest."""
-    snapshots = json.loads(snapshots_path.read_text(encoding="utf-8"))
+    snapshots = load_source_snapshots(snapshots_path)
     manifest_entries: list[dict[str, Any]] = []
     for fallback_priority, source in enumerate(snapshots, start=1):
         priority = _normalized_priority(source.get("priority"))

@@ -1,6 +1,6 @@
 # Plan: Generalization Refactor — Registries, Guarantees & Editorial Selection
 
-**Status: IN PROGRESS — Slices 1–11 done (Slice 11: 2026-07-06). Implement remaining slices in the order given.**
+**Status: IN PROGRESS — Slices 1–12 done (Slice 12: 2026-07-06, incl. the re-crawl). Implement remaining slices in the order given.**
 
 ## Why this plan exists
 
@@ -1016,10 +1016,83 @@ expected on pilot (categories carry most cases).
 reconciliation); everything else should be output-neutral on the pilot — which is exactly the
 point: these were invisible on WPL and load-bearing everywhere else.
 
-## Slice 12 — Ingest: inline paragraph links + infobox fields + organization registry (H-1 enablers) **[RE-CRAWL]**
+## Slice 12 — Ingest: inline paragraph links + infobox fields + organization registry (H-1 enablers) **[RE-CRAWL]** — ✅ DONE (2026-07-06, incl. re-crawl)
 
 **Goal:** capture the wiki's own structure so later slices can consume it. Batch *all* ingest
 schema additions here so only one re-crawl is needed.
+
+**Implementation notes (as built, 2026-07-06):**
+
+- **Per-block inline links** live in the block-extraction substrate `wiki_html.content_blocks`
+  (not per-caller): every emitted block now carries `links: [{anchor_text, href}]` — document
+  order, deduped per block by resolved href (first anchor wins), text-less icon/image anchors
+  skipped. New single home `wiki_html.wiki_article_href` canonicalizes hrefs to **site-relative
+  `/wiki/…` paths** (absolute `warcraft.wiki.gg` origins stripped, fragments stripped) — that is
+  the "resolve" the plan asked for, chosen because the registry's `wiki_path` uses the same form,
+  so Slice 13 can match link targets to organizations by string. Links ride *all* block types
+  (paragraph/list_item/table_cell), matching the "every crawled block" requirement.
+- **Threading:** `fetch_wiki._extract_sections_and_links` copies each block's links onto the
+  section dict; `run_fetch_wiki` normalizes blocks on write (`_snapshot_section_blocks`) and
+  traverse's `_persist_section_block` keeps `links` (both writers guarantee the key even for
+  non-extractor `FetchedSource` producers, e.g. test mocks). `quest_lore.extract_quest_lore`
+  snippets keep their source block's links, so **both** enrich evidence paths (quest-lore rows
+  and the per-block loop) emit `evidence_items[].links` via `enrich._block_evidence_links`.
+  `EvidenceItem` gained `links: list[EvidenceLink]` (new contract model; empty default).
+  Verified end-to-end on the fresh crawl: all 1332 evidence items carry the key, 1007 non-empty,
+  across every pool (faction_pool 216, location_pool 294, quest_lore 319, …).
+- **Infobox:** capture already existed since commit `889cf51` (both fetch + traverse paths;
+  `parse_infobox` label→value pairs — live-verified `Type` / `Affiliation` / `Location` on the
+  pilot pages). This slice added the missing **title**: the leading header-only banner row is
+  stored under the reserved `"_title"` key (cannot collide with a character infobox's real
+  `Title` label; later header-only rows are in-box section headers and stay skipped). Two
+  review-cycle fixes made Slice 10's category → infobox → LLM precedence actually fire after the
+  re-crawl: `draft_writer` now threads each location-profile snapshot's `infobox` onto its
+  candidate-map row (next to the existing `categories` threading), and
+  `location_scoring._infobox_location_type` matches keys case-insensitively (`parse_infobox`
+  preserves the wiki's `"Type"` casing; the old exact lookup on `"type"` was a silent no-op).
+- **Snapshot loading has one home:** new `pipeline/ingest/snapshots.py` —
+  `load_source_snapshots(path, *, missing_ok=False)` + `SnapshotSchemaError` ("re-crawl required",
+  names the offending source_id). Requires `infobox` to be a dict and every `section_blocks[]`
+  entry to carry a `links` list; empty dict/list are explicitly valid data conditions. All eight
+  consumers re-pointed (enrich, discovery workflow, glossary run_terms, draft_writer,
+  validate/context, coalesce resolve_entities, normalize_source, traverse state). The one
+  deliberate exception: `orchestrator/stages._resolve_instance_roster_identities` keeps its raw
+  best-effort read — it re-reads the file `run_fetch_wiki` wrote seconds earlier in the same
+  stage inside broad error handling, so it can never see a stale shape.
+- **Organization registry:** the plan's category names don't exist on the wiki — the real
+  taxonomy is `Category:Organizations` (lore groups) + `Category:Factions` (gameplay factions),
+  with umbrella affiliation carried by `Category:Alliance factions` / `Category:Horde factions`
+  membership, **no** neutral category (neutrality = absence of umbrella membership), and racial
+  org categories swept live from `Category:Organizations by race` subcategories (mirrors the
+  Subzones sweep — never hand-listed). `RegistryEntry` gained `affiliations` (union-merged);
+  new `entry_affiliations()` accessor beside `entry_kinds()`. Concept/list articles ("Faction",
+  "Organization", "Alliance organizations") are meta-filtered (`_META_ARTICLE_TITLES` +
+  `\borganizations$` in `_META_TITLE_RE`). Registry version bumped to **3**; committed
+  `world_registry.json` rebuilt live: 11297 entries, **1388 organizations**, 51 with
+  affiliations (28 alliance / 23 horde); Argent Crusade, Cenarion Circle, Alliance, Horde,
+  Forsaken all resolve as organizations. The rebuild also actualized Slice 11's deferred
+  subzone-parent semantics (74 instances lost their bogus `zone` kind — Black Temple et al.;
+  8 wiki-uncategorized parents like Icecrown Citadel flipped instance→zone), exactly as Slice
+  11's notes predicted for "the next registry rebuild". All existing kind consumers enumerate
+  explicit kind sets, so the new `organization` kind is inert until Slice 13.
+- **Tests:** `test_wiki_html` (block links order/dedupe/icon-skip/normalization,
+  `wiki_article_href`, `_title` capture; no-infobox → `{}` already covered); new
+  `tests/test_ingest_snapshots.py` (old-shape → "re-crawl required" naming the snapshot,
+  empty-infobox/links valid, missing_ok, non-array); `test_world_registry` (committed registry
+  has >100 orgs with affiliations; mocked-fetch seed test incl. racial sweep + affiliation
+  union + meta filtering); `test_location_type_significance` wiki-cased `"Type"` test. Pinned
+  `ingest_parser_cases.json` regenerated (assertion-guarded: only `sections[].links` changed).
+  Hand-built snapshot fixtures across 6 test files upgraded via new
+  `tests/factories/snapshots.with_required_snapshot_schema` (the fixture builder for the
+  post-Slice-12 shape).
+- **Re-crawl done:** fresh pilot crawl `test-run-wpl-26` (ingest → discovery → traverse_seed →
+  enrich roster → traverse_quests → enrich cluster/significance/card_polish/evidence_merge; the
+  LLM stages await the next live pilot, per `draft-stage-requires-openai`). Page population is
+  identical to `test-run-wpl-25` (111 snapshots; same per-role counts), 96/111 snapshots carry a
+  non-empty infobox, 6771/8646 blocks carry links, and the whole set loads through the schema
+  guard while `test-run-wpl-25` is now rejected with the re-crawl error (stale by decree).
+  Verified: `ruff check pipeline tests`, `mypy` on all sixteen touched production modules, full
+  `pytest` (~1110 passed, 5 skipped, 1 xfailed).
 
 - `pipeline/ingest/fetch_wiki.py` block extraction: record each paragraph block's inline links as
   `links: [{anchor_text, href}]` on the block (resolve relative `/wiki/…` hrefs; keep order;

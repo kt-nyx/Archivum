@@ -176,12 +176,22 @@ class DecisionArtifact(BaseModel):
     temporal_reason: str | None = None
 
 
+class EvidenceLink(BaseModel):
+    """One inline article link carried over from an evidence snippet's source block."""
+
+    anchor_text: str = ""
+    href: str = Field(min_length=1)
+
+
 class EvidenceItem(BaseModel):
     source_url: str = Field(min_length=1)
     source_title: str = Field(min_length=1)
     snippet: str = Field(min_length=1)
     section_role: str = Field(min_length=1)
     confidence: float = Field(ge=0, le=1)
+    # Slice 12: the source block's own inline article links (document order,
+    # deduped per block; empty when the paragraph has none).
+    links: list[EvidenceLink] = Field(default_factory=list)
     raw_section_role: str | None = None
     # Provenance taxonomy (Option A): what KIND of source prose this snippet is,
     # derived from the wiki header. Drives locators independently of the

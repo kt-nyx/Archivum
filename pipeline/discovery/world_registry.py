@@ -16,12 +16,12 @@ import httpx
 from pipeline.common import http
 from pipeline.common.io import write_json
 
-_REGISTRY_VERSION = "2"
+_REGISTRY_VERSION = "3"
 _WIKI_API = "https://warcraft.wiki.gg/api.php"
 _USER_AGENT = "wow-lore-registry/1.0"
 _SUBZONE_PARENT_RE = re.compile(r"^(?:Category:)?(.+?) subzones$", re.IGNORECASE)
 _META_TITLE_RE = re.compile(
-    r"(?:instances by|zones by|by level|by expansion|by continent|by faction|image requests|npcs|mobs|achievements|walkthrough|delves\b)",
+    r"(?:instances by|zones by|by level|by expansion|by continent|by faction|image requests|npcs|mobs|achievements|walkthrough|delves\b|\borganizations$)",
     re.IGNORECASE,
 )
 _JUNK_HEX_TITLE_RE = re.compile(r"^\(0x[0-9a-f]+\)$", re.IGNORECASE)
@@ -40,6 +40,7 @@ EntryKind = Literal[
     "place",
     "meta",
     "subzone_parent",
+    "organization",
 ]
 
 # Categories whose article members are geography/meta hubs, not playable zones.
@@ -58,6 +59,12 @@ _META_ARTICLE_TITLES = frozenset(
         "instances by level",
         "instance difficulty",
         "call to arms (dungeon)",
+        # Concept articles living inside the organization categories ("<X>
+        # organizations" list articles are caught by _META_TITLE_RE instead).
+        "faction",
+        "subfaction",
+        "organization",
+        "icon",
     }
 )
 
@@ -77,6 +84,24 @@ _ARTICLE_CATEGORY_SEEDS: tuple[tuple[str, str], ...] = (
     ("Category:Lore locations", "place"),
     ("Category:Locations", "place"),
 )
+
+# Organization category seeds (Slice 12). The wiki's own taxonomy differs from the
+# names the plan sketched: there are no "Category:<X> organizations" member categories;
+# organizations live under Category:Organizations (lore groups) and Category:Factions
+# (gameplay/reputation factions), with the umbrella affiliation carried by
+# Category:Alliance factions / Category:Horde factions membership. There is no neutral
+# category — neutrality is the absence of an umbrella membership. Racial organization
+# categories are enumerated live from Category:Organizations by race subcategories
+# (see build_world_registry), never hand-listed here.
+_ORGANIZATION_CATEGORY_SEEDS: tuple[tuple[str, str], ...] = (
+    ("Category:Organizations", ""),
+    ("Category:Factions", ""),
+    ("Category:Alliance factions", "alliance"),
+    ("Category:Horde factions", "horde"),
+)
+
+# The category whose subcategories are the wiki's racial organization categories.
+_ORGANIZATIONS_BY_RACE_CATEGORY = "Category:Organizations by race"
 
 # Known continent/region article titles (fallback when category seeds are sparse).
 _CONTINENT_TITLES = (
@@ -123,6 +148,10 @@ class RegistryEntry:
     wiki_path: str
     kinds: tuple[str, ...]
     source_categories: tuple[str, ...]
+    # Umbrella affiliations from organization-category memberships (Slice 12):
+    # "alliance"/"horde" via Category:Alliance factions / Category:Horde factions.
+    # Empty means neutral/unaffiliated (the wiki has no neutral category).
+    affiliations: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -131,6 +160,7 @@ class RegistryEntry:
             "wiki_path": self.wiki_path,
             "kinds": list(self.kinds),
             "source_categories": list(self.source_categories),
+            "affiliations": list(self.affiliations),
         }
 
 
@@ -275,6 +305,7 @@ def _merge_entry(
     title: str,
     kind: str,
     source_category: str,
+    affiliation: str = "",
 ) -> None:
     cleaned = _canonical_zone_title(title)
     if not cleaned or _should_skip_registry_title(cleaned):
@@ -282,6 +313,7 @@ def _merge_entry(
     normalized = _normalize_title(cleaned)
     if normalized in _META_ARTICLE_TITLES:
         return
+    new_affiliations = (affiliation,) if affiliation else ()
     existing = entries.get(normalized)
     if existing is None:
         entries[normalized] = RegistryEntry(
@@ -290,17 +322,87 @@ def _merge_entry(
             wiki_path=_wiki_path(cleaned),
             kinds=(kind,),
             source_categories=(source_category,),
+            affiliations=new_affiliations,
         )
         return
     kinds = tuple(sorted(set(existing.kinds) | {kind}))
     sources = tuple(sorted(set(existing.source_categories) | {source_category}))
+    affiliations = tuple(sorted(set(existing.affiliations) | set(new_affiliations)))
     entries[normalized] = RegistryEntry(
         title=existing.title,
         normalized_title=existing.normalized_title,
         wiki_path=existing.wiki_path,
         kinds=kinds,
         source_categories=sources,
+        affiliations=affiliations,
     )
+
+
+def _ingest_organization_categories(
+    entries: dict[str, RegistryEntry],
+    *,
+    sleep_seconds: float,
+    cache: dict[str, list[dict[str, Any]]],
+    cache_path: Path | None,
+) -> None:
+    """Seed ``kind="organization"`` entries with umbrella affiliations (Slice 12).
+
+    Fixed seeds carry the wiki's umbrella signal (Alliance/Horde factions); the
+    racial organization categories are swept live from the wiki's own
+    Category:Organizations by race subcategory list, mirroring the Subzones sweep,
+    so no racial category is ever hand-enumerated.
+    """
+    for category, affiliation in _ORGANIZATION_CATEGORY_SEEDS:
+        members = _fetch_category_members(
+            category,
+            cmtype="page",
+            sleep_seconds=sleep_seconds,
+            cache=cache,
+            cache_path=cache_path,
+        )
+        for row in members:
+            if int(row.get("ns", -1)) != 0:
+                continue
+            title = str(row.get("title", "")).strip()
+            if not title:
+                continue
+            _merge_entry(
+                entries,
+                title=title,
+                kind="organization",
+                source_category=category,
+                affiliation=affiliation,
+            )
+
+    race_subcats = _fetch_category_members(
+        _ORGANIZATIONS_BY_RACE_CATEGORY,
+        cmtype="subcat",
+        sleep_seconds=sleep_seconds,
+        cache=cache,
+        cache_path=cache_path,
+    )
+    for row in race_subcats:
+        subcat_title = str(row.get("title", "")).strip()
+        if not subcat_title.startswith("Category:"):
+            continue
+        for page_row in _fetch_category_members(
+            subcat_title,
+            cmtype="page",
+            sleep_seconds=sleep_seconds,
+            cache=cache,
+            cache_path=cache_path,
+        ):
+            if int(page_row.get("ns", -1)) != 0:
+                continue
+            page_title = str(page_row.get("title", "")).strip()
+            if not page_title:
+                continue
+            _merge_entry(
+                entries,
+                title=page_title,
+                kind="organization",
+                source_category=subcat_title,
+            )
 
 
 def _ingest_category_pages(
@@ -360,6 +462,15 @@ def build_world_registry(
         entries,
         "Category:Instances",
         "instance",
+        sleep_seconds=sleep_seconds,
+        cache=cache,
+        cache_path=cache_path,
+    )
+
+    # Slice 12: organization entries (with umbrella affiliations) are always part
+    # of the registry from version 3 on.
+    _ingest_organization_categories(
+        entries,
         sleep_seconds=sleep_seconds,
         cache=cache,
         cache_path=cache_path,
@@ -455,6 +566,20 @@ def entry_kinds(title: str, path: Path | None = None) -> frozenset[str]:
     if not isinstance(kinds, list):
         return frozenset()
     return frozenset(str(kind) for kind in kinds if isinstance(kind, str))
+
+
+def entry_affiliations(title: str, path: Path | None = None) -> frozenset[str]:
+    """Umbrella affiliations recorded for a registry entry ("alliance"/"horde").
+
+    Empty for unknown titles and for neutral/unaffiliated organizations.
+    """
+    row = registry_index(path).get(_normalize_title(title))
+    if row is None:
+        return frozenset()
+    affiliations = row.get("affiliations", [])
+    if not isinstance(affiliations, list):
+        return frozenset()
+    return frozenset(str(item) for item in affiliations if isinstance(item, str))
 
 
 def is_registry_title(title: str, *kinds: str, path: Path | None = None) -> bool:

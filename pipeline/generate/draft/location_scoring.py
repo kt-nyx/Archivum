@@ -67,8 +67,9 @@ SIGNIFICANCE_TAGS = frozenset(
     }
 )
 _VALID_LOCATION_TYPES = frozenset(member.value for member in LocationType)
-# Infobox keys carrying a place-type hint. Empty until the Slice 12 re-crawl populates
-# ``infobox`` on the snapshot; the type precedence below simply skips a missing field.
+# Infobox keys carrying a place-type hint, compared case-insensitively against the
+# wiki-cased labels ``parse_infobox`` preserves ("Type"). Populated on snapshots since
+# the Slice 12 re-crawl; the type precedence below simply skips a missing field.
 _INFOBOX_TYPE_KEYS = ("type", "location_type")
 
 
@@ -85,11 +86,14 @@ def _category_type(categories: list[str] | None) -> str:
 def _infobox_location_type(infobox: dict[str, Any] | None) -> str:
     """A published LocationType read directly from an infobox ``type`` field, when present.
 
-    Returns ``""`` when there is no infobox or no recognized value — before the Slice 12
-    re-crawl there is no infobox on the snapshot, so this step is simply skipped.
+    Keys are matched case-insensitively: ``parse_infobox`` preserves the wiki's own
+    label casing ("Type"). Returns ``""`` when there is no infobox or no recognized
+    value — a snapshot without an infobox simply skips this step.
     """
-    for key in _INFOBOX_TYPE_KEYS:
-        value = str((infobox or {}).get(key, "")).strip().lower().replace(" ", "_")
+    for raw_key, raw_value in (infobox or {}).items():
+        if str(raw_key).strip().lower() not in _INFOBOX_TYPE_KEYS:
+            continue
+        value = str(raw_value).strip().lower().replace(" ", "_")
         if value in _VALID_LOCATION_TYPES:
             return value
     return ""
