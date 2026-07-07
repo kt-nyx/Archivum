@@ -826,6 +826,41 @@ def test_zone_page_questline_inclusion_threshold_enforced() -> None:
     assert "structure.zone_page_questline_inclusion_threshold" in codes
 
 
+def _ready_openai_settings() -> SimpleNamespace:
+    return SimpleNamespace(
+        openai_ready=True,
+        google_ready=False,
+        openai_model="gpt-5.5",
+        google_api_key="",
+        google_cse_id="",
+    )
+
+
+def _mock_fact_check_llm(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    status: str = "supported",
+    confidence: float = 0.92,
+) -> dict[str, int]:
+    """Route fact-check adjudication through a fake LLM returning ``status`` (Slice 15).
+
+    The token-overlap scoring path is deleted, so every ``supported`` / ``unsupported`` /
+    ``contradicted`` verdict now comes from the adjudicator; tests that assert a verdict must
+    supply one.
+    """
+    monkeypatch.setattr(
+        "pipeline.validate.rules.fact_check.load_ai_settings", lambda: _ready_openai_settings()
+    )
+    calls = {"count": 0}
+
+    def fake_chat(*_args: object, **_kwargs: object) -> dict[str, object]:
+        calls["count"] += 1
+        return {"status": status, "confidence": confidence, "reason": "adjudicated for test."}
+
+    monkeypatch.setattr("pipeline.validate.rules.fact_check.chat_json_completion", fake_chat)
+    return calls
+
+
 def test_fact_check_warn_profile_routes_contradiction_to_warning() -> None:
     payload = _validation_ready_zone_page_payload()
     payload["history_sections"][0]["body"] = (
@@ -861,7 +896,8 @@ def test_fact_check_strict_profile_blocks_contradictions() -> None:
     assert contradiction_issue.severity.value == "hard-fail"
 
 
-def test_fact_check_uses_local_snapshots_for_evidence() -> None:
+def test_fact_check_uses_local_snapshots_for_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
+    _mock_fact_check_llm(monkeypatch, status="supported")
     payload = _validation_ready_zone_page_payload()
     source_ids = [entry["source_id"] for entry in payload["sources"]]
     report = validate_payload(
@@ -869,6 +905,8 @@ def test_fact_check_uses_local_snapshots_for_evidence() -> None:
         payload,
         validation_context={
             "fact_check_profile": "warn",
+            "fact_check_enable_llm": True,
+            "fact_check_target_entity_ids": [str(payload["zone_id"])],
             "fact_check_source_snapshots": [
                 {
                     "source_id": source_ids[0],
@@ -893,15 +931,27 @@ def test_fact_check_uses_local_snapshots_for_evidence() -> None:
     rows = cast(list[dict[str, object]], report.fact_check_report["claims"])
     assert rows
     assert any(row["status"] == "supported" for row in rows)
+    # The adjudicated rows carry the cited local-snapshot body as evidence.
+    supported = next(row for row in rows if row["status"] == "supported")
+    evidence_kinds = {
+        str(item.get("kind"))
+        for item in cast(list[dict[str, object]], supported["evidence"])
+    }
+    assert "local_snapshot" in evidence_kinds
 
 
-def test_fact_check_uses_zone_page_history_provenance_for_history_sections() -> None:
+def test_fact_check_uses_zone_page_history_provenance_for_history_sections(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _mock_fact_check_llm(monkeypatch, status="supported")
     payload = _validation_ready_zone_page_payload()
     report = validate_payload(
         "zone_page",
         payload,
         validation_context={
             "fact_check_profile": "warn",
+            "fact_check_enable_llm": True,
+            "fact_check_target_entity_ids": [str(payload["zone_id"])],
             "fact_check_source_snapshots": [
                 {
                     "source_id": "src-wiki-wpl",
@@ -919,19 +969,24 @@ def test_fact_check_uses_zone_page_history_provenance_for_history_sections() -> 
     history_issues = [
         issue
         for issue in report.issues
-        if issue.code == "fact_check.insufficient_evidence"
+        if issue.code.startswith("fact_check.")
         and issue.path == "$.history_sections[0].body"
     ]
     assert not history_issues
 
 
-def test_fact_check_resolves_instance_page_claims_to_provenance_buckets() -> None:
+def test_fact_check_resolves_instance_page_claims_to_provenance_buckets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _mock_fact_check_llm(monkeypatch, status="supported")
     payload = _instance_page_payload_with_distinct_prose_sources()
     report = validate_payload(
         "instance_page",
         payload,
         validation_context={
             "fact_check_profile": "warn",
+            "fact_check_enable_llm": True,
+            "fact_check_target_entity_ids": [str(payload["instance_id"])],
             "fact_check_source_snapshots": [
                 {
                     "source_id": "src-instance-identity",
@@ -958,21 +1013,17 @@ def test_fact_check_resolves_instance_page_claims_to_provenance_buckets() -> Non
     assert rows_by_path["$.at_a_glance"]["status"] == "supported"
     assert rows_by_path["$.overview"]["status"] == "supported"
     assert rows_by_path["$.history_sections[0].body"]["status"] == "supported"
-    assert [
-        evidence["source_id"]
-        for evidence in cast(list[dict[str, object]], rows_by_path["$.at_a_glance"]["evidence"])
-    ] == ["src-instance-identity"]
-    assert [
-        evidence["source_id"]
-        for evidence in cast(list[dict[str, object]], rows_by_path["$.overview"]["evidence"])
-    ] == ["src-instance-story"]
-    assert [
-        evidence["source_id"]
-        for evidence in cast(
-            list[dict[str, object]],
-            rows_by_path["$.history_sections[0].body"]["evidence"],
-        )
-    ] == ["src-instance-history"]
+
+    def _local_source_ids(path: str) -> list[str]:
+        return [
+            str(evidence["source_id"])
+            for evidence in cast(list[dict[str, object]], rows_by_path[path]["evidence"])
+            if evidence.get("kind") == "local_snapshot"
+        ]
+
+    assert _local_source_ids("$.at_a_glance") == ["src-instance-identity"]
+    assert _local_source_ids("$.overview") == ["src-instance-story"]
+    assert _local_source_ids("$.history_sections[0].body") == ["src-instance-history"]
 
 
 def test_fact_check_warns_when_web_toggle_enabled_without_google_credentials(
@@ -994,7 +1045,7 @@ def test_fact_check_warns_when_web_toggle_enabled_without_google_credentials(
     assert "fact_check.web_unavailable" in codes
 
 
-def test_fact_check_warn_profile_runs_llm_for_low_confidence_supported_claims(
+def test_fact_check_warn_profile_runs_llm_adjudication_for_targeted_entity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     payload = _validation_ready_zone_page_payload()
@@ -1472,18 +1523,184 @@ def test_fact_check_off_emits_no_insufficient_evidence_instance_page() -> None:
     assert report.fact_check_report["profile"] == "off"
 
 
-def test_fact_check_warn_profile_emits_insufficient_evidence_on_low_overlap() -> None:
+def test_fact_check_contradiction_from_inverted_spatial_relation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Slice 15: an inverted spatial relation is adjudicated ``contradicted`` against the cited
+    source (mocked LLM) — the failure the deleted token-overlap path used to pass at 0.95."""
+    _mock_fact_check_llm(monkeypatch, status="contradicted", confidence=0.95)
     payload = _valid_zone_page_payload()
+    payload["currently"] = "The academy was built above Caer Darrow, overlooking the lake."
+    report = validate_payload(
+        "zone_page",
+        payload,
+        validation_context={
+            "fact_check_profile": "strict",
+            "fact_check_enable_llm": True,
+            "fact_check_target_entity_ids": [str(payload["zone_id"])],
+            "fact_check_source_snapshots": [
+                {
+                    "source_id": "src-zone",
+                    "url": "https://example.test/zone",
+                    "body": "The academy was built beneath Caer Darrow, deep under the lake.",
+                }
+            ],
+        },
+    )
+    assert report.fact_check_report is not None
+    rows = {row["path"]: row for row in cast(list[dict[str, object]], report.fact_check_report["claims"])}
+    assert rows["$.currently"]["status"] == "contradicted"
+    contradiction = next(
+        issue
+        for issue in report.issues
+        if issue.code == "fact_check.contradiction" and issue.path == "$.currently"
+    )
+    assert contradiction.severity == ValidationSeverity.HARD_FAIL
+    assert report.passed is False
+
+
+def test_fact_check_pointer_less_field_is_unchecked_missing_pointers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Slice 15: a checked field with no provenance pointers is a provenance defect, recorded as
+    a WARN and never fuzzy-matched to a verdict."""
+    _mock_fact_check_llm(monkeypatch, status="supported")
+    payload = _valid_zone_page_payload()
+    payload["provenance"]["currently"] = []
     report = validate_payload(
         "zone_page",
         payload,
         validation_context={
             "fact_check_profile": "warn",
-            **_low_overlap_fact_check_context(),
+            "fact_check_enable_llm": True,
+            "fact_check_target_entity_ids": [str(payload["zone_id"])],
+            "fact_check_source_snapshots": [
+                {
+                    "source_id": "src-zone",
+                    "url": "https://example.test/zone",
+                    "body": "Any zone body text at all for the region.",
+                }
+            ],
         },
     )
-    codes = {issue.code for issue in report.issues}
-    assert "fact_check.insufficient_evidence" in codes
+    assert report.fact_check_report is not None
+    rows = {row["path"]: row for row in cast(list[dict[str, object]], report.fact_check_report["claims"])}
+    assert rows["$.currently"]["status"] == "unchecked_missing_pointers"
+    assert rows["$.currently"]["status"] not in {"supported", "unsupported", "contradicted"}
+    warn = next(
+        issue
+        for issue in report.issues
+        if issue.code == "fact_check.unchecked_missing_pointers" and issue.path == "$.currently"
+    )
+    assert warn.severity == ValidationSeverity.WARN
+
+
+def test_fact_check_checks_zone_card_summaries(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Slice 15: faction and location card summaries join the checked set."""
+    _mock_fact_check_llm(monkeypatch, status="supported")
+    payload = _valid_zone_page_payload()
+    payload["major_factions"] = [
+        {
+            "id": "faction-argent-crusade",
+            "name": "Argent Crusade",
+            "summary": "The Argent Crusade patrols the roads and shelters refugees across the zone.",
+            "wiki_url": "https://warcraft.wiki.gg/wiki/Argent_Crusade",
+        }
+    ]
+    payload["location_cards"] = [
+        {
+            "id": "location-andorhal",
+            "name": "Andorhal",
+            "location_type": "town",
+            "zone_id": "zone-western-plaguelands",
+            "wiki_url": "https://warcraft.wiki.gg/wiki/Andorhal",
+            "summary": "Andorhal is a contested town at the center of the zone's conflict.",
+            "significance_tag": "conflict-hub",
+            "provenance": [
+                {
+                    "source_id": "src-zone",
+                    "locator": "section:lead paragraph:1",
+                    "revision_id": "mw:42",
+                    "excerpt_hash": "sha1:loc1111",
+                }
+            ],
+        }
+    ]
+    payload["provenance"]["major_factions"] = {
+        "faction-argent-crusade": [
+            {
+                "source_id": "src-zone",
+                "locator": "section:factions paragraph:1",
+                "revision_id": "mw:42",
+                "excerpt_hash": "sha1:fac1111",
+            }
+        ]
+    }
+    report = validate_payload(
+        "zone_page",
+        payload,
+        validation_context={
+            "fact_check_profile": "warn",
+            "fact_check_enable_llm": True,
+            "fact_check_target_entity_ids": [str(payload["zone_id"])],
+            "fact_check_source_snapshots": [
+                {
+                    "source_id": "src-zone",
+                    "url": "https://example.test/zone",
+                    "body": "Argent Crusade patrols and Andorhal conflict details for the region.",
+                }
+            ],
+        },
+    )
+    assert report.fact_check_report is not None
+    rows = {row["path"]: row for row in cast(list[dict[str, object]], report.fact_check_report["claims"])}
+    assert rows["$.major_factions[0].summary"]["status"] == "supported"
+    assert rows["$.location_cards[0].summary"]["status"] == "supported"
+
+
+def test_fact_check_checks_instance_key_character_summaries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Slice 15: key-character card summaries join the checked set."""
+    _mock_fact_check_llm(monkeypatch, status="supported")
+    payload = _valid_instance_page_payload()
+    payload["key_characters"] = [
+        {
+            "id": "character-darkmaster-gandling",
+            "name": "Darkmaster Gandling",
+            "summary": "Darkmaster Gandling rules the academy and directs its necromantic curriculum.",
+            "role": "enemy",
+        }
+    ]
+    payload["provenance"]["key_characters"] = {
+        "character-darkmaster-gandling": [
+            {
+                "source_id": "src-instance",
+                "locator": "section:lead paragraph:1",
+                "revision_id": "mw:99",
+                "excerpt_hash": "sha1:char1111",
+            }
+        ]
+    }
+    report = validate_payload(
+        "instance_page",
+        payload,
+        validation_context={
+            "fact_check_profile": "warn",
+            "fact_check_enable_llm": True,
+            "fact_check_target_entity_ids": [str(payload["instance_id"])],
+            "fact_check_source_snapshots": [
+                {
+                    "source_id": "src-instance",
+                    "url": "https://example.test/scholomance",
+                    "body": "Darkmaster Gandling leads Scholomance and its necromantic teaching.",
+                }
+            ],
+        },
+    )
+    assert report.fact_check_report is not None
+    rows = {row["path"]: row for row in cast(list[dict[str, object]], report.fact_check_report["claims"])}
+    assert rows["$.key_characters[0].summary"]["status"] == "supported"
 
 
 def test_instance_page_key_characters_empty_hard_fails_under_release_gate() -> None:
@@ -1660,24 +1877,3 @@ def test_zone_page_glossary_ref_missing_wiki_url_hard_fails() -> None:
     assert any(issue.code == "structure.glossary_ref_missing_wiki_url" for issue in report.issues)
 
 
-def test_fact_check_support_score_lemma_fallback() -> None:
-    """Slice 8: the deterministic support score gains a lemmatized fallback for inflected
-    paraphrase, while an already-supported surface score is returned untouched and the raw
-    evidence text (proper nouns, exact prepositions) is what the report rows carry."""
-    from pipeline.validate.rules.fact_check import _support_score, _text_overlap_score
-
-    # Fully inflected paraphrase: zero surface overlap (below every support threshold), but
-    # the lemma fallback recognizes the same predications.
-    claim = "The ghouls prowled granaries, spirits haunted chapels, and cultists desecrated graves."
-    evidence = (
-        "A ghoul prowls each granary; a spirit haunts every chapel; "
-        "a cultist desecrates each grave."
-    )
-    assert _text_overlap_score(claim, evidence) == 0.0
-    assert _support_score(claim, evidence) > 0.5
-
-    # Surface score already clears every support threshold: the fallback never re-scores it,
-    # so an inverted spatial relation gains nothing from lemmatization here.
-    above = "The academy was built above Caer Darrow."
-    beneath = "The academy was built beneath Caer Darrow."
-    assert _support_score(above, beneath) == _text_overlap_score(above, beneath)

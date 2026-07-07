@@ -1,6 +1,6 @@
 # Plan: Generalization Refactor — Registries, Guarantees & Editorial Selection
 
-**Status: IN PROGRESS — Slices 1–14 done (Slice 14: 2026-07-07). Implement remaining slices in the order given.**
+**Status: IN PROGRESS — Slices 1–15 done (Slice 15: 2026-07-07). Implement remaining slices in the order given.**
 
 ## Why this plan exists
 
@@ -1339,9 +1339,53 @@ names).
   on the pilot fixtures before/after), one module at a time, and stop at parity — improving the
   classifications themselves is out of scope.
 
-## Slice 15 — Assertion-level fact-check (F) — depends on Slice 7
+## Slice 15 — Assertion-level fact-check (F) — depends on Slice 7 — ✅ DONE (2026-07-07)
 
 **Goal:** fact-check verifies assertions against the cited paragraphs, not token overlap.
+
+**Implementation notes (as built, 2026-07-07):**
+
+- `pipeline/validate/rules/fact_check.py` rewritten around a single verdict source. The
+  token-overlap scoring path is **deleted**: `WORD_RE`, `_tokenize`, `_text_overlap_score`,
+  `_support_score`, the `LOCAL_SUPPORT_THRESHOLD`/`WEB_SUPPORT_THRESHOLD` constants, and the
+  `pipeline.common.text_sim.lemma_support_containment` import are gone. No lexical-overlap score
+  ever decides `supported`/`unsupported`/`contradicted` — Slice 8's lemmatized scoring now lives
+  only on the synthesis/retrieval side.
+- The checked set is built once as `CheckedUnit(path, text, source_ids)` via `_checked_units`:
+  the existing section claims (`_section_claims` + `_section_pointer_source_ids`) **plus** card
+  summaries (`_card_units`). Card provenance is per-card — zone/instance faction and instance
+  key-character pointers hang off `provenance.<group>[card_id]`; location cards carry pointers
+  inline on `LocationCard.provenance`. `_pointer_source_ids` now dedupes.
+- Per unit (`_check_unit`): deterministic control markers first (`[CONTRADICTED]` →
+  contradicted, `[UNSUPPORTED]` → unsupported), evaluated before the pointer check so a marked
+  passage always yields its verdict (the pipeline-stage `[CONTRADICTED]` tests still hold). No
+  provenance pointers ⇒ `unchecked_missing_pointers` WARN (`fact_check.unchecked_missing_pointers`)
+  and move on — never fuzzy-matched. Otherwise the cited **source bodies** are retrieved from the
+  ingest snapshots (tags stripped, capped at 2000 chars/source; pointer locators are
+  synthesis-relative after Slice 7, so the retrievable unit is the cited source body, which
+  carries the paragraph plus its section context) and handed to the LLM adjudicator with
+  structured output (`_ADJUDICATION_SCHEMA`, enum `supported|unsupported|contradicted`). When
+  adjudication can't run (LLM unavailable, entity not targeted, or no cited-source text), the
+  unit is recorded `unchecked` with no issue — no verdict is manufactured.
+- Web search is retained as an *evidence gatherer* only (feeds snippets to the adjudicator when
+  enabled+targeted+available); its former overlap-scoring-to-`supported` step is deleted.
+- Severities: `contradicted` ⇒ HARD_FAIL under STRICT / WARN under WARN
+  (`fact_check.contradiction`); `unsupported` ⇒ WARN (`fact_check.unsupported`);
+  `unchecked_missing_pointers` ⇒ WARN. The OFF/`llm_unavailable`/`web_unavailable`/targeting
+  semantics are unchanged. `_adjudicate_with_openai` keeps its `(settings, claim_text,
+  evidence_snippets, model)` signature (the prompt-leak guard renders it); the prompt/status enum
+  were rewritten and it now requests structured output.
+- Tests (`tests/test_validation_engine.py`): new `_mock_fact_check_llm` helper; inverted spatial
+  relation ("above" vs source "beneath") → `contradicted` HARD_FAIL under strict; pointer-less
+  field → `unchecked_missing_pointers` WARN and never a supported/unsupported/contradicted
+  verdict; faction+location (zone) and key-character (instance) card summaries join the checked
+  set and adjudicate. The local-snapshot / history-provenance / instance-bucket tests now supply
+  a mocked verdict (the evidence-routing assertions filter to `local_snapshot` rows). The two
+  token-overlap scoring tests (`test_fact_check_warn_profile_emits_insufficient_evidence_on_low_overlap`,
+  `test_fact_check_support_score_lemma_fallback`) are deleted. Verified: `ruff check pipeline
+  tests`, `mypy` on fact_check.py + engine.py, full `pytest` (1129 passed, 5 skipped, 1 xfailed).
+
+**Original spec:**
 
 - `pipeline/validate/rules/fact_check.py`: for each checked sentence, retrieve the **exact
   paragraphs its provenance pointers cite** (paragraph-granular after Slice 7) plus their

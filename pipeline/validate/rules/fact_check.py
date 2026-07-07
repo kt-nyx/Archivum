@@ -1,10 +1,30 @@
-"""Automated fact-check validation pass with optional web + LLM adjudication."""
+"""Assertion-level fact-check validation (Slice 15).
+
+The fact-check verdict comes solely from an LLM adjudicator that judges each drafted
+passage against the *cited source text* — the paragraphs a passage's provenance
+pointers name, plus their surrounding section context. The former token-overlap
+scoring path (which passed "built **above** Caer Darrow" against a source saying
+"beneath") is deleted: no lexical-overlap score ever decides
+``supported`` / ``unsupported`` / ``contradicted``. Slice 8's lemmatized scoring
+stays on the synthesis/retrieval side and never participates in a fact-check verdict.
+
+A checked passage with no provenance pointers is a provenance defect (Slice 7 makes
+pointers honest), not something to fuzzy-match around: it is recorded as a
+``fact_check.unchecked_missing_pointers`` WARN and skipped.
+
+Retrieval granularity: provenance pointer locators are synthesis-relative (Slice 7
+assembly numbers them over the kept pointers, not over source offsets), so the
+retrievable evidence unit is the cited *source body* — which contains the cited
+paragraph together with its immediate section context. That whole body is handed to
+the adjudicator.
+"""
 
 from __future__ import annotations
 
 import json
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass
 from html import unescape
 from typing import Any, cast
 from urllib.parse import urlencode
@@ -14,17 +34,29 @@ from pydantic import BaseModel
 
 from pipeline.ai.config import AISettings, load_ai_settings
 from pipeline.ai.openai_client import chat_json_completion
-from pipeline.common.text_sim import lemma_support_containment
 from pipeline.validate.profiles import FactCheckProfile, parse_fact_check_profile
 from pipeline.validate.types import ValidationIssue, ValidationSeverity
 
-WORD_RE = re.compile(r"[a-z0-9']+")
 HTML_TAG_RE = re.compile(r"<[^>]+>")
 HISTORY_SECTION_BODY_RE = re.compile(r"^history_sections\[(?P<index>\d+)\]\.body$")
 
-# Deterministic support thresholds for the token-overlap heuristics (previously inline).
-LOCAL_SUPPORT_THRESHOLD = 0.08
-WEB_SUPPORT_THRESHOLD = 0.12
+# Verdict vocabulary. ``unchecked_missing_pointers`` and ``unchecked`` are bookkeeping
+# statuses (no adjudication happened) — only the first three come from the adjudicator.
+_ADJUDICATED_STATUSES = frozenset({"supported", "unsupported", "contradicted"})
+
+# Per-source evidence body cap handed to the adjudicator (tags stripped only): generous
+# enough to carry the cited paragraph's section context, bounded so a huge page body
+# can't blow the prompt.
+_EVIDENCE_BODY_MAX_LEN = 2000
+
+
+@dataclass(frozen=True)
+class CheckedUnit:
+    """One passage whose assertions are checked against its cited sources."""
+
+    path: str
+    text: str
+    source_ids: tuple[str, ...]
 
 
 def _section_claims(entity_type: str, payload: dict[str, Any]) -> list[tuple[str, str]]:
@@ -60,36 +92,6 @@ def _section_claims(entity_type: str, payload: dict[str, Any]) -> list[tuple[str
     return claims
 
 
-def _tokenize(text: str) -> set[str]:
-    return {token for token in WORD_RE.findall(text.lower()) if len(token) >= 3}
-
-
-def _text_overlap_score(claim_text: str, evidence_text: str) -> float:
-    claim_tokens = _tokenize(claim_text)
-    if not claim_tokens:
-        return 0.0
-    evidence_tokens = _tokenize(evidence_text)
-    if not evidence_tokens:
-        return 0.0
-    overlap = len(claim_tokens.intersection(evidence_tokens))
-    return overlap / float(len(claim_tokens))
-
-
-def _support_score(claim_text: str, evidence_text: str) -> float:
-    """Surface token containment with a lemmatized fallback (Slice 8).
-
-    The lemma variant only runs when the surface score is below every support threshold
-    (spaCy over full page bodies is not free), and the result is the max of the two. This is
-    a *support* signal only: it can raise a paraphrased/inflected claim to "supported", but
-    contradiction is still decided solely by the LLM adjudicator / explicit markers — and the
-    lemma token set keeps prepositions visible, so it never equates "above" with "beneath".
-    """
-    surface = _text_overlap_score(claim_text, evidence_text)
-    if surface >= max(LOCAL_SUPPORT_THRESHOLD, WEB_SUPPORT_THRESHOLD):
-        return surface  # already supported at every threshold; the fallback can't matter
-    return max(surface, lemma_support_containment(claim_text, evidence_text))
-
-
 def _clean_snippet(text: str, *, max_len: int = 280) -> str:
     cleaned = HTML_TAG_RE.sub(" ", text)
     cleaned = " ".join(unescape(cleaned).split())
@@ -119,7 +121,7 @@ def _pointer_source_ids(pointers: object) -> list[str]:
         if not isinstance(pointer, dict):
             continue
         source_id = pointer.get("source_id")
-        if isinstance(source_id, str) and source_id:
+        if isinstance(source_id, str) and source_id and source_id not in source_ids:
             source_ids.append(source_id)
     return source_ids
 
@@ -158,6 +160,74 @@ def _section_pointer_source_ids(
         if source_ids:
             return source_ids
     return []
+
+
+def _card_provenance_source_ids(payload: dict[str, Any], group_key: str, card_id: str) -> list[str]:
+    provenance = payload.get("provenance")
+    if not isinstance(provenance, dict):
+        return []
+    group = provenance.get(group_key)
+    if not isinstance(group, dict):
+        return []
+    return _pointer_source_ids(group.get(card_id))
+
+
+def _card_units(entity_type: str, payload: dict[str, Any]) -> list[CheckedUnit]:
+    """Faction / location / key-character card summaries (Slice 15 checked set).
+
+    Card provenance lives per-card: zone/instance faction and instance key-character
+    pointers hang off ``provenance.<group>[card_id]``; location cards carry their
+    pointers inline on ``LocationCard.provenance``.
+    """
+    units: list[CheckedUnit] = []
+
+    def _summary_units(field: str, group_key: str | None) -> None:
+        cards = payload.get(field)
+        if not isinstance(cards, list):
+            return
+        for index, card in enumerate(cards):
+            if not isinstance(card, dict):
+                continue
+            summary = card.get("summary")
+            if not isinstance(summary, str) or not summary.strip():
+                continue
+            card_id = str(card.get("id", "")).strip()
+            if group_key is None:
+                source_ids = _pointer_source_ids(card.get("provenance"))
+            else:
+                source_ids = _card_provenance_source_ids(payload, group_key, card_id)
+            units.append(
+                CheckedUnit(
+                    path=f"{field}[{index}].summary",
+                    text=summary,
+                    source_ids=tuple(source_ids),
+                )
+            )
+
+    if entity_type == "zone_page":
+        _summary_units("major_factions", "major_factions")
+        _summary_units("location_cards", None)
+    elif entity_type == "instance_page":
+        _summary_units("major_factions", "major_factions")
+        _summary_units("key_characters", "key_characters")
+    return units
+
+
+def _checked_units(entity_type: str, payload: dict[str, Any]) -> list[CheckedUnit]:
+    units: list[CheckedUnit] = [
+        CheckedUnit(
+            path=section_name,
+            text=claim_text,
+            source_ids=tuple(
+                _section_pointer_source_ids(
+                    payload, entity_type=entity_type, section_name=section_name
+                )
+            ),
+        )
+        for section_name, claim_text in _section_claims(entity_type, payload)
+    ]
+    units.extend(_card_units(entity_type, payload))
+    return units
 
 
 def _local_snapshot_map(
@@ -218,6 +288,18 @@ def _search_google_custom(
     return results
 
 
+_ADJUDICATION_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["status", "confidence", "reason"],
+    "properties": {
+        "status": {"type": "string", "enum": sorted(_ADJUDICATED_STATUSES)},
+        "confidence": {"type": "number"},
+        "reason": {"type": "string"},
+    },
+}
+
+
 def _adjudicate_with_openai(
     *,
     settings: AISettings,
@@ -226,10 +308,16 @@ def _adjudicate_with_openai(
     model: str,
 ) -> dict[str, object] | None:
     system_prompt = (
-        "You are a strict fact-check adjudicator. Respond only with JSON: "
-        '{"status":"supported|contradicted|insufficient_evidence","confidence":0.0,"reason":"..."}'
+        "You are a strict fact-check adjudicator. Judge the DRAFTED PASSAGE only against the "
+        "SOURCE EVIDENCE provided — never against outside knowledge. Verdicts: 'supported' when "
+        "every assertion in the passage is stated by or directly entailed by the evidence; "
+        "'contradicted' when any assertion conflicts with the evidence (for example an inverted "
+        "spatial, temporal, or causal relation such as 'above' where the source says 'beneath'); "
+        "'unsupported' when the evidence neither confirms nor contradicts the passage's "
+        "assertions. Respond only with JSON: "
+        '{"status":"supported|unsupported|contradicted","confidence":0.0,"reason":"..."}'
     )
-    user_prompt = f"Claim:\n{claim_text}\n\nEvidence snippets:\n" + "\n".join(
+    user_prompt = f"Drafted passage:\n{claim_text}\n\nSource evidence:\n" + "\n".join(
         f"- {snippet}" for snippet in evidence_snippets[:8]
     )
     parsed = chat_json_completion(
@@ -237,13 +325,15 @@ def _adjudicate_with_openai(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         model=model,
+        response_json_schema=_ADJUDICATION_SCHEMA,
+        response_schema_name="fact_check_adjudication",
     )
     if not isinstance(parsed, dict):
         return None
     status = parsed.get("status")
     confidence = parsed.get("confidence")
     reason = parsed.get("reason")
-    if status not in {"supported", "contradicted", "insufficient_evidence"}:
+    if status not in _ADJUDICATED_STATUSES:
         return None
     if not isinstance(confidence, (float, int)):
         confidence = 0.5
@@ -271,18 +361,46 @@ def _status_issue(
         )
         return ValidationIssue(
             code="fact_check.contradiction",
-            message=f"claim at {path} was adjudicated as contradicted",
+            message=f"passage at {path} was adjudicated as contradicted by its cited sources",
             severity=severity,
             path=path,
         )
-    if status == "insufficient_evidence":
+    if status == "unsupported":
         return ValidationIssue(
-            code="fact_check.insufficient_evidence",
-            message=f"claim at {path} has insufficient supporting evidence",
+            code="fact_check.unsupported",
+            message=f"passage at {path} is not supported by its cited sources",
+            severity=ValidationSeverity.WARN,
+            path=path,
+        )
+    if status == "unchecked_missing_pointers":
+        return ValidationIssue(
+            code="fact_check.unchecked_missing_pointers",
+            message=(
+                f"passage at {path} has no provenance pointers, so its assertions cannot be "
+                "verified against a cited source"
+            ),
             severity=ValidationSeverity.WARN,
             path=path,
         )
     return None
+
+
+def _off_report(entity_type: str, entity_id: str, settings: AISettings) -> dict[str, Any]:
+    return {
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "profile": FactCheckProfile.OFF.value,
+        "web_search_enabled": False,
+        "web_search_available": settings.google_ready,
+        "llm_enabled": False,
+        "llm_available": settings.openai_ready,
+        "llm_model": settings.openai_model,
+        "targeted_for_adjudication": False,
+        "target_reasons": [],
+        "claim_count": 0,
+        "claims": [],
+        "review_queue": [],
+    }
 
 
 def validate_fact_check_rules(
@@ -291,7 +409,7 @@ def validate_fact_check_rules(
     *,
     validation_context: Mapping[str, object] | None = None,
 ) -> tuple[list[ValidationIssue], dict[str, Any] | None]:
-    """Validate claims against local sources and optional web/LLM adjudication."""
+    """Adjudicate each checked passage against its cited sources with an LLM (structured output)."""
     settings = load_ai_settings()
     profile_value = None
     if validation_context:
@@ -303,24 +421,9 @@ def validate_fact_check_rules(
     entity_id = str(entity_id_value) if isinstance(entity_id_value, str) else ""
 
     if profile == FactCheckProfile.OFF:
-        report = {
-            "entity_type": entity_type,
-            "entity_id": entity_id,
-            "profile": profile.value,
-            "web_search_enabled": False,
-            "web_search_available": settings.google_ready,
-            "llm_enabled": False,
-            "llm_available": settings.openai_ready,
-            "llm_model": settings.openai_model,
-            "targeted_for_adjudication": False,
-            "target_reasons": [],
-            "claim_count": 0,
-            "claims": [],
-            "review_queue": [],
-        }
-        return [], report
+        return [], _off_report(entity_type, entity_id, settings)
 
-    claims = _section_claims(entity_type, payload)
+    units = _checked_units(entity_type, payload)
     source_map = _local_snapshot_map(validation_context)
 
     web_search_enabled = bool(
@@ -401,133 +504,26 @@ def validate_fact_check_rules(
     entity_label = payload.get("name") or payload.get("label") or payload.get("id") or entity_type
     entity_label_text = str(entity_label)
 
-    for section_name, claim_text in claims:
-        path = f"$.{section_name}"
-        claim_status = "insufficient_evidence"
-        claim_confidence = 0.5
-        evidence_rows: list[dict[str, Any]] = []
-        adjudication_model: str | None = None
+    adjudicate = (
+        llm_enabled
+        and targeted_for_adjudication
+        and llm_available
+        and profile in {FactCheckProfile.WARN, FactCheckProfile.STRICT}
+    )
 
-        # Marker overrides remain available for deterministic test/control paths.
-        normalized_upper = claim_text.upper()
-        if "[CONTRADICTED]" in normalized_upper:
-            claim_status = "contradicted"
-            claim_confidence = 0.95
-        elif "[UNCERTAIN]" in normalized_upper:
-            claim_status = "insufficient_evidence"
-            claim_confidence = 0.9
-
-        section_source_ids = _section_pointer_source_ids(
-            payload,
-            entity_type=entity_type,
-            section_name=section_name,
+    for unit in units:
+        path = f"$.{unit.path}"
+        claim_status, claim_confidence, adjudication_model, evidence_rows = _check_unit(
+            unit,
+            settings=settings,
+            source_map=source_map,
+            entity_label_text=entity_label_text,
+            adjudicate=adjudicate,
+            web_search_enabled=web_search_enabled and targeted_for_adjudication,
+            web_search_available=web_search_available,
+            max_web_results=max_web_results,
+            llm_model=llm_model,
         )
-        local_best_score = 0.0
-        local_supported = False
-        for source_id in section_source_ids:
-            source_snapshot = source_map.get(source_id)
-            if source_snapshot is None:
-                continue
-            score = _support_score(claim_text, source_snapshot["body"])
-            local_best_score = max(local_best_score, score)
-            evidence_rows.append(
-                {
-                    "kind": "local_snapshot",
-                    "source_id": source_id,
-                    "url": source_snapshot["url"],
-                    "score": round(score, 3),
-                    # Raw source text (tags stripped only): proper nouns and exact location
-                    # prepositions stay visible for downstream assertion adjudication.
-                    "snippet": _clean_snippet(source_snapshot["body"]),
-                }
-            )
-            if score >= LOCAL_SUPPORT_THRESHOLD:
-                local_supported = True
-
-        if claim_status not in {"contradicted"}:
-            if local_supported:
-                claim_status = "supported"
-                claim_confidence = max(claim_confidence, min(0.95, 0.55 + local_best_score))
-            elif not section_source_ids:
-                claim_status = "insufficient_evidence"
-                claim_confidence = 0.6
-
-        if (
-            web_search_enabled
-            and targeted_for_adjudication
-            and web_search_available
-            and claim_status != "contradicted"
-            and not local_supported
-        ):
-            query = f"{entity_label_text} {claim_text[:170]}"
-            try:
-                web_hits = _search_google_custom(
-                    query=query,
-                    max_results=max_web_results,
-                    api_key=settings.google_api_key,
-                    cse_id=settings.google_cse_id,
-                )
-            except Exception as exc:  # pragma: no cover - external API/network variability
-                web_hits = []
-                evidence_rows.append(
-                    {
-                        "kind": "web_error",
-                        "error": repr(exc),
-                    }
-                )
-            web_best_score = 0.0
-            for hit in web_hits:
-                score = _support_score(claim_text, hit["snippet"])
-                web_best_score = max(web_best_score, score)
-                evidence_rows.append(
-                    {
-                        "kind": "web_result",
-                        "url": hit["url"],
-                        "title": hit["title"],
-                        "score": round(score, 3),
-                        "snippet": hit["snippet"],
-                    }
-                )
-            if web_best_score >= WEB_SUPPORT_THRESHOLD:
-                claim_status = "supported"
-                claim_confidence = max(claim_confidence, min(0.9, 0.5 + web_best_score))
-
-        if (
-            llm_enabled
-            and targeted_for_adjudication
-            and llm_available
-            and profile in {FactCheckProfile.WARN, FactCheckProfile.STRICT}
-            and claim_status != "contradicted"
-            and (claim_status == "insufficient_evidence" or claim_confidence < 0.85)
-        ):
-            evidence_snippets = [
-                str(row.get("snippet", ""))
-                for row in evidence_rows
-                if isinstance(row.get("snippet"), str)
-            ]
-            try:
-                adjudication = _adjudicate_with_openai(
-                    settings=settings,
-                    claim_text=claim_text,
-                    evidence_snippets=evidence_snippets,
-                    model=llm_model,
-                )
-            except Exception as exc:  # pragma: no cover - external API/network variability
-                adjudication = None
-                evidence_rows.append({"kind": "llm_error", "error": repr(exc)})
-            if adjudication is not None:
-                claim_status = str(adjudication["status"])
-                confidence_value = adjudication.get("confidence")
-                if isinstance(confidence_value, (float, int)):
-                    claim_confidence = float(confidence_value)
-                adjudication_model = str(adjudication.get("model", llm_model))
-                evidence_rows.append(
-                    {
-                        "kind": "llm_adjudication",
-                        "model": adjudication["model"],
-                        "reason": adjudication["reason"],
-                    }
-                )
 
         claim_issue = _status_issue(path=path, status=claim_status, profile=profile)
         if claim_issue is not None:
@@ -560,3 +556,105 @@ def validate_fact_check_rules(
         "review_queue": sorted(set(review_queue)),
     }
     return issues, report
+
+
+def _check_unit(
+    unit: CheckedUnit,
+    *,
+    settings: AISettings,
+    source_map: dict[str, dict[str, str]],
+    entity_label_text: str,
+    adjudicate: bool,
+    web_search_enabled: bool,
+    web_search_available: bool,
+    max_web_results: int,
+    llm_model: str,
+) -> tuple[str, float, str | None, list[dict[str, Any]]]:
+    evidence_rows: list[dict[str, Any]] = []
+
+    # Deterministic control markers for tests / offline control paths. Evaluated before the
+    # pointer check so a marked passage always yields its intended verdict.
+    normalized_upper = unit.text.upper()
+    if "[CONTRADICTED]" in normalized_upper:
+        return "contradicted", 0.95, None, evidence_rows
+    if "[UNSUPPORTED]" in normalized_upper:
+        return "unsupported", 0.9, None, evidence_rows
+
+    if not unit.source_ids:
+        # Provenance defect (Slice 7 makes pointers honest): nothing to verify against.
+        return "unchecked_missing_pointers", 0.0, None, evidence_rows
+
+    for source_id in unit.source_ids:
+        source_snapshot = source_map.get(source_id)
+        if source_snapshot is None:
+            continue
+        evidence_rows.append(
+            {
+                "kind": "local_snapshot",
+                "source_id": source_id,
+                "url": source_snapshot["url"],
+                # Raw source text (tags stripped only): proper nouns and exact location
+                # prepositions stay visible for the assertion adjudicator.
+                "snippet": _clean_snippet(source_snapshot["body"], max_len=_EVIDENCE_BODY_MAX_LEN),
+            }
+        )
+
+    if web_search_enabled and web_search_available:
+        query = f"{entity_label_text} {unit.text[:170]}"
+        try:
+            web_hits = _search_google_custom(
+                query=query,
+                max_results=max_web_results,
+                api_key=settings.google_api_key,
+                cse_id=settings.google_cse_id,
+            )
+        except Exception as exc:  # pragma: no cover - external API/network variability
+            web_hits = []
+            evidence_rows.append({"kind": "web_error", "error": repr(exc)})
+        for hit in web_hits:
+            evidence_rows.append(
+                {
+                    "kind": "web_result",
+                    "url": hit["url"],
+                    "title": hit["title"],
+                    "snippet": hit["snippet"],
+                }
+            )
+
+    evidence_snippets = [
+        str(row.get("snippet", ""))
+        for row in evidence_rows
+        if isinstance(row.get("snippet"), str) and row.get("snippet")
+    ]
+    if not evidence_snippets:
+        # Pointers exist but no cited-source text is available to check against.
+        return "unchecked", 0.0, None, evidence_rows
+
+    if not adjudicate:
+        return "unchecked", 0.0, None, evidence_rows
+
+    try:
+        adjudication = _adjudicate_with_openai(
+            settings=settings,
+            claim_text=unit.text,
+            evidence_snippets=evidence_snippets,
+            model=llm_model,
+        )
+    except Exception as exc:  # pragma: no cover - external API/network variability
+        evidence_rows.append({"kind": "llm_error", "error": repr(exc)})
+        return "unchecked", 0.0, None, evidence_rows
+    if adjudication is None:
+        return "unchecked", 0.0, None, evidence_rows
+
+    claim_status = str(adjudication["status"])
+    confidence_value = adjudication.get("confidence")
+    claim_confidence = float(confidence_value) if isinstance(confidence_value, (float, int)) else 0.5
+    adjudication_model = str(adjudication.get("model", llm_model))
+    evidence_rows.append(
+        {
+            "kind": "llm_adjudication",
+            "model": adjudication["model"],
+            "reason": adjudication["reason"],
+        }
+    )
+    return claim_status, claim_confidence, adjudication_model, evidence_rows
