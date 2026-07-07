@@ -15,11 +15,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from pipeline.common.discovery_vocab import (
-    lore_character_role_hints,
-    lore_faction_tokens,
-)
-from pipeline.discovery.world_registry import _CLASSIC_SUFFIX_RE
+from pipeline.common.discovery_vocab import lore_character_role_hints
+from pipeline.discovery.world_registry import _CLASSIC_SUFFIX_RE, entry_kinds
 
 # Raw ingest section roles (not the discovery canonical buckets) that signal narrative
 # prose. Parent complexes are named in the lead; related lore is named in history/lore.
@@ -39,12 +36,12 @@ _NOISE_PREFIXES = (
     "media:",
 )
 
-# Conservative character/faction markers: these belong to the I3 key_characters path
-# or the faction profile path, not the cross-page lore set. WS-C: externalized to
+# Conservative character markers: these belong to the I3 key_characters path, not the
+# cross-page lore set. WS-C: externalized to
 # pipeline/data/discovery_classification_vocab.v1.json (D-6) — judged on the link title
-# pre-fetch, so no category/section signal exists at the decision point.
+# pre-fetch, so no category/section signal exists at the decision point. Faction-ness is
+# settled by the org registry (Slice 13), not a keyword list.
 _CHARACTER_ROLE_HINTS = lore_character_role_hints()
-_FACTION_KEYWORDS = lore_faction_tokens()
 
 # Body-text markers used to drop Classic-only / non-retail pages after they are fetched.
 # Deliberately narrower than discovery's _classify_retail_eligibility (which treats a bare
@@ -105,8 +102,9 @@ def _is_noise_href(href: str) -> bool:
 
 
 def _looks_like_character_or_faction(title: str) -> bool:
-    lowered = title.lower()
-    if any(keyword in lowered for keyword in _FACTION_KEYWORDS):
+    # Slice 13: faction-ness comes from the wiki's own category taxonomy (org registry),
+    # never a faction-word vocabulary.
+    if "organization" in entry_kinds(title):
         return True
     parts = [part for part in re.split(r"\s+", title.strip()) if part]
     if any(part.lower() in _CHARACTER_ROLE_HINTS for part in parts):

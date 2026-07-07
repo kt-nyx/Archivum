@@ -382,8 +382,14 @@ def _claim_view_for_item(
     source_title = str(
         claim.get("source_title") or item.get("source_title") or row.get("source_title", "")
     ).strip()
+    raw_links = item.get("links")
     return {
         "snippet": claim_text,
+        # Slice 12/13: the source paragraph's inline article links ride onto each claim view so
+        # link-based faction recognition sees them in routed pools.
+        "links": [link for link in raw_links if isinstance(link, dict)]
+        if isinstance(raw_links, list)
+        else [],
         "claim_text": claim_text,
         "source_excerpt": source_excerpt,
         "source_url": source_url,

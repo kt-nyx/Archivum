@@ -1,23 +1,6 @@
 {
   "version": 1,
   "_doc": "WS-C (D-6) externalized classification vocabulary for the discovery + ingest path. Every list here is matched against TITLE or BODY text (not against a section-role identifier), so no MediaWiki category/infobox/section structural signal exists at the decision point. Where a section role IS available the code uses it as the primary structural classifier; these are the irreducible text/title fallbacks. Each entry passed the D-6 gate: (1) no category/infobox/section signal at the decision point, (2) no viable statistical signal (short titles / fixed vocab), (3) externalized (this file), (4) justified with a pilot-bias note below. Section-role taxonomy lists (which ARE the structural signal) are intentionally NOT here — they remain in code as structural infra.",
-  "faction_title_tokens": {
-    "_why_no_structural_signal": "Faction pages are not reliably grouped under a dedicated zone-page section; the only pre-fetch signal is a faction-ish token in the link title. (Post-fetch, the page's MediaWiki categories settle it, but typing happens before traversal.)",
-    "_pilot_bias_note": "Tuned against WPL (Scarlet Crusade, Argent Dawn, Forsaken). Generalizes via generic organization words (order, covenant, tribe, cult, circle) rather than named factions.",
-    "tokens": [
-      "crusade",
-      "horde",
-      "alliance",
-      "dawn",
-      "circle",
-      "cult",
-      "order",
-      "covenant",
-      "faction",
-      "forsaken",
-      "tribe"
-    ]
-  },
   "event_title_tokens": {
     "_why_no_structural_signal": "Historical events rarely have their own zone-page section and are not a MediaWiki entity kind in the registry; the link title is the only pre-fetch cue.",
     "_pilot_bias_note": "Generic conflict vocabulary (war/battle/invasion); 'scourging'/'cataclysm' are WoW-era nouns but apply across zones.",
@@ -80,18 +63,6 @@
       "warcraft rpg",
       "novel",
       "novella"
-    ]
-  },
-  "lore_faction_tokens": {
-    "_why_no_structural_signal": "lore_sources excludes obvious character/faction links from the cross-page narrative-lore candidate set, judged on the link title before fetch. Kept distinct from faction_title_tokens (different consumer, narrower set) until a live golden run can prove a single reconciled list is safe.",
-    "_pilot_bias_note": "Org words plus two named WoW factions (the burning legion, scourge) that recur as lore-page links; reconcile with faction_title_tokens under the WS-C live golden gate.",
-    "tokens": [
-      "crusade",
-      "horde",
-      "alliance",
-      "covenant",
-      "the burning legion",
-      "scourge"
     ]
   },
   "lore_character_role_hints": {

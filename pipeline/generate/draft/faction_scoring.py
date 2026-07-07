@@ -6,9 +6,15 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from pipeline.common.discovery_vocab import faction_title_tokens, lore_faction_tokens
 from pipeline.common.draft_vocab import era_section_role_tokens
 from pipeline.common.text_ids import slugify
+from pipeline.discovery.world_registry import (
+    entry_affiliations,
+    organization_entry,
+    organization_entry_for_href,
+    umbrella_faction_tags,
+    umbrella_organizations,
+)
 from pipeline.generate.draft.faction_lint import (
     MAX_FACTION_SUMMARY_WORDS,
     MIN_FACTION_SUMMARY_WORDS,
@@ -33,8 +39,6 @@ ALLIANCE_HORDE_CONFLICT_THRESHOLD = 2
 _SPECIFIC_BINDING_SCORE_CAP = 6.0
 ACTIVE_COMBATANT_BONUS = 3.0
 
-_ALLIANCE_HORDE_IDS = frozenset({"faction-alliance", "faction-horde"})
-
 # WS-C: era tokens externalized + de-duplicated (shared with prose_election) in
 # pipeline/data/draft_classification_vocab.v1.json (D-6).
 _ERA_TOKENS = era_section_role_tokens()
@@ -42,11 +46,16 @@ _ERA_TOKENS = era_section_role_tokens()
 _HIGH_WEIGHT_ROLES = frozenset({"quests_edit", "quests", "quests_or_storyline"})
 _LEDE_ROLES = frozenset({"lead", "introduction"})
 
-_BINDING_BY_FACTION_ID: dict[str, frozenset[str]] = {
-    "faction-alliance": frozenset({"alliance"}),
-    "faction-horde": frozenset({"horde"}),
-    "faction-forsaken": frozenset({"horde", "neutral", "shared"}),
-}
+
+def _umbrella_tag_by_faction_id() -> dict[str, str]:
+    """faction_id -> umbrella tag for the faction-capital orgs, from the registry (Slice 13)."""
+    return {
+        f"faction-{slugify(title)}": tag for title, tag in umbrella_organizations().items()
+    }
+
+
+def _umbrella_faction_ids() -> frozenset[str]:
+    return frozenset(_umbrella_tag_by_faction_id())
 
 
 @dataclass
@@ -61,6 +70,9 @@ class FactionCandidate:
     score: float = 0.0
     has_high_weight_seed: bool = False
     lede_only: bool = False
+    # Umbrella affiliations ("alliance"/"horde") from the org registry's category
+    # memberships plus the crawled profile page's infobox Affiliation field (Slice 13).
+    affiliations: frozenset[str] = frozenset()
 
 
 def _normalize_role(section_role: str) -> str:
@@ -89,15 +101,31 @@ def _name_in_text(name: str, text: str) -> bool:
     return bool(re.search(pattern, text, re.IGNORECASE))
 
 
-def _bindings_for_faction_id(faction_id: str) -> frozenset[str]:
-    if faction_id in _BINDING_BY_FACTION_ID:
-        return _BINDING_BY_FACTION_ID[faction_id]
-    slug = faction_id.removeprefix("faction-").replace("-", " ")
-    return frozenset({slug, "shared", "neutral"})
+def _bindings_for_faction(
+    faction_id: str, name: str = "", affiliations: frozenset[str] = frozenset()
+) -> frozenset[str]:
+    """Quest-binding tags a faction matches, derived structurally (Slice 13).
+
+    An umbrella faction (Alliance/Horde, per the registry's faction-capital orgs) matches only
+    its own side's bindings. Every other faction matches its own name slug plus the generic
+    shared/neutral bindings, plus any umbrella side it belongs to — membership coming from the
+    org registry's category affiliations and the profile infobox (e.g. Forsaken -> horde),
+    never a hardcoded per-faction map.
+    """
+    umbrella = _umbrella_tag_by_faction_id()
+    if faction_id in umbrella:
+        return frozenset({umbrella[faction_id]})
+    slug = (name.strip().lower() or faction_id.removeprefix("faction-").replace("-", " "))
+    return frozenset({slug, "shared", "neutral"}) | affiliations
 
 
-def _count_quest_bindings(faction_id: str, v3_rows: list[dict[str, Any]], zone_id: str) -> int:
-    bindings = _bindings_for_faction_id(faction_id)
+def _bindings_for_candidate(candidate: FactionCandidate) -> frozenset[str]:
+    return _bindings_for_faction(candidate.faction_id, candidate.name, candidate.affiliations)
+
+
+def _count_quest_bindings(
+    bindings: frozenset[str], v3_rows: list[dict[str, Any]], zone_id: str
+) -> int:
     count = 0
     for row in v3_rows:
         if not isinstance(row, dict):
@@ -113,7 +141,7 @@ def _count_quest_bindings(faction_id: str, v3_rows: list[dict[str, Any]], zone_i
 
 
 def _count_specific_quest_bindings(
-    faction_id: str, v3_rows: list[dict[str, Any]], zone_id: str
+    bindings: frozenset[str], v3_rows: list[dict[str, Any]], zone_id: str
 ) -> int:
     """Count zone quests bound to this faction's OWN side, excluding the generic ``shared`` /
     ``neutral`` bindings that *every* faction matches. A nonzero count marks the faction as an active
@@ -121,50 +149,52 @@ def _count_specific_quest_bindings(
     zone). Without this, lore factions borrow score uniformly from every shared quest while
     Alliance / Horde — whose bindings are side-specific — never do, so a defunct lore faction can
     outrank an active war combatant."""
-    bindings = _bindings_for_faction_id(faction_id) - {"shared", "neutral"}
-    if not bindings:
+    specific = bindings - {"shared", "neutral"}
+    if not specific:
         return 0
-    count = 0
-    for row in v3_rows:
-        if not isinstance(row, dict):
-            continue
-        if str(row.get("zone_id", "")) != zone_id:
-            continue
-        if str(row.get("node_type", "")) != "quest":
-            continue
-        binding = str(row.get("faction_binding", "shared")).strip().lower()
-        if binding in bindings:
-            count += 1
-    return count
+    return _count_quest_bindings(specific, v3_rows, zone_id)
 
 
-# A Title-Case proper-noun phrase (allowing of/the/and connectors), used to harvest faction names
-# from free instance prose where no faction_pool evidence exists (WS-8).
-_FACTION_NAME_RE = re.compile(
+# A Title-Case proper-noun phrase (allowing of/the/and connectors) — a general grammar pattern,
+# used ONLY to harvest frequent proper nouns (places/figures) as summary anchor tokens. Faction
+# identity never comes from this regex: mentions are inline links resolved against the
+# organization registry (Slice 13).
+_PROPER_NOUN_PHRASE_RE = re.compile(
     r"\b([A-Z][A-Za-z']+(?:(?:\s+(?:of|the))*\s+[A-Z][A-Za-z']+){0,4})"
 )
-# Single-word phrases are too generic to be a faction unless they are an actual faction proper noun.
-# (Generic org words like "cult"/"order"/"dawn" only count inside a multi-word name.)
-_STANDALONE_FACTION_NAMES = frozenset(
-    {"scourge", "horde", "alliance", "forsaken", "legion"}
-)
 
 
-def _faction_token_set() -> tuple[frozenset[str], frozenset[str]]:
-    tokens = set(faction_title_tokens()) | set(lore_faction_tokens())
-    single = frozenset(token for token in tokens if " " not in token)
-    multi = frozenset(token for token in tokens if " " in token)
-    return single, multi
+def _organization_from_link(link: Any) -> dict[str, Any] | None:
+    """Resolve an evidence-block inline link to a registry organization.
+
+    Prefers the ingest redirect-resolution annotation (``canonical_path``) where present,
+    so a link through a redirect title still lands on the canonical article.
+    """
+    if not isinstance(link, dict):
+        return None
+    href = str(link.get("canonical_path") or link.get("href") or "").strip()
+    if not href:
+        return None
+    return organization_entry_for_href(href)
 
 
-def _phrase_is_faction(phrase: str, single: frozenset[str], multi: frozenset[str]) -> bool:
-    low = phrase.lower()
-    words = [word for word in re.findall(r"[a-z']+", low) if word]
-    if len(words) == 1:
-        return words[0] in _STANDALONE_FACTION_NAMES
-    if set(words) & single:
-        return True
-    return any(token in low for token in multi)
+def _item_organization_links(item: dict[str, Any]) -> list[dict[str, Any]]:
+    """The item's linked registry organizations, deduped by normalized title, in link order."""
+    raw_links = item.get("links")
+    if not isinstance(raw_links, list):
+        return []
+    orgs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for link in raw_links:
+        org = _organization_from_link(link)
+        if org is None:
+            continue
+        key = str(org.get("normalized_title", "")).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        orgs.append(org)
+    return orgs
 
 
 # The instance's own-subject evidence fields (its page prose, lore page, and boss sections).
@@ -176,80 +206,30 @@ _INSTANCE_OWN_EVIDENCE_FIELDS = frozenset(
     {"history_digest", "at_a_glance_input", "boss_pool", "instance_lore_pool"}
 )
 
-_LEADING_QUALIFIER_RE = re.compile(r"^[A-Z][A-Za-z']+\s+of\s+(?:the\s+)?([A-Z][A-Za-z'].*)$")
-_ROLE_ALIAS_RE = re.compile(r"^([A-Z][A-Za-z']+)\s+of\s+(?:the\s+)?([A-Z][A-Za-z']+)$")
-_GENERIC_ROLE_ALIAS_HEADS = frozenset(
-    {
-        "acolytes",
-        "agents",
-        "armies",
-        "followers",
-        "forces",
-        "members",
-        "servants",
-        "soldiers",
-        "troops",
-    }
-)
 
+def resolve_canonical_faction_name(phrase: str) -> str:
+    """Resolve a variant faction name onto its canonical member faction (RC5 / Slice 13).
 
-def resolve_canonical_faction_name(
-    phrase: str, single: frozenset[str] | None = None, multi: frozenset[str] | None = None
-) -> str:
-    """Resolve a variant faction name onto its canonical member faction (RC5).
-
-    Wiki prose renders adjacent article links as one phrase ("the [Horde] [Forsaken] commanded
-    by Sylvanas"), which harvests as a distinct "Horde Forsaken" faction alongside "Forsaken" —
-    two cards for one faction. When a name is an umbrella faction qualifying a recognized member
-    faction, the member is the canonical identity (the concrete actor); whether the *umbrella*
-    card also survives stays with :func:`_suppress_umbrella_factions` at election time.
-    Vocabulary-driven (shared faction-token registry + the structural umbrella set), never a
-    per-pair mapping.
+    Thin fallback for names that arrive as stored strings rather than links (link-based
+    harvesting makes the "[Horde] [Forsaken]" adjacent-link compound structurally impossible,
+    but earlier stages' stored targets can still carry one). When a name is an umbrella faction
+    qualifying a registry organization, the member org's canonical registry title is the
+    identity ("Horde Forsaken" -> "Forsaken"); whether the *umbrella* card also survives stays
+    with :func:`_suppress_umbrella_factions` at election time. Registry-consulting, never a
+    per-pair mapping or a token vocabulary.
     """
-    if single is None or multi is None:
-        single, multi = _faction_token_set()
-    umbrella_names = frozenset(_UMBRELLA_TAG_BY_ID.values())
+    umbrella_names = {tag.lower() for tag in umbrella_faction_tags()}
     current = phrase.strip()
     for _ in range(2):
         words = current.split()
         if len(words) < 2 or words[0].lower() not in umbrella_names:
             break
         tail = re.sub(r"^the\s+", "", " ".join(words[1:]).strip(), flags=re.IGNORECASE)
-        if not tail or not _phrase_is_faction(tail, single, multi):
+        org = organization_entry(tail) if tail else None
+        if org is None:
             break
-        current = tail
+        current = str(org.get("title", tail))
     return current
-
-
-def _canonicalize_faction_phrase(
-    phrase: str, single: frozenset[str], multi: frozenset[str]
-) -> str:
-    """Trim a leading ``X of [the] <FACTION>`` qualifier (e.g. "Members of the Cult of the Damned"
-    -> "Cult of the Damned") so a faction reads under one canonical name. Only trims when the
-    remaining tail is itself a recognized faction, leaving names like "Scarlet Crusade" intact.
-    Also resolves an umbrella-qualified member name ("Horde Forsaken" -> "Forsaken") onto the
-    canonical member faction (see :func:`resolve_canonical_faction_name`).
-    """
-    current = phrase
-    for _ in range(4):
-        match = _LEADING_QUALIFIER_RE.match(current)
-        if not match:
-            break
-        tail = match.group(1).strip()
-        if _phrase_is_faction(tail, single, multi):
-            current = tail
-        else:
-            break
-    return resolve_canonical_faction_name(current, single, multi)
-
-
-def _is_generic_role_alias_phrase(phrase: str) -> bool:
-    match = _ROLE_ALIAS_RE.match(phrase.strip())
-    if not match:
-        return False
-    head = match.group(1).casefold()
-    tail = match.group(2).casefold()
-    return head in _GENERIC_ROLE_ALIAS_HEADS and tail not in _STANDALONE_FACTION_NAMES
 
 
 def harvest_instance_faction_targets(
@@ -261,12 +241,14 @@ def harvest_instance_faction_targets(
     field_names: frozenset[str] | None = None,
     min_mentions: int = 3,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Harvest faction candidates from the instance's *own* evidence prose.
+    """Harvest faction candidates from the instance's *own* evidence (Slice 13: link-based).
 
     Instances carry no ``faction_pool`` evidence and no faction_profile_targets of their own, so
     ``build_major_factions`` (scoped to the parent zone) returns nothing — yet pages like Scholomance
-    are saturated with Scourge / Cult of the Damned. This scans the instance evidence snippets for
-    faction proper nouns (gated by the shared faction-token vocab) and returns synthetic
+    are saturated with Scourge / Cult of the Damned. A faction identity is established by an inline
+    link on an evidence block whose target is a registry organization; once established, plain-text
+    mentions of that organization's name on the same page also count (wiki style links only the
+    first mention), but no open-vocabulary phrase matching happens. Returns synthetic
     profile-target rows scoped to ``instance_id`` plus a flattened seed-mention role pool, which the
     existing faction scorer + summary path consumes unchanged. Returns ``([], [])`` when nothing
     clears ``min_mentions`` (callers then fall back to the parent-zone targets).
@@ -277,13 +259,13 @@ def harvest_instance_faction_targets(
     """
     if field_names is None:
         field_names = _INSTANCE_OWN_EVIDENCE_FIELDS
-    single, multi = _faction_token_set()
     role_pool: list[dict[str, Any]] = []
     counts: dict[str, int] = {}
     history_support_counts: dict[str, int] = {}
     structured_support_counts: dict[str, int] = {}
     display: dict[str, str] = {}
     instance_low = instance_name.strip().lower()
+    admitted: list[tuple[dict[str, Any], dict[str, Any], frozenset[str]]] = []
     for row in evidence_rows:
         if str(row.get("field_name", "")).strip() not in field_names:
             continue
@@ -317,26 +299,28 @@ def harvest_instance_faction_targets(
                     ),
                 }
             )
-            for match in _FACTION_NAME_RE.finditer(snippet):
-                phrase = re.sub(r"^the\s+", "", match.group(1).strip(), flags=re.IGNORECASE).strip()
-                if not phrase or not _phrase_is_faction(phrase, single, multi):
-                    continue
-                phrase = _canonicalize_faction_phrase(phrase, single, multi)
-                if _is_generic_role_alias_phrase(phrase):
-                    continue
-                if phrase.lower() == instance_low:
+            linked_keys: set[str] = set()
+            for org in _item_organization_links(item):
+                phrase = str(org.get("title", "")).strip()
+                if not phrase or phrase.lower() == instance_low:
                     continue
                 key = phrase.lower()
+                linked_keys.add(key)
+                display.setdefault(key, phrase)
+            admitted.append((item, row, frozenset(linked_keys)))
+    # Second pass: count mentions per admitted item — a link to the organization, or (for
+    # identities the page's links established) its name in the item's prose.
+    for item, row, item_link_keys in admitted:
+        snippet = str(item.get("snippet", ""))
+        for key, name in display.items():
+            if key in item_link_keys or _name_in_text(name, snippet):
                 counts[key] = counts.get(key, 0) + 1
                 if _item_history_eligible(item, row=row):
                     history_support_counts[key] = history_support_counts.get(key, 0) + 1
-                display.setdefault(key, phrase)
     _add_structured_instance_faction_mentions(
         snapshots=snapshots or [],
         evidence_rows=evidence_rows,
         instance_name=instance_name,
-        single=single,
-        multi=multi,
         role_pool=role_pool,
         counts=counts,
         history_support_counts=history_support_counts,
@@ -371,8 +355,6 @@ def _add_structured_instance_faction_mentions(
     snapshots: list[dict[str, Any]],
     evidence_rows: list[dict[str, Any]],
     instance_name: str,
-    single: frozenset[str],
-    multi: frozenset[str],
     role_pool: list[dict[str, Any]],
     counts: dict[str, int],
     history_support_counts: dict[str, int],
@@ -399,11 +381,15 @@ def _add_structured_instance_faction_mentions(
         for link in structured_links:
             if not isinstance(link, dict):
                 continue
-            phrase = str(link.get("label", "")).strip()
-            if not phrase or not _phrase_is_faction(phrase, single, multi):
+            # Slice 13: the link's target settles org identity (registry lookup); the anchor
+            # label is only a fallback for links whose href is absent (older fixtures).
+            org = _organization_from_link(link) or organization_entry(
+                str(link.get("label", "")).strip()
+            )
+            if org is None:
                 continue
-            phrase = _canonicalize_faction_phrase(phrase, single, multi)
-            if phrase.lower() == instance_low:
+            phrase = str(org.get("title", "")).strip()
+            if not phrase or phrase.lower() == instance_low:
                 continue
             section_role = str(link.get("section_role", "")).strip()
             link_roles = [section_role] if section_role else [str(link.get("parent_section_role", "")).strip()]
@@ -546,7 +532,7 @@ def harvest_instance_anchor_tokens(
                 continue
             if is_excluded_from_card_pool(item, row=row):
                 continue
-            for match in _FACTION_NAME_RE.finditer(str(item.get("snippet", ""))):
+            for match in _PROPER_NOUN_PHRASE_RE.finditer(str(item.get("snippet", ""))):
                 phrase = re.sub(
                     r"^the\s+", "", match.group(1).strip(), flags=re.IGNORECASE
                 ).strip()
@@ -640,7 +626,14 @@ def _instance_faction_required_mentions(
 def _candidates_from_high_weight_seed_mentions(
     faction_role_pool: list[dict[str, Any]],
 ) -> dict[str, dict[str, str]]:
-    single, multi = _faction_token_set()
+    """Discover faction identities from high-weight seed evidence (Slice 13: link-based).
+
+    A mention is an inline link on the evidence block whose target is a registry
+    organization; the org's canonical registry title is the identity. No open-vocabulary
+    phrase matching — plain-text matching only ever happens downstream for names these
+    links (or stored targets) already established (``seed_mentions`` in
+    :func:`collect_faction_candidates`).
+    """
     discovered: dict[str, dict[str, str]] = {}
     for item in faction_role_pool:
         if not isinstance(item, dict) or not _is_high_weight_seed_item(item):
@@ -648,22 +641,20 @@ def _candidates_from_high_weight_seed_mentions(
         snippet = str(item.get("snippet", "")).strip()
         if not snippet or has_currently_meta(snippet):
             continue
-        for match in _FACTION_NAME_RE.finditer(snippet):
-            phrase = re.sub(r"^the\s+", "", match.group(1).strip(), flags=re.IGNORECASE).strip()
-            if not phrase or not _phrase_is_faction(phrase, single, multi):
+        for org in _item_organization_links(item):
+            name = str(org.get("title", "")).strip()
+            if not name:
                 continue
-            name = _canonicalize_faction_phrase(phrase, single, multi)
-            if _is_generic_role_alias_phrase(name):
-                continue
-            faction_id = f"faction-{slugify(name)}"
-            if faction_id:
-                discovered.setdefault(
-                    faction_id,
-                    {
-                        "name": name,
-                        "wiki_url": _wiki_url_from_name(name),
-                    },
-                )
+            wiki_path = str(org.get("wiki_path", "")).strip()
+            discovered.setdefault(
+                f"faction-{slugify(name)}",
+                {
+                    "name": name,
+                    "wiki_url": _wiki_url_from_link(wiki_path)
+                    if wiki_path
+                    else _wiki_url_from_name(name),
+                },
+            )
     return discovered
 
 
@@ -674,11 +665,10 @@ def _discover_candidates_from_v3_bindings(
     discovered: dict[str, str] = {}
     if not v3_rows:
         return discovered
-    for faction_id, display_name in (
-        ("faction-alliance", "Alliance"),
-        ("faction-horde", "Horde"),
-    ):
-        if _count_quest_bindings(faction_id, v3_rows, zone_id) >= ALLIANCE_HORDE_CONFLICT_THRESHOLD:
+    for display_name, tag in umbrella_organizations().items():
+        faction_id = f"faction-{slugify(display_name)}"
+        bindings = frozenset({tag})
+        if _count_quest_bindings(bindings, v3_rows, zone_id) >= ALLIANCE_HORDE_CONFLICT_THRESHOLD:
             discovered[faction_id] = display_name
     return discovered
 
@@ -701,6 +691,40 @@ def _candidate_is_finalize_eligible(candidate: FactionCandidate) -> bool:
     return _alliance_horde_conflict_met(candidate)
 
 
+def _profile_affiliations_by_faction_id(
+    snapshots: list[dict[str, Any]] | None,
+) -> dict[str, frozenset[str]]:
+    """Umbrella affiliations read from crawled faction-profile infoboxes (Slice 13).
+
+    The org registry's category affiliations only cover the wiki's gameplay reputation
+    factions (``Category:Horde factions`` holds "Undercity (faction)", not "Forsaken"),
+    so lore-org umbrella membership comes from the profile page's own infobox
+    ``Affiliation`` field — wiki structure, captured at ingest since Slice 12.
+    """
+    tags = umbrella_faction_tags()
+    out: dict[str, frozenset[str]] = {}
+    for snapshot in snapshots or []:
+        if not isinstance(snapshot, dict):
+            continue
+        if str(snapshot.get("auxiliary_role", "")).strip() != "faction_profile":
+            continue
+        target_id = str(snapshot.get("auxiliary_target_id", "")).strip()
+        infobox = snapshot.get("infobox")
+        if not target_id or not isinstance(infobox, dict):
+            continue
+        value = ""
+        for key, raw in infobox.items():
+            if str(key).strip().lower() == "affiliation":
+                value = str(raw)
+                break
+        found = frozenset(
+            tag for tag in tags if re.search(rf"\b{re.escape(tag)}\b", value, re.IGNORECASE)
+        )
+        if found:
+            out[target_id] = out.get(target_id, frozenset()) | found
+    return out
+
+
 def collect_faction_candidates(
     *,
     zone_id: str,
@@ -708,12 +732,14 @@ def collect_faction_candidates(
     pools: dict[str, list[dict[str, Any]]],
     faction_profile_targets: list[dict[str, Any]] | None = None,
     v3_rows: list[dict[str, Any]] | None = None,
+    snapshots: list[dict[str, Any]] | None = None,
 ) -> list[FactionCandidate]:
     target_map = _targets_for_zone(faction_profile_targets, zone_id)
     discovered = _candidates_from_evidence(evidence_rows, zone_id)
     faction_pool = pools.get("faction_pool", [])
     faction_role_pool = pools.get("faction_role_pool", [])
     seed_discovered = _candidates_from_high_weight_seed_mentions(faction_role_pool)
+    profile_affiliations = _profile_affiliations_by_faction_id(snapshots)
 
     candidate_ids = set(target_map) | set(discovered) | set(seed_discovered)
     v3_discovered = _discover_candidates_from_v3_bindings(v3_rows, zone_id)
@@ -744,6 +770,8 @@ def collect_faction_candidates(
             item for item in faction_role_pool if _name_in_text(name, str(item.get("snippet", "")))
         ]
 
+        affiliations = profile_affiliations.get(faction_id, frozenset()) | entry_affiliations(name)
+        bindings = _bindings_for_faction(faction_id, name, affiliations)
         candidates.append(
             FactionCandidate(
                 faction_id=faction_id,
@@ -751,10 +779,11 @@ def collect_faction_candidates(
                 wiki_url=wiki_url,
                 profile_items=profile_items,
                 seed_mentions=seed_mentions,
-                quest_binding_count=_count_quest_bindings(faction_id, v3_rows or [], zone_id),
+                quest_binding_count=_count_quest_bindings(bindings, v3_rows or [], zone_id),
                 specific_quest_binding_count=_count_specific_quest_bindings(
-                    faction_id, v3_rows or [], zone_id
+                    bindings, v3_rows or [], zone_id
                 ),
+                affiliations=affiliations,
             )
         )
 
@@ -769,15 +798,16 @@ def merge_variant_faction_candidates(
     Candidates arrive from several harvests (profile targets, evidence pools, seed mentions), and
     a variant name that slipped past phrase canonicalization in an earlier stage's stored targets
     can mint a second identity for the same faction ("Horde Forsaken" beside "Forsaken"). Each
-    candidate's name is resolved to its canonical faction: when the canonical sibling was also
-    harvested, the variant's pooled evidence is deduped onto that survivor so the retained card is
-    richer; a variant with no harvested sibling is renamed to the canonical identity instead.
+    candidate's name is resolved to its canonical faction (registry-consulting, Slice 13 —
+    link-based harvesting already dedupes by canonical article, so this only catches stored
+    string variants): when the canonical sibling was also harvested, the variant's pooled
+    evidence is deduped onto that survivor so the retained card is richer; a variant with no
+    harvested sibling is renamed to the canonical identity instead.
     """
-    single, multi = _faction_token_set()
     by_id = {candidate.faction_id: candidate for candidate in candidates}
     merged: list[FactionCandidate] = []
     for candidate in candidates:
-        canonical_name = resolve_canonical_faction_name(candidate.name, single, multi)
+        canonical_name = resolve_canonical_faction_name(candidate.name)
         if canonical_name.strip().lower() == candidate.name.strip().lower():
             merged.append(candidate)
             continue
@@ -802,6 +832,7 @@ def merge_variant_faction_candidates(
         survivor.specific_quest_binding_count = max(
             survivor.specific_quest_binding_count, candidate.specific_quest_binding_count
         )
+        survivor.affiliations = survivor.affiliations | candidate.affiliations
     return merged
 
 
@@ -820,7 +851,7 @@ def alliance_horde_conflict_met(
     quest_binding_count: int,
     seed_mentions: list[dict[str, Any]],
 ) -> bool:
-    if faction_id not in _ALLIANCE_HORDE_IDS:
+    if faction_id not in _umbrella_faction_ids():
         return True
     if quest_binding_count >= ALLIANCE_HORDE_CONFLICT_THRESHOLD:
         return True
@@ -898,7 +929,9 @@ def score_faction_candidate(
             candidate.score = 0.0
             return candidate
 
-    if candidate.faction_id in _ALLIANCE_HORDE_IDS and not _alliance_horde_conflict_met(candidate):
+    if candidate.faction_id in _umbrella_faction_ids() and not _alliance_horde_conflict_met(
+        candidate
+    ):
         candidate.score = min(score, 1.0)
         return candidate
 
@@ -926,24 +959,24 @@ def rank_faction_candidates(
     )
 
 
-# The umbrella factions and the binding tag a sub-faction carries to mark itself as a member.
-# When a specific member is already elected (e.g. Forsaken — a Horde sub-faction that controls
-# Andorhal), the generic umbrella is redundant and is dropped so the card list names the concrete
-# actor instead of "Horde". The opposite side keeps its umbrella when no specific member is elected
-# (no Alliance sub-faction surfaces in WPL, so "Alliance" stays).
-_UMBRELLA_TAG_BY_ID: dict[str, str] = {"faction-horde": "horde", "faction-alliance": "alliance"}
-
-
 def _suppress_umbrella_factions(ranked: list[FactionCandidate]) -> list[FactionCandidate]:
+    """Drop a generic umbrella faction when a specific member of its side is elected.
+
+    When a member is already elected (e.g. Forsaken — a Horde sub-faction that controls
+    Andorhal), the generic umbrella is redundant and is dropped so the card list names the
+    concrete actor instead of "Horde". The opposite side keeps its umbrella when no specific
+    member is elected (no Alliance sub-faction surfaces in WPL, so "Alliance" stays). The
+    umbrella set and each member's side come from the registry/infobox affiliations (Slice 13).
+    """
     elected_ids = {candidate.faction_id for candidate in ranked}
     drop: set[str] = set()
-    for umbrella_id, tag in _UMBRELLA_TAG_BY_ID.items():
+    for umbrella_id, tag in _umbrella_tag_by_faction_id().items():
         if umbrella_id not in elected_ids:
             continue
         for candidate in ranked:
             if candidate.faction_id == umbrella_id:
                 continue
-            if tag in _bindings_for_faction_id(candidate.faction_id):
+            if tag in _bindings_for_candidate(candidate):
                 drop.add(umbrella_id)
                 break
     if not drop:

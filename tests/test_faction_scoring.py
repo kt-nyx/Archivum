@@ -125,13 +125,23 @@ def _profile_item(
     }
 
 
-def _seed_item(snippet: str, *, section_role: str = "quests_edit") -> dict[str, object]:
+def _seed_item(
+    snippet: str,
+    *,
+    section_role: str = "quests_edit",
+    links: list[dict[str, str]] | None = None,
+) -> dict[str, object]:
     return {
         "source_id": "src-zone",
         "snippet": snippet,
         "section_role": section_role,
         "field_name": "currently_input",
+        "links": links or [],
     }
+
+
+def _link(name: str) -> dict[str, str]:
+    return {"anchor_text": name, "href": f"/wiki/{name.replace(' ', '_')}"}
 
 
 def _target(faction_id: str, name: str, zone_id: str = "zone-example") -> dict[str, str]:
@@ -373,13 +383,28 @@ def test_generic_horde_suppressed_when_forsaken_elected() -> None:
         _target("faction-horde", "Horde"),
         _target("faction-alliance", "Alliance"),
     ]
+    # Slice 13: Forsaken's Horde membership comes from its crawled profile page's infobox
+    # Affiliation field (the org registry's category affiliations only cover gameplay
+    # reputation factions), so the suppression needs the profile snapshot.
+    snapshots = [
+        {
+            "auxiliary_role": "faction_profile",
+            "auxiliary_target_id": "faction-forsaken",
+            "infobox": {"_title": "The Forsaken", "Affiliation": "Horde , Cult of Forgotten Shadows"},
+        }
+    ]
     candidates = collect_faction_candidates(
         zone_id=zone_id,
         evidence_rows=[],
         pools=pools,
         faction_profile_targets=targets,
         v3_rows=v3_rows,
+        snapshots=snapshots,
     )
+    forsaken = next(row for row in candidates if row.faction_id == "faction-forsaken")
+    assert "horde" in forsaken.affiliations
+    # Membership also grants the member its side's quest bindings (horde-bound quests).
+    assert forsaken.specific_quest_binding_count == 2
     elected_ids = {row.faction_id for row in select_major_factions(candidates, zone_name="Example Zone")}
     assert "faction-forsaken" in elected_ids
     assert "faction-alliance" in elected_ids
@@ -560,6 +585,9 @@ def test_high_weight_current_mentions_discover_missing_faction_targets() -> None
                     "efforts to cleanse and restore the land."
                 ),
                 section_role="cataclysm_edit",
+                # Slice 13: identities come from the block's inline links resolved
+                # against the org registry, never from prose phrase shapes.
+                links=[_link("Argent Crusade"), _link("Cenarion Circle")],
             )
         ],
     }
@@ -641,15 +669,17 @@ def test_variant_without_canonical_sibling_renamed_to_canonical() -> None:
     assert candidates[0].wiki_url.endswith("/wiki/Forsaken")
 
 
-def test_seed_mention_harvest_resolves_umbrella_variant_phrase() -> None:
-    # Phrase-level: the seed-mention harvest must never mint a "Horde Forsaken" identity from
-    # prose in the first place.
+def test_seed_mention_harvest_never_mints_adjacent_link_compound() -> None:
+    # Slice 13: wiki prose renders adjacent article links as one phrase ("the [Horde]
+    # [Forsaken] hold Andorhal"), but link-based harvesting resolves each link's TARGET,
+    # so a "Horde Forsaken" compound identity is structurally impossible.
     zone_id = "zone-example"
     pools = {
         "faction_pool": [],
         "faction_role_pool": [
             _seed_item(
-                "War rages in the west as the Horde Forsaken hold the ruined city of Andorhal."
+                "War rages in the west as the Horde Forsaken hold the ruined city of Andorhal.",
+                links=[_link("Horde"), _link("Forsaken")],
             )
         ],
     }
@@ -662,3 +692,43 @@ def test_seed_mention_harvest_resolves_umbrella_variant_phrase() -> None:
     ids = {row.faction_id for row in candidates}
     assert "faction-horde-forsaken" not in ids
     assert "faction-forsaken" in ids
+    assert "faction-horde" in ids
+
+
+def test_seed_mention_harvest_ignores_unlinked_prose_phrases() -> None:
+    # No open-vocabulary phrase matching: prose naming a faction without a link (and with
+    # no stored target establishing it) discovers nothing.
+    candidates = collect_faction_candidates(
+        zone_id="zone-example",
+        evidence_rows=[],
+        pools={
+            "faction_pool": [],
+            "faction_role_pool": [
+                _seed_item("The Argent Crusade presses its campaign across the land.")
+            ],
+        },
+        faction_profile_targets=[],
+    )
+    assert candidates == []
+
+
+def test_seed_mention_harvest_discovers_org_unknown_to_deleted_vocab() -> None:
+    # A faction whose name shares no token with the deleted vocabulary ("Kirin Tor" —
+    # the "Defias Brotherhood"-shaped case) is discovered purely via its link target
+    # being a registry organization.
+    candidates = collect_faction_candidates(
+        zone_id="zone-example",
+        evidence_rows=[],
+        pools={
+            "faction_pool": [],
+            "faction_role_pool": [
+                _seed_item(
+                    "The Kirin Tor maintain a presence in Example Zone.",
+                    links=[_link("Kirin Tor")],
+                )
+            ],
+        },
+        faction_profile_targets=[],
+    )
+    assert [row.faction_id for row in candidates] == ["faction-kirin-tor"]
+    assert candidates[0].name == "Kirin Tor"

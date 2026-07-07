@@ -631,6 +631,7 @@ def build_zone_page(
         revision_map=revision_map,
         faction_profile_targets=faction_profile_targets,
         extra_subregion_tokens=location_subregion_tokens,
+        snapshots=snapshots,
     )
     for pointers in faction_provenance_map.values():
         for pointer in pointers:

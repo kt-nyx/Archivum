@@ -42,10 +42,6 @@ def _frozenset(key: str) -> frozenset[str]:
     return frozenset(_tokens(key))
 
 
-def faction_title_tokens() -> tuple[str, ...]:
-    return _tokens("faction_title_tokens")
-
-
 def event_title_tokens() -> tuple[str, ...]:
     return _tokens("event_title_tokens")
 
@@ -86,10 +82,6 @@ def location_type_title_rules() -> tuple[tuple[str, frozenset[str]], ...]:
         tokens = frozenset(str(token) for token in rule.get("tokens", []))
         out.append((location_type, tokens))
     return tuple(out)
-
-
-def lore_faction_tokens() -> tuple[str, ...]:
-    return _tokens("lore_faction_tokens")
 
 
 def lore_character_role_hints() -> tuple[str, ...]:

@@ -139,8 +139,14 @@ def _iter_evidence_items(
                 block_index_value = int(block_index)
             except (TypeError, ValueError):
                 block_index_value = 0
+            raw_links = item.get("links")
             out_item = {
                 "snippet": snippet,
+                # Slice 12/13: the source block's inline article links ride into the pools so
+                # link-based faction recognition sees them.
+                "links": [link for link in raw_links if isinstance(link, dict)]
+                if isinstance(raw_links, list)
+                else [],
                 "source_url": str(item.get("source_url", "")),
                 "source_title": str(item.get("source_title", "")),
                 "section_role": str(item.get("section_role", "")),

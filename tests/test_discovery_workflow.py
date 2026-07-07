@@ -7,6 +7,7 @@ from pipeline.common.run_context import ensure_run_context
 from pipeline.discovery.workflow import (
     _collapse_location_variants,
     _collect_instance_character_targets,
+    _collect_zone_faction_targets,
     _effective_section_slug,
     _section_role,
     run_discovery_workflow,
@@ -201,7 +202,15 @@ def test_discovery_workflow_emits_typed_traversal_targets(tmp_path: Path) -> Non
                     "body": "Zone overview with quests and geography.",
                     "section_blocks": [
                         {"section_role": "Quests", "text": f"See {ZONE_NAME} storyline"},
-                        {"section_role": "History", "text": "Crusader and undead conflict"},
+                        {
+                            "section_role": "History",
+                            "text": "Crusader and undead conflict",
+                            # Slice 13: faction targets come from block links resolved
+                            # against the org registry, never from name-shape typing.
+                            "links": [
+                                {"anchor_text": "Argent Crusade", "href": "/wiki/Argent_Crusade"}
+                            ],
+                        },
                         {
                             "section_role": "Geography",
                             "text": "Brill and Fort City are major locations",
@@ -210,7 +219,7 @@ def test_discovery_workflow_emits_typed_traversal_targets(tmp_path: Path) -> Non
                     "wiki_links": [
                         f"/wiki/{ZONE_WIKI}_storyline",
                         "/wiki/Faction",
-                        "/wiki/Example_Faction",
+                        "/wiki/Argent_Crusade",
                         "/wiki/Brill",
                         f"/wiki/{INSTANCE_NAME.replace(' ', '_')}",
                     ],
@@ -248,11 +257,12 @@ def test_discovery_workflow_emits_typed_traversal_targets(tmp_path: Path) -> Non
     outputs = run_discovery_workflow(context, manifest_path)
 
     faction_targets = json.loads(outputs["faction_profile_targets"].read_text(encoding="utf-8"))
-    assert any(row["name"] == "Example Faction" for row in faction_targets)
+    assert any(row["name"] == "Argent Crusade" for row in faction_targets)
+    assert all(row["faction_id"] for row in faction_targets)
 
     location_targets = json.loads(outputs["location_profile_targets"].read_text(encoding="utf-8"))
     assert any(row["name"] == "Brill" for row in location_targets)
-    assert not any(row["name"] == "Example Faction" for row in location_targets)
+    assert not any(row["name"] == "Argent Crusade" for row in location_targets)
 
     storyline_targets = json.loads(
         outputs["storyline_traversal_targets"].read_text(encoding="utf-8")
@@ -271,6 +281,83 @@ def test_discovery_workflow_emits_typed_traversal_targets(tmp_path: Path) -> Non
         outputs["questline_inclusion_decisions"].read_text(encoding="utf-8")
     )
     assert questline_decisions == []
+
+
+def _org_link_block(section_role: str, *hrefs: str, parent: str = "") -> dict[str, object]:
+    block: dict[str, object] = {
+        "section_role": section_role,
+        "text": "Narrative prose naming the linked groups.",
+        "links": [{"anchor_text": href.rsplit("/", 1)[-1].replace("_", " "), "href": href} for href in hrefs],
+    }
+    if parent:
+        block["parent_section_role"] = parent
+    return block
+
+
+def test_zone_faction_targets_rank_registry_orgs_by_link_frequency_and_section() -> None:
+    """Slice 13: targets are org-registry links from the seed page, ranked by
+    link frequency x section class — history/quest links outrank chrome, RPG contributes
+    nothing, and non-organization links never become targets."""
+    blocks = [
+        _org_link_block("history_edit", "/wiki/Argent_Crusade", "/wiki/Cenarion_Circle"),
+        _org_link_block("the_scourging_edit", "/wiki/Argent_Crusade", parent="history_edit"),
+        # Questline-bound org: linked from the quests/storyline section.
+        _org_link_block("quests_edit", "/wiki/Alliance"),
+        # Kirin Tor appears once in an unclassified section: weakest, but still targeted.
+        _org_link_block("trivia_edit", "/wiki/Kirin_Tor"),
+        # RPG-only links never become targets.
+        _org_link_block("in_the_rpg_organizations", "/wiki/Scarlet_Crusade"),
+        # Non-organization links (places) never become faction targets.
+        _org_link_block("history_edit", "/wiki/Andorhal"),
+    ]
+    targets = _collect_zone_faction_targets("zone-example", "Example Zone", blocks)
+    names = [row["name"] for row in targets]
+    assert names[0] == "Argent Crusade"  # two history-class links
+    assert "Cenarion Circle" in names
+    assert "Alliance" in names  # questline-bound org is targeted
+    assert "Kirin Tor" in names
+    assert "Scarlet Crusade" not in names
+    assert "Andorhal" not in names
+    argent = next(row for row in targets if row["name"] == "Argent Crusade")
+    assert argent["faction_id"] == "faction-argent-crusade"
+    assert argent["source_link"] == "/wiki/Argent_Crusade"
+    assert argent["source_section_role"] == "history"
+
+
+def test_zone_faction_targets_resolve_identity_from_link_target_not_anchor_text() -> None:
+    # A prose anchor ("the necromancers' cult") targets the canonical article; the
+    # registry title is the identity, so anchor wording can never mint a faction name.
+    blocks = [
+        {
+            "section_role": "history_edit",
+            "text": "The necromancers' cult ruled beneath the lake.",
+            "links": [
+                {"anchor_text": "the necromancers' cult", "href": "/wiki/Cult_of_the_Damned"}
+            ],
+        }
+    ]
+    targets = _collect_zone_faction_targets("zone-example", "Example Zone", blocks)
+    assert [row["name"] for row in targets] == ["Cult of the Damned"]
+
+
+def test_zone_faction_targets_capped() -> None:
+    orgs = [
+        "/wiki/Argent_Crusade",
+        "/wiki/Cenarion_Circle",
+        "/wiki/Alliance",
+        "/wiki/Horde",
+        "/wiki/Forsaken",
+        "/wiki/Kirin_Tor",
+        "/wiki/Scarlet_Crusade",
+        "/wiki/Argent_Dawn",
+        "/wiki/Cult_of_the_Damned",
+        "/wiki/Scourge",
+        "/wiki/Earthen_Ring",
+        "/wiki/Cenarion_Expedition",
+    ]
+    blocks = [_org_link_block("history_edit", href) for href in orgs]
+    targets = _collect_zone_faction_targets("zone-example", "Example Zone", blocks)
+    assert len(targets) == 10
 
 
 def test_discovery_workflow_types_links_by_section_role_not_keywords(tmp_path: Path) -> None:

@@ -1,6 +1,6 @@
 # Plan: Generalization Refactor — Registries, Guarantees & Editorial Selection
 
-**Status: IN PROGRESS — Slices 1–12 done (Slice 12: 2026-07-06, incl. the re-crawl). Implement remaining slices in the order given.**
+**Status: IN PROGRESS — Slices 1–13 done (Slice 13: 2026-07-07). Implement remaining slices in the order given.**
 
 ## Why this plan exists
 
@@ -1116,10 +1116,89 @@ schema additions here so only one re-crawl is needed.
   yields an empty `infobox`); registry seeds org kinds; loading an old-shape snapshot raises the
   re-crawl error.
 
-## Slice 13 — Link-based faction recognition; delete the faction vocabulary (H-1 consumers)
+## Slice 13 — Link-based faction recognition; delete the faction vocabulary (H-1 consumers) — ✅ DONE (2026-07-07)
 
 **Goal:** faction mentions and identities come from links + the organization registry; the
 name-shape vocabulary dies. **Depends on Slice 12 (+ a re-crawled run for live verification).**
+
+**Implementation notes (as built, 2026-07-07):**
+
+- **Registry is the one home for org identity/umbrella.** `world_registry.py` gained the Slice 13
+  lookup surface, all cached: `registry_index` now memoizes per path via `_registry_index_for`
+  (the 11k-entry JSON was re-parsed on every link before — link-based recognition looks up per
+  inline link); `title_from_wiki_href` (href/bare-path → article title, unquoted, fragment/query
+  stripped); `organization_entry` / `organization_entry_for_href` (title/href → registry row iff
+  `kind="organization"`); `umbrella_organizations` (display-title → tag) + `umbrella_faction_tags`,
+  both **derived** — the tag vocabulary is the set of affiliation values the org-category seeds
+  recorded (`Category:Alliance factions` / `Category:Horde factions`), and each umbrella is the
+  registry org bearing that title. On the committed registry this yields exactly
+  `{"Alliance": "alliance", "Horde": "horde"}` with **no** hand-listed faction names.
+- **Links thread into the draft pools.** `assembly._iter_evidence_items` and
+  `claim_routing._claim_view_for_item` now copy each evidence item's Slice-12 `links` onto the
+  pool item / claim view (empty list when absent), so both the offline paragraph path and the
+  live claim-view path carry the block's inline article links to the scorer.
+- **`faction_scoring.py` rewrite.** Deleted `_FACTION_NAME_RE`, `_phrase_is_faction`,
+  `_faction_token_set`, `_STANDALONE_FACTION_NAMES`, `_canonicalize_faction_phrase`,
+  `_is_generic_role_alias_phrase`, `_LEADING_QUALIFIER_RE`/`_ROLE_ALIAS_RE`/
+  `_GENERIC_ROLE_ALIAS_HEADS`, the static `_BINDING_BY_FACTION_ID`, `_ALLIANCE_HORDE_IDS`, and the
+  static `_UMBRELLA_TAG_BY_ID`. A **mention is now an inline link** whose target resolves to a
+  registry organization (`_organization_from_link` prefers the ingest `canonical_path` redirect
+  annotation, else the raw href; `_item_organization_links` dedupes per item by normalized title).
+  Instance harvest and seed-mention discovery are two-pass: links **establish** an identity (the
+  org's canonical registry title, so anchor wording like "Acolytes of the Cult" never mints a
+  name), then plain-text name matching counts that established identity across the page's other
+  paragraphs (wiki links only the first mention) — **no open-vocabulary phrase matching**.
+  `resolve_canonical_faction_name` kept as a thin registry-consulting fallback for stored string
+  targets (`"Horde Forsaken"` → `"Forsaken"` via `organization_entry`); `merge_variant_faction_candidates`
+  kept and now also unions candidate `affiliations`. `_PROPER_NOUN_PHRASE_RE` (the old
+  `_FACTION_NAME_RE` pattern, a general-grammar Title-Case matcher) survives **only** in
+  `harvest_instance_anchor_tokens`, which harvests frequent place/figure proper nouns as summary
+  anchors — never faction identities.
+- **Bindings/umbrella derive from the registry + infobox.** `_bindings_for_faction(faction_id,
+  name, affiliations)` replaces the static map: an umbrella faction matches only its own tag; every
+  other faction matches its name slug + `shared`/`neutral` + any umbrella side it belongs to.
+  Membership (`FactionCandidate.affiliations`) comes from the org registry's category affiliations
+  **and** the crawled profile page's infobox `Affiliation` field — the latter is load-bearing
+  because `Category:Horde factions` holds gameplay reputation factions ("Undercity (faction)"), not
+  the lore org "Forsaken"; the Forsaken page's own infobox (`Affiliation: Horde , …`, captured at
+  ingest since Slice 12) is what marks it Horde. `collect_faction_candidates` gained a `snapshots`
+  param (threaded from `build_major_factions` ← zone/instance page builders) to read those infoboxes.
+  `_suppress_umbrella_factions`, `_discover_candidates_from_v3_bindings`, and the Alliance/Horde
+  conflict gate all now key off `umbrella_organizations()`.
+- **Discovery targets from seed-page links (Cause A).** `workflow._collect_zone_faction_targets`
+  mints faction-profile targets from the seed page's block links that resolve to registry orgs,
+  ranked by summed **link frequency × section-class weight** (history/quests = 3.0, lead = 2.0,
+  cast = 1.0, gazetteer = 0.5, RPG = 0.0), capped at `_MAX_FACTION_PROFILE_TARGETS = 10`. The
+  quests/storyline section weight is the "questline-bound" signal available at discovery time
+  (the quest graph does not exist yet). The old per-link `inferred_entity_type == "faction"`
+  branch no longer emits a target (it only means "not a location"), and link *typing* itself now
+  asks the registry (`"organization" in entry_kinds(title)`) instead of `faction_title_tokens`.
+  On the WPL seed page this produces Argent Crusade (7.0), Alliance/Horde (6.0), Scourge/Cenarion
+  Circle/Scarlet Crusade (5.0), Argent Dawn/Ashen Verdict/Forsaken (3.0) — the current actors
+  Cause A said were missing now get profiles crawled. `traverse_wiki._MAX_FACTION` re-homed onto
+  `_MAX_FACTION_PROFILE_TARGETS` so the crawl budget can't silently cut a ranked target.
+- **Vocabulary deleted.** `faction_title_tokens` / `lore_faction_tokens` removed from
+  `discovery_classification_vocab.v1.json` and their `discovery_vocab` accessors; `lore_sources`
+  faction filtering re-pointed at `entry_kinds` (registry organization kind).
+- **Offline verification (test-run-wpl-26 artifacts, no re-crawl needed — Slice 12 already
+  captured links/infoboxes):** re-running discovery on the run-26 snapshots yields the 9-org
+  ranked WPL target list above (was 5, missing the current actors). Instance harvest on the
+  run-26 Scholomance evidence reproduces the gold set exactly (Scourge, Cult of the Damned).
+  Zone election on run-26 WPL evidence elects Alliance, Scourge, Argent Crusade, Cenarion Circle,
+  Forsaken, Scarlet Crusade, Cult of the Damned (Forsaken carries `horde` from its profile
+  infobox; generic Horde suppressed). This is the "identical or better, and now generalizes"
+  outcome; a full LIVE pilot with re-enrich still awaits `OPENAI_API_KEY`
+  (memory: `draft-stage-requires-openai`), verified properly by Slice 16.
+- **Tests:** `test_faction_scoring` (link-based seed discovery; unlinked prose discovers nothing;
+  an org unknown to the deleted vocab — Kirin Tor — found purely via its link target; adjacent-link
+  compound never mints "Horde Forsaken"; Forsaken Horde-suppression driven by profile-infobox
+  affiliation), `test_instance_faction_harvest` (link establishes then prose counts; identity from
+  link target not anchor text; unlinked prose mints nothing; temporally-excluded evidence never
+  counts), `test_discovery_workflow` (`_collect_zone_faction_targets` ranking, identity-from-target,
+  cap; seed fixture now carries an org block link), `test_classification_vocab` (deleted loaders
+  removed). Verified: `ruff check pipeline tests`, `mypy` on the ten touched modules, full `pytest`
+  (1115 passed, 5 skipped, 1 xfailed; the lone failure `test_history_heading_relabel` is
+  pre-existing on `157df37` and unrelated to factions).
 
 - `pipeline/generate/draft/faction_scoring.py`:
   - Seed-mention discovery (`_candidates_from_high_weight_seed_mentions`) and

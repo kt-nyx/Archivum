@@ -8,6 +8,7 @@ import time
 import urllib.parse
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
@@ -550,12 +551,24 @@ def registry_entries(path: Path | None = None) -> list[dict[str, Any]]:
     return [row for row in rows if isinstance(row, dict)]
 
 
-def registry_index(path: Path | None = None) -> dict[str, dict[str, Any]]:
+@lru_cache(maxsize=8)
+def _registry_index_for(path_key: str) -> dict[str, dict[str, Any]]:
     return {
         str(row.get("normalized_title", "")).strip(): row
-        for row in registry_entries(path)
+        for row in registry_entries(Path(path_key))
         if str(row.get("normalized_title", "")).strip()
     }
+
+
+def registry_index(path: Path | None = None) -> dict[str, dict[str, Any]]:
+    """Normalized-title index over the registry, cached per path.
+
+    The committed registry file is static for the life of a process, and Slice 13's
+    link-based faction recognition looks entries up per inline link — an uncached
+    read would re-parse the 11k-entry JSON on every call. A process that rewrites a
+    registry file in place must use a fresh path (or ``_registry_index_for.cache_clear()``).
+    """
+    return _registry_index_for(str(path or registry_path()))
 
 
 def entry_kinds(title: str, path: Path | None = None) -> frozenset[str]:
@@ -580,6 +593,75 @@ def entry_affiliations(title: str, path: Path | None = None) -> frozenset[str]:
     if not isinstance(affiliations, list):
         return frozenset()
     return frozenset(str(item) for item in affiliations if isinstance(item, str))
+
+
+def title_from_wiki_href(href: str) -> str:
+    """Article title for a wiki href or bare wiki path (``/wiki/Cult_of_the_Damned``,
+    ``https://warcraft.wiki.gg/wiki/Forsaken#History``, ``Instructor_Razuvious``)."""
+    value = str(href or "").strip()
+    if not value or value.startswith("#"):
+        return ""
+    if "/wiki/" in value:
+        value = value.split("/wiki/", 1)[1]
+    elif "://" in value:
+        return ""
+    value = value.split("#", 1)[0].split("?", 1)[0].strip("/")
+    return urllib.parse.unquote(value).replace("_", " ").strip()
+
+
+def organization_entry(title: str, path: Path | None = None) -> dict[str, Any] | None:
+    """The registry row for ``title`` when the wiki classes it as an organization."""
+    row = registry_index(path).get(_normalize_title(title))
+    if row is None:
+        return None
+    kinds = row.get("kinds", [])
+    if not isinstance(kinds, list) or "organization" not in kinds:
+        return None
+    return row
+
+
+def organization_entry_for_href(href: str, path: Path | None = None) -> dict[str, Any] | None:
+    """Resolve an inline-link target to a registry organization (Slice 13)."""
+    title = title_from_wiki_href(href)
+    if not title:
+        return None
+    return organization_entry(title, path)
+
+
+@lru_cache(maxsize=8)
+def _umbrella_organizations_for(path_key: str) -> dict[str, str]:
+    tags: set[str] = set()
+    index = _registry_index_for(path_key)
+    for row in index.values():
+        affiliations = row.get("affiliations", [])
+        if isinstance(affiliations, list):
+            tags.update(str(tag) for tag in affiliations if isinstance(tag, str) and tag)
+    umbrellas: dict[str, str] = {}
+    for tag in sorted(tags):
+        umbrella_row = index.get(_normalize_title(tag))
+        if umbrella_row is None:
+            continue
+        kinds = umbrella_row.get("kinds", [])
+        if isinstance(kinds, list) and "organization" in kinds:
+            umbrellas[str(umbrella_row.get("title", tag))] = tag
+    return umbrellas
+
+
+def umbrella_organizations(path: Path | None = None) -> dict[str, str]:
+    """Display title -> umbrella tag for the faction-capital organizations.
+
+    Structurally derived (Slice 13): the umbrella tag vocabulary is the set of
+    affiliation values the org-category seeds recorded (``Category:<X> factions``),
+    and the umbrella organization for a tag is the registry org entry bearing that
+    title — {"Alliance": "alliance", "Horde": "horde"} on the live wiki, with no
+    hand-enumerated faction list.
+    """
+    return _umbrella_organizations_for(str(path or registry_path()))
+
+
+def umbrella_faction_tags(path: Path | None = None) -> frozenset[str]:
+    """The registry's umbrella affiliation tags (``alliance``/``horde`` on the live wiki)."""
+    return frozenset(umbrella_organizations(path).values())
 
 
 def is_registry_title(title: str, *kinds: str, path: Path | None = None) -> bool:

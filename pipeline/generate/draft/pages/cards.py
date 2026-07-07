@@ -859,6 +859,7 @@ def build_major_factions(
     faction_profile_targets: list[dict[str, Any]] | None = None,
     instance_name: str | None = None,
     extra_subregion_tokens: list[str] | None = None,
+    snapshots: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, str]]]]:
     subregion_tokens = extract_subregion_tokens(
         pools.get("location_seed_pool", []), zone_name=zone_name
@@ -876,6 +877,7 @@ def build_major_factions(
         pools=pools,
         faction_profile_targets=faction_profile_targets,
         v3_rows=questline_rows,
+        snapshots=snapshots,
     )
     target_count, queue = candidates_for_finalize(
         candidates,

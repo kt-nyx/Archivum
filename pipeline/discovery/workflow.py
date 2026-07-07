@@ -11,7 +11,6 @@ from urllib.parse import unquote, urlparse
 from pipeline.common.discovery_vocab import (
     character_role_hints,
     event_title_tokens,
-    faction_title_tokens,
     location_type_title_rules,
     non_location_title_tokens,
 )
@@ -33,7 +32,7 @@ from pipeline.discovery.lore_sources import (
     build_instance_lore_candidates,
     compute_instance_lore_density,
 )
-from pipeline.discovery.world_registry import entry_kinds
+from pipeline.discovery.world_registry import entry_kinds, organization_entry_for_href
 from pipeline.ingest.snapshots import load_source_snapshots
 
 _CLASSIC_ONLY_MARKERS = ("classic", "classic-only", "vanilla")
@@ -378,6 +377,99 @@ def _collect_instance_character_targets(
     return targets
 
 
+# Slice 13 (Cause A): faction profile targets are the organizations the zone's own page links
+# to, ranked by link frequency x section class. Weights favor the sections that carry the
+# zone's narrative actors (history, quests/storyline — the latter is what "questline-bound"
+# means at discovery time, before the quest graph exists) over gazetteer/roster chrome; RPG
+# sections contribute nothing. The lead is weighted separately (it classifies to "other").
+_FACTION_TARGET_SECTION_WEIGHTS: dict[str, float] = {
+    "history": 3.0,
+    "quests_or_storyline": 3.0,
+    "notable_characters": 1.0,
+    "maps_subregions": 0.5,
+    "instances_or_dungeons": 0.5,
+    "in_the_rpg": 0.0,
+    "other": 1.0,
+}
+_LEAD_FACTION_TARGET_WEIGHT = 2.0
+_MAX_FACTION_PROFILE_TARGETS = 10
+
+
+def _collect_zone_faction_targets(
+    zone_id: str,
+    zone_name: str,
+    section_blocks: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Faction-profile crawl targets: registry organizations linked from the zone's seed page.
+
+    A target is minted from an inline block link whose target resolves to an org-registry
+    entry — never from a name-shape vocabulary — and ranked by summed section-class weight
+    (link frequency x section class), so the zone's current actors (Argent Crusade, Cenarion
+    Circle, Alliance in WPL) get profiles crawled. Capped to the top
+    ``_MAX_FACTION_PROFILE_TARGETS``; traverse applies its own per-zone crawl cap on top,
+    in this ranked order.
+    """
+    zone_low = zone_name.strip().lower()
+    stats: dict[str, dict[str, Any]] = {}
+    for block in section_blocks:
+        if not isinstance(block, dict):
+            continue
+        raw_leaf = str(block.get("section_role", ""))
+        raw_parent = str(block.get("parent_section_role", ""))
+        effective_slug = _effective_section_slug(raw_leaf, raw_parent)
+        role = _section_role(effective_slug)
+        if effective_slug.strip().lower() in ("lead", "introduction"):
+            weight = _LEAD_FACTION_TARGET_WEIGHT
+        else:
+            weight = _FACTION_TARGET_SECTION_WEIGHTS.get(role, 0.0)
+        if weight <= 0.0:
+            continue
+        links = block.get("links")
+        if not isinstance(links, list):
+            continue
+        for link in links:
+            if not isinstance(link, dict):
+                continue
+            href = str(link.get("href", "")).strip()
+            org = organization_entry_for_href(href) if href else None
+            if org is None:
+                continue
+            title = str(org.get("title", "")).strip()
+            if not title or title.lower() == zone_low:
+                continue
+            key = str(org.get("normalized_title", title.lower()))
+            record = stats.setdefault(
+                key,
+                {
+                    "title": title,
+                    "source_link": str(org.get("wiki_path", "")) or href,
+                    "score": 0.0,
+                    "count": 0,
+                    "best_role": role,
+                    "best_weight": 0.0,
+                },
+            )
+            record["score"] += weight
+            record["count"] += 1
+            if weight > record["best_weight"]:
+                record["best_weight"] = weight
+                record["best_role"] = role
+    ranked = sorted(
+        stats.values(),
+        key=lambda record: (-record["score"], -record["count"], str(record["title"]).lower()),
+    )
+    return [
+        {
+            "zone_id": zone_id,
+            "faction_id": _to_entity_id("faction", str(record["title"])),
+            "name": str(record["title"]),
+            "source_link": str(record["source_link"]),
+            "source_section_role": str(record["best_role"]),
+        }
+        for record in ranked[:_MAX_FACTION_PROFILE_TARGETS]
+    ]
+
+
 def _infer_entity_type_for_link(title: str, inferred_section_role: str) -> str:
     # WS-C: the link's section role (WS-A structural signal) is the primary
     # classifier. The title-token fallbacks below only run when the section role
@@ -398,7 +490,9 @@ def _infer_entity_type_for_link(title: str, inferred_section_role: str) -> str:
         return "location"
     if "(instance)" in lowered or " dungeon" in lowered or " raid" in lowered:
         return "instance"
-    if any(keyword in lowered for keyword in faction_title_tokens()):
+    # Slice 13: organization-ness comes from the wiki's own category taxonomy (the org
+    # registry), not a faction-word vocabulary.
+    if "organization" in entry_kinds(title):
         return "faction"
     if any(keyword in lowered for keyword in event_title_tokens()):
         return "event"
@@ -750,15 +844,10 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
                     }
                 )
             elif inferred_entity_type == "faction":
-                faction_profile_targets.append(
-                    {
-                        "zone_id": str(snapshot.get("entity_id", "")),
-                        "faction_id": _to_entity_id("faction", title),
-                        "name": title,
-                        "source_link": link,
-                        "source_section_role": inferred_role,
-                    }
-                )
+                # Slice 13: faction profile targets are built from the seed page's block
+                # links against the org registry (see _collect_zone_faction_targets below);
+                # a faction-typed link only means "not a location candidate" here.
+                continue
             elif inferred_entity_type == "character":
                 # Zone-page characters are not crawled: zones emit no key-character cards, so a
                 # character profile here has no consumer. Instance key characters are targeted
@@ -800,6 +889,12 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
                         "lore_significant": lore_significant,
                     }
                 )
+
+        faction_profile_targets.extend(
+            _collect_zone_faction_targets(
+                str(snapshot.get("entity_id", "")), entity_name, section_blocks
+            )
+        )
 
         _ = source_row
 

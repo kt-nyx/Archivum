@@ -10,20 +10,35 @@ from pipeline.generate.draft.faction_scoring import (
 )
 
 
-def _row(*snippets: str, field_name: str = "history_digest", section_role: str = "history") -> dict[str, Any]:
-    return {
-        "field_name": field_name,
-        "section_role": section_role,
-        "evidence_items": [
-            {"source_id": f"src-{i}", "snippet": s, "section_role": section_role}
-            for i, s in enumerate(snippets)
-        ],
-    }
+def _row(
+    *snippets: str | tuple[str, list[dict[str, str]]],
+    field_name: str = "history_digest",
+    section_role: str = "history",
+) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    for i, entry in enumerate(snippets):
+        snippet, links = entry if isinstance(entry, tuple) else (entry, [])
+        items.append(
+            {
+                "source_id": f"src-{i}",
+                "snippet": snippet,
+                "section_role": section_role,
+                "links": links,
+            }
+        )
+    return {"field_name": field_name, "section_role": section_role, "evidence_items": items}
 
 
-def test_harvest_extracts_multiword_faction_with_double_connector() -> None:
+def _link(name: str, *, anchor: str = "") -> dict[str, str]:
+    return {"anchor_text": anchor or name, "href": f"/wiki/{name.replace(' ', '_')}"}
+
+
+def test_harvest_establishes_faction_from_link_then_counts_prose_mentions() -> None:
+    # Slice 13: the first (linked) mention establishes the identity via the org registry;
+    # later plain-text mentions of the established name still count (wiki style links
+    # only the first occurrence).
     rows = [
-        _row("The Cult of the Damned seized Scholomance." * 1),
+        _row(("The Cult of the Damned seized Scholomance.", [_link("Cult of the Damned")])),
         _row("The Cult of the Damned raised the dead at Scholomance."),
         _row("Members of the Cult of the Damned still haunt Scholomance."),
     ]
@@ -37,14 +52,18 @@ def test_harvest_extracts_multiword_faction_with_double_connector() -> None:
     assert any(t["faction_id"] == "faction-cult-of-the-damned" for t in targets)
 
 
-def test_harvest_keeps_standalone_faction_drops_generic_single_word() -> None:
+def test_harvest_resolves_identity_from_link_target_not_anchor_text() -> None:
+    # "Acolytes of the Cult" is anchor wording; the link target settles the identity, so
+    # the anchor phrase can never mint a faction of its own.
     rows = [
-        _row("The Scourge overran the keep."),
-        _row("The Scourge claimed Scholomance."),
-        _row("The Scourge remains."),
-        # "Cult" appearing alone (no qualifier) is too generic to be a faction on its own.
-        _row("A small Cult gathered.", "Another Cult met.", "A third Cult formed."),
-        _row("Acolytes of the Cult learned in the school."),
+        _row(
+            (
+                "Acolytes of the Cult learned in the school.",
+                [_link("Cult of the Damned", anchor="Acolytes of the Cult")],
+            )
+        ),
+        _row("The Cult of the Damned raised the dead at Scholomance."),
+        _row("The Cult of the Damned still haunts the halls of Scholomance."),
     ]
     targets, _ = harvest_instance_faction_targets(
         instance_id="instance-scholomance",
@@ -52,14 +71,34 @@ def test_harvest_keeps_standalone_faction_drops_generic_single_word() -> None:
         evidence_rows=rows,
     )
     names = {t["name"] for t in targets}
-    assert "Scourge" in names
-    assert "Cult" not in names
+    assert "Cult of the Damned" in names
     assert "Acolytes of the Cult" not in names
+
+
+def test_harvest_never_mints_unlinked_prose_phrases() -> None:
+    # No open-vocabulary phrase matching: prose without a link establishing the identity
+    # discovers nothing, however faction-shaped the words are.
+    rows = [
+        _row("The Scourge overran the keep."),
+        _row("The Scourge claimed Scholomance."),
+        _row("A small Cult gathered.", "Another Cult met.", "A third Cult formed."),
+    ]
+    targets, _ = harvest_instance_faction_targets(
+        instance_id="instance-scholomance",
+        instance_name="Scholomance",
+        evidence_rows=rows,
+    )
+    assert targets == []
 
 
 def test_harvest_does_not_merge_two_factions_joined_by_and() -> None:
     rows = [
-        _row("The Argent Crusade and the Scourge clashed."),
+        _row(
+            (
+                "The Argent Crusade and the Scourge clashed.",
+                [_link("Argent Crusade"), _link("Scourge")],
+            )
+        ),
         _row("The Argent Crusade and the Scourge clashed again."),
         _row("The Argent Crusade and the Scourge clashed once more."),
     ]
@@ -76,8 +115,13 @@ def test_harvest_does_not_merge_two_factions_joined_by_and() -> None:
 
 def test_harvest_min_mentions_threshold_filters_thin_factions() -> None:
     rows = [
-        _row("The Scourge struck.", "The Scourge struck.", "The Scourge struck."),
-        _row("The Forsaken appeared once."),  # only one mention -> below default threshold
+        _row(
+            ("The Scourge struck.", [_link("Scourge")]),
+            "The Scourge struck.",
+            "The Scourge struck.",
+        ),
+        # Only one (linked) mention -> below the default threshold.
+        _row(("The Forsaken appeared once.", [_link("Forsaken")])),
     ]
     targets, _ = harvest_instance_faction_targets(
         instance_id="instance-scholomance",
@@ -101,9 +145,13 @@ def test_harvest_excludes_instance_name_itself() -> None:
 
 def test_harvested_factions_feed_scorer_and_rank_by_evidence() -> None:
     rows = [
-        _row(f"The Scourge held Scholomance ({i}).") for i in range(5)
+        _row(("The Scourge held Scholomance (0).", [_link("Scourge")]))
     ] + [
-        _row(f"The Cult of the Damned served at Scholomance ({i}).") for i in range(3)
+        _row(f"The Scourge held Scholomance ({i}).") for i in range(1, 5)
+    ] + [
+        _row(("The Cult of the Damned served at Scholomance (0).", [_link("Cult of the Damned")]))
+    ] + [
+        _row(f"The Cult of the Damned served at Scholomance ({i}).") for i in range(1, 3)
     ]
     targets, pool = harvest_instance_faction_targets(
         instance_id="instance-scholomance",
@@ -173,14 +221,14 @@ def test_harvest_skips_temporally_excluded_instance_evidence() -> None:
 def test_harvest_ignores_biography_only_mentions_for_instance_factions() -> None:
     rows = [
         _row(
-            "The Scourge raised the dead beneath Scholomance.",
+            ("The Scourge raised the dead beneath Scholomance.", [_link("Scourge")]),
             "The Scourge defended the academy's halls.",
             "The Scourge still occupies the ruined school.",
             field_name="history_digest",
             section_role="history",
         ),
         _row(
-            "Lilian Voss was trained by the Scarlet Crusade.",
+            ("Lilian Voss was trained by the Scarlet Crusade.", [_link("Scarlet Crusade")]),
             "The Scarlet Crusade hunted Lilian Voss after her undeath.",
             "Scarlet Crusade zealots shaped Lilian Voss's early biography.",
             field_name="character_pool",
@@ -203,13 +251,16 @@ def test_harvest_ignores_biography_only_mentions_for_instance_factions() -> None
 def test_harvest_allows_multiword_faction_with_eligible_history_support() -> None:
     rows = [
         _row(
-            "The Cult of the Damned founded the school beneath the island.",
+            (
+                "The Cult of the Damned founded the school beneath the island.",
+                [_link("Cult of the Damned")],
+            ),
             "The Cult of the Damned still trains necromancers in the current holdout.",
         ),
         _row(
-            "The Shadow Council later entered the school.",
-            "The Shadow Council later searched the school.",
-            "The Shadow Council later departed the school.",
+            ("The Scourge later entered the school.", [_link("Scourge")]),
+            "The Scourge later searched the school.",
+            "The Scourge later departed the school.",
         ),
     ]
     for item in rows[0]["evidence_items"]:
@@ -227,7 +278,8 @@ def test_harvest_allows_multiword_faction_with_eligible_history_support() -> Non
 
     names = {t["name"] for t in targets}
     assert "Cult of the Damned" in names
-    assert "Shadow Council" not in names
+    # Temporally excluded evidence (post-active lore) never establishes or counts a faction.
+    assert "Scourge" not in names
     assert len(pool) == 2
 
 

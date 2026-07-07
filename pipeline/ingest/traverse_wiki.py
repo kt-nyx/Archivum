@@ -36,6 +36,7 @@ from pipeline.discovery.quest_hub import resolve_hub_child_links
 from pipeline.discovery.quest_lore import build_quest_lore_record
 from pipeline.discovery.quest_record import build_quest_record
 from pipeline.discovery.storyline_parser import _to_entity_id, _wiki_title
+from pipeline.discovery.workflow import _MAX_FACTION_PROFILE_TARGETS
 from pipeline.ingest.fetch_wiki import (
     _category_lookup_key,
     _fetch_url_text,
@@ -51,7 +52,9 @@ _MAX_STORYLINE = 1
 # Slice A removes the per-zone quest cap (D4: fetch all roster quests with
 # throttling). A very high ceiling stays as a runaway guard, overridable via env.
 _MAX_QUEST = int(os.environ.get("WOWLORE_MAX_QUESTS_PER_ZONE", "100000"))
-_MAX_FACTION = 7
+# Slice 13: discovery emits a ranked, capped faction-target list; the crawl budget is that
+# same cap (one home for N), so no ranked target is silently cut here.
+_MAX_FACTION = _MAX_FACTION_PROFILE_TARGETS
 _MAX_LOCATION = 8
 # Slice D: per-page character-profile crawl cap. Sized to the instance key-character roster
 # (INSTANCE_MAX_KEY_CHARACTERS) so every elected key character can pick up biographical evidence.

@@ -300,6 +300,7 @@ def build_instance_major_factions(
             faction_profile_targets=native_targets,
             instance_name=instance_name,
             extra_subregion_tokens=anchor_tokens,
+            snapshots=snapshots,
         )
         if cards:
             return cards, provenance
@@ -334,6 +335,7 @@ def build_instance_major_factions(
         revision_map=revision_map,
         faction_profile_targets=scoped_targets,
         instance_name=instance_name,
+        snapshots=snapshots,
     )
 
 
