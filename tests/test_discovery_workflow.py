@@ -617,9 +617,9 @@ def test_collect_instance_character_targets_takes_roster_not_places() -> None:
             "name": "Scholomance",
             "structured_links": [
                 {"label": "Darkmaster Gandling", "href": "/wiki/Darkmaster_Gandling",
-                 "section_role": "scholomance_faculty_edit"},
+                 "section_role": "dungeon_scholomance_edit"},
                 {"label": "Lilian Voss", "href": "/wiki/Lilian_Voss",
-                 "section_role": "scholomance_faculty_edit"},
+                 "section_role": "dungeon_scholomance_edit"},
                 {"label": "Rattlegore", "href": "/wiki/Rattlegore",
                  "section_role": "dungeon_scholomance_edit"},
                 # A place linked from the adventure-guide section is rejected.

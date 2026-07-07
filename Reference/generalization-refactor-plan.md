@@ -1,6 +1,6 @@
 # Plan: Generalization Refactor — Registries, Guarantees & Editorial Selection
 
-**Status: IN PROGRESS — Slices 1–13 done (Slice 13: 2026-07-07). Implement remaining slices in the order given.**
+**Status: IN PROGRESS — Slices 1–14 done (Slice 14: 2026-07-07). Implement remaining slices in the order given.**
 
 ## Why this plan exists
 
@@ -1228,10 +1228,100 @@ name-shape vocabulary dies. **Depends on Slice 12 (+ a re-crawled run for live v
 **Expected pilot effect [LIVE, after re-crawl]:** identical or better faction sets on the pilot;
 the mechanism finally *generalizes* (verified properly by Slice 16).
 
-## Slice 14 — Section-role token single-homing sweep (H-3 residue)
+## Slice 14 — Section/heading classification: full registry transition (H-3 residue) — ✅ DONE (2026-07-07)
 
-**Goal:** finish the migration the section-label registry started; the scattered role-token lists
-become registry-class lookups.
+**Approach changed from the original spec — see below.**
+
+**Verification (2026-07-07):** `ruff check pipeline tests` clean; `mypy` clean on all touched
+modules; full `pytest` green (only the pre-existing skips + the known `test_temporal_run_artifacts`
+xfail). New `tests/test_section_role_classification_slice14.py` pins the registry-derived
+replacements and the two maintainer constraints (no "faculty" theme word in shared code; quest
+objectives/description stay page-type lore). Behavior/gold movement is expected and accepted (see
+the approach change) — the pilot *page* reconciliation remains the marked **[LIVE]** step, since
+draft regeneration needs `OPENAI_API_KEY`; the discovery-stage classification changes are covered by
+the offline suite. Notable intentional behavior shifts: `warlords`/`midnight`/`last_titan` are now
+recognized as era sections (era tokens derive from `expansion_release_order`); `exploring_azeroth`
+(and other adaptation sections) now classify `media` and drop out of history/currently/lore pools;
+a bare "Faculty" heading is no longer a boss token (Scholomance's roster reaches `boss_pool` via its
+per-dungeon table / adventure guide); a `classic`/`removed` section role no longer forces
+`excluded_noncanon` (retail-era exclusion is the category signal's job).
+
+**Goal:** finish the migration the section-label registry started; the scattered role-token
+keyword/deny/allow lists become registry-class (and expansion-registry) lookups.
+
+**Approach change (2026-07-07, agreed with maintainer).** The original spec below constrained this
+slice to a *behavior-identical, parity-only* sweep ("assert routing decisions unchanged on the pilot
+fixtures; improving the classifications themselves is out of scope"). Verifying that against the
+code showed the guardrail is in direct tension with the goal: the named lists use **substring**
+matching, **mix canonical discovery roles with raw wiki slugs**, and encode purpose-specific
+judgments the content-class registry deliberately does not model — so a faithful registry transition
+*necessarily* changes behavior (e.g. deriving `era_section_role_tokens` from `expansion_release_order`
+makes `warlords_of_draenor`/`midnight` sections count as era history where they didn't, on the pilot
+pages themselves). Per maintainer direction, **the parity-only and "don't improve classifications"
+guardrails are dropped for this slice.** The whole refactor exists to generalize to every retail
+zone; any change that removes a brittle keyword/regex/allow/deny list in favor of the registries is
+preferred even when it moves behavior or gold. Pipeline regressions are still avoided; gold *page*
+reconciliation that needs the LLM is left as the marked **[LIVE]** step (draft needs
+`OPENAI_API_KEY`), with the discovery-stage decision artifacts + test suite verified offline.
+
+**Two maintainer constraints on this slice:**
+- **No pilot vocabulary in shared code.** "faculty" is a Scholomance-specific theme word (the school's
+  bosses are "faculty"); instance-entity detection must come from the registry `roster` class /
+  boss-section detection, never a `faculty` keyword, and shared code/language must use the generic
+  terms ("denizens"/"bosses").
+- **`objectives`/`description` on quest pages are the lore we extract**, but they are copy-pasted
+  in-game quest-journal text and can carry a little meta — keep the quest-page inclusion explicit
+  and page-type-scoped rather than assuming those sections are pure prose.
+
+**Plan as implemented (Groups A–C):**
+
+*Registry extensions* (`section_label_registry.v1.json` + `section_registry.py`): add a **`media`**
+content-class (RPG/novel/comic/adaptation prose — excluded from lore like `meta`); add labels
+`maps_subregions`(geography, canonical alias of `maps_and_subregions`), `resources`(gameplay), and
+the media labels (`exploring_azeroth`, `novel`, `novella`, `short_story`, `manga`, `comic`,
+`later_appearances`). Add helpers: `is_generic_history_heading(label)` and an `expansion_era`
+display-name accessor (single home for the "generic heading" concept and the expansion display
+names).
+
+*Group A — content-class exclusion sets → registry queries:*
+- `prose_election._HISTORY_EXCLUDED_ROLES` → `section_content_class(role,parent) in {geography, non_canon}`.
+- `enrich._HISTORY_DIGEST_EXCLUDED` + `_is_currently_input_role` → registry-narrative / quest-gameplay
+  in, geography/non_canon/meta out (drops the `endswith("_edit")` catch-all that leaked `notes_edit`
+  etc. into `currently_input`).
+- `lore_sources._HISTORY_ROLE_TOKENS` → `is_narrative_section` with `narrative_kind ∈ {history, background}`.
+- `wiki_evidence_filters` (`_GENERIC_SECTION_ROLES` / `_EXCLUDED_PROSE_SECTION_ROLES` /
+  `_FOOTER_META_SECTION_ROLES`) → `is_named_history_section` re-expressed via parent-inherited
+  `content_class` + `is_generic_history_heading` (signature gains `parent`); fixes the current
+  `description_edit → named history` false-positive.
+
+*Group B — single-home the duplicated concepts:*
+- `era_section_role_tokens()` derived from `expansion_release_order()`; delete the duplicate vocab
+  entry (accepts the `warlords`/`midnight`/`last_titan` recognition change).
+- `_GENERIC_HISTORY_HEADINGS` → the shared `is_generic_history_heading` helper; its expansion
+  display-name portion derives from the registry `expansion_era` labels.
+- `retail._NON_RETAIL_PARENTHETICAL_RE` expansion alternatives built from `expansion_release_order()`.
+
+*Group C — markers that aren't pure content-class:*
+- `temporal._POST_LORE_ROLE_MARKERS` (novel/manga/comic/exploring-azeroth/later-appearances) →
+  the new `media` class + `non_canon`. `temporal._ENTRY_ROLE_MARKERS` → `narrative`(identity) /
+  `gameplay`(adventure_guide) / `roster` classes (no `faculty`/`boss` keyword; boss detection is
+  the existing `is_boss_section_role`). `temporal._EXCLUDED_ROLE_MARKERS`: the non-canon/gameplay
+  parts → registry classes; **the retail-scope part (`classic`/`removed`/`deprecated`) moves to the
+  category-based retail signal** (`strict_generation_category_signal`) rather than the content
+  registry — `classic` is legitimately `narrative/expansion_era` prose, and retail eligibility is a
+  separate, already-homed judgment (memories: `retail-only-no-classic`,
+  `classic-era-content-scope-by-section`).
+- `workflow._LOCATION_LORE_SECTION_TOKENS` / `_LOCATION_GAMEPLAY_SECTION_TOKENS` and
+  `_INSTANCE_ROSTER_SECTION_TOKENS` re-sourced from `content_class` (narrative/geography = lore;
+  gameplay/meta/media = gameplay; `roster` + `is_boss_section_role` for instance rosters). The core
+  `_SECTION_ROLE_PATTERNS` discovery bucketer is a *different taxonomy* (navigation roles, not
+  content classes) and stays, but its lore/gameplay-derived helpers are registry-sourced.
+- `quest_lore._EXCLUDED_ROLES` dropped in favor of a `content_class` gameplay/meta exclusion; the
+  quest-narrative inclusion (`objectives`/`description`/`quest_text`) stays as an explicit,
+  page-type-scoped rule (those sections are `gameplay`/`meta` for zone/faction pages but *are* the
+  lore on a quest page).
+
+**Original spec (superseded by the approach change above; kept for reference):**
 
 - Inventory the residual lists: `enrich._HISTORY_DIGEST_EXCLUDED`, `_is_currently_input_role`'s
   role checks, `quest_lore._LORE_ROLES`/`_EXCLUDED_ROLES`, `prose_election._HISTORY_EXCLUDED_ROLES`

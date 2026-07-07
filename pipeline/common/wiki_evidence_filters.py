@@ -6,44 +6,9 @@ import re
 from typing import Any
 
 from pipeline.common.discovery_vocab import non_canon_body_markers
-from pipeline.common.section_registry import section_content_class
-
-_GENERIC_SECTION_ROLES = frozenset(
-    {
-        "history",
-        "history_edit",
-        "lead",
-        "introduction",
-        "other",
-    }
-)
-
-_EXCLUDED_PROSE_SECTION_ROLES = frozenset(
-    {
-        "geography",
-        "geography_edit",
-        "maps_subregions",
-        "quests",
-        "quests_edit",
-        "getting_there",
-        "getting_there_edit",
-        "resources",
-        "resources_edit",
-        "notable_characters",
-    }
-)
-
-_FOOTER_META_SECTION_ROLES = frozenset(
-    {
-        "notes",
-        "notes_edit",
-        "trivia",
-        "trivia_edit",
-        "see_also",
-        "gallery",
-        "patches",
-        "patch_changes",
-    }
+from pipeline.common.section_registry import (
+    is_bare_history_container,
+    section_content_class,
 )
 
 # WS-C: body-text non-canon markers externalized to
@@ -82,15 +47,29 @@ def is_expansion_boilerplate(text: str) -> bool:
     return bool(_EXPANSION_BOILERPLATE_RE.search(str(text).strip()))
 
 
-def is_named_history_section(raw_section_role: str) -> bool:
-    lowered = str(raw_section_role).strip().lower()
-    if not lowered or lowered in _GENERIC_SECTION_ROLES:
+def is_named_history_section(raw_section_role: str, parent_section_role: str = "") -> bool:
+    """True for a distinctive narrative history subsection ("The Scourging", "Cataclysm") worth
+    reserving as its own section — i.e. registry-narrative (with the canonical/parent role supplying
+    inheritance for unlisted subsection slugs) and not a bare container heading (History/Lead/…).
+    RPG, geography, gameplay, meta and media sections are all non-narrative and therefore excluded.
+    """
+    if not str(raw_section_role).strip():
         return False
-    if is_rpg_section(lowered):
+    if section_content_class(raw_section_role, parent_section_role) != "narrative":
         return False
-    if lowered in _EXCLUDED_PROSE_SECTION_ROLES or lowered in _FOOTER_META_SECTION_ROLES:
-        return False
-    return True
+    return not is_bare_history_container(raw_section_role)
+
+
+def evidence_item_content_class(item: dict[str, Any]) -> str:
+    """Registry content_class for a draft evidence item.
+
+    Uses the item's canonical ``section_role`` as the inherited-parent fallback for its raw slug, so
+    a distinctive subsection ("Scourging of Lordaeron") inherits ``narrative`` from its History
+    parent while an adaptation section ("Exploring Azeroth") keeps its own ``media`` class.
+    """
+    raw = str(item.get("raw_section_role", item.get("section_role", ""))).strip()
+    canonical = str(item.get("section_role", "")).strip()
+    return section_content_class(raw, canonical)
 
 
 def is_simile_continent_mention(snippet: str, continent_title: str) -> bool:
@@ -133,6 +112,10 @@ def _item_raw_section(item: dict[str, Any]) -> str:
     return str(item.get("raw_section_role", item.get("section_role", ""))).strip().lower()
 
 
+def _item_canonical_section(item: dict[str, Any]) -> str:
+    return str(item.get("section_role", "")).strip().lower()
+
+
 def group_items_by_raw_section(items: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
     ordered = sorted(items, key=lambda row: (_item_block_index(row), _item_source_id(row)))
     groups: list[list[dict[str, Any]]] = []
@@ -160,7 +143,10 @@ def trailing_named_section_items(
     named_groups = [
         group
         for group in group_items_by_raw_section(items)
-        if group and is_named_history_section(_item_raw_section(group[0]))
+        if group
+        and is_named_history_section(
+            _item_raw_section(group[0]), _item_canonical_section(group[0])
+        )
     ]
     if not named_groups:
         return []

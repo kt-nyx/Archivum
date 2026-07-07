@@ -14,6 +14,7 @@ from pipeline.common.section_registry import (
     is_narrative_section,
     normalize_section_label,
     section_content_class,
+    section_narrative_kind,
 )
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.common.wiki_evidence_filters import should_exclude_from_history
@@ -60,23 +61,6 @@ _NARRATIVE_PROFILE_POOL_FIELDS = frozenset(
         "location_pool",
     }
 )
-
-_HISTORY_DIGEST_EXCLUDED = frozenset(
-    {
-        "geography_edit",
-        "geography",
-        "quests_edit",
-        "quests",
-        "getting_there_edit",
-        "getting_there",
-        "resources_edit",
-        "resources",
-        "in_the_rpg_edit",
-        "in_the_rpg",
-        "maps_subregions",
-    }
-)
-
 
 def _block_evidence_links(block: dict[str, Any]) -> list[dict[str, str]]:
     """Return the block's well-formed inline links for the evidence item (Slice 12)."""
@@ -145,23 +129,27 @@ def _instance_seed_field_names(
     return names
 
 
-def _is_currently_input_role(section_role: str) -> bool:
-    lowered = section_role.lower()
-    if lowered.startswith("in_the_rpg"):
-        return False
-    if lowered in {"quests_edit", "quests", "quests_or_storyline"}:
+def _is_currently_input_role(
+    canonical_role: str, section_role: str, parent_section_role: str = ""
+) -> bool:
+    """currently_input is a temporal (current-state) signal, not a content-type one: it draws the
+    zone's quest/storyline activity plus its recent narrative history. Quest/storyline routing is
+    the discovery bucketer's job (the canonical role); the content-type exclusions — geography
+    lists, meta/media/RPG apparatus — come from the section registry (narrative only).
+    """
+    if canonical_role == "quests_or_storyline":
         return True
-    if lowered in _HISTORY_DIGEST_EXCLUDED:
+    if section_content_class(section_role, parent_section_role) != "narrative":
         return False
-    if lowered.endswith("_edit"):
-        return True
-    return False
+    # The lede / introduction is identity essence (routed to at_a_glance), not current-state prose.
+    return section_narrative_kind(section_role, parent_section_role) != "identity"
 
 
 def _seed_field_names(
     section_role: str,
     parent_section_role: str = "",
     *,
+    canonical_role: str = "",
     lead_emitted: int,
     history_at_glance_emitted: int = 0,
     block_type: str = "paragraph",
@@ -186,10 +174,10 @@ def _seed_field_names(
         # (cauldron lords, commanders) feed history_digest alone.
         if history_at_glance_emitted < 1:
             names.append("at_a_glance_input")
-    # currently_input is a temporal (current-state) signal, not a content-type one, and it
-    # intentionally draws quest/recent sections the registry classes as gameplay — so it keeps
-    # its own role check. Geography is never current-state, so don't let it leak in.
-    if not is_geography and _is_currently_input_role(section_role.lower()):
+    # Geography is never current-state, so don't let it leak in.
+    if not is_geography and _is_currently_input_role(
+        canonical_role, section_role, parent_section_role
+    ):
         names.append("currently_input")
     return names
 
@@ -365,6 +353,7 @@ def _build_evidence_packs(
                 field_names = _seed_field_names(
                     raw_section,
                     parent_section,
+                    canonical_role=role,
                     lead_emitted=lead_emitted,
                     history_at_glance_emitted=history_at_glance_counts.get(subject_id, 0),
                     block_type=block_type,

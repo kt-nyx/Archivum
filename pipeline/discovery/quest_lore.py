@@ -5,44 +5,23 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from pipeline.common.section_registry import section_content_class
 from pipeline.common.text_normalize import clean_wiki_snippet
 
-_LORE_ROLES = frozenset(
-    {
-        "lead",
-        "introduction",
-        "description",
-        "objectives",
-        "objective",
-        "quest",
-        "quest_text",
-        "quest_details",
-        "overview",
-    }
+# Quest-page narrative sections: the in-game quest journal text (lede, description, objectives,
+# quest text). The section registry classes these 'gameplay'/'meta' for zone/faction pages, but on a
+# quest page they ARE the lore — so this page-type inclusion is explicit (Slice 14). The reward /
+# progression / log / patch apparatus shares the "quest" token but is not narrative.
+_QUEST_NARRATIVE_ROLE_TOKENS = (
+    "description",
+    "objective",
+    "quest_text",
+    "quest_detail",
+    "quest",
+    "overview",
+    "summary",
 )
-_EXCLUDED_ROLES = frozenset(
-    {
-        "rewards",
-        "reward",
-        "progression",
-        "quest_log",
-        "patch_changes",
-        "notes",
-        "gallery",
-        "images",
-        "videos",
-        "external_links",
-        "see_also",
-        "categories",
-        "achievements",
-        "achievement",
-        "reputation",
-        "items",
-        "loot",
-        "trivia",
-        "quest_progression",
-    }
-)
+_QUEST_APPARATUS_TOKENS = ("reward", "progression", "log", "patch")
 _BOILERPLATE_RE = re.compile(
     r"(?:wowhead|wowpedia|database|db link|click here|patch \d+\.\d+|level \d+ quest)",
     re.IGNORECASE,
@@ -54,16 +33,19 @@ def _normalize_role(section_role: str) -> str:
     return re.sub(r"\s+", " ", section_role.strip()).lower().replace(" ", "_")
 
 
-def _is_lore_section(section_role: str) -> bool:
+def _is_lore_section(section_role: str, parent_section_role: str = "") -> bool:
+    """True for a quest section carrying narrative lore.
+
+    Registry ``narrative`` sections always qualify (with parent inheritance); on top of that, the
+    quest-journal sections (description / objectives / quest text) qualify by their page-type role
+    even though the registry classes them gameplay/meta — excluding the reward/progression/log/patch
+    apparatus that shares the "quest" token.
+    """
+    if section_content_class(section_role, parent_section_role) == "narrative":
+        return True
     lowered = _normalize_role(section_role)
-    if lowered in _EXCLUDED_ROLES:
-        return False
-    if lowered in _LORE_ROLES:
-        return True
-    if any(token in lowered for token in ("description", "objective", "quest")):
-        if any(bad in lowered for bad in ("reward", "progression", "log", "patch")):
-            return False
-        return True
+    if any(token in lowered for token in _QUEST_NARRATIVE_ROLE_TOKENS):
+        return not any(bad in lowered for bad in _QUEST_APPARATUS_TOKENS)
     return False
 
 
@@ -86,12 +68,13 @@ def extract_quest_lore(section_blocks: list[dict[str, Any]]) -> list[dict[str, A
         if not isinstance(block, dict):
             continue
         raw_role = str(block.get("section_role", "other"))
+        parent_role = str(block.get("parent_section_role", ""))
         text = clean_wiki_snippet(str(block.get("text", "")))
         if len(text) < _MIN_SNIPPET_CHARS:
             continue
         if _is_boilerplate(text):
             continue
-        if not _is_lore_section(raw_role):
+        if not _is_lore_section(raw_role, parent_role):
             continue
         raw_links = block.get("links")
         snippets.append(

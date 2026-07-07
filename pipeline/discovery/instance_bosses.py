@@ -29,7 +29,6 @@ _BOSS_SECTION_TOKENS = (
     "dungeon",
     "adventure_guide",
     "walkthrough",
-    "faculty",
     "denizen",
     "dungeon_journal",
     "adventurers_guide",
@@ -99,16 +98,16 @@ def _is_denizen_section(lowered_role: str) -> bool:
 def is_high_confidence_boss_section(section_role: str) -> bool:
     """True for an authoritative boss-roster section that seeds the must-include floor.
 
-    Covers the dungeon journal / adventure guide / encounter lists, the school "faculty" roster,
-    and the per-dungeon boss table (``dungeon_<name>``) — but never the denizens/inhabitants trash
-    list. This is the structural boss roster; a name here is a boss, a name only in denizens is not.
+    Covers the dungeon journal / adventure guide / encounter lists and the per-dungeon boss table
+    (``dungeon_<name>``) — but never the denizens/inhabitants trash list. This is the structural
+    boss roster; a name here is a boss, a name only in denizens is not. Detection is structural
+    (no instance-specific theme words — a themed roster heading like "Faculty" reaches boss_pool via
+    its per-dungeon table / adventure guide, not a hardcoded label).
     """
     lowered = _normalize_role(section_role)
     if _is_denizen_section(lowered):
         return False
     if any(token in lowered for token in HIGH_CONFIDENCE_BOSS_SECTION_TOKENS):
-        return True
-    if "faculty" in lowered:
         return True
     # Per-dungeon boss table, e.g. "dungeon_scholomance" (denizens already excluded above).
     return lowered.startswith("dungeon_")

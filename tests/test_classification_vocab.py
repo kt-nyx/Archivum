@@ -45,8 +45,9 @@ def test_discovery_vocab_loaders_return_expected_shapes() -> None:
 
 
 def test_draft_vocab_loaders_return_expected_shapes() -> None:
-    # historical_framing_markers was retired in Slice 5 (tense judgments moved to the NLP
-    # grammar substrate); era tokens remain the draft path's only externalized vocab.
+    # historical_framing_markers was retired in Slice 5 (tense judgments moved to the NLP grammar
+    # substrate); Slice 14 single-homed era_section_role_tokens onto expansion_release_order (it now
+    # derives from it), leaving expansion_release_order as the draft path's only externalized vocab.
     for loader in (draft_vocab.era_section_role_tokens, draft_vocab.expansion_release_order):
         value = loader()
         assert isinstance(value, tuple) and value, loader.__name__

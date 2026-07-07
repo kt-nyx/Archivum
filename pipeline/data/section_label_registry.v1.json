@@ -10,7 +10,8 @@
     "geography": "place/geography prose+lists; geography_input",
     "gameplay": "mechanics (abilities/loot/quests/rewards/strategy); EXCLUDE from lore prose",
     "meta": "editorial/out-of-universe apparatus (refs, changelog, gallery, tooltip, trivia); EXCLUDE. (No separate 'chrome' class: true site chrome never appears as a heading.)",
-    "non_canon": "RPG/novel-derived; EXCLUDE from canon (canon=false)"
+    "non_canon": "RPG/novel-derived; EXCLUDE from canon (canon=false)",
+    "media": "adaptation / expanded-universe prose (novels, novellas, comics/manga, 'Exploring Azeroth', 'Later appearances'). In-universe but post-release framing; EXCLUDE from entry-state lore pools the same way 'meta' is (canon stays true — this is not the non_canon RPG class)."
   },
   "fallback": "classify by label; else by parent (top-level ancestor) section's class; else default content_class=meta (exclude from lore prose).",
   "prefix_rules": {
@@ -20,6 +21,47 @@
     }
   },
   "labels": {
+    "_slice14_note": "The entries below (down to the next real label) were added in Slice 14 (2026-07-07) to complete the section/heading classification transition off the scattered keyword/deny lists. maps_subregions/resources are canonical discovery-role aliases (the raw wiki slug is maps_and_subregions); lore/story/vanilla are generic narrative container headings; the 'media' class labels re-home temporal's _POST_LORE_ROLE_MARKERS. Non-harvest additions carry no _evidence block.",
+    "maps_subregions": {
+      "content_class": "geography"
+    },
+    "resources": {
+      "content_class": "gameplay"
+    },
+    "lore": {
+      "content_class": "narrative",
+      "narrative_kind": "history"
+    },
+    "story": {
+      "content_class": "narrative",
+      "narrative_kind": "history"
+    },
+    "vanilla": {
+      "content_class": "narrative",
+      "narrative_kind": "history",
+      "temporality": "expansion_era"
+    },
+    "exploring_azeroth": {
+      "content_class": "media"
+    },
+    "later_appearances": {
+      "content_class": "media"
+    },
+    "novel": {
+      "content_class": "media"
+    },
+    "novella": {
+      "content_class": "media"
+    },
+    "short_story": {
+      "content_class": "media"
+    },
+    "manga": {
+      "content_class": "media"
+    },
+    "comic": {
+      "content_class": "media"
+    },
     "history": {
       "content_class": "narrative",
       "narrative_kind": "history",

@@ -20,7 +20,13 @@ from typing import Any, cast
 
 from pipeline.ai.config import load_ai_settings
 from pipeline.common.draft_vocab import expansion_release_order
+from pipeline.common.section_registry import (
+    is_media_section,
+    section_content_class,
+    section_narrative_kind,
+)
 from pipeline.common.wiki_category_registry import CategorySignal, classify_page_categories
+from pipeline.discovery.instance_bosses import is_high_confidence_boss_section
 from pipeline.generate.draft.claims import (
     CLAIM_ELIGIBLE_FIELDS,
     extract_canonical_claim_decision_rows,
@@ -94,43 +100,6 @@ _SPOILER_SAFETY_VALUES = (
     UNKNOWN_SPOILER_SAFETY,
 )
 
-_ENTRY_ROLE_MARKERS = (
-    "lead",
-    "introduction",
-    "adventure guide",
-    "adventure_guide",
-    "dungeon ",
-    "dungeon_",
-    "faculty",
-    "boss",
-    "denizens",
-    "encounter",
-)
-_POST_LORE_ROLE_MARKERS = (
-    "exploring azeroth",
-    "exploring_azeroth",
-    "novel",
-    "novella",
-    "short story",
-    "short_story",
-    "manga",
-    "comic",
-    "report",
-    "later appearances",
-    "later_appearances",
-)
-_EXCLUDED_ROLE_MARKERS = (
-    "in the rpg",
-    "in_the_rpg",
-    "roleplaying game",
-    "rpg",
-    "achievements",
-    "removed",
-    "deprecated",
-    "classic",
-    "non canon",
-    "non-canon",
-)
 _ACTIVE_FIELD_NAMES = frozenset({"questline_pool", "quest_cluster_lore", "quest_lore"})
 _CURRENT_FIELD_NAMES = frozenset({"currently_input", "at_a_glance_input", "boss_pool"})
 _PROFILE_CONTEXT_FIELD_NAMES = frozenset(
@@ -2480,7 +2449,7 @@ def classify_evidence_item(
 ) -> TemporalClassification:
     field_name = str(row.get("field_name", "")).strip()
     build_meta = row.get("build_meta") or {}
-    raw_role = _role_text(
+    role_values = _role_slugs(
         item.get("raw_section_role"),
         build_meta.get("raw_section_role"),
         item.get("section_role"),
@@ -2491,7 +2460,7 @@ def classify_evidence_item(
     snippet = str(item.get("snippet", "")).strip()
     boundary_id = str(boundary.get("boundary_id", "")).strip()
 
-    if _is_excluded_noncanon(raw_role, snippet, source_categories):
+    if _is_excluded_noncanon(role_values, snippet, source_categories):
         return TemporalClassification(
             EXCLUDED_NONCANON,
             0.95,
@@ -2508,7 +2477,7 @@ def classify_evidence_item(
             quest_card_index=quest_card_index,
         )
 
-    if _is_post_lore_role(raw_role):
+    if _is_post_lore_role(*role_values):
         return TemporalClassification(
             POST_ACTIVE_LORE,
             0.88,
@@ -2521,7 +2490,7 @@ def classify_evidence_item(
         relation = _contract_relation_for_item(row, item, boundary)
         if relation.get("independent_match"):
             hint = _contract_relation_hint(relation, prefix="profile_context_contract_match")
-            if _is_entry_role(raw_role):
+            if _is_entry_role(*role_values):
                 return TemporalClassification(
                     ENTRY_STATE,
                     0.68,
@@ -2546,7 +2515,7 @@ def classify_evidence_item(
             fallback_mode="needs_llm",
         )
 
-    if _is_entry_role(raw_role) or field_name == "boss_pool":
+    if _is_entry_role(*role_values) or field_name == "boss_pool":
         return TemporalClassification(
             ENTRY_STATE,
             0.86,
@@ -2556,7 +2525,7 @@ def classify_evidence_item(
         )
 
     if field_name in _CURRENT_FIELD_NAMES:
-        if _is_current_field_from_historical_section(raw_role):
+        if _is_current_field_from_historical_section(*role_values):
             return TemporalClassification(
                 AMBIGUOUS_TEMPORAL,
                 0.48,
@@ -3153,8 +3122,7 @@ def _build_instance_entry_state_contract(
     for link in structured_links:
         if not isinstance(link, dict):
             continue
-        role = _role_text(link.get("section_role"), link.get("parent_section_role"))
-        if _is_entry_role(role):
+        if _is_entry_role(link.get("section_role"), link.get("parent_section_role")):
             label = str(link.get("label", "")).strip()
             if label and label not in roster_labels:
                 roster_labels.append(label)
@@ -3284,13 +3252,17 @@ def _supplemental_current_state_anchors(
         for item in items:
             if not isinstance(item, dict):
                 continue
-            raw_role = _role_text(
+            role_values = _role_slugs(
                 item.get("raw_section_role"),
                 (row.get("build_meta") or {}).get("raw_section_role"),
                 item.get("content_role"),
                 (row.get("build_meta") or {}).get("content_role"),
             )
-            if field_name in _PROFILE_CONTEXT_FIELD_NAMES and raw_role and not _is_entry_role(raw_role):
+            if (
+                field_name in _PROFILE_CONTEXT_FIELD_NAMES
+                and role_values
+                and not _is_entry_role(*role_values)
+            ):
                 continue
             snippet = str(item.get("snippet", "")).strip()
             if snippet:
@@ -3536,8 +3508,8 @@ def _add_profile_context_entities_from_rows(
 def _row_has_entry_context(row: dict[str, Any]) -> bool:
     build_meta = row.get("build_meta") or {}
     items = row.get("evidence_items")
-    roles = [
-        _role_text(
+    role_groups: list[list[str]] = [
+        _role_slugs(
             build_meta.get("raw_section_role"),
             build_meta.get("section_role"),
             build_meta.get("content_role"),
@@ -3546,14 +3518,14 @@ def _row_has_entry_context(row: dict[str, Any]) -> bool:
     if isinstance(items, list):
         for item in items[:4]:
             if isinstance(item, dict):
-                roles.append(
-                    _role_text(
+                role_groups.append(
+                    _role_slugs(
                         item.get("raw_section_role"),
                         item.get("section_role"),
                         item.get("content_role"),
                     )
                 )
-    return any(_is_entry_role(role) for role in roles if role)
+    return any(_is_entry_role(*roles) for roles in role_groups if roles)
 
 
 def _infobox_values(infobox: dict[str, Any], *keys: str) -> list[str]:
@@ -3800,32 +3772,68 @@ def _role_text(*values: object) -> str:
     return " ".join(str(value or "").replace("_", " ").casefold() for value in values if value)
 
 
-def _is_entry_role(raw_role: str) -> bool:
-    return any(marker in raw_role for marker in _ENTRY_ROLE_MARKERS)
+def _role_slugs(*values: object) -> list[str]:
+    """Distinct non-empty role slugs (raw_section_role / section_role / content_role / parent) for
+    registry classification. Kept as slugs (underscores intact), unlike :func:`_role_text`."""
+    out: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if text and text not in out:
+            out.append(text)
+    return out
 
 
-def _is_post_lore_role(raw_role: str) -> bool:
-    return any(marker in raw_role for marker in _POST_LORE_ROLE_MARKERS)
+def _is_entry_role(*role_values: object) -> bool:
+    """True when any role frames the subject as-encountered (entry state): its lede (identity
+    narrative) or a structural boss / adventure-guide / dungeon-table roster. No pilot theme words —
+    boss/roster detection is the structural :func:`is_high_confidence_boss_section`; identity comes
+    from the section registry's ``narrative_kind``.
+    """
+    for role in _role_slugs(*role_values):
+        if section_narrative_kind(role) == "identity":
+            return True
+        if is_high_confidence_boss_section(role):
+            return True
+    return False
 
 
-def _is_current_field_from_historical_section(raw_role: str) -> bool:
-    if "lore history" not in raw_role and "history" not in raw_role:
+def _is_post_lore_role(*role_values: object) -> bool:
+    """True when any role is a post-release adaptation / expanded-universe section (novels, comics,
+    'Exploring Azeroth', 'Later appearances') — the section registry ``media`` class."""
+    return any(is_media_section(role) for role in _role_slugs(*role_values))
+
+
+def _is_current_field_from_historical_section(*role_values: object) -> bool:
+    roles = _role_slugs(*role_values)
+    if not any(section_narrative_kind(role) in {"history", "background"} for role in roles):
         return False
-    if _is_entry_role(raw_role):
+    if _is_entry_role(*roles):
         return False
-    if "quest" in raw_role or "storyline" in raw_role:
+    # A quest/storyline section is current activity, not settled history.
+    if any(
+        role == "quests_or_storyline" or section_content_class(role) == "gameplay" for role in roles
+    ):
         return False
     return True
 
 
-def _is_excluded_role(raw_role: str) -> bool:
-    return any(marker in raw_role for marker in _EXCLUDED_ROLE_MARKERS)
+def _is_excluded_role(*role_values: object) -> bool:
+    """True when any role is out-of-scope content for temporal lore: RPG/non-canon apparatus or
+    adaptation media. Retail-era exclusion (Classic/removed) is NOT a section-role class — it is a
+    wiki-category judgment handled in :func:`_is_excluded_noncanon` (the registry legitimately
+    classes 'Classic' as expansion-era history prose)."""
+    for role in _role_slugs(*role_values):
+        if section_content_class(role) in {"non_canon", "media"}:
+            return True
+    return False
 
 
-def _is_excluded_noncanon(raw_role: str, snippet: str, categories: list[str]) -> bool:
-    if _is_excluded_role(raw_role):
+def _is_excluded_noncanon(
+    role_values: list[str], snippet: str, categories: list[str]
+) -> bool:
+    if _is_excluded_role(*role_values):
         return True
-    lowered = f"{raw_role} {snippet}".casefold()
+    lowered = f"{_role_text(*role_values)} {snippet}".casefold()
     if "non-canon" in lowered or "non canon" in lowered or "removed from world of warcraft" in lowered:
         return True
     signal = strict_generation_category_signal(categories)

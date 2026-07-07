@@ -94,7 +94,8 @@ def _prose_evidence_rows(zone_id: str) -> list[dict[str, object]]:
                         "along the old roads, and patrols escorted supply caravans between the recovered "
                         "garrisons."
                     ),
-                    "section_role": "history_third_war",
+                    "section_role": "history",
+                    "raw_section_role": "third_war_edit",
                 },
                 {
                     "snippet": (

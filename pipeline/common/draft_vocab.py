@@ -34,7 +34,14 @@ def _tokens(key: str) -> tuple[str, ...]:
 
 
 def era_section_role_tokens() -> tuple[str, ...]:
-    return _tokens("era_section_role_tokens")
+    """Expansion shorthands used as substring markers for era/timeline section roles.
+
+    Single-homed on :func:`expansion_release_order` (the expansion registry): every known
+    expansion shorthand is an era-section token. This is a membership set — order is irrelevant
+    here — so it derives directly from the release-order list rather than duplicating the names
+    (Slice 14; previously a separate, drift-prone vocab entry that omitted warlords/midnight).
+    """
+    return expansion_release_order()
 
 
 def expansion_release_order() -> tuple[str, ...]:

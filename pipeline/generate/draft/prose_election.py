@@ -7,7 +7,11 @@ from typing import Any
 
 from pipeline.common.draft_vocab import era_section_role_tokens
 from pipeline.common.linguistics import tense_profile
-from pipeline.common.wiki_evidence_filters import should_exclude_from_history
+from pipeline.common.section_registry import is_bare_history_container
+from pipeline.common.wiki_evidence_filters import (
+    evidence_item_content_class,
+    should_exclude_from_history,
+)
 from pipeline.contracts.models import ZONE_PAGE_BUDGET_RULES
 from pipeline.generate.draft.claim_routing import prefer_entry_state_first
 from pipeline.generate.draft.evidence_identity import evidence_id_for_item
@@ -29,19 +33,10 @@ _ERA_TOKENS = era_section_role_tokens()
 
 _CURRENTLY_QUEST_ROLES = frozenset({"quests_edit", "quests", "quests_or_storyline"})
 
-_HISTORY_EXCLUDED_ROLES = frozenset(
-    {
-        "geography_edit",
-        "geography",
-        "maps_subregions",
-        "getting_there_edit",
-        "getting_there",
-        "resources_edit",
-        "resources",
-        "in_the_rpg_edit",
-        "in_the_rpg",
-    }
-)
+# Registry content_classes that never carry zone history/currently prose (place lists, RPG
+# apparatus, expanded-universe adaptations). The section registry is the single home for the
+# membership; this only names which of its classes are inadmissible here.
+_NON_HISTORY_CONTENT_CLASSES = frozenset({"geography", "non_canon", "media"})
 
 _AT_A_GLANCE_MAX_ITEMS = 16
 _HISTORY_MIN_WORDS = 25
@@ -182,7 +177,7 @@ def _tier_expansion_edit(items: list[dict[str, Any]], *, zone_name: str) -> list
         role = _normalize_role(str(item.get("section_role", "")))
         if not any(token in role for token in _ERA_TOKENS):
             continue
-        if role in _HISTORY_EXCLUDED_ROLES:
+        if evidence_item_content_class(item) in _NON_HISTORY_CONTENT_CLASSES:
             continue
         snippet = str(item.get("snippet", ""))
         if _is_excluded_currently_snippet(snippet, zone_name=zone_name):
@@ -303,8 +298,7 @@ def _history_sort_key(row: dict[str, Any]) -> tuple[int, str]:
 def select_history_pool(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     selected: list[dict[str, Any]] = []
     for item in items:
-        role = _normalize_role(str(item.get("section_role", "")))
-        if role in _HISTORY_EXCLUDED_ROLES or role == "in_the_rpg":
+        if evidence_item_content_class(item) != "narrative":
             continue
         if should_exclude_from_history(item):
             continue
@@ -326,23 +320,18 @@ def history_section_cap(items: list[dict[str, Any]]) -> int:
     return min(cap, eligible)
 
 
-# Generic subsection slugs that name the parent section itself, not a distinct era;
-# titling these adds no variety, so fall through to the canonical role / constant.
-_GENERIC_HISTORY_SUBSECTIONS = frozenset(
-    {"history", "lore", "background", "story", "lead", "introduction", "other"}
-)
-
-
 def history_heading_from_role(section_role: str, raw_section_role: str = "") -> str:
     """Derive a history-section heading.
 
     Prefer the actual wiki subsection heading (``raw_section_role``, e.g.
     ``"the_scourging_edit"`` -> ``"The Scourging"``) so distinct history subsections get
-    distinct headings instead of the single ``"Historical era"`` constant (#8). Fall back
-    to the canonical section-role label, then to the constant when nothing usable remains.
+    distinct headings instead of the single ``"Historical era"`` constant (#8). A bare container
+    heading (History/Lore/Background/…) names the parent, not a distinct era, so it falls through
+    to the canonical section-role label, then to the constant. Expansion-era headings ("Cataclysm")
+    are kept — they title a distinct era.
     """
     raw = _normalize_role(raw_section_role).replace("_edit", "").strip("_")
-    if raw and raw not in _GENERIC_HISTORY_SUBSECTIONS:
+    if raw and not is_bare_history_container(raw):
         label = raw.replace("_", " ").strip()
         if label:
             return label.title()

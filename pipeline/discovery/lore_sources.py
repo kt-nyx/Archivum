@@ -16,12 +16,14 @@ import re
 from typing import Any
 
 from pipeline.common.discovery_vocab import lore_character_role_hints
+from pipeline.common.section_registry import section_narrative_kind
 from pipeline.discovery.world_registry import _CLASSIC_SUFFIX_RE, entry_kinds
 
-# Raw ingest section roles (not the discovery canonical buckets) that signal narrative
-# prose. Parent complexes are named in the lead; related lore is named in history/lore.
-_LEAD_ROLE_TOKENS = ("lead", "introduction")
-_HISTORY_ROLE_TOKENS = ("history", "lore", "background", "story")
+# Narrative kinds that mark a cross-page lore candidate. Parent complexes are named in the lede
+# (identity); related lore is named in history/background prose. Sourced from the section registry
+# (with parent inheritance) rather than a raw-slug keyword list.
+_RELATED_NARRATIVE_KINDS = frozenset({"history", "background"})
+_LEAD_NARRATIVE_KIND = "identity"
 
 _NOISE_PREFIXES = (
     "file:",
@@ -114,11 +116,10 @@ def _looks_like_character_or_faction(title: str) -> bool:
 
 def _role_kind(section_role: str, parent_section_role: str) -> str | None:
     """Map raw ingest roles to a narrative candidate kind, or None when non-narrative."""
-    leaf = str(section_role or "").lower()
-    parent = str(parent_section_role or "").lower()
-    if any(token in leaf or token in parent for token in _HISTORY_ROLE_TOKENS):
+    kind = section_narrative_kind(section_role, parent_section_role)
+    if kind in _RELATED_NARRATIVE_KINDS:
         return "related"
-    if leaf in _LEAD_ROLE_TOKENS or parent in _LEAD_ROLE_TOKENS:
+    if kind == _LEAD_NARRATIVE_KIND:
         return "lead"
     return None
 
@@ -133,13 +134,15 @@ def compute_instance_lore_density(section_blocks: list[dict[str, Any]]) -> dict[
             continue
         if str(block.get("block_type", "paragraph")) != "paragraph":
             continue
-        role = str(block.get("section_role", "")).lower()
+        role = str(block.get("section_role", ""))
+        parent = str(block.get("parent_section_role", ""))
         text = str(block.get("text", ""))
         word_count = len(text.split())
-        if any(token in role for token in _HISTORY_ROLE_TOKENS):
+        kind = section_narrative_kind(role, parent)
+        if kind in _RELATED_NARRATIVE_KINDS:
             history_blocks += 1
             history_words += word_count
-        elif role in _LEAD_ROLE_TOKENS:
+        elif kind == _LEAD_NARRATIVE_KIND:
             lead_words += word_count
     return {
         "history_block_count": history_blocks,

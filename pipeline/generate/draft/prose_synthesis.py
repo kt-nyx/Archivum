@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from pipeline.ai.config import load_ai_settings
+from pipeline.common.section_registry import is_generic_history_heading
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.contracts.models import (
     INSTANCE_BUDGET_RULES,
@@ -695,51 +696,15 @@ def synthesize_history_sections(
     return sections_out, used
 
 
-# Headings that are bare wiki TOC / expansion-era labels rather than thematic event titles.
-# These describe *when* a section sits in the timeline, not *what* it narrates, so they read as
-# noise next to a content-derived title ("Scourging of Lordaeron"). Detected case-insensitively;
-# era tokens (cataclysm, legion, …) come from the shared draft vocab so the list stays single-source.
-_GENERIC_HISTORY_HEADINGS = frozenset(
-    {
-        "history",
-        "lore",
-        "background",
-        "story",
-        "overview",
-        "introduction",
-        "historical era",
-        "world of warcraft",
-        "exploring azeroth",
-        "classic",
-        "vanilla",
-        "the burning crusade",
-        "burning crusade",
-        "wrath of the lich king",
-        "cataclysm",
-        "mists of pandaria",
-        "warlords of draenor",
-        "legion",
-        "battle for azeroth",
-        "shadowlands",
-        "dragonflight",
-        "the war within",
-        "war within",
-    }
-)
-
-
 def _heading_is_generic(heading: str) -> bool:
-    """True for bare TOC / expansion-era labels (matched as the *whole* heading).
+    """True for bare wiki-TOC / expansion-era labels rather than thematic event titles.
 
-    Matched against the full lowered heading only — never as a substring — so thematic gold
-    titles that happen to contain an era word ("Battle for Andorhal", "Wrath of the Lich King"
-    is itself an expansion and stays listed, but "Battle for Andorhal" must NOT match
-    "battle_for") are preserved.
+    Delegates to the section registry's ``is_generic_history_heading`` (Slice 14 single-home): the
+    generic container headings, every expansion display name, and adaptation ('media') headings read
+    as noise next to a content-derived title. It matches the *whole* heading — never a substring —
+    so a thematic title that merely contains an era word ("Battle for Andorhal") is preserved.
     """
-    lowered = heading.strip().lower()
-    if not lowered:
-        return True
-    return lowered in _GENERIC_HISTORY_HEADINGS
+    return is_generic_history_heading(heading)
 
 
 def relabel_history_headings(

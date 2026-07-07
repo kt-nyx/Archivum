@@ -104,3 +104,98 @@ def section_temporality(section_role: str, parent_section_role: str = "") -> str
         if isinstance(entry, dict) and entry.get("temporality"):
             return str(entry["temporality"])
     return ""
+
+
+def section_narrative_kind(section_role: str, parent_section_role: str = "") -> str:
+    """Return the narrative_kind ('history'/'background'/'identity'/… or '') for a section.
+
+    Own label first, then the parent (top-level ancestor). Only registry narrative labels carry a
+    narrative_kind; everything else returns ''.
+    """
+    for role in (section_role, parent_section_role):
+        entry = _labels().get(normalize_section_label(role))
+        if isinstance(entry, dict) and entry.get("narrative_kind"):
+            return str(entry["narrative_kind"])
+    return ""
+
+
+def is_media_section(section_role: str, parent_section_role: str = "") -> bool:
+    """True for adaptation / expanded-universe prose (novels, comics, 'Exploring Azeroth')."""
+    return section_content_class(section_role, parent_section_role) == "media"
+
+
+# The narrative_kind values that name a generic history *container* rather than a distinctive
+# era/event subsection. Sentinels are the pipeline's own synthetic role values (never wiki labels).
+_GENERIC_NARRATIVE_KINDS = frozenset({"history", "background", "overview", "identity"})
+_GENERIC_HEADING_SENTINELS = frozenset({"other", "historical_era"})
+
+
+def is_generic_history_heading(heading: str) -> bool:
+    """True when a heading is a bare container/era label, not a distinctive subsection title.
+
+    Registry-derived (replaces the three hand-kept generic-heading sets). Generic =
+    the synthetic sentinels ('other', 'Historical era'); any expansion-era label (bare expansion
+    names — 'Cataclysm', 'Wrath of the Lich King', 'World of Warcraft', 'Vanilla'); any generic
+    narrative container heading (narrative_kind history/background/overview/identity, e.g.
+    'History', 'Lore', 'Background', 'Overview', 'Introduction'); and adaptation 'media' headings.
+    A distinctive event/thematic title ('The Scourging', 'Battle for Andorhal') returns False so it
+    can be used as a real section heading. Accepts display headings (spaces) or role slugs.
+    """
+    label = normalize_section_label(str(heading or "").replace(" ", "_"))
+    if not label:
+        return True
+    if label in _GENERIC_HEADING_SENTINELS:
+        return True
+    # Expansion display names are stored with their leading article ("the_burning_crusade"); a
+    # heading may drop it ("Burning Crusade"), so try both forms.
+    variants = (label, label[4:]) if label.startswith("the_") else (label, f"the_{label}")
+    for candidate in variants:
+        cls = _lookup(candidate)
+        if cls is None:
+            continue
+        if cls == "media":
+            return True
+        if cls == "narrative":
+            entry = _labels().get(candidate)
+            if isinstance(entry, dict):
+                if str(entry.get("temporality") or "") == "expansion_era":
+                    return True
+                if str(entry.get("narrative_kind") or "") in _GENERIC_NARRATIVE_KINDS:
+                    return True
+    return False
+
+
+def is_bare_history_container(section_role: str) -> bool:
+    """True when the section's *own* label is a generic narrative container (History, Background,
+    Overview, Introduction, Lead) rather than a distinctive subsection.
+
+    Own-label only (no parent inheritance): a distinctive subsection ("The Scourging") is absent
+    from the registry so it is not bare, while an expansion-era heading ("Cataclysm") names a
+    specific era and is likewise not bare. Used to tell a reservable *named* history section apart
+    from a bare container.
+    """
+    entry = _labels().get(normalize_section_label(section_role))
+    if not isinstance(entry, dict):
+        return False
+    if entry.get("content_class") != "narrative":
+        return False
+    if entry.get("temporality") == "expansion_era":
+        return False
+    return str(entry.get("narrative_kind") or "") in _GENERIC_NARRATIVE_KINDS
+
+
+@lru_cache(maxsize=1)
+def expansion_era_labels() -> tuple[str, ...]:
+    """Registry labels marked ``temporality: expansion_era`` (the expansion display-name home)."""
+    return tuple(
+        sorted(
+            label
+            for label, entry in _labels().items()
+            if isinstance(entry, dict) and entry.get("temporality") == "expansion_era"
+        )
+    )
+
+
+def expansion_era_display_names() -> tuple[str, ...]:
+    """Expansion labels as spaced display text ('wrath_of_the_lich_king' -> 'wrath of the lich king')."""
+    return tuple(label.replace("_", " ") for label in expansion_era_labels())

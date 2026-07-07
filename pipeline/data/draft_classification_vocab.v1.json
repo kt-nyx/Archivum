@@ -1,22 +1,6 @@
 {
   "version": 1,
-  "_doc": "WS-C (D-6) externalized classification vocabulary for the draft (prose election / scoring / lint) path. era_section_role_tokens is WoW expansion-name vocabulary matched against history section-role identifiers (e.g. 'cataclysm_edit'); it is externalized both to de-duplicate it across prose_election + faction_scoring (principle 5) and so a new expansion is a data update, not a code change. Each entry carries a pilot-bias note (D-6 clause 4). historical_framing_markers was retired in Slice 5 of the generalization refactor: historical/present framing is now a grammar judgment from pipeline/common/linguistics.py (tense_profile), not a phrase list.",
-  "era_section_role_tokens": {
-    "_why_no_structural_signal": "Identifies expansion-named history sections; the expansion name itself is open vocabulary (grows each expansion) with no finer structural signal than the section-role string it appears in.",
-    "_pilot_bias_note": "All current WoW expansion shorthands; cross-zone (not WPL-specific). Add the next expansion's token here on release.",
-    "tokens": [
-      "cataclysm",
-      "battle_for",
-      "dragonflight",
-      "war_within",
-      "legion",
-      "mists",
-      "wrath",
-      "burning_crusade",
-      "classic",
-      "shadowlands"
-    ]
-  },
+  "_doc": "WS-C (D-6) externalized classification vocabulary for the draft (prose election / scoring / lint) path. Slice 14 (2026-07-07) removed the separate era_section_role_tokens entry: era/timeline section-role detection is now single-homed on expansion_release_order (draft_vocab.era_section_role_tokens() derives from it), so a new expansion is one data update here and the two lists can no longer drift. historical_framing_markers was retired in Slice 5: historical/present framing is now a grammar judgment from pipeline/common/linguistics.py (tense_profile), not a phrase list.",
   "expansion_release_order": {
     "_doc": "Canonical WoW expansion release order (chronological). Used as a SOFT, RELATIVE recency signal for temporal boundary classification: a paragraph from a later expansion-edit section than the subject's active-content expansion leans post_active_lore; earlier/same leans pre_entry/entry. Tokens match as substrings of the raw_section_role (e.g. 'mists' matches 'mists_of_pandaria_edit'). Order is meaningful here, unlike era_section_role_tokens which is a membership set. This deliberately encodes expansion chronology; it is a soft prior the LLM rubric can override, not a hard rule. Append the next expansion on release.",
     "_pilot_bias_note": "All WoW expansions in release order, cross-zone. Announced-but-unreleased expansions (Midnight, The Last Titan) are included so forward-dated wiki edits are ranked.",

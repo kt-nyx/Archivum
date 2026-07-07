@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from pipeline.discovery.instance_bosses import (
-    _BOSS_SECTION_EXACT,
     BossCandidate,
     cap_pool_for_llm_prompt,
     classify_character_role,
@@ -185,13 +184,16 @@ def test_rejects_events_meta_and_generic_class_nouns() -> None:
     assert not should_reject_boss_title("Ras Frostwhisper")
 
 
-def test_faculty_and_denizens_section_roles_match() -> None:
+def test_boss_and_denizens_section_roles_match() -> None:
     from pipeline.discovery.instance_bosses import is_boss_section_role
 
-    assert "scholomance_faculty" not in _BOSS_SECTION_EXACT
-    # The faculty roster is an authoritative boss list (school-themed dungeon journal).
-    assert is_high_confidence_boss_section("scholomance_faculty")
-    assert is_boss_section_role("scholomance_faculty")
+    # Slice 14: instance-entity detection is structural, never an instance-specific theme word.
+    # A school-themed "Faculty" heading is NOT a hardcoded boss token; Scholomance's roster reaches
+    # boss_pool via its generic per-dungeon table ("dungeon_scholomance") / adventure guide instead.
+    assert not is_high_confidence_boss_section("scholomance_faculty")
+    assert not is_boss_section_role("scholomance_faculty")
+    assert is_high_confidence_boss_section("dungeon_scholomance")
+    assert is_boss_section_role("dungeon_scholomance")
     assert is_boss_section_role("denizens")
     assert is_boss_section_role("dungeon_journal")
     assert is_boss_section_role("dungeon_layout")
@@ -228,12 +230,12 @@ def test_section_block_matches_via_parent_section_role() -> None:
     assert candidates[0].source_section_role == "dungeon_denizens"
 
 
-def test_collect_boss_candidates_from_faculty_html_table() -> None:
+def test_collect_boss_candidates_from_dungeon_table_html() -> None:
     html = (
         '<table><tr><td><a href="/wiki/Darkmaster_Gandling">Darkmaster Gandling</a></td></tr>'
         '<tr><td><a href="/wiki/Jandice_Barov">Jandice Barov</a></td></tr></table>'
     )
-    section_blocks = [{"section_role": "scholomance_faculty", "text": html}]
+    section_blocks = [{"section_role": "dungeon_scholomance", "text": html}]
     candidates = collect_boss_candidates(
         section_blocks=section_blocks,
         instance_name="Scholomance",
@@ -418,19 +420,20 @@ def test_deterministic_pool_order_tiebreaks_on_section_weight() -> None:
 def test_high_confidence_boss_section_tokens() -> None:
     assert is_high_confidence_boss_section("dungeon_journal")
     assert is_high_confidence_boss_section("encounters")
-    # Authoritative boss-roster sections: faculty + the per-dungeon boss table.
-    assert is_high_confidence_boss_section("faculty")
-    assert is_high_confidence_boss_section("scholomance_faculty")
+    # Authoritative boss-roster section: the per-dungeon boss table (structural, not a theme word).
     assert is_high_confidence_boss_section("dungeon_scholomance")
+    # A school-themed "Faculty" heading is not a hardcoded boss token (Slice 14).
+    assert not is_high_confidence_boss_section("faculty")
+    assert not is_high_confidence_boss_section("scholomance_faculty")
     # Trash/denizen rosters are never the boss floor (a random skeleton is not a boss).
     assert not is_high_confidence_boss_section("denizens")
     assert not is_high_confidence_boss_section("dungeon_denizens")
 
 
-def test_collect_character_pool_from_faculty_html() -> None:
+def test_collect_character_pool_from_dungeon_table_html() -> None:
     html = (FIXTURES / "scholomance_faculty_section.html").read_text(encoding="utf-8")
     pool = collect_character_pool(
-        section_blocks=[{"section_role": "scholomance_faculty", "text": html}],
+        section_blocks=[{"section_role": "dungeon_scholomance", "text": html}],
         instance_name="Scholomance",
     )
     names = {row.name for row in pool}
@@ -500,13 +503,13 @@ def test_must_include_from_boss_class_boss_pool() -> None:
     assert must_include == ["Darkmaster Gandling"]
 
 
-def test_must_include_floors_faculty_boss_pool() -> None:
-    # The faculty roster is authoritative, so a faculty-listed boss floors deterministically
+def test_must_include_floors_dungeon_table_boss_pool() -> None:
+    # The per-dungeon boss table is authoritative, so a boss listed there floors deterministically
     # (this is what makes the full Scholomance boss roster the cast without LLM padding).
     boss_pool = [
         {
-            "snippet": "Faculty wing: /wiki/Darkmaster_Gandling",
-            "section_role": "scholomance_faculty",
+            "snippet": "Boss wing: /wiki/Darkmaster_Gandling",
+            "section_role": "dungeon_scholomance",
             "source_id": "src-instance",
         }
     ]

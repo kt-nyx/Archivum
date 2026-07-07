@@ -18,9 +18,11 @@ from pipeline.common.draft_vocab import era_section_role_tokens
 from pipeline.common.io import read_json, write_json
 from pipeline.common.retail import is_classic_categorized
 from pipeline.common.run_context import RunContext
+from pipeline.common.section_registry import section_content_class
 from pipeline.common.text_ids import slugify
 from pipeline.contracts.models import DecisionArtifact
 from pipeline.discovery.entity_typing import normalize_title, should_reject_location_title
+from pipeline.discovery.instance_bosses import is_high_confidence_boss_section
 from pipeline.discovery.location_discovery import (
     HARD_REJECT_MARKERS,
     build_location_decision_row,
@@ -297,14 +299,7 @@ def _title_has_location_type_token(title: str) -> bool:
 # Slice D: instance roster structured-link sections whose members are the instance's key characters
 # (faculty / adventure-guide / boss / encounter / per-dungeon boss table). Denizen/inhabitant rosters
 # are trash-heavy (random skeletons, props), so they are excluded; the cast is the curated roster.
-_INSTANCE_ROSTER_SECTION_TOKENS = (
-    "faculty",
-    "adventure_guide",
-    "boss",
-    "encounter",
-    "dungeon_journal",
-    "notable_character",
-)
+# Generic trash-roster terms (never the key-character roster we crawl); not instance-specific.
 _INSTANCE_ROSTER_DENIZEN_TOKENS = ("denizen", "inhabitant")
 # entry_kinds that mark a roster link as a place / structure rather than a character.
 _NON_CHARACTER_ENTRY_KINDS = frozenset(
@@ -313,13 +308,18 @@ _NON_CHARACTER_ENTRY_KINDS = frozenset(
 
 
 def _is_instance_roster_section(section_role: str) -> bool:
+    """True for an instance's key-character roster section (boss roster or a registry ``roster``
+    section like "Notable characters"/"NPCs"), excluding the denizens/inhabitants trash list.
+
+    Structural: the authoritative boss roster is :func:`is_high_confidence_boss_section` and the
+    registry supplies the general roster class — no instance-specific theme words.
+    """
     lowered = re.sub(r"\s+", "_", section_role.strip().lower())
     if any(token in lowered for token in _INSTANCE_ROSTER_DENIZEN_TOKENS):
         return False
-    if any(token in lowered for token in _INSTANCE_ROSTER_SECTION_TOKENS):
+    if is_high_confidence_boss_section(section_role):
         return True
-    # Per-dungeon boss table, e.g. "dungeon_scholomance_edit" (denizens already excluded above).
-    return lowered.startswith("dungeon_")
+    return section_content_class(section_role) == "roster"
 
 
 def _collect_instance_character_targets(
@@ -517,50 +517,21 @@ def _should_reject_location_candidate(title: str, entity_type: str) -> bool:
 # Lore/narrative sections that mark a place as story-significant (a card-worthy landmark) vs the
 # gameplay gazetteer. A location named in the zone's history/lore prose is marquee; one appearing
 # only in maps/getting-there/travel/loot/etc. chrome is a gameplay waypoint, not a landmark.
-_LOCATION_LORE_SECTION_TOKENS = (
-    "history",
-    "scourg",
-    "background",
-    "lore",
-    "story",
-    "lead",
-    "exploring",
-    "legacy",
-    "aftermath",
-)
-_LOCATION_GAMEPLAY_SECTION_TOKENS = (
-    "maps",
-    "subregion",
-    "getting_there",
-    "travel",
-    "patch",
-    "reference",
-    "achievement",
-    "loot",
-    "navbox",
-    "adventure",
-    "trivia",
-    "gallery",
-)
-
-
 def _zone_lore_body_text(section_blocks: list[dict[str, Any]]) -> str:
     """Concatenated, lowercased body text of the zone's lore/history narrative sections.
 
-    Excludes gameplay/chrome sections so a name's presence here means narrative significance.
-    Era headings (Cataclysm, Legion, ...) count as lore via the shared era vocab.
+    Includes only registry ``narrative`` sections (with parent inheritance, so event/era
+    subsections — "The Scourging", "Cataclysm", "Aftermath" — count via their History parent) and
+    excludes geography/gameplay/meta/media chrome, so a name's presence here means narrative
+    significance.
     """
-    era_tokens = era_section_role_tokens()
     parts: list[str] = []
     for block in section_blocks:
         if not isinstance(block, dict):
             continue
-        role = re.sub(r"\s+", "_", str(block.get("section_role", "")).strip().lower())
-        if any(token in role for token in _LOCATION_GAMEPLAY_SECTION_TOKENS):
-            continue
-        if any(token in role for token in _LOCATION_LORE_SECTION_TOKENS) or any(
-            era in role for era in era_tokens
-        ):
+        role = str(block.get("section_role", ""))
+        parent = str(block.get("parent_section_role", ""))
+        if section_content_class(role, parent) == "narrative":
             parts.append(str(block.get("text", "")))
     return " ".join(parts).lower()
 
