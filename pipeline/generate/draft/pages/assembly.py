@@ -612,6 +612,24 @@ def _extract_instance_structured_links(
     return []
 
 
+def _extract_instance_infobox(
+    snapshots: list[dict[str, Any]] | None, instance_id: str
+) -> dict[str, Any]:
+    """Return the instance's own snapshot infobox (label -> value), or an empty dict.
+
+    The boss-labelled fields seed the must-include boss floor (Slice-12 infobox capture).
+    """
+    for snapshot in snapshots or []:
+        if (
+            str(snapshot.get("entity_id", "")).strip() == instance_id
+            and str(snapshot.get("entity_type", "")).strip() == "instance"
+            and not str(snapshot.get("auxiliary_role", "")).strip()
+        ):
+            infobox = snapshot.get("infobox")
+            return infobox if isinstance(infobox, dict) else {}
+    return {}
+
+
 def _classic_excluded_names(snapshots: list[dict[str, Any]] | None, instance_id: str) -> set[str]:
     """S3 retail/Classic cast exclusion set (normalized names).
 

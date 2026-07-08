@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import unquote
 
 from pipeline.contracts.models import LocationType
 from pipeline.discovery.entity_typing import (
@@ -31,11 +32,6 @@ def classification_to_location_type(classification: str) -> str:
     if classification in _TYPED_CLASSIFICATIONS:
         return classification
     return LocationType.MAJOR_LOCATION.value
-
-
-def _name_has_token(name: str, tokens: frozenset[str]) -> bool:
-    words = set(re.findall(r"[a-z]+", name.lower()))
-    return bool(words & tokens)
 
 
 # MediaWiki category substrings → published LocationType. The page's own categories are the most
@@ -515,50 +511,60 @@ def _is_electable(candidate: LocationCandidate) -> bool:
     return candidate.score >= MIN_SCORE
 
 
-_CONTAINED_LOCATION_NAME_TOKENS = frozenset(
-    {
-        "camp",
-        "chamber",
-        "chapel",
-        "farm",
-        "field",
-        "hall",
-        "hold",
-        "inn",
-        "keep",
-        "mill",
-        "orchard",
-        "outpost",
-        "post",
-        "stead",
-        "tower",
-        "wing",
-    }
-)
+# Lead-paragraph section roles (a location's defining sentence carries its parent link).
+_LEAD_LINK_ROLES = frozenset({"lead", "introduction"})
 
 
-def _candidate_evidence_text(candidate: LocationCandidate) -> str:
-    parts = [candidate.name, candidate.source_section_role]
-    for item in candidate.profile_items + candidate.seed_mentions:
-        parts.append(str(item.get("source_title", "")))
-        parts.append(str(item.get("snippet", "")))
-        parts.append(str(item.get("section_role", "")))
-    return " ".join(part for part in parts if part)
+def _wiki_path_key(value: str) -> str:
+    """Normalize a wiki href/URL/title to a comparable bare title key ('/wiki/Hearthglen' -> 'hearthglen')."""
+    text = str(value).strip()
+    if "/wiki/" in text:
+        text = text.split("/wiki/", 1)[1]
+    text = text.split("#", 1)[0].split("?", 1)[0].strip().strip("/")
+    return unquote(text).replace("_", " ").strip().lower()
+
+
+def _candidate_path_key(candidate: LocationCandidate) -> str:
+    key = _wiki_path_key(candidate.wiki_url)
+    return key or normalize_title(candidate.name)
+
+
+def _item_is_lead(item: dict[str, Any]) -> bool:
+    return any(
+        str(item.get(field_name, "")).strip().lower() in _LEAD_LINK_ROLES
+        for field_name in ("content_role", "raw_section_role", "section_role")
+    )
+
+
+def _lead_link_path_keys(candidate: LocationCandidate) -> set[str]:
+    """Wiki-path keys the candidate's *lead paragraph* links to (its structural parent signal)."""
+    keys: set[str] = set()
+    for item in candidate.profile_items:
+        if not _item_is_lead(item):
+            continue
+        for link in item.get("links") or []:
+            href = str(link.get("href", "")).strip()
+            if href:
+                keys.add(_wiki_path_key(href))
+    return keys
 
 
 def _is_contained_location(child: LocationCandidate, parent: LocationCandidate) -> bool:
+    """True when the child's own lead paragraph links to the parent (structural containment).
+
+    Cause 1a: replaces the old "any landmark name appears anywhere in the child's evidence"
+    substring test — which wrongly folded independent towns (Andorhal, whose profile merely
+    mentions other landmarks) into a parent. A location is contained only when its *defining*
+    sentence links to another selected landmark card (e.g. "Mardenholde Keep is the fortress
+    keep of [[Hearthglen]]"). Andorhal's lead links only to the zone, so it is kept.
+    """
     if child.location_id == parent.location_id:
         return False
     if not parent.lore_significant:
         return False
-    if not _name_in_text(parent.name, _candidate_evidence_text(child)):
-        return False
     if child.significance_tag in {"active_quest_hub", "instance_anchor"}:
         return False
-    role = _normalize_role(child.source_section_role)
-    return role in _HIGH_WEIGHT_ROLES or _name_has_token(
-        child.name, _CONTAINED_LOCATION_NAME_TOKENS
-    )
+    return _candidate_path_key(parent) in _lead_link_path_keys(child)
 
 
 def _suppress_contained_locations(

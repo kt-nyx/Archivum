@@ -527,6 +527,69 @@ def test_must_include_floors_dungeon_table_boss_pool() -> None:
     assert must_include == ["Darkmaster Gandling"]
 
 
+def test_must_include_floors_infobox_roster_boss() -> None:
+    # Cause 1b: a boss whose only link the section classifier under-labels (it sits in a
+    # denizen/trash section) is still floored when the instance infobox's boss roster names it.
+    boss_pool = [
+        {
+            "snippet": "Roaming the halls: /wiki/Rattlegore",
+            "section_role": "dungeon_denizens",
+            "source_id": "src-instance",
+        }
+    ]
+    pool = collect_character_pool(
+        section_blocks=[],
+        instance_name="Scholomance",
+        boss_pool_items=boss_pool,
+    )
+    pool = prefilter_character_pool(pool, instance_name="Scholomance")
+    # Without the infobox, a denizen-section name is not a boss.
+    assert (
+        must_include_key_character_names(
+            boss_pool_items=boss_pool, pool=pool, instance_name="Scholomance"
+        )
+        == []
+    )
+    # The infobox boss roster is authoritative and floors it (matched to a discovered candidate).
+    infobox = {
+        "Bosses": "Bosses Instructor Chillheart Rattlegore Darkmaster Gandling",
+        "Type": "Dungeon",
+    }
+    floored = must_include_key_character_names(
+        boss_pool_items=boss_pool,
+        pool=pool,
+        instance_name="Scholomance",
+        infobox=infobox,
+    )
+    assert "Rattlegore" in floored
+
+
+def test_must_include_infobox_never_mints_uncrawled_boss() -> None:
+    # The infobox floor only matches names the pool already discovered; a boss named only in the
+    # infobox text (never crawled as a candidate) is not conjured into the cast.
+    boss_pool = [
+        {
+            "snippet": "Final encounter: /wiki/Darkmaster_Gandling",
+            "section_role": "dungeon_journal",
+            "source_id": "src-instance",
+        }
+    ]
+    pool = collect_character_pool(
+        section_blocks=[],
+        instance_name="Scholomance",
+        boss_pool_items=boss_pool,
+    )
+    pool = prefilter_character_pool(pool, instance_name="Scholomance")
+    infobox = {"Bosses": "Bosses Darkmaster Gandling Doctor Theolen Krastinov"}
+    floored = must_include_key_character_names(
+        boss_pool_items=boss_pool,
+        pool=pool,
+        instance_name="Scholomance",
+        infobox=infobox,
+    )
+    assert floored == ["Darkmaster Gandling"]  # Krastinov never discovered -> not floored
+
+
 def test_must_include_excludes_denizen_only_boss_pool() -> None:
     # A name appearing only in the denizens trash roster (a random skeleton) is never floored.
     boss_pool = [

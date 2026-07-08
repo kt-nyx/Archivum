@@ -10,6 +10,7 @@ import copy
 from collections.abc import Iterable
 from typing import Any
 
+from pipeline.common.linguistics import clause_before_adversative
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.generate.draft.temporal import (
     ACTIVE_STORYLINE,
@@ -312,6 +313,25 @@ def safe_paragraph_excerpt(
             filtered_spans.update(spans)
     include = sorted(span for span in safe_spans if span not in filtered_spans)
     return " ".join(cleaned[start:end].strip() for start, end in include).strip()
+
+
+def safe_intent_excerpt(view: dict[str, Any]) -> str:
+    """The spoiler-safe *intent* clause of an otherwise-unsafe claim view (Cause 3).
+
+    A character's connective 'why they're here' beat is often a single sentence that pairs the
+    aim with its outcome ("intended to kill Gandling, though it failed"). The whole sentence is
+    filtered by spoiler safety, discarding the intent with the outcome. This keeps the leading
+    clause up to the first adversative connective — the aim/motivation — and drops the reversal
+    tail. Returns ``""`` when no adversative connective marks an outcome tail (the sentence is a
+    single realis assertion and stays filtered), so no outcome ever leaks back in.
+    """
+    text = clean_wiki_snippet(str(view.get("claim_text") or view.get("source_excerpt", "")))
+    if not text:
+        return ""
+    trimmed = clause_before_adversative(text).strip()
+    if trimmed and trimmed != text.strip():
+        return trimmed
+    return ""
 
 
 def reconstruct_safe_paragraph_excerpts(

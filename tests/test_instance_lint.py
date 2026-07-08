@@ -9,6 +9,7 @@ from pipeline.generate.draft.instance_lint import (
     fallback_key_character_summary,
     is_generic_overview,
     lint_at_a_glance,
+    lint_key_character_spoilers,
     lint_key_character_summary,
     lint_overview,
     lint_passthrough_fragment,
@@ -224,3 +225,33 @@ def test_assess_role_diversity_uses_emitted_card_role_over_stale_roster() -> Non
     ]
     severity, _ = assess_role_diversity(emitted, roster, window=10)
     assert severity == "ok"
+
+
+def test_spoiler_lint_allows_origin_clause_naming_cast_member() -> None:
+    # Cause 2: an origin/backstory clause naming another cast member (nominalized outcome, or
+    # the character created by another) is legitimate — the gate must not fire.
+    text = (
+        "Rattlegore is a hulking abomination reanimated by Darkmaster Gandling after his defeat "
+        "at Andorhal to guard the school's halls."
+    )
+    assert lint_key_character_spoilers(
+        text, self_name="Rattlegore", other_cast_names=["Darkmaster Gandling"]
+    ) == []
+
+
+def test_spoiler_lint_allows_intent_to_eliminate_cast_member() -> None:
+    # Intent (an infinitive complement) is not an outcome: "sought to destroy X" is her aim,
+    # not a spoiler reveal, and is allowed.
+    text = "Lilian Voss redirected her wrath on the school and sought to destroy Darkmaster Gandling."
+    assert lint_key_character_spoilers(
+        text, self_name="Lilian Voss", other_cast_names=["Darkmaster Gandling"]
+    ) == []
+
+
+def test_spoiler_lint_flags_self_eliminating_cast_member() -> None:
+    # The realis spoiler shape — this character finishing a fellow boss — is still blocked.
+    text = "Lilian Voss hunted down and destroyed Darkmaster Gandling in the Chamber of Summoning."
+    issues = lint_key_character_spoilers(
+        text, self_name="Lilian Voss", other_cast_names=["Darkmaster Gandling"]
+    )
+    assert issues and "Darkmaster Gandling" in issues[0]

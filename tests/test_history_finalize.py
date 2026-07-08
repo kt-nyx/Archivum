@@ -176,3 +176,40 @@ def test_apply_history_section_budget_keeps_unabsorbable_sub_floor_section() -> 
     reasons = cards._history_budget_reasons(result)
     assert len(reasons) == 1
     assert "section 2" in reasons[0]
+
+
+def test_history_present_tense_reasons_flags_past_current_state() -> None:
+    # Cause 5: with current-state evidence, a past-tense final section is a retry reason.
+    past_final = [
+        _section("Origins", "The keep was founded long ago and fell during the war."),
+        _section(
+            "Aftermath",
+            "By the Cataclysm, much of the plague had been dispelled by the Cenarion Circle, and "
+            "the region remained a scarred borderland shaped by the lingering Scourge.",
+        ),
+    ]
+    reasons = cards._history_present_tense_reasons(past_final, has_current_state=True)
+    assert reasons and "present tense" in reasons[0]
+    # A present-framed final section passes.
+    present_final = [
+        _section("Origins", "The keep was founded long ago and fell during the war."),
+        _section(
+            "Now",
+            "The Western Plaguelands remain a scarred borderland, and the Argent Crusade still "
+            "holds Hearthglen against the lingering Scourge as the Cenarion Circle heals the land.",
+        ),
+    ]
+    assert cards._history_present_tense_reasons(present_final, has_current_state=True) == []
+    # No current-state material -> never enforced (a past-ending chronicle is fine).
+    assert cards._history_present_tense_reasons(past_final, has_current_state=False) == []
+
+
+def test_history_has_current_state_reads_entry_state_scope() -> None:
+    from pipeline.generate.draft.temporal import ENTRY_STATE, PRE_ENTRY_HISTORY
+
+    assert cards._history_has_current_state(
+        [{"snippet": "x", "temporal_scope": ENTRY_STATE}]
+    )
+    assert not cards._history_has_current_state(
+        [{"snippet": "x", "temporal_scope": PRE_ENTRY_HISTORY}]
+    )

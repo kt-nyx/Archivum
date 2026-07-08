@@ -14,6 +14,8 @@ case) so any behaviour change on a model/library bump is caught deliberately.
 from __future__ import annotations
 
 from pipeline.common.linguistics import (
+    action_relations,
+    clause_before_adversative,
     coordinated_finite_clause_split,
     describe,
     finite_clause_count,
@@ -305,6 +307,43 @@ def test_coordinated_split_refuses_uncertain_shapes() -> None:
     assert (
         coordinated_finite_clause_split("The wall fell and the town burned. The keep held.") == []
     )
+
+
+def test_action_relations_active_and_conjoined_subject() -> None:
+    # Active clause: agent = subject, patient = object.
+    (rel,) = [r for r in action_relations("Lilian Voss defeated Gandling.") if r.verb_lemma == "defeat"]
+    assert any("Lilian" in a or "Voss" in a for a in rel.agents)
+    assert any("Gandling" in p for p in rel.patients)
+    # Conjoined verb inherits the shared subject of its head ("hunted and defeated").
+    (rel2,) = [
+        r
+        for r in action_relations("Lilian Voss hunted and defeated Gandling.")
+        if r.verb_lemma == "defeat"
+    ]
+    assert any("Lilian" in a or "Voss" in a for a in rel2.agents)
+
+
+def test_action_relations_passive_normalizes_agent_patient() -> None:
+    # "Y was defeated by X": the by-agent is the agent, the passive subject is the patient.
+    (rel,) = [r for r in action_relations("Gandling was defeated by Lilian.") if r.verb_lemma == "defeat"]
+    assert any("Lilian" in a for a in rel.agents)
+    assert any("Gandling" in p for p in rel.patients)
+
+
+def test_action_relations_nominalized_outcome_has_no_relation() -> None:
+    # "his defeat" is a noun, not a verb — it produces no defeat action relation, so an origin
+    # clause that merely mentions a past outcome is distinguishable from a finite action.
+    text = "Gandling reanimated Rattlegore after his defeat at Andorhal."
+    assert not any(r.verb_lemma == "defeat" for r in action_relations(text))
+
+
+def test_clause_before_adversative_trims_reversal_tail() -> None:
+    assert (
+        clause_before_adversative("She pressed the attack, though it ultimately failed.")
+        == "She pressed the attack"
+    )
+    # No adversative connective -> unchanged.
+    assert clause_before_adversative("She pressed the attack.") == "She pressed the attack."
 
 
 def test_support_tokens_lemmatize_content_keep_names_and_prepositions() -> None:

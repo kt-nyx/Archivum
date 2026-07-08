@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from pipeline.common import wiki_html
-from pipeline.common.linguistics import tense_profile
+from pipeline.common.linguistics import action_relations, tense_profile
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.contracts.models import INSTANCE_BUDGET_RULES
 from pipeline.generate.draft.prose_gate import detect_list_shape
@@ -30,6 +30,7 @@ MIN_OVERVIEW_WORDS = INSTANCE_BUDGET_RULES["story_context"].min_words
 MAX_OVERVIEW_WORDS = INSTANCE_BUDGET_RULES["story_context"].max_words
 MIN_KEY_CHARACTER_WORDS = INSTANCE_BUDGET_RULES["key_characters_card_summary"].min_words
 MAX_KEY_CHARACTER_WORDS = INSTANCE_BUDGET_RULES["key_characters_card_summary"].max_words
+TARGET_KEY_CHARACTER_WORDS = INSTANCE_BUDGET_RULES["key_characters_card_summary"].target_words
 
 _GENERIC_AT_A_GLANCE = re.compile(r"\bis a lore-significant retail instance\b", re.IGNORECASE)
 _GENERIC_OVERVIEW = re.compile(
@@ -176,18 +177,52 @@ def lint_key_character_summary(
     return issues
 
 
-# Fix 4: in-instance encounter-outcome spoiler shapes. The claim route already drops
-# active_storyline_outcome / spoiler-unsafe claim views, so this is a prose-level backstop for
-# outcomes the synthesizer *infers* (e.g. from a demoted lead) — a character eliminating a fellow
-# boss of the same instance, or the "counted among the dead" reveal. Naming an outside force
-# (e.g. "destroyed by the Alliance at Andorhal") is legitimate backstory and is NOT flagged: the
-# gate fires only when an outcome verb co-occurs with another *cast member's* name.
-_OUTCOME_VERB_RE = re.compile(
-    r"\b(?:kill(?:s|ed)?|slay(?:s|ed)?|slain|defeat(?:s|ed)?|destroy(?:s|ed)?"
-    r"|vanquish(?:es|ed)?|subdu(?:e|es|ed)|eliminat(?:e|es|ed))\b",
-    re.IGNORECASE,
+# Fix 4 (relaxed, Cause 2): in-instance encounter-outcome spoiler shape — *this* character
+# eliminating a fellow cast member. The trigger is grammatical, not lexical: an elimination verb
+# whose AGENT is the card's own subject and whose PATIENT is another cast member. This deliberately
+# allows a cast member to appear in an origin/backstory clause — "Gandling reanimated Rattlegore
+# after his defeat at Andorhal" (the outcome word is a noun / Gandling is not the card subject's
+# victim) no longer trips the gate, which previously fired on any outcome *word* co-occurring with
+# any cast name. Naming an outside force ("destroyed by the Alliance at Andorhal") is likewise
+# legitimate backstory. The claim route already drops active_storyline_outcome / spoiler-unsafe
+# claim views; this is the prose-level backstop for outcomes the synthesizer *infers*.
+_ELIMINATION_VERB_LEMMAS = frozenset(
+    {
+        "kill",
+        "slay",
+        "defeat",
+        "destroy",
+        "vanquish",
+        "subdue",
+        "eliminate",
+        "murder",
+        "annihilate",
+        "execute",
+        "behead",
+    }
 )
+# A bare third-person pronoun subject in a single-character card refers to that character.
+_SELF_REFERENT_PRONOUNS = frozenset({"he", "she", "they", "it"})
 _DEAD_TARGET_RE = re.compile(r"\bcounted among the dead\b|\bamong the dead\b", re.IGNORECASE)
+
+
+def _name_tokens(value: str) -> set[str]:
+    return {token for token in value.strip().lower().split() if token}
+
+
+def _phrase_is_self(phrase: str, self_tokens: set[str]) -> bool:
+    lowered = phrase.strip().lower()
+    if lowered in _SELF_REFERENT_PRONOUNS:
+        return True
+    return bool(self_tokens and (_name_tokens(phrase) & self_tokens))
+
+
+def _phrase_matches_cast(phrase: str, cast: list[tuple[str, set[str]]]) -> str:
+    phrase_tokens = _name_tokens(phrase)
+    for original, tokens in cast:
+        if phrase_tokens & tokens:
+            return original
+    return ""
 
 
 def lint_key_character_spoilers(
@@ -196,7 +231,12 @@ def lint_key_character_spoilers(
     self_name: str = "",
     other_cast_names: Iterable[str] = (),
 ) -> list[str]:
-    """Flag a key-character summary that reveals an in-instance encounter outcome (Fix 4)."""
+    """Flag a summary in which this character eliminates a fellow cast member (Fix 4, relaxed).
+
+    Grammar-based: fires only when an elimination *verb* has the card's own subject as its agent
+    and another cast member as its patient. Origin/backstory mentions of other cast members
+    (including nominalized outcomes like "after his defeat") are allowed.
+    """
     issues: list[str] = []
     cleaned = text.strip()
     if not cleaned:
@@ -204,17 +244,27 @@ def lint_key_character_spoilers(
     if _DEAD_TARGET_RE.search(cleaned):
         issues.append("key character summary reveals an in-instance elimination outcome")
         return issues
-    if not _OUTCOME_VERB_RE.search(cleaned):
+    self_tokens = _name_tokens(self_name)
+    cast = [
+        (str(name).strip(), _name_tokens(str(name)))
+        for name in other_cast_names
+        if str(name).strip() and _name_tokens(str(name)) != self_tokens
+    ]
+    cast = [(original, tokens) for original, tokens in cast if tokens]
+    if not cast:
         return issues
-    lowered = cleaned.lower()
-    self_key = self_name.strip().lower()
-    for name in other_cast_names:
-        key = str(name).strip().lower()
-        if key and key != self_key and key in lowered:
-            issues.append(
-                f"key character summary pairs an encounter outcome with cast member {name!r}"
-            )
-            break
+    for relation in action_relations(cleaned):
+        if relation.verb_lemma not in _ELIMINATION_VERB_LEMMAS:
+            continue
+        if not any(_phrase_is_self(agent, self_tokens) for agent in relation.agents):
+            continue
+        for patient in relation.patients:
+            matched = _phrase_matches_cast(patient, cast)
+            if matched:
+                issues.append(
+                    f"key character summary pairs an encounter outcome with cast member {matched!r}"
+                )
+                return issues
     return issues
 
 

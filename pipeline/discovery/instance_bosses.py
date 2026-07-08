@@ -645,22 +645,63 @@ def prefilter_character_pool(
     ]
 
 
+def boss_names_from_infobox_roster(
+    infobox: dict[str, Any] | None,
+    *,
+    pool: list[BossCandidate],
+    instance_name: str = "",
+) -> set[str]:
+    """Normalized pool-candidate names the instance infobox lists as bosses.
+
+    The instance infobox's boss-labelled fields ("Bosses", "End boss") are the wiki's own
+    authoritative encounter roster. Rather than parse discrete names out of the concatenated
+    field text (multi-word names, no delimiters), match already-discovered candidate names
+    against it: a candidate whose full name appears in a boss-labelled field is a boss and is
+    guaranteed into the cast. Structural signal only — no instance-specific keywords, and the
+    match is bounded to names the pool already discovered so infobox chrome can never mint one.
+    """
+    if not isinstance(infobox, dict) or not infobox:
+        return set()
+    roster_parts = [
+        str(value)
+        for label, value in infobox.items()
+        if isinstance(label, str) and "boss" in label.lower() and value
+    ]
+    if not roster_parts:
+        return set()
+    roster_text = normalize_title(" ".join(roster_parts))
+    if not roster_text:
+        return set()
+    names: set[str] = set()
+    for candidate in pool:
+        norm = normalize_title(candidate.name)
+        if not norm or should_reject_boss_title(candidate.name, instance_name=instance_name):
+            continue
+        if re.search(rf"\b{re.escape(norm)}\b", roster_text):
+            names.add(norm)
+    return names
+
+
 def must_include_key_character_names(
     *,
     boss_pool_items: list[dict[str, Any]],
     pool: list[BossCandidate],
     instance_name: str,
+    infobox: dict[str, Any] | None = None,
 ) -> list[str]:
-    """Boss-class names guaranteed into the cast (stable sort), from two sources.
+    """Boss-class names guaranteed into the cast (stable sort), from three sources.
 
-    1. Wiki-linked names harvested from boss-class boss_pool snippets, and
+    1. Wiki-linked names harvested from boss-class boss_pool snippets,
     2. prefiltered pool candidates whose *own* discovery ``source_section_role`` is a
        high-confidence boss-class section (Adventure Guide / Dungeon Journal / boss /
-       encounter rosters).
+       encounter rosters), and
+    3. pool candidates the instance infobox's boss-labelled roster names (the wiki's own
+       encounter list, which is complete even when section-role classification is not).
 
-    Source 2 makes structurally-obvious bosses deterministic even when boss_pool snippets
-    carry no ``/wiki/`` links (the common case for this ingest revision). S0-compliant tokens
-    only — no zone/instance keywords drive the floor.
+    Sources 2 and 3 make structurally-obvious bosses deterministic even when boss_pool snippets
+    carry no ``/wiki/`` links and the section classifier under-labels the roster table (the
+    common case for this ingest revision — the reason bosses were previously dropped). S0-compliant
+    tokens only — no zone/instance keywords drive the floor.
     """
     pool_by_norm = {normalize_title(candidate.name): candidate.name for candidate in pool}
     must_norm: set[str] = {
@@ -675,6 +716,9 @@ def must_include_key_character_names(
     for candidate in pool:
         if is_high_confidence_boss_section(candidate.source_section_role):
             must_norm.add(normalize_title(candidate.name))
+    must_norm |= boss_names_from_infobox_roster(
+        infobox, pool=pool, instance_name=instance_name
+    )
     return sorted(
         [pool_by_norm[name] for name in must_norm if name in pool_by_norm],
         key=normalize_title,

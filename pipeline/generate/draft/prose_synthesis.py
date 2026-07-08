@@ -831,8 +831,10 @@ def synthesize_faction_summary(
             task_lines=(
                 f"Write a faction-role summary for faction '{faction_name}' in instance "
                 f"'{instance_name}' using ONLY evidence. Maximum {max_words} words. "
-                "Write from the entry-state perspective: present tense for active roles, past "
-                "tense only for older identity context, and no current-storyline outcomes."
+                "Use present tense for what the faction does here now; use past tense only for its "
+                "origin or background. Do not narrate current-storyline outcomes. Stay in-world: "
+                "describe the faction itself, never framed by 'the player' or 'adventurers', and "
+                "never quote the wording of these instructions."
             )
             + reinforce,
         )
@@ -840,8 +842,10 @@ def synthesize_faction_summary(
         system_prompt = (
             f"Write a zone-role summary for faction '{faction_name}' in zone '{zone_name}' using ONLY evidence. "
             f"Maximum {max_words} words. Describe what this faction does in this zone only. "
-            "Write from the entry-state perspective: present tense for active roles, past tense "
-            "only for older identity context, and no current-storyline outcomes. "
+            "Use present tense for what the faction does here now; use past tense only for its "
+            "origin or background. Do not narrate current-storyline outcomes. Stay in-world: "
+            "describe the faction itself, never framed by 'the player' or 'adventurers', and never "
+            "quote the wording of these instructions. "
             "Do not copy generic faction wiki ledes, geography lists, reputation/achievement meta, or out-of-zone plot."
             + reinforce
         )
@@ -1289,6 +1293,7 @@ def synthesize_key_character_summary(
     instance_name: str,
     structural_role: str = "",
     max_words: int = INSTANCE_BUDGET_RULES["key_characters_card_summary"].max_words,
+    target_words: int = INSTANCE_BUDGET_RULES["key_characters_card_summary"].target_words,
     avoid_hints: list[str] | None = None,
     reference_framing: str = "",
     evidence_item_limit: int = KEY_CHARACTER_EVIDENCE_ITEM_LIMIT,
@@ -1315,7 +1320,8 @@ def synthesize_key_character_summary(
         )
     task_lines = (
         f"Write a key-character card summary for '{boss_name}' in instance "
-        f"'{instance_name}' using ONLY evidence. Maximum {max_words} words. "
+        f"'{instance_name}' using ONLY evidence. Aim for about {target_words} words; do not "
+        f"exceed {max_words}. "
         f"Align with the precomputed structural role '{structural_role or 'uncertain'}' "
         "without using meta labels as prose. Trace the chain from who this character is to why they "
         f"are present in '{instance_name}' now — foreground the history and motivations that explain "

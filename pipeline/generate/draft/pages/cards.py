@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from pipeline.common.linguistics import tense_profile
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.common.wiki_evidence_filters import cap_history_pool
 from pipeline.contracts.models import PAGE_HISTORY_SECTION_BUDGET_RULE
@@ -59,7 +60,7 @@ from pipeline.generate.draft.pages.assembly import (
     citation_shortfall_reasons,
 )
 from pipeline.generate.draft.point_of_use_temporal import adjudicate_card_pool
-from pipeline.generate.draft.pool_policy import filter_card_pool
+from pipeline.generate.draft.pool_policy import card_pool_scope, filter_card_pool
 from pipeline.generate.draft.prose_election import (
     fallback_history_sections,
     history_section_cap,
@@ -87,7 +88,7 @@ from pipeline.generate.draft.prose_synthesis import (
     synthesize_location_summary,
     synthesize_with_validation,
 )
-from pipeline.generate.draft.temporal import HISTORY_SETUP_BRIDGE
+from pipeline.generate.draft.temporal import ENTRY_STATE, HISTORY_SETUP_BRIDGE
 
 # Per-section history word budget, derived from the same contracts BudgetRule validate
 # enforces (Slice 2). The deterministic trim/absorb pass keeps sections inside it, and any
@@ -120,6 +121,47 @@ def _history_budget_reasons(sections: list[dict[str, Any]]) -> list[str]:
                 "or condense it"
             )
     return reasons
+
+
+def _history_has_current_state(history_pool: list[dict[str, Any]]) -> bool:
+    """True when the history evidence carries the subject's current-content baseline (Cause 5).
+
+    ``entry_state`` is the scope the temporal model assigns to the state at which the player
+    enters the *current* content (the latest expansion that shaped the zone). Its presence means
+    the chronicle reaches a live, present-tense state, so the final synthesized section should be
+    present-framed — deterministic where the prompt instruction alone was applied inconsistently.
+    """
+    return any(card_pool_scope(item) == ENTRY_STATE for item in history_pool)
+
+
+def _history_present_tense_reasons(
+    sections: list[dict[str, Any]], *, has_current_state: bool
+) -> list[str]:
+    """Retry reason when the current-state final section is written in past tense (Cause 5).
+
+    Fires only when the evidence has current-content material (``entry_state``) and the final
+    section is past-dominant with no present framing — the exact WPL 'Plaguebound Present'
+    regression. Neutral-tense or already-present sections pass; earlier sections are left to the
+    prompt (which keeps them past). A live-only retry trigger: it drives the synthesis loop but
+    never fails the field, so if the model cannot comply the best attempt still ships.
+    """
+    if not has_current_state or not sections:
+        return []
+    final = sections[-1]
+    if not isinstance(final, dict):
+        return []
+    body = str(final.get("body", "")).strip()
+    if not body:
+        return []
+    profile = tense_profile(body)
+    if profile.present_framed or not profile.past_dominant:
+        return []
+    heading = str(final.get("heading", "")).strip() or "final section"
+    return [
+        f"the final history section ('{heading}') describes the subject's current, ongoing state "
+        "but is written in past tense — rewrite that section in present tense as the chronicle "
+        "reaching its current state, keeping every earlier section in past tense"
+    ]
 
 
 def _section_gate_reasons(
@@ -280,6 +322,7 @@ def _finalize_history_sections(
     # Source-aware passthrough corpus: reject history bodies that copy their evidence paragraph
     # verbatim (the licensing exposure). None offline, where borrowing source prose is sanctioned.
     pool_snippets = passthrough_corpus(history_pool)
+    has_current_state = _history_has_current_state(history_pool)
     status = FIELD_STATUS_OK
 
     def _postprocess(raw_sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -292,10 +335,17 @@ def _finalize_history_sections(
         # section, so the live driver must repair it, never ship it. Live-only
         # (``enforce_budget=False`` on the offline ladder): the sanctioned NO_LLM borrow has
         # no retry lever, and a thin wiki paragraph beats an empty history on a smoke run —
-        # validate still reports the violation on its artifacts.
+        # validate still reports the violation on its artifacts. Present-tense enforcement of
+        # the current-state section (Cause 5) is likewise live-only: the offline borrow cannot
+        # rewrite voice, and it drives retries without ever failing the field.
         reasons = list(lint_history_sections(candidate_sections, max_sections=lint_cap))
         if enforce_budget:
             reasons.extend(_history_budget_reasons(candidate_sections))
+            reasons.extend(
+                _history_present_tense_reasons(
+                    candidate_sections, has_current_state=has_current_state
+                )
+            )
         reasons.extend(_section_gate_reasons(candidate_sections, pool_snippets))
         return reasons
 
@@ -1093,16 +1143,19 @@ def build_location_cards(
         )
         if card_body is None:
             continue
+        pointers = _cap_card_pointers(
+            _pointers_for_evidence_ids(source_pool, used_ids, revision_map)
+        )
         card = {
             **card_body,
             "zone_id": zone_id,
             "ui_hints": {"render_as": card_body.get("location_type", "major_location")},
-            "provenance": [],
+            # Inline provenance so the card is fact-checkable on its own (Cause 1a companion): the
+            # same pointers that reach the page-level major_landmarks map were previously dropped
+            # here, leaving location cards permanently `unchecked_missing_pointers`.
+            "provenance": pointers,
         }
         cards.append(card)
-        pointers = _cap_card_pointers(
-            _pointers_for_evidence_ids(source_pool, used_ids, revision_map)
-        )
         if pointers:
             provenance_map[candidate.location_id] = pointers
         if len(cards) >= target_count and target_count > 0:

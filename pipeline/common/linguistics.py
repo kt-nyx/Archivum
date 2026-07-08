@@ -318,6 +318,108 @@ def finite_clause_count(text: str) -> int:
     )
 
 
+@dataclass(frozen=True)
+class ActionRelation:
+    """Agent→verb→patient roles for one action verb (general dependency grammar).
+
+    Surface phrases only — the caller decides which verbs/names matter. Passive voice is
+    normalized so ``X defeated Y`` and ``Y was defeated by X`` yield the same agent/patient
+    split. A nominalized action ("his defeat at Andorhal") is *not* a verb and produces no
+    relation, which is what lets callers treat backstory/origin nominalizations differently
+    from a finite action.
+    """
+
+    verb_lemma: str
+    agents: tuple[str, ...]
+    patients: tuple[str, ...]
+
+
+def _phrase_text(doc: Doc, token: Token) -> str:
+    """Contiguous surface text of a token's subtree (its noun phrase)."""
+    indexes = [descendant.i for descendant in token.subtree]
+    return doc[min(indexes) : max(indexes) + 1].text
+
+
+@lru_cache(maxsize=2048)
+def _action_relations_cached(text: str) -> tuple[ActionRelation, ...]:
+    doc = _analyze(text)
+    relations: list[ActionRelation] = []
+    for token in doc:
+        if token.pos_ != "VERB":
+            continue
+        agents: list[str] = []
+        patients: list[str] = []
+        for child in token.children:
+            dep = child.dep_
+            if dep == "nsubj":
+                agents.append(_phrase_text(doc, child))
+            elif dep == "nsubjpass":
+                patients.append(_phrase_text(doc, child))
+            elif dep in {"dobj", "obj", "dative", "oprd"}:
+                patients.append(_phrase_text(doc, child))
+            elif dep == "agent":  # passive "by X": the object of the agent marker is the actor
+                agents.extend(
+                    _phrase_text(doc, grandchild)
+                    for grandchild in child.children
+                    if grandchild.dep_ == "pobj"
+                )
+        if not agents:
+            # A conjoined verb shares the subject of the head it hangs off ("X hunted and
+            # defeated Y"): climb the conjunction chain to inherit that subject/agent.
+            head = token
+            while head.dep_ == "conj" and head.head is not head and not agents:
+                head = head.head
+                for child in head.children:
+                    if child.dep_ == "nsubj":
+                        agents.append(_phrase_text(doc, child))
+                    elif child.dep_ == "agent":
+                        agents.extend(
+                            _phrase_text(doc, grandchild)
+                            for grandchild in child.children
+                            if grandchild.dep_ == "pobj"
+                        )
+        if agents or patients:
+            relations.append(
+                ActionRelation(
+                    verb_lemma=token.lemma_,
+                    agents=tuple(agents),
+                    patients=tuple(patients),
+                )
+            )
+    return tuple(relations)
+
+
+def action_relations(text: str) -> list[ActionRelation]:
+    """Agent/patient relations for each finite action verb (subject-verb-object grammar).
+
+    Reports grammatical roles only; no domain judgment about which verbs or names matter.
+    """
+    return list(_action_relations_cached(text))
+
+
+# Adversative / concessive connectives — a closed grammatical class. Everything from the first
+# such connective heading a clause is the reversal/result ("..., though it failed"); the leading
+# clause is the assertion/intent.
+_ADVERSATIVE_MARKERS = frozenset(
+    {"though", "although", "but", "yet", "however", "whereas", "nevertheless", "nonetheless"}
+)
+
+
+@lru_cache(maxsize=2048)
+def clause_before_adversative(text: str) -> str:
+    """The leading clause up to the first adversative/concessive connective.
+
+    A closed-class grammatical cut: "she pressed on, though it failed" -> "she pressed on".
+    Returns the input unchanged when no adversative connective heads a clause. General grammar
+    only — the caller decides what the trimmed clause means or is used for.
+    """
+    doc = _analyze(text)
+    for token in doc:
+        if token.lemma_.lower() in _ADVERSATIVE_MARKERS and token.dep_ in {"mark", "cc"}:
+            return text[: token.idx].rstrip().rstrip(",;:").rstrip()
+    return text
+
+
 @lru_cache(maxsize=2048)
 def _coordinated_clause_split_cached(text: str) -> tuple[str, ...]:
     doc = _analyze(text)

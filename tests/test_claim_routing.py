@@ -13,6 +13,7 @@ from pipeline.generate.draft.claim_routing import (
     build_claim_view_routing_decisions,
     reconstruct_safe_paragraph_excerpts,
     route_claim_views_for_pool,
+    safe_intent_excerpt,
     safe_paragraph_excerpt,
 )
 from pipeline.generate.draft.pages.assembly import (
@@ -566,3 +567,25 @@ def test_claim_views_carry_source_char_spans() -> None:
     )
     view = routed_rows[0]["evidence_items"][0][CLAIM_VIEW_KEY][0]
     assert view["source_char_spans"] == [[span.start, span.end]]
+
+
+def test_safe_intent_excerpt_keeps_aim_drops_outcome() -> None:
+    # Cause 3: a spoiler-shaped hook sentence yields its spoiler-safe intent clause; the
+    # reversal/outcome tail after the adversative connective is dropped.
+    view = {
+        "claim_text": (
+            "She redirected her attention to the necromancers within Scholomance and intended "
+            "to kill Darkmaster Gandling, though it failed as he turned her against the adventurer."
+        )
+    }
+    intent = safe_intent_excerpt(view)
+    assert "Scholomance" in intent
+    assert "intended to kill" in intent
+    assert "failed" not in intent
+    assert "adventurer" not in intent
+
+
+def test_safe_intent_excerpt_empty_without_outcome_tail() -> None:
+    # A single realis assertion with no adversative tail stays filtered (returns "") so no
+    # outcome ever leaks back in.
+    assert safe_intent_excerpt({"claim_text": "She defeated Gandling in the Chamber of Summoning."}) == ""

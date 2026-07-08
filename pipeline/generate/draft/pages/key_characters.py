@@ -32,11 +32,14 @@ from pipeline.generate.draft.claim_routing import (
     key_character_unsafe_claim_views,
     reconstruct_safe_paragraph_excerpts,
     route_claim_views_for_pool,
+    safe_intent_excerpt,
     safe_paragraph_excerpt,
 )
 from pipeline.generate.draft.evidence_identity import evidence_id_for_item
 from pipeline.generate.draft.instance_lint import (
     MAX_KEY_CHARACTER_WORDS,
+    MIN_KEY_CHARACTER_WORDS,
+    TARGET_KEY_CHARACTER_WORDS,
     fallback_key_character_summary,
     lint_key_character_spoilers,
     lint_key_character_summary,
@@ -46,10 +49,12 @@ from pipeline.generate.draft.pages.assembly import (
     _build_instance_evidence_pools,
     _cap_card_pointers,
     _classic_excluded_names,
+    _extract_instance_infobox,
     _extract_instance_structured_links,
     _pointers_for_evidence_ids,
 )
 from pipeline.generate.draft.prose_gate import prose_gate_violations
+from pipeline.generate.draft.prose_lint import word_count
 from pipeline.generate.draft.prose_selection import (
     classify_key_character_role_llm,
     select_key_characters_from_pool,
@@ -69,6 +74,36 @@ _POOL_SELECTION_CONTEXT_MAX_CHARS = 800
 # card uses the restrained structural-presence blurb instead of letting the synthesizer extrapolate
 # a backstory from one or two thin sentences (the Instructor Chillheart case).
 _MIN_BIOGRAPHY_EVIDENCE_WORDS = 22
+
+# A card that lands this far below target reads as an under-developed origin stub — a single "who
+# they are" sentence that never reaches the through-line explaining why the figure holds this place
+# (the Gandling/Jandice case: ~25-28 words from evidence rich enough for a full arc). The synthesis
+# prompt bounds only the ceiling, so sampling variance alone decided whether a card grew or stopped
+# short; this floor drives one retry toward the target. It is enforced as a *soft* reason: it
+# re-prompts a thin card but never fails the field, so a genuinely sparse figure still ships its best
+# attempt. Sits midway between the hard minimum and the target so it fires only near the floor.
+_KEY_CHARACTER_THROUGH_LINE_MIN_WORDS = (MIN_KEY_CHARACTER_WORDS + TARGET_KEY_CHARACTER_WORDS) // 2
+
+
+def _through_line_soft_reasons(summary: str, *, instance_name: str) -> list[str]:
+    """Soft retry trigger for a short origin-stub card (drives richness, never fails the field).
+
+    Fires when the synthesized card lands near the hard word floor: a full origin -> presence
+    through-line cannot fit in so few words, so the card almost certainly stopped at "who they
+    are" and dropped the "why they are here" beat that makes it useful. Returns a plain-language
+    reason the retry feeds back to the model; ``synthesize_with_validation`` treats it as soft, so
+    an unavoidably thin figure still ships its best attempt.
+    """
+    if not summary.strip():
+        return []
+    if word_count(summary) >= _KEY_CHARACTER_THROUGH_LINE_MIN_WORDS:
+        return []
+    place = instance_name or "this place"
+    return [
+        "the summary is short and reads as an origin stub — develop the through-line that explains "
+        f"why this figure is present in {place} now (the history, motivations, or allegiances that "
+        f"brought them here), aiming for about {TARGET_KEY_CHARACTER_WORDS} words"
+    ]
 
 
 def _summary_pool_word_count(summary_pool: list[dict[str, Any]]) -> int:
@@ -207,6 +242,7 @@ def build_instance_key_character_selection(
         boss_pool_items=pools["boss_pool"],
         pool=pool,
         instance_name=instance_name,
+        infobox=_extract_instance_infobox(snapshots, instance_id),
     )
     if len(floor) > INSTANCE_MAX_KEY_CHARACTERS:
         floor = floor[:INSTANCE_MAX_KEY_CHARACTERS]
@@ -403,6 +439,53 @@ def _beat_text(view: dict[str, Any]) -> str:
     return str(view.get("claim_text") or view.get("snippet", "")).strip()
 
 
+def _recover_instance_hook_intent(
+    source_pool: list[dict[str, Any]],
+    *,
+    instance_name: str,
+    selected: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Recover the spoiler-safe intent of an instance-hook beat routing dropped (Cause 3).
+
+    When no selected safe beat names this instance, the character's whole 'why they're here'
+    arc is a spoiler-shaped sentence (Lilian Voss: "intended to kill Gandling, though it
+    failed") that the safety route drops before selection. Keep only its intent clause (up to
+    the first adversative connective) as a synthetic safe view, so the connective arc reaches
+    synthesis while the outcome tail stays filtered. No-op for paragraph-fallback pools (no
+    claim views) and when a safe instance beat is already selected.
+    """
+    if not instance_name:
+        return []
+    instance_key = normalize_title(instance_name)
+    instance_lower = instance_name.lower()
+    if any(
+        _view_mentions_instance(view, instance_key=instance_key, instance_lower=instance_lower)
+        for view in selected
+    ):
+        return []
+    recovered: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for view in key_character_unsafe_claim_views(source_pool):
+        if not _view_mentions_instance(
+            view, instance_key=instance_key, instance_lower=instance_lower
+        ):
+            continue
+        intent = safe_intent_excerpt(view)
+        if not intent:
+            continue
+        key = intent.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        synthetic = dict(view)
+        synthetic["snippet"] = intent
+        synthetic["claim_text"] = intent
+        synthetic["spoiler_safety"] = "safe_setup_hook"
+        synthetic["is_claim_view"] = True
+        recovered.append(synthetic)
+    return recovered
+
+
 def _key_character_summary_pool(
     pool: list[dict[str, Any]],
     *,
@@ -441,6 +524,13 @@ def _key_character_summary_pool(
             candidates, instance_name=instance_name, limit=KEY_CHARACTER_EVIDENCE_ITEM_LIMIT
         )
     ordered = _order_key_character_summary_views(selected, instance_name=instance_name)
+    # Cause 3: if the safety route dropped the only instance-hook beat, splice its spoiler-safe
+    # intent clause back in (chronologically last — it is the character's latest, current aim).
+    hook_views = _recover_instance_hook_intent(
+        pool, instance_name=instance_name, selected=ordered
+    )
+    if hook_views:
+        ordered = ordered + [view for view in hook_views if view not in ordered]
     if decisions_out is not None:
         kept_texts = {_beat_text(view) for view in ordered}
         decisions_out["method"] = method
@@ -458,13 +548,18 @@ def _key_character_summary_pool(
     return ordered
 
 
-def _structural_presence_summary_pool(
+def _structural_presence_item(
     *,
     candidate: BossCandidate,
     instance_name: str,
     source_pool: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    if not source_pool or not is_boss_section_role(candidate.source_section_role):
+    """The restrained, spoiler-free structural-presence seed item (ungated by section role).
+
+    Used both as the pre-synthesis fallback for thin/unsafe evidence and as the guaranteed
+    last resort for a must-include boss whose evidence-rich summary cannot pass validation.
+    """
+    if not source_pool:
         return []
     base = dict(source_pool[0])
     base["snippet"] = (
@@ -476,6 +571,19 @@ def _structural_presence_summary_pool(
     base["claim_id"] = ""
     base["spoiler_safety"] = "encounter_setup"
     return [base]
+
+
+def _structural_presence_summary_pool(
+    *,
+    candidate: BossCandidate,
+    instance_name: str,
+    source_pool: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not is_boss_section_role(candidate.source_section_role):
+        return []
+    return _structural_presence_item(
+        candidate=candidate, instance_name=instance_name, source_pool=source_pool
+    )
 
 
 _ADVENTURE_GUIDE_TOKENS = ("adventure_guide", "adventurers_guide", "dungeon_journal")
@@ -655,6 +763,10 @@ def _finalize_key_characters(
         card: dict[str, Any] | None = None
         card_pointers: list[dict[str, str]] = []
         structural_role = candidate.role or "uncertain"
+        # A must-include boss is a confirmed encounter: it must always ship (Cause 2a). On
+        # validation failure it falls back to the spoiler-free structural-presence seed rather
+        # than being dropped like a speculative narrative candidate.
+        is_floor_candidate = (selection_reasons or {}).get(candidate.name) == "must_include_floor"
         for pool in pools_to_try:
             source_pool = pool
             # Slice 9: encounter-mechanics / outcome claims (e.g. "Lilian Voss defeated",
@@ -752,34 +864,71 @@ def _finalize_key_characters(
 
             if llm_synthesis_active():
 
-                def _call(
-                    reinforce: str,
-                    synthesis_items: list[dict[str, Any]] = synthesis_items,
+                def _run_validated(
+                    items: list[dict[str, Any]],
                     summary_kwargs: dict[str, Any] = summary_kwargs,
-                ) -> dict[str, Any]:
-                    text, used_ids = synthesize_key_character_summary(
-                        synthesis_items,
-                        boss_name=candidate.name,
-                        instance_name=instance_name,
-                        structural_role=structural_role,
-                        max_words=MAX_KEY_CHARACTER_WORDS,
-                        reinforce=reinforce,
-                        **summary_kwargs,
-                    )
-                    return {"text": text, "used": used_ids}
+                    *,
+                    soft_through_line: bool = True,
+                ) -> Any:
+                    gate = [str(row.get("snippet", "")) for row in items]
+                    if ag_framing:
+                        gate.append(ag_framing)
 
-                result = synthesize_with_validation(
-                    call=_call,
-                    extract_bodies=lambda payload: [str(payload.get("text", ""))],
-                    validate=lambda payload: _summary_reasons(str(payload.get("text", ""))),
-                    # Copy detection runs inside _summary_reasons via the source-aware gate.
-                    source_snippets=None,
-                    label=f"key_character.{candidate.boss_id}",
-                )
+                    def _call(reinforce: str, items: list[dict[str, Any]] = items) -> dict[str, Any]:
+                        text, used_ids = synthesize_key_character_summary(
+                            items,
+                            boss_name=candidate.name,
+                            instance_name=instance_name,
+                            structural_role=structural_role,
+                            max_words=MAX_KEY_CHARACTER_WORDS,
+                            reinforce=reinforce,
+                            **summary_kwargs,
+                        )
+                        return {"text": text, "used": used_ids}
+
+                    # Drive one retry toward the target when an evidence-backed card lands as a short
+                    # origin stub. Soft: it never fails the field, so a thin figure still ships. Not
+                    # applied to the structural-presence seed (a fixed template with no evidence to
+                    # expand — retries there would only burn calls and re-ship the same blurb).
+                    validate_soft = (
+                        (lambda payload: _through_line_soft_reasons(
+                            str(payload.get("text", "")), instance_name=instance_name
+                        ))
+                        if soft_through_line
+                        else None
+                    )
+                    return synthesize_with_validation(
+                        call=_call,
+                        extract_bodies=lambda payload: [str(payload.get("text", ""))],
+                        validate=lambda payload: _summary_reasons(
+                            str(payload.get("text", "")), gate_sources=gate
+                        ),
+                        validate_soft=validate_soft,
+                        # Copy detection runs inside _summary_reasons via the source-aware gate.
+                        source_snippets=None,
+                        label=f"key_character.{candidate.boss_id}",
+                    )
+
+                result = _run_validated(synthesis_items)
+                if not result.ok and is_floor_candidate and not used_structural_fallback:
+                    # Cause 2a: a confirmed boss must ship. When its evidence-rich summary can't
+                    # pass validation, retry once from the spoiler-free structural-presence seed
+                    # (the Adventure Guide framing still supplies its identity) before giving up.
+                    seed_items = _structural_presence_item(
+                        candidate=candidate,
+                        instance_name=instance_name,
+                        source_pool=source_pool,
+                    )
+                    if seed_items:
+                        seed_result = _run_validated(seed_items, soft_through_line=False)
+                        if seed_result.ok:
+                            result = seed_result
+                            synthesis_items = seed_items
+                            used_structural_fallback = True
                 if not result.ok:
-                    # Live path never borrows: a candidate whose summary cannot pass validation
-                    # is dropped (recorded via the synth_guard trace) rather than shipped as copy
-                    # or template filler.
+                    # Live path never borrows: a non-floor candidate whose summary cannot pass
+                    # validation is dropped (recorded via the synth_guard trace) rather than
+                    # shipped as copy or template filler.
                     continue
                 summary = str(result.payload.get("text", ""))
                 used = list(result.payload.get("used", []))
@@ -846,8 +995,7 @@ def _finalize_key_characters(
             # The boss floor (must_include) always passes, so confident bosses are never
             # dropped. card is still None here, so breaking the pool loop drops the
             # candidate via the `if card is None` guard below.
-            is_floor = (selection_reasons or {}).get(candidate.name) == "must_include_floor"
-            if not is_floor and candidate.source_section_role == "narrative_fallback":
+            if not is_floor_candidate and candidate.source_section_role == "narrative_fallback":
                 break
             reason_codes: list[str] = []
             selection_reason = (selection_reasons or {}).get(candidate.name)

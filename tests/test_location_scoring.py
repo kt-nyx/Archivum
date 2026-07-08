@@ -63,19 +63,39 @@ def _location_candidate(
     *,
     lore_significant: bool = True,
     source_section_role: str = "history",
+    lead_links: list[str] | None = None,
 ) -> LocationCandidate:
+    profile_items: list[dict[str, object]] = [
+        {
+            "source_id": f"src-{location_id}",
+            "source_title": name,
+            "snippet": snippet,
+            "section_role": source_section_role,
+        }
+    ]
+    if lead_links is not None:
+        # A lead paragraph carrying the location's defining sentence + its inline links, the
+        # structural containment signal (Cause 1a).
+        profile_items.insert(
+            0,
+            {
+                "source_id": f"src-{location_id}",
+                "source_title": name,
+                "snippet": f"{name} lead paragraph.",
+                "section_role": "lead",
+                "content_role": "lead",
+                "raw_section_role": "lead",
+                "links": [
+                    {"anchor_text": target, "href": f"/wiki/{target.replace(' ', '_')}"}
+                    for target in lead_links
+                ],
+            },
+        )
     return LocationCandidate(
         location_id=location_id,
         name=name,
         wiki_url=f"https://warcraft.wiki.gg/wiki/{name.replace(' ', '_')}",
-        profile_items=[
-            {
-                "source_id": f"src-{location_id}",
-                "source_title": name,
-                "snippet": snippet,
-                "section_role": source_section_role,
-            }
-        ],
+        profile_items=profile_items,
         decision="include",
         source_section_role=source_section_role,
         zone_relevant=True,
@@ -301,32 +321,47 @@ def test_location_pool_does_not_fall_back_to_history_digest() -> None:
 
 
 def test_select_location_cards_suppresses_child_keep_when_parent_is_selected() -> None:
+    # Cause 1a: containment is a structural signal — the child's *lead paragraph* links to the
+    # parent. Mardenholde Keep's lead links to Hearthglen, so it folds into Hearthglen. Andorhal
+    # merely *mentions* Hearthglen in its body but its lead links only to the zone, so it is kept
+    # (the old substring test wrongly suppressed it).
     selected = select_location_cards(
         [
             _location_candidate(
                 "location-hearthglen",
                 "Hearthglen",
                 "Hearthglen is a major fortified settlement in Example Zone.",
+                lead_links=["Example Zone"],
             ),
             _location_candidate(
                 "location-mardenholde-keep",
                 "Mardenholde Keep",
                 "Mardenholde Keep is a keep within Hearthglen in Example Zone.",
                 source_section_role="maps_subregions",
+                lead_links=["Hearthglen", "Example Zone"],
+            ),
+            _location_candidate(
+                "location-andorhal",
+                "Andorhal",
+                "Andorhal lies near Hearthglen in Example Zone and once anchored grain trade.",
+                lead_links=["Example Zone"],
             ),
             _location_candidate(
                 "location-caer-darrow",
                 "Caer Darrow",
                 "Caer Darrow anchors the lake crossing in Example Zone.",
+                lead_links=["Example Zone"],
             ),
             _location_candidate(
                 "location-uthers-tomb",
                 "Uther's Tomb",
                 "Uther's Tomb marks a major memorial in Example Zone.",
+                lead_links=["Example Zone"],
             ),
         ]
     )
     names = [candidate.name for candidate in selected]
 
     assert "Hearthglen" in names
-    assert "Mardenholde Keep" not in names
+    assert "Andorhal" in names  # independent town: mentions Hearthglen but does not link to it
+    assert "Mardenholde Keep" not in names  # lead links to Hearthglen -> contained
