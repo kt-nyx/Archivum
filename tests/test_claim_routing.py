@@ -589,3 +589,31 @@ def test_safe_intent_excerpt_empty_without_outcome_tail() -> None:
     # A single realis assertion with no adversative tail stays filtered (returns "") so no
     # outcome ever leaks back in.
     assert safe_intent_excerpt({"claim_text": "She defeated Gandling in the Chamber of Summoning."}) == ""
+
+
+def test_key_character_route_excludes_setup_hook_and_active_labels() -> None:
+    # Fix 3: safe_setup_hook is deliberately NOT admitted at the route — it shares its labels with
+    # in-encounter mechanics, and this route also feeds paragraph reconstruction. The motivation hook
+    # is recovered instead in key_characters, cast/grammar-gated. Encounter mechanics and outcomes
+    # stay excluded here too.
+    from pipeline.generate.draft.claim_routing import SAFE_SETUP_HOOK, _claim_allowed_for_route
+    from pipeline.generate.draft.temporal import ACTIVE_STORYLINE
+
+    hook = {
+        "temporal_scope": ACTIVE_STORYLINE,
+        "spoiler_safety": SAFE_SETUP_HOOK,
+        "history_eligibility": "",
+    }
+    mechanics = {
+        "temporal_scope": ACTIVE_STORYLINE,
+        "spoiler_safety": ACTIVE_MECHANICS_STATE,
+        "history_eligibility": "",
+    }
+    outcome = {
+        "temporal_scope": ACTIVE_STORYLINE_OUTCOME,
+        "spoiler_safety": ACTIVE_OUTCOME,
+        "history_eligibility": "",
+    }
+    assert _claim_allowed_for_route(hook, KEY_CHARACTER_ROUTE) is False
+    assert _claim_allowed_for_route(mechanics, KEY_CHARACTER_ROUTE) is False
+    assert _claim_allowed_for_route(outcome, KEY_CHARACTER_ROUTE) is False

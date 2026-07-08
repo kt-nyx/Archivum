@@ -259,6 +259,39 @@ def key_character_unsafe_claim_views(
     return unsafe
 
 
+def key_character_setup_hook_claim_views(
+    items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Claim views labeled ``safe_setup_hook`` — the character's active-storyline motivation beats.
+
+    These are barred from the key-character route (they share their labels with in-encounter
+    mechanics), so they are surfaced here for the caller's grammar/cast-aware recovery of the
+    spoiler-safe "why they're here" lead-in. A pool with no claim views yields an empty list.
+    """
+    hooks: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        views = item.get(CLAIM_VIEW_KEY)
+        if not isinstance(views, list):
+            continue
+        for view in views:
+            if not isinstance(view, dict):
+                continue
+            if str(view.get("spoiler_safety", "")).strip() != SAFE_SETUP_HOOK:
+                continue
+            key = (
+                str(view.get("claim_id", "")).strip(),
+                str(view.get("claim_text", "")).strip(),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            hooks.append(view)
+    return hooks
+
+
 def route_claim_views_for_item(item: dict[str, Any], route: str) -> list[dict[str, Any]]:
     views = item.get(CLAIM_VIEW_KEY)
     if not isinstance(views, list):
@@ -490,6 +523,13 @@ def _claim_allowed_for_route(claim: dict[str, Any], route: str) -> bool:
             not spoiler_safety or spoiler_safety in _SAFE_CONTEXT
         )
     if route == KEY_CHARACTER_ROUTE:
+        # safe_setup_hook is deliberately NOT admitted here: the classifier gives a genuine
+        # motivation beat ("turned her wrath on the necromancers of this place") and an in-encounter
+        # mechanic ("Gandling forced her to fight the adventurers") the same active_storyline /
+        # safe_setup_hook labels, so a label-only rule cannot separate them — and this route also
+        # feeds paragraph reconstruction. The motivation hook is recovered instead in
+        # key_characters._recover_instance_setup_hooks, where the card's own cast identity and beat
+        # grammar (the character must be the agent, no other cast member present) tell them apart.
         return scope in {PRE_ENTRY_HISTORY, ENTRY_STATE} and spoiler_safety in {
             SAFE_BACKGROUND,
             SAFE_ENTRY_CONTEXT,

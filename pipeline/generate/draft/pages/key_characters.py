@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from pipeline.common.draft_vocab import expansion_release_order
+from pipeline.common.linguistics import action_relations
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.contracts.models import INSTANCE_MAX_KEY_CHARACTERS
 from pipeline.discovery.adventure_guide import (
@@ -28,7 +29,9 @@ from pipeline.discovery.instance_bosses import (
 from pipeline.generate.draft.claim_routing import (
     CLAIM_VIEW_KEY,
     KEY_CHARACTER_ROUTE,
+    SAFE_SETUP_HOOK,
     item_has_claim_views,
+    key_character_setup_hook_claim_views,
     key_character_unsafe_claim_views,
     reconstruct_safe_paragraph_excerpts,
     route_claim_views_for_pool,
@@ -439,6 +442,111 @@ def _beat_text(view: dict[str, Any]) -> str:
     return str(view.get("claim_text") or view.get("snippet", "")).strip()
 
 
+def _name_tokens(value: str) -> set[str]:
+    # Strip edge punctuation so a name at a clause/sentence boundary ("Gandling.") still matches its
+    # bare token ("gandling") — otherwise a trailing period would hide a cast member from the check.
+    tokens: set[str] = set()
+    for raw in str(value).lower().split():
+        token = raw.strip(".,;:!?'\"()[]{}—–-")
+        if token:
+            tokens.add(token)
+    return tokens
+
+
+def _beat_is_self_motivation(
+    text: str, *, self_name: str, other_cast_names: list[str]
+) -> bool:
+    """True when a setup-hook beat is the card character's OWN aim, not encounter play-by-play.
+
+    The classifier labels a genuine motivation beat ("Lilian turned her wrath on the necromancers of
+    this place") and an in-encounter mechanic ("Gandling forced Lilian to fight the adventurers")
+    identically, so this separates them by structure alone — grammar and cast identity, never
+    wording. A beat qualifies only when:
+
+      * no other cast member is named anywhere in it (drops interaction beats the dependency parse
+        misses via prepositions, e.g. "caught up with Gandling"); and
+      * the card character is a grammatical AGENT of the beat and is NOT the PATIENT of any action
+        (drops "Gandling forced her to fight …", where she is acted upon).
+    """
+    self_tokens = _name_tokens(self_name)
+    if not self_tokens:
+        return False
+    text_tokens = _name_tokens(text)
+    for other in other_cast_names:
+        other_tokens = _name_tokens(other)
+        if other_tokens and other_tokens != self_tokens and other_tokens <= text_tokens:
+            return False
+    relations = action_relations(text)
+    if not relations:
+        return False
+    self_is_agent = any(
+        self_tokens & _name_tokens(agent) for rel in relations for agent in rel.agents
+    )
+    if not self_is_agent:
+        return False
+    self_is_patient = any(
+        self_tokens & _name_tokens(patient) for rel in relations for patient in rel.patients
+    )
+    return not self_is_patient
+
+
+def _recover_instance_setup_hooks(
+    source_pool: list[dict[str, Any]],
+    *,
+    instance_name: str,
+    boss_name: str,
+    other_cast_names: list[str],
+    selected: list[dict[str, Any]],
+    limit: int = 2,
+) -> list[dict[str, Any]]:
+    """Recover the card character's spoiler-safe 'why they're here' motivation hook.
+
+    ``safe_setup_hook`` beats are barred from the key-character route because they share their labels
+    with in-encounter mechanics (and the route also feeds paragraph reconstruction). This re-admits
+    only the ones that are the character's own aim toward this place, gated by
+    :func:`_beat_is_self_motivation` — so the motivation lead-in reaches synthesis while the mechanics
+    and outcomes stay filtered. No-op when a safe instance beat is already selected, or for
+    paragraph-fallback pools (no claim views).
+    """
+    if not instance_name or not boss_name:
+        return []
+    instance_key = normalize_title(instance_name)
+    instance_lower = instance_name.lower()
+    if any(
+        _view_mentions_instance(view, instance_key=instance_key, instance_lower=instance_lower)
+        for view in selected
+    ):
+        return []
+    recovered: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for view in key_character_setup_hook_claim_views(source_pool):
+        if not _view_mentions_instance(
+            view, instance_key=instance_key, instance_lower=instance_lower
+        ):
+            continue
+        text = _beat_text(view)
+        if not text:
+            continue
+        if not _beat_is_self_motivation(
+            text, self_name=boss_name, other_cast_names=other_cast_names
+        ):
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        synthetic = dict(view)
+        # Detach from the source paragraph so the hook text survives synthesis-item collapse
+        # (a shared canonical id would let a same-paragraph background excerpt overwrite it).
+        synthetic["canonical_evidence_id"] = ""
+        synthetic["spoiler_safety"] = SAFE_SETUP_HOOK
+        synthetic["is_claim_view"] = True
+        recovered.append(synthetic)
+        if len(recovered) >= limit:
+            break
+    return recovered
+
+
 def _recover_instance_hook_intent(
     source_pool: list[dict[str, Any]],
     *,
@@ -491,6 +599,7 @@ def _key_character_summary_pool(
     *,
     instance_name: str = "",
     boss_name: str = "",
+    other_cast_names: list[str] | None = None,
     reference_arc: str = "",
     decisions_out: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
@@ -524,8 +633,21 @@ def _key_character_summary_pool(
             candidates, instance_name=instance_name, limit=KEY_CHARACTER_EVIDENCE_ITEM_LIMIT
         )
     ordered = _order_key_character_summary_views(selected, instance_name=instance_name)
-    # Cause 3: if the safety route dropped the only instance-hook beat, splice its spoiler-safe
-    # intent clause back in (chronologically last — it is the character's latest, current aim).
+    # Recover the character's spoiler-safe "why they're here" motivation hook — a safe_setup_hook
+    # beat the route drops — when it is the character's own aim (grammar/cast gated). Appended last:
+    # it is their latest, current aim leading into this place.
+    setup_hooks = _recover_instance_setup_hooks(
+        pool,
+        instance_name=instance_name,
+        boss_name=boss_name,
+        other_cast_names=other_cast_names or [],
+        selected=ordered,
+    )
+    for view in setup_hooks:
+        if view not in ordered:
+            ordered = ordered + [view]
+    # Cause 3 fallback: if no safe instance hook survived, splice the spoiler-safe intent clause of
+    # an otherwise-unsafe instance-hook beat (up to the first adversative connective).
     hook_views = _recover_instance_hook_intent(
         pool, instance_name=instance_name, selected=ordered
     )
@@ -785,6 +907,7 @@ def _finalize_key_characters(
                 source_pool,
                 instance_name=instance_name,
                 boss_name=candidate.name,
+                other_cast_names=other_cast_names,
                 reference_arc=ag_framing,
                 decisions_out=beat_decision,
             )

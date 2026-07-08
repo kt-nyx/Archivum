@@ -6,10 +6,12 @@ from pipeline.generate.draft.temporal import (
     ACTIVE_MECHANICS_STATE,
     ACTIVE_OUTCOME,
     ACTIVE_STORYLINE_OUTCOME,
+    AMBIGUOUS_TEMPORAL,
     ENTRY_STATE,
     HISTORY_BACKGROUND,
     HISTORY_EXCLUDED_OUTCOME,
     HISTORY_EXCLUDED_POST_ACTIVE,
+    HISTORY_NOT_APPLICABLE,
     HISTORY_SETUP_BRIDGE,
     POST_ACTIVE_LORE,
     POST_ACTIVE_REFERENCE,
@@ -731,3 +733,246 @@ def test_reclaimed_current_location_event_stays_history_eligible() -> None:
 
     assert by_id["h0"]["temporal_scope"] == ENTRY_STATE
     assert by_id["h0"]["history_eligibility"] == HISTORY_SETUP_BRIDGE
+
+
+# --- Character-biography spoiler classification (self-encounter, guard, LLM escalation) ---
+
+
+def _character_bio_record(
+    canonical_id: str,
+    *,
+    character_id: str,
+    character_name: str,
+    confidence: float = 0.86,
+    active_encounters: list[dict] | None = None,
+    active_conflicts: list[dict] | None = None,
+    active_expansion: dict | None = None,
+    raw_role: str = "",
+) -> CanonicalEvidenceRecord:
+    """A deterministic entry_state character-profile paragraph, with roster/contract context.
+
+    ``refs`` carry the profiled character's provenance (``character_id``/``character_name``) exactly
+    as a real character_pool row does, so the self-exclusion reads identity from structure.
+    """
+    paragraph = TemporalClassification(
+        scope=ENTRY_STATE,
+        confidence=confidence,
+        reason="entry structural role",
+        fallback_mode="deterministic",
+        history_eligibility=HISTORY_NOT_APPLICABLE,
+    )
+    contract: dict = {"name": "Scholomance"}
+    if active_encounters is not None:
+        contract["active_encounters"] = active_encounters
+    if active_conflicts is not None:
+        contract["active_conflicts"] = active_conflicts
+    if active_expansion is not None:
+        contract["active_expansion"] = active_expansion
+    boundary = {"boundary_id": "boundary-test", "entry_state_contract": contract}
+    appearance = {
+        "field_name": "character_pool",
+        "raw_section_role": raw_role,
+        "section_role": raw_role,
+    }
+    ref = {
+        "field_name": "character_pool",
+        "build_meta": {"character_id": character_id, "character_name": character_name},
+    }
+    return CanonicalEvidenceRecord(
+        canonical_evidence_id=canonical_id,
+        subject_id="instance-scholomance",
+        subject_type="instance",
+        source_id="src-scholomance-profile",
+        source_categories=[],
+        source_title=character_name,
+        snippet="(paragraph snippet)",
+        boundary=boundary,
+        appearances=[appearance],
+        refs=[ref],
+        structural_classifications=[],
+        classification=paragraph,
+    )
+
+
+def test_active_conflict_contract_match_excludes_self_terms() -> None:
+    # Fix 1 unit: a claim that only names the profiled character (who is also an instance encounter)
+    # must not read as resolving the conflict; a different encounter it names still anchors.
+    from pipeline.generate.draft.temporal import _claim_matches_active_conflict_contract
+
+    boundary = {
+        "entry_state_contract": {
+            "active_encounters": [
+                {"label": "Lilian Voss", "character_id": "character-lilian-voss"},
+                {"label": "Darkmaster Gandling", "character_id": "character-darkmaster-gandling"},
+            ]
+        }
+    }
+    self_claim = _claim(
+        "x", "event", "Lilian Voss began a campaign against the Scarlet Crusade.",
+        ["Lilian Voss", "Scarlet Crusade"], [0],
+    )
+    assert _claim_matches_active_conflict_contract(self_claim, boundary) is True
+    assert (
+        _claim_matches_active_conflict_contract(
+            self_claim, boundary, exclude_terms={"lilian voss"}
+        )
+        is False
+    )
+    cross_claim = _claim(
+        "y", "event", "Lilian Voss struck down Darkmaster Gandling.",
+        ["Lilian Voss", "Darkmaster Gandling"], [0],
+    )
+    assert (
+        _claim_matches_active_conflict_contract(
+            cross_claim, boundary, exclude_terms={"lilian voss"}
+        )
+        is True
+    )
+
+
+def test_profiled_character_terms_read_from_character_pool_provenance() -> None:
+    # Fix 1 unit: identity comes from the character_pool ref build_meta, never prose.
+    from pipeline.generate.draft.temporal import _profiled_character_terms
+
+    record = _character_bio_record(
+        "canonical-terms", character_id="character-lilian-voss", character_name="Lilian Voss"
+    )
+    terms = _profiled_character_terms(record)
+    assert "lilian voss" in terms
+    # A record with no character_pool ref yields nothing to exclude.
+    assert _profiled_character_terms(_entry_state_setup_bridge_record("canonical-none")) == set()
+
+
+def test_character_self_encounter_bio_stays_entry_state() -> None:
+    # Fix 1 + Fix 2 integrated (the Lilian case): the profiled character is a Scholomance encounter,
+    # so every biographical sentence names her. Her backstory must not be swept into an active
+    # outcome and filtered as a spoiler.
+    canonical_id = "canonical-lilian-bio"
+    record = _character_bio_record(
+        canonical_id,
+        character_id="character-lilian-voss",
+        character_name="Lilian Voss",
+        active_encounters=[{"label": "Lilian Voss", "character_id": "character-lilian-voss"}],
+    )
+    claims = [
+        _claim(
+            "b0", "event",
+            "Lilian Voss began a single-minded campaign against the Scarlet Crusade.",
+            ["Lilian Voss", "Scarlet Crusade"], [0],
+        ),
+        _claim(
+            "b1", "state", "Lilian Voss was the daughter of High Priest Voss.",
+            ["Lilian Voss", "High Priest Voss"], [1],
+        ),
+    ]
+    decision = {
+        "canonical_evidence_id": canonical_id,
+        "subject_id": "instance-scholomance",
+        "subject_type": "instance",
+        "claims": claims,
+        "appearances": [{"field_name": "character_pool"}],
+    }
+    by_id = _claim_rows_by_id(decision, record)
+    assert by_id["b0"]["temporal_scope"] == ENTRY_STATE
+    assert by_id["b1"]["temporal_scope"] == ENTRY_STATE
+
+
+def test_cross_encounter_outcome_in_character_bio_still_excluded() -> None:
+    # Fix 1 does not over-suppress: with the confidence too low for the setup-verdict guard to
+    # defer, a claim naming a different encounter still resolves to an active-storyline outcome.
+    canonical_id = "canonical-cross-bio"
+    record = _character_bio_record(
+        canonical_id,
+        character_id="character-lilian-voss",
+        character_name="Lilian Voss",
+        confidence=0.6,
+        active_encounters=[
+            {"label": "Lilian Voss", "character_id": "character-lilian-voss"},
+            {"label": "Darkmaster Gandling", "character_id": "character-darkmaster-gandling"},
+        ],
+    )
+    claims = [
+        _claim(
+            "c0", "event", "Lilian Voss struck down Darkmaster Gandling.",
+            ["Lilian Voss", "Darkmaster Gandling"], [0],
+        ),
+    ]
+    decision = {
+        "canonical_evidence_id": canonical_id,
+        "subject_id": "instance-scholomance",
+        "subject_type": "instance",
+        "claims": claims,
+        "appearances": [{"field_name": "character_pool"}],
+    }
+    by_id = _claim_rows_by_id(decision, record)
+    assert by_id["c0"]["temporal_scope"] == ACTIVE_STORYLINE_OUTCOME
+
+
+def test_confident_deterministic_character_bio_defers_global_conflict_match() -> None:
+    # Fix 2: a confident deterministic entry read of a character biography defers the weak global
+    # active-conflict match (parallel to the LLM-verdict deferral), so a backstory sentence that
+    # merely names a contested locus is not flipped to an outcome. Non-character (history_digest)
+    # paragraphs still relabel - see test_deterministic_setup_bridge_still_relabels_global_conflict.
+    canonical_id = "canonical-bio-global"
+    record = _character_bio_record(
+        canonical_id,
+        character_id="character-lilian-voss",
+        character_name="Lilian Voss",
+        confidence=0.86,
+        active_conflicts=[{"label": "Scarlet Crusade"}],
+    )
+    claims = [
+        _claim(
+            "g0", "event",
+            "Lilian Voss began a single-minded campaign against the Scarlet Crusade.",
+            ["Lilian Voss", "Scarlet Crusade"], [0],
+        ),
+    ]
+    decision = {
+        "canonical_evidence_id": canonical_id,
+        "subject_id": "instance-scholomance",
+        "subject_type": "instance",
+        "claims": claims,
+        "appearances": [{"field_name": "character_pool"}],
+    }
+    by_id = _claim_rows_by_id(decision, record)
+    assert by_id["g0"]["temporal_scope"] == ENTRY_STATE
+
+
+def test_character_biography_untagged_escalates_to_llm() -> None:
+    # Fix 4: an untagged character-profile paragraph the deterministic pass kept as entry_state only
+    # from roster presence - with no expansion tag to date it - is escalated to the boundary LLM.
+    from pipeline.generate.draft.temporal import _character_biography_needs_llm
+
+    record = _character_bio_record(
+        "canonical-untagged",
+        character_id="character-lilian-voss",
+        character_name="Lilian Voss",
+        active_expansion={"label": "Cataclysm", "rank": 3},
+        raw_role="",
+    )
+    escalated = _character_biography_needs_llm(record)
+    assert escalated is not None
+    assert escalated.scope == AMBIGUOUS_TEMPORAL
+    assert escalated.fallback_mode == "needs_llm"
+
+
+def test_character_biography_expansion_tagged_not_escalated() -> None:
+    # A tagged bio paragraph is datable by the deterministic recency floor, so it is NOT escalated.
+    from pipeline.generate.draft.temporal import _character_biography_needs_llm
+
+    record = _character_bio_record(
+        "canonical-tagged",
+        character_id="character-lilian-voss",
+        character_name="Lilian Voss",
+        active_expansion={"label": "Cataclysm", "rank": 3},
+        raw_role="shadowlands",
+    )
+    assert _character_biography_needs_llm(record) is None
+
+
+def test_non_character_paragraph_not_escalated() -> None:
+    # Fix 4 is scoped to character biographies: a zone history paragraph is never escalated.
+    from pipeline.generate.draft.temporal import _character_biography_needs_llm
+
+    assert _character_biography_needs_llm(_entry_state_setup_bridge_record("canonical-zone")) is None

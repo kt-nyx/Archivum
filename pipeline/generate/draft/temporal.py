@@ -421,6 +421,20 @@ def enrich_evidence_temporal_metadata(
             appearances=record.appearances,
         )
 
+    # Fix 4: escalate undecidable shared-character biography paragraphs (roster-pulled entry_state
+    # with no expansion tag) to the boundary LLM below, which can order them relative to the door.
+    # Live runs only — offline keeps the deterministic read so NO_LLM output stays stable, and the
+    # escalated records join the same cost-scoped, claim-eligible LLM candidate set as any other
+    # ambiguous paragraph (no extra pass).
+    if not _llm_temporal_adjudication_disabled():
+        for record in canonical_records:
+            escalated = _character_biography_needs_llm(record)
+            if escalated is not None:
+                record.classification = _with_canonical_history_defaults(
+                    escalated,
+                    appearances=record.appearances,
+                )
+
     # Cost scoping: only spend canonical LLM adjudication on fields whose claim views are rendered
     # (CLAIM_ELIGIBLE_FIELDS). Bulk descriptive pools (faction_pool, location_pool, quest_lore) keep
     # their deterministic classification and route at paragraph level — this is the dominant cost
@@ -916,6 +930,46 @@ def _character_profile_recency_override(
         boundary_id,
         "character_profile_recency_guard",
         event_label=classification.event_label,
+    )
+
+
+def _character_biography_needs_llm(
+    record: CanonicalEvidenceRecord,
+) -> TemporalClassification | None:
+    """Escalate an undecidable shared-character biography paragraph to the boundary LLM.
+
+    A character's whole-life wiki page routinely packs origin, in-instance action, and later
+    off-instance lore into one entry/overview-role paragraph. The deterministic pass reads such a
+    paragraph as ``entry_state`` purely from roster presence, and — when it carries no expansion
+    tag — the recency floor (:func:`_character_profile_recency_override`) cannot date it either.
+    Ordering it relative to THIS instance's door is a semantic question structural rules cannot
+    answer, so hand it to the boundary LLM (which sees the entry-state contract). Returns ``None``
+    unless the paragraph is a deterministically-classified ``character_pool`` entry/pre-entry read
+    with unknown expansion recency — so tagged bios, non-character evidence, and already-ambiguous
+    records are left untouched. The caller gates this to live runs; offline keeps the deterministic
+    read so NO_LLM output stays stable.
+    """
+    classification = record.classification
+    if classification is None or classification.fallback_mode != "deterministic":
+        return None
+    if classification.scope not in {ENTRY_STATE, PRE_ENTRY_HISTORY}:
+        return None
+    if not _record_appears_in_character_pool(record):
+        return None
+    recency = _expansion_recency(
+        _paragraph_expansion_rank(record), _active_expansion_rank(record.boundary)
+    )
+    if recency != "unknown":
+        return None
+    boundary_id = str(record.boundary.get("boundary_id", "")).strip()
+    return TemporalClassification(
+        AMBIGUOUS_TEMPORAL,
+        min(classification.confidence, 0.5),
+        "character_biography_requires_boundary_classification",
+        boundary_id,
+        "character_biography_boundary_escalation",
+        event_label=classification.event_label,
+        fallback_mode="needs_llm",
     )
 
 
@@ -1953,16 +2007,24 @@ def _claim_sentence_indexes(claim: dict[str, Any]) -> set[int]:
     return indexes
 
 
-def _claim_matches_active_conflict_contract(claim: dict[str, Any], boundary: dict[str, Any]) -> bool:
+def _claim_matches_active_conflict_contract(
+    claim: dict[str, Any],
+    boundary: dict[str, Any],
+    *,
+    exclude_terms: frozenset[str] | set[str] = frozenset(),
+) -> bool:
     """True when the claim's resolved entities match a contested/active contract locus.
 
     Matches exact normalized entity labels/IDs against the active-conflict contract fields only,
-    never substring scans over prose.
+    never substring scans over prose. ``exclude_terms`` drops self-referential identity terms (the
+    page subject and, for a character biography, the profiled character) before matching, so a claim
+    that only names itself — e.g. every sentence of a cast member who is also an instance encounter —
+    does not read as resolving the conflict.
     """
     contract = boundary.get("entry_state_contract")
     if not isinstance(contract, dict):
         return False
-    entity_terms = _claim_entity_terms(claim)
+    entity_terms = _claim_entity_terms(claim) - set(exclude_terms)
     if not entity_terms:
         return False
     for contract_field in _ACTIVE_CONFLICT_CONTRACT_FIELDS:
@@ -2003,23 +2065,33 @@ def _active_storyline_outcome_classification(
 _LLM_PARAGRAPH_VERDICT_MIN_CONFIDENCE = 0.7
 
 
-def _paragraph_has_confident_llm_verdict(record: CanonicalEvidenceRecord) -> bool:
-    """True when the page's LLM boundary pass confidently classified this whole paragraph.
+def _paragraph_has_confident_setup_verdict(record: CanonicalEvidenceRecord) -> bool:
+    """True when the paragraph carries a confident entry/setup verdict that a bare global
+    contract name-match must not override.
 
-    The canonical (paragraph-level) adjudicator sees the full paragraph in context, so its
-    confident verdict is authoritative: deterministic claim passes may refine *within* it (e.g.
-    excluding a resolving sentence flagged by a within-paragraph ``encounter_state`` sibling), but
-    must never flip it on the strength of a broad *global* signal alone — an instance paragraph
-    that merely NAMES a contested place while describing who now holds the site is standing setup,
-    not a resolution of that conflict (the Scholomance/Gandling case). The reliable
-    within-paragraph ``encounter_state`` sibling signal is unaffected and still anchors outcomes.
+    Used to defer the *weak global* active-conflict anchor: if we are already confident the whole
+    paragraph is standing setup, a claim that merely NAMES a contested locus does not resolve it (the
+    Scholomance/Gandling and character-biography cases). The *strong local* signal — an in-paragraph
+    ``encounter_state`` sibling — is unaffected and still anchors genuine outcomes.
+
+    Two verdicts qualify, on confidence + scope + fallback_mode alone (never wording):
+      * the page's LLM boundary pass, which saw the full paragraph in context; and
+      * a high-confidence deterministic entry/pre-entry read of a **character-profile** paragraph,
+        where the whole life sits in one entry/overview-role lead and the deterministic "current"
+        read comes only from roster presence. This is scoped to ``character_pool`` so zone
+        current-state overviews keep the global anchor.
     """
     classification = record.classification
     if classification is None:
         return False
+    if classification.confidence < _LLM_PARAGRAPH_VERDICT_MIN_CONFIDENCE:
+        return False
+    if classification.fallback_mode == "llm_boundary":
+        return True
     return (
-        classification.fallback_mode == "llm_boundary"
-        and classification.confidence >= _LLM_PARAGRAPH_VERDICT_MIN_CONFIDENCE
+        classification.fallback_mode == "deterministic"
+        and classification.scope in {ENTRY_STATE, PRE_ENTRY_HISTORY}
+        and _record_appears_in_character_pool(record)
     )
 
 
@@ -2037,6 +2109,30 @@ def _subject_name_terms(record: CanonicalEvidenceRecord) -> set[str]:
     contract = record.boundary.get("entry_state_contract")
     if isinstance(contract, dict):
         _add_normalized_contract_term(terms, contract.get("name"))
+    terms.discard("")
+    return terms
+
+
+def _profiled_character_terms(record: CanonicalEvidenceRecord) -> set[str]:
+    """Normalized identity terms for the character a character-profile paragraph is about.
+
+    A cast member is frequently one of the instance's own ``active_encounters``/current inhabitants,
+    so every sentence of their crawled biography names an entity that matches the contract. That
+    roster self-match must not mark their backstory as an active-conflict outcome (the Lilian Voss
+    case). This mirrors :func:`_subject_name_terms` — the page subject's own name is already excluded
+    from the contested-locus set — extended to whichever character the profile paragraph is a
+    biography of. Keyed off the ``character_id``/``character_name`` carried on the ``character_pool``
+    appearance's provenance, never a name scanned from prose.
+    """
+    terms: set[str] = set()
+    for ref in record.refs:
+        if str(ref.get("field_name", "")).strip() != "character_pool":
+            continue
+        build_meta = ref.get("build_meta")
+        if not isinstance(build_meta, dict):
+            continue
+        _add_normalized_contract_term(terms, build_meta.get("character_id"))
+        _add_normalized_contract_term(terms, build_meta.get("character_name"))
     terms.discard("")
     return terms
 
@@ -2063,18 +2159,22 @@ def _propagate_active_storyline_outcomes(
     the safe-setup/exclude-outcome split from clarification Q2 of the temporal tracker.
     """
     for entries in entries_by_canonical.values():
-        subject_terms: set[str] = set()
+        # Self-referential identity: the page subject and — for a character biography — the profiled
+        # character. A claim that only names itself must never anchor an outcome (a cast member who
+        # is also an instance encounter otherwise matches the roster on every biographical sentence).
+        self_terms: set[str] = set()
         for entry in entries:
-            subject_terms |= _subject_name_terms(entry["record"])
+            self_terms |= _subject_name_terms(entry["record"])
+            self_terms |= _profiled_character_terms(entry["record"])
 
         # Entities a sibling encounter_state claim marks as an active, unresolved conflict locus,
-        # minus the subject's own name (too broad — it would over-match safe sentences).
+        # minus self-referential names (too broad — they would over-match safe sentences).
         contested_terms: set[str] = set()
         for entry in entries:
             claim = entry["claim"]
             if str(claim.get("claim_type", "")).strip() == "encounter_state":
                 contested_terms |= _claim_entity_terms(claim)
-        contested_terms -= subject_terms
+        contested_terms -= self_terms
 
         anchor_sentences: set[int] = set()
         for entry in entries:
@@ -2092,9 +2192,9 @@ def _propagate_active_storyline_outcomes(
             # it" — merely NAMES the contested place; it does not resolve that conflict. Defer to
             # that considered paragraph verdict rather than let the global match override it.
             resolves_contract = _claim_matches_active_conflict_contract(
-                claim, entry["record"].boundary
+                claim, entry["record"].boundary, exclude_terms=self_terms
             )
-            if resolves_contract and _paragraph_has_confident_llm_verdict(entry["record"]):
+            if resolves_contract and _paragraph_has_confident_setup_verdict(entry["record"]):
                 resolves_contract = False
             if resolves_local or resolves_contract:
                 anchor_sentences |= _claim_sentence_indexes(claim)
