@@ -69,14 +69,15 @@ def _present_state_rank_key(row: dict[str, Any]) -> tuple[int, int]:
 # A key-character card draws on a curated per-figure profile pool, so it gets a larger evidence
 # window than the default short fields. The default 8 starved rich figures (Lilian Voss routed 27
 # safe claim views): the cap fell before the motivation that explains the figure's presence, leaving
-# the model to pad with atmosphere. Pairs with the presence-first ordering in key_characters.py so
-# the kept window holds the claims that matter.
-KEY_CHARACTER_EVIDENCE_ITEM_LIMIT = 14
+# the model to pad with atmosphere. Sized alongside the raised card word budget so more of the arc
+# (origin -> transformation -> motivation) reaches synthesis; pairs with the presence-first ordering
+# in key_characters.py so the kept window holds the claims that matter.
+KEY_CHARACTER_EVIDENCE_ITEM_LIMIT = 20
 
 # Upper bound on beats shown to the salience ranker, so its prompt stays small on figures with a
 # large route-safe pool (Lilian Voss routes dozens of atomized biography claims). The deterministic
 # era-balanced selection trims to this before the LLM ranks within it.
-KEY_CHARACTER_RANKER_INPUT_LIMIT = 28
+KEY_CHARACTER_RANKER_INPUT_LIMIT = 36
 
 
 def _wiki_first_no_llm() -> bool:

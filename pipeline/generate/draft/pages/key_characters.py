@@ -88,7 +88,9 @@ _MIN_BIOGRAPHY_EVIDENCE_WORDS = 22
 _KEY_CHARACTER_THROUGH_LINE_MIN_WORDS = (MIN_KEY_CHARACTER_WORDS + TARGET_KEY_CHARACTER_WORDS) // 2
 
 
-def _through_line_soft_reasons(summary: str, *, instance_name: str) -> list[str]:
+def _through_line_soft_reasons(
+    summary: str, *, instance_name: str, target_words: int | None = None
+) -> list[str]:
     """Soft retry trigger for a short origin-stub card (drives richness, never fails the field).
 
     Fires when the synthesized card lands near the hard word floor: a full origin -> presence
@@ -96,16 +98,30 @@ def _through_line_soft_reasons(summary: str, *, instance_name: str) -> list[str]
     are" and dropped the "why they are here" beat that makes it useful. Returns a plain-language
     reason the retry feeds back to the model; ``synthesize_with_validation`` treats it as soft, so
     an unavoidably thin figure still ships its best attempt.
+
+    ``target_words`` is the evidence-proportional target for this card (the caller caps it at what
+    the source supports). When it is near the hard floor — a genuinely thin figure — the card is not
+    pushed at all: there is nothing to develop the through-line from, so retrying would only invite
+    filler. With no target given, the fixed midpoint floor is used (offline / direct callers).
     """
     if not summary.strip():
         return []
-    if word_count(summary) >= _KEY_CHARACTER_THROUGH_LINE_MIN_WORDS:
+    if target_words is None:
+        threshold = _KEY_CHARACTER_THROUGH_LINE_MIN_WORDS
+        aim = TARGET_KEY_CHARACTER_WORDS
+    else:
+        # Thin evidence: do not push a card the source cannot support beyond the floor.
+        if target_words <= MIN_KEY_CHARACTER_WORDS + 5:
+            return []
+        threshold = (MIN_KEY_CHARACTER_WORDS + target_words) // 2
+        aim = target_words
+    if word_count(summary) >= threshold:
         return []
     place = instance_name or "this place"
     return [
         "the summary is short and reads as an origin stub — develop the through-line that explains "
         f"why this figure is present in {place} now (the history, motivations, or allegiances that "
-        f"brought them here), aiming for about {TARGET_KEY_CHARACTER_WORDS} words"
+        f"brought them here), aiming for about {aim} words"
     ]
 
 
@@ -636,6 +652,7 @@ def _key_character_summary_pool(
     # Recover the character's spoiler-safe "why they're here" motivation hook — a safe_setup_hook
     # beat the route drops — when it is the character's own aim (grammar/cast gated). Appended last:
     # it is their latest, current aim leading into this place.
+    recovered_hooks: list[dict[str, Any]] = []
     setup_hooks = _recover_instance_setup_hooks(
         pool,
         instance_name=instance_name,
@@ -646,13 +663,23 @@ def _key_character_summary_pool(
     for view in setup_hooks:
         if view not in ordered:
             ordered = ordered + [view]
+            recovered_hooks.append(view)
     # Cause 3 fallback: if no safe instance hook survived, splice the spoiler-safe intent clause of
     # an otherwise-unsafe instance-hook beat (up to the first adversative connective).
     hook_views = _recover_instance_hook_intent(
         pool, instance_name=instance_name, selected=ordered
     )
-    if hook_views:
-        ordered = ordered + [view for view in hook_views if view not in ordered]
+    for view in hook_views:
+        if view not in ordered:
+            ordered = ordered + [view]
+            recovered_hooks.append(view)
+    # Pin the recovered hook within the synthesis evidence window. It is appended last (the current
+    # aim), so on a figure with a full selection it could fall outside the ``max_items`` cap the
+    # synthesizer shows. Drop the lowest-priority background beats instead — never the lead-in.
+    if recovered_hooks and len(ordered) > KEY_CHARACTER_EVIDENCE_ITEM_LIMIT:
+        others = [view for view in ordered if view not in recovered_hooks]
+        keep = max(0, KEY_CHARACTER_EVIDENCE_ITEM_LIMIT - len(recovered_hooks))
+        ordered = others[:keep] + recovered_hooks
     if decisions_out is not None:
         kept_texts = {_beat_text(view) for view in ordered}
         decisions_out["method"] = method
@@ -996,14 +1023,29 @@ def _finalize_key_characters(
                     gate = [str(row.get("snippet", "")) for row in items]
                     if ag_framing:
                         gate.append(ag_framing)
+                    # Evidence-proportional target: never ask for more words than the source can
+                    # support, so a rich figure gets the full arc while a thin one (a short seed,
+                    # a lone sentence) is not padded toward the ceiling. Anti-filler by construction.
+                    evidence_words = sum(
+                        word_count(str(row.get("snippet", ""))) for row in items
+                    )
+                    effective_target = max(
+                        MIN_KEY_CHARACTER_WORDS,
+                        min(TARGET_KEY_CHARACTER_WORDS, evidence_words),
+                    )
 
-                    def _call(reinforce: str, items: list[dict[str, Any]] = items) -> dict[str, Any]:
+                    def _call(
+                        reinforce: str,
+                        items: list[dict[str, Any]] = items,
+                        target: int = effective_target,
+                    ) -> dict[str, Any]:
                         text, used_ids = synthesize_key_character_summary(
                             items,
                             boss_name=candidate.name,
                             instance_name=instance_name,
                             structural_role=structural_role,
                             max_words=MAX_KEY_CHARACTER_WORDS,
+                            target_words=target,
                             reinforce=reinforce,
                             **summary_kwargs,
                         )
@@ -1012,10 +1054,13 @@ def _finalize_key_characters(
                     # Drive one retry toward the target when an evidence-backed card lands as a short
                     # origin stub. Soft: it never fails the field, so a thin figure still ships. Not
                     # applied to the structural-presence seed (a fixed template with no evidence to
-                    # expand — retries there would only burn calls and re-ship the same blurb).
+                    # expand — retries there would only burn calls and re-ship the same blurb), and
+                    # bounded by the same evidence-proportional target so a thin card is not pushed.
                     validate_soft = (
                         (lambda payload: _through_line_soft_reasons(
-                            str(payload.get("text", "")), instance_name=instance_name
+                            str(payload.get("text", "")),
+                            instance_name=instance_name,
+                            target_words=effective_target,
                         ))
                         if soft_through_line
                         else None

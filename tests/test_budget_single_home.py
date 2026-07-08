@@ -21,7 +21,7 @@ from pipeline.generate.draft.prose_lint import MAX_AT_A_GLANCE_WORDS
 
 def test_key_character_budget_derives_from_registry() -> None:
     rule = INSTANCE_BUDGET_RULES["key_characters_card_summary"]
-    assert (rule.min_words, rule.max_words) == (25, 60)
+    assert (rule.min_words, rule.max_words) == (25, 115)
     assert instance_lint.MIN_KEY_CHARACTER_WORDS == rule.min_words
     assert instance_lint.MAX_KEY_CHARACTER_WORDS == rule.max_words
 

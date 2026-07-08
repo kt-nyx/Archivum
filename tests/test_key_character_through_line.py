@@ -46,6 +46,19 @@ def test_through_line_soft_reason_silent_on_empty() -> None:
     assert _through_line_soft_reasons("   ", instance_name="Scholomance") == []
 
 
+def test_through_line_soft_reason_not_pushed_when_evidence_is_thin() -> None:
+    # Anti-filler: when the evidence-proportional target is near the hard floor (a thin figure),
+    # a short card is NOT pushed — there is nothing to develop the through-line from.
+    assert _through_line_soft_reasons(_JANDICE_STUB, instance_name="Scholomance", target_words=27) == []
+
+
+def test_through_line_soft_reason_uses_adaptive_target() -> None:
+    # With a rich target, a short card fires and the retry aims for that target (not a fixed one).
+    reasons = _through_line_soft_reasons(_JANDICE_STUB, instance_name="Scholomance", target_words=80)
+    assert reasons
+    assert "80 words" in reasons[0]
+
+
 def test_through_line_threshold_sits_between_floor_and_target() -> None:
     # The soft floor must be above the hard minimum (else it never fires) and below the target
     # (else a card at target would still be re-prompted).

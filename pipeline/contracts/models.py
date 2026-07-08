@@ -638,8 +638,13 @@ INSTANCE_BUDGET_RULES: dict[str, BudgetRule] = {
     "story_context": BudgetRule(
         target_words=105, min_words=70, max_words=160, severity=BudgetSeverity.HARD_FAIL
     ),
+    # Sized for who-they-are -> biography -> why-they're-here, now that spoiler-safe backstory and
+    # the motivation hook actually reach synthesis. The floor stays low so a genuinely thin figure
+    # (structural-presence blurb) still ships; the synthesizer's target is capped per-card at what
+    # the evidence supports (see key_characters._run_validated), so the raised ceiling grows rich
+    # cards without padding thin ones.
     "key_characters_card_summary": BudgetRule(
-        target_words=42, min_words=25, max_words=60, severity=BudgetSeverity.WARN
+        target_words=80, min_words=25, max_words=115, severity=BudgetSeverity.WARN
     ),
 }
 
