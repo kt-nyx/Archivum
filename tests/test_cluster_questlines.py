@@ -325,11 +325,7 @@ def test_build_zone_page_filters_excluded_clusters_by_ranking() -> None:
         {},
         {"final_decision": "include"},
         included_cluster_ids=["included-arc"],
-        questline_cluster_decision_map={
-            "included-arc": {"final_decision": "include", "reason_codes": ["score_threshold_met"]},
-            "excluded-arc": {"final_decision": "exclude", "reason_codes": ["local_side_content"]},
-        },
     )
     assert len(draft["major_questlines"]) == 1
     assert draft["major_questlines"][0]["id"] == "ql-included-arc"
-    assert draft["major_questlines"][0]["reason_codes"] == ["score_threshold_met"]
+    assert draft["major_questlines"][0]["reason_codes"] == ["graph_depth"]

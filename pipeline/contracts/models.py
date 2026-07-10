@@ -317,13 +317,14 @@ class QuestlineCardMetadata(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["questline_card_metadata.v1"] = "questline_card_metadata.v1"
+    schema_version: Literal["questline_card_metadata.v2"] = "questline_card_metadata.v2"
     metadata_id: str = Field(pattern=ID_PATTERN)
     zone_id: str = Field(pattern=ID_PATTERN)
     cluster_id: str = Field(pattern=ID_PATTERN)
     source_arc_id: str = Field(pattern=ID_PATTERN)
     card_id: str = Field(pattern=ID_PATTERN)
-    display_title: str = Field(min_length=1)
+    canonical_id: str = Field(pattern=ID_PATTERN)
+    base_title: str = Field(min_length=1)
     faction: str = Field(min_length=1)
     faction_variant: str | None = None
     phase_variant: str | None = None
@@ -338,6 +339,8 @@ class QuestlineCardMetadata(BaseModel):
 
     @model_validator(mode="after")
     def validate_chain_contract(self) -> QuestlineCardMetadata:
+        if self.canonical_id != self.card_id:
+            raise ValueError("canonical_id must equal card_id")
         if self.start_anchor_ref not in self.chain_refs + self.overflow_chain_refs:
             raise ValueError("start_anchor_ref must belong to the serialized quest chain")
         refs = self.chain_refs + self.overflow_chain_refs
@@ -351,9 +354,117 @@ class QuestlineCardMetadataArtifact(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["questline_card_metadata.v1"] = "questline_card_metadata.v1"
+    schema_version: Literal["questline_card_metadata.v2"] = "questline_card_metadata.v2"
     producer: Literal["discovery.questline_card_polish"] = "discovery.questline_card_polish"
     metadata: list[QuestlineCardMetadata] = Field(default_factory=list)
+
+
+class ArcSignalEvidence(BaseModel):
+    """Structured source signal used to form or rank a story-arc family."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    signal: Literal[
+        "shared_hub",
+        "recurring_actor",
+        "recurring_organization",
+        "prerequisite_followup",
+        "conflict_theme",
+        "faction",
+        "phase_expansion",
+    ]
+    values: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
+class ArcCandidate(BaseModel):
+    """A graph-component input expressed as an auditable arc candidate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_id: str = Field(pattern=ID_PATTERN)
+    zone_id: str = Field(pattern=ID_PATTERN)
+    component_ids: list[str] = Field(min_length=1)
+    quest_node_ids: list[str] = Field(min_length=1)
+    base_title: str = Field(min_length=1)
+    faction_variant: str | None = None
+    phase_variant: str | None = None
+    signal_evidence: list[ArcSignalEvidence] = Field(default_factory=list)
+    coherent_score: float = Field(ge=0)
+    reason_codes: list[str] = Field(default_factory=list)
+
+
+class ArcFamily(BaseModel):
+    """A campaign family with one or more independently playable variants."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    family_id: str = Field(pattern=ID_PATTERN)
+    zone_id: str = Field(pattern=ID_PATTERN)
+    base_title: str = Field(min_length=1)
+    candidate_ids: list[str] = Field(min_length=1)
+    signal_evidence: list[ArcSignalEvidence] = Field(default_factory=list)
+    coherent_score: float = Field(ge=0)
+
+
+class ArcFamilyDecision(BaseModel):
+    """A bounded merge/split/selection decision with its structured evidence."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    decision_id: str = Field(pattern=ID_PATTERN)
+    zone_id: str = Field(pattern=ID_PATTERN)
+    decision: Literal["merge", "split", "keep_separate", "include", "exclude"]
+    candidate_ids: list[str] = Field(min_length=1)
+    family_id: str | None = None
+    reason_codes: list[str] = Field(default_factory=list)
+    signal_evidence: list[ArcSignalEvidence] = Field(default_factory=list)
+    adjudication: dict[str, str] | None = None
+
+
+class ArcCoverage(BaseModel):
+    """Coverage state for a zone's family-first arc selection."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    zone_id: str = Field(pattern=ID_PATTERN)
+    status: Literal["coverage_met", "insufficient_viable_arc_variants"]
+    selected_candidate_ids: list[str] = Field(default_factory=list)
+    attempted_candidate_ids: list[str] = Field(default_factory=list)
+    reason_codes: list[str] = Field(default_factory=list)
+
+
+class QuestlineArcSelectionArtifact(BaseModel):
+    """Versioned family-first questline selection handoff for discovery consumers."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["questline_arc_selection.v1"] = "questline_arc_selection.v1"
+    producer: Literal["discovery.questline_significance"] = "discovery.questline_significance"
+    candidates: list[ArcCandidate] = Field(default_factory=list)
+    families: list[ArcFamily] = Field(default_factory=list)
+    decisions: list[ArcFamilyDecision] = Field(default_factory=list)
+    selected_candidate_ids_by_zone: dict[str, list[str]] = Field(default_factory=dict)
+    family_rankings_by_zone: dict[str, list[str]] = Field(default_factory=dict)
+    coverage: list[ArcCoverage] = Field(default_factory=list)
+    exclusions: list[ArcFamilyDecision] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_selected_candidates(self) -> QuestlineArcSelectionArtifact:
+        candidates = {candidate.candidate_id: candidate for candidate in self.candidates}
+        for zone_id, selected_ids in self.selected_candidate_ids_by_zone.items():
+            labels: set[str] = set()
+            for candidate_id in selected_ids:
+                candidate = candidates.get(candidate_id)
+                if candidate is None or candidate.zone_id != zone_id:
+                    raise ValueError("arc selection references an unknown candidate")
+                label = " ".join(
+                    part for part in (candidate.base_title, candidate.faction_variant, candidate.phase_variant) if part
+                ).casefold()
+                if label in labels:
+                    raise ValueError("arc selection has duplicate normalized variant labels")
+                labels.add(label)
+        return self
 
 
 class DecisionArtifact(BaseModel):

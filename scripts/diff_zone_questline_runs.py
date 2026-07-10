@@ -92,9 +92,9 @@ def build_diff(
         "baseline_card_count": len(baseline_cards),
         "candidate_card_count": len(candidate_cards),
         "rankings_changed": _load_json(
-            baseline_root / "data" / "discovery" / "zone_quest_cluster_rankings.json"
+            baseline_root / "data" / "discovery" / "questline_arc_selection.json"
         )
-        != _load_json(candidate_root / "data" / "discovery" / "zone_quest_cluster_rankings.json"),
+        != _load_json(candidate_root / "data" / "discovery" / "questline_arc_selection.json"),
         "metadata_changed": _load_json(
             baseline_root / "data" / "discovery" / "zone_questline_card_metadata.json"
         )

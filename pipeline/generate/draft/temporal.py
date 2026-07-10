@@ -3173,7 +3173,7 @@ def _build_zone_entry_state_contract(
         ]
         late_snippets = [_truncate(snippet, _BOUNDARY_SNIPPET_LIMIT) for snippet in late_snippets if snippet]
         title = str(
-            card.get("display_title")
+            card.get("base_title")
             or card.get("title")
             or card.get("start_anchor")
             or cluster_id

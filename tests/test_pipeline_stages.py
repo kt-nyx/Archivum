@@ -240,7 +240,7 @@ def test_wiki_first_stage_chain_includes_discovery_and_enrich(
         ingest_output["source_manifest_path"],
         phase="significance",
     )
-    assert significance_outputs["zone_quest_cluster_rankings"].exists()
+    assert significance_outputs["questline_arc_selection"].exists()
 
     card_polish_outputs = run_discovery_enrich_stage(
         context,
@@ -251,15 +251,15 @@ def test_wiki_first_stage_chain_includes_discovery_and_enrich(
     metadata = json.loads(
         card_polish_outputs["zone_questline_card_metadata"].read_text(encoding="utf-8")
     )
-    assert metadata["schema_version"] == "questline_card_metadata.v1"
+    assert metadata["schema_version"] == "questline_card_metadata.v2"
     assert metadata["producer"] == "discovery.questline_card_polish"
     assert isinstance(metadata["metadata"], list)
-    decisions = json.loads(
-        significance_outputs["questline_inclusion_decisions"].read_text(encoding="utf-8")
+    selection = json.loads(
+        significance_outputs["questline_arc_selection"].read_text(encoding="utf-8")
     )
-    cluster_decisions = [row for row in decisions if row.get("subject_type") == "questline_cluster"]
-    assert cluster_decisions
-    assert any(row.get("final_decision") == "include" for row in cluster_decisions)
+    assert selection["schema_version"] == "questline_arc_selection.v1"
+    assert selection["candidates"]
+    assert any(selection["selected_candidate_ids_by_zone"].values())
 
     clustered_v3 = json.loads(cluster_outputs["zone_quest_graph_v3"].read_text(encoding="utf-8"))
     quest_cluster_ids = {

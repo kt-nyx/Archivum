@@ -9,7 +9,7 @@ from typing import Any
 
 from pipeline.common.run_context import RunContext
 from pipeline.contracts.models import LocationSelectionArtifact, QuestlineCardMetadataArtifact
-from pipeline.discovery.questline_significance import load_included_cluster_ids_by_zone
+from pipeline.discovery.questline_significance import selected_candidate_ids_by_zone
 from pipeline.ingest.snapshots import load_source_snapshots
 
 
@@ -140,11 +140,12 @@ def load_validation_run_resources(run_root: Path) -> ValidationRunResources:
         resources.location_decisions = [row.model_dump(mode="json") for row in artifact.decisions]
         resources.location_coverage = [row.model_dump(mode="json") for row in artifact.coverage]
 
-    rankings_path = run_root / "data" / "discovery" / "zone_quest_cluster_rankings.json"
-    if rankings_path.exists():
-        blob = json.loads(rankings_path.read_text(encoding="utf-8"))
-        if isinstance(blob, list):
-            resources.questline_cluster_rankings = [row for row in blob if isinstance(row, dict)]
+    arc_selection_path = run_root / "data" / "discovery" / "questline_arc_selection.json"
+    if arc_selection_path.exists():
+        resources.questline_cluster_rankings = [
+            {"zone_id": zone_id, "included_cluster_ids": candidate_ids}
+            for zone_id, candidate_ids in selected_candidate_ids_by_zone(arc_selection_path).items()
+        ]
 
     metadata_path = run_root / "data" / "discovery" / "zone_questline_card_metadata.json"
     if metadata_path.exists():
@@ -212,7 +213,11 @@ def wiki_first_entity_flags(
         ),
         "",
     )
-    rankings_by_zone = load_included_cluster_ids_by_zone(questline_cluster_rankings)
+    rankings_by_zone = {
+        str(row.get("zone_id", "")): [str(value) for value in row.get("included_cluster_ids", [])]
+        for row in questline_cluster_rankings
+        if isinstance(row, dict)
+    }
     questline_included_cluster_ids = rankings_by_zone.get(entity_id, [])
     questline_card_metadata_by_cluster = {
         str(row.get("cluster_id", "")).strip(): row

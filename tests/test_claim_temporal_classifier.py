@@ -174,7 +174,7 @@ def test_active_storyline_outcome_claim_is_unsafe(monkeypatch) -> None:
         questline_card_metadata={
             "cluster-1": {
                 "zone_id": "zone-example",
-                "display_title": "Battle for Andorhal",
+                "base_title": "Battle for Andorhal",
                 "chain_refs": ["q1", "q2", "q3", "q4"],
             }
         },

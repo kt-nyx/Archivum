@@ -66,21 +66,21 @@ def test_zone_entry_state_contract_uses_setup_records_not_late_outcomes() -> Non
         questline_card_metadata={
             "andorhal": {
                 "zone_id": "zone-example",
-                "display_title": "Andorhal Campaign",
+                    "base_title": "Andorhal Campaign",
                 "faction": "alliance",
                 "start_anchor": "Hero's Call",
                 "chain_refs": ["q1", "q2", "q3", "q4"],
             },
             "hearthglen": {
                 "zone_id": "zone-example",
-                "display_title": "Hearthglen Muster",
+                    "base_title": "Hearthglen Muster",
                 "faction": "shared",
                 "start_anchor": "An Audience with the Highlord",
                 "chain_refs": ["h1"],
             },
             "gahrrons": {
                 "zone_id": "zone-example",
-                "display_title": "The Renewed Plague",
+                    "base_title": "The Renewed Plague",
                 "faction": "shared",
                 "start_anchor": "Gahrron's Withering Cauldron",
                 "chain_refs": ["g1", "g2"],
@@ -399,7 +399,8 @@ def test_selected_metadata_round_trips_into_entry_state_setup_evidence(
                         "cluster_id": "arc-lantern-watch",
                         "source_arc_id": "arc-lantern-watch",
                         "card_id": "ql-arc-lantern-watch",
-                        "display_title": "Lantern Watch",
+                            "canonical_id": "ql-arc-lantern-watch",
+                            "base_title": "Lantern Watch",
                         "faction": "shared",
                         "start_anchor": "Lantern Call",
                         "start_anchor_ref": "quest-lantern-call",
@@ -476,7 +477,7 @@ def test_selected_metadata_round_trips_into_entry_state_setup_evidence(
             "cluster_id": "arc-broken",
             "source_arc_id": "arc-broken",
             "card_id": "ql-broken",
-            "display_title": "Broken Arc",
+            "base_title": "Broken Arc",
             "faction": "shared",
             "start_anchor": "Missing Start",
             "start_anchor_ref": "quest-missing",
@@ -489,7 +490,7 @@ def test_selected_metadata_round_trips_into_entry_state_setup_evidence(
             "cluster_id": "arc-order",
             "source_arc_id": "arc-order",
             "card_id": "ql-order",
-            "display_title": "Order Arc",
+            "base_title": "Order Arc",
             "faction": "shared",
             "start_anchor": "Entry",
             "start_anchor_ref": "quest-entry",
@@ -503,7 +504,7 @@ def test_invalid_metadata_artifact_fails_fast(tmp_path, metadata: dict) -> None:
     path.write_text(
         json.dumps(
             {
-                "schema_version": "questline_card_metadata.v1",
+                "schema_version": "questline_card_metadata.v2",
                 "producer": "discovery.questline_card_polish",
                 "metadata": [metadata],
             }

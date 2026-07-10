@@ -25,6 +25,8 @@ def test_questline_cards_are_derived_from_clusters_not_zone_overrides() -> None:
         v3_rows=rows,
         quest_records=records,
         included_cluster_ids=included,
+        arc_candidates_by_id={included[0]: {"base_title": "Lantern Watch", "faction_variant": None, "phase_variant": None}},
+        arc_families_by_candidate_id={included[0]: {"family_id": "arc-zone-amber-marsh-lantern"}},
     )
     assert metrics["card_polish_cluster_count"] == len(included)
     assert {row["card_id"] for row in metadata} == {f"ql-{cluster_id}" for cluster_id in included}
@@ -55,4 +57,6 @@ def test_selected_cluster_with_missing_quest_record_fails_before_metadata_write(
             ],
             quest_records=[],
             included_cluster_ids=["arc-lantern-watch"],
+            arc_candidates_by_id={"arc-lantern-watch": {"base_title": "Lantern Watch"}},
+            arc_families_by_candidate_id={"arc-lantern-watch": {"family_id": "arc-zone-amber-marsh-lantern"}},
         )

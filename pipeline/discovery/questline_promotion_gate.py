@@ -9,7 +9,7 @@ from typing import Any
 
 from pipeline.discovery.questline_anchor import ENTRY_QUEST_TITLE_KEYWORDS
 from pipeline.discovery.questline_card_polish import load_questline_card_metadata
-from pipeline.discovery.questline_significance import load_included_cluster_ids_by_zone
+from pipeline.discovery.questline_significance import selected_candidate_ids_by_zone
 
 _MAX_CHAIN_REFS = 12
 
@@ -44,9 +44,9 @@ def load_questline_run_artifacts(run_root: Path, zone_id: str) -> QuestlineRunAr
         cards = [row for row in draft.get("major_questlines", []) if isinstance(row, dict)]
 
     included_cluster_ids: list[str] = []
-    rankings = _load_json(run_root / "data" / "discovery" / "zone_quest_cluster_rankings.json")
-    if isinstance(rankings, list):
-        included_cluster_ids = load_included_cluster_ids_by_zone(rankings).get(zone_id, [])
+    selection_path = run_root / "data" / "discovery" / "questline_arc_selection.json"
+    if selection_path.exists():
+        included_cluster_ids = selected_candidate_ids_by_zone(selection_path).get(zone_id, [])
 
     metadata_path = run_root / "data" / "discovery" / "zone_questline_card_metadata.json"
     metadata_by_cluster = (
@@ -172,7 +172,7 @@ def check_questline_promotion(
                 f"major_questlines cluster mapping (got {sorted(emitted_clusters)}, expected {sorted(expected)})"
             )
     elif require_rankings:
-        errors.append("zone_quest_cluster_rankings missing or has no included clusters for zone")
+        errors.append("questline_arc_selection missing or has no selected arc candidates for zone")
 
     if require_evidence_coverage and artifacts.included_cluster_ids:
         missing = set(artifacts.included_cluster_ids) - set(covered_cluster_ids or set())

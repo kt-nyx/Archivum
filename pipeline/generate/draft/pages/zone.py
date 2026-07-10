@@ -7,6 +7,7 @@ from typing import Any
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.contracts.models import ZONE_PAGE_BUDGET_RULES
 from pipeline.discovery.geography import resolve_parent_continent
+from pipeline.discovery.questline_card_polish import render_questline_title
 from pipeline.generate.draft.instance_link_lint import (
     MAX_INSTANCE_LINK_WORDS,
     trim_instance_link_summary,
@@ -258,7 +259,6 @@ def build_zone_page(
     location_decision_map: dict[str, dict[str, Any]],
     questline_decision: dict[str, Any] | None,
     *,
-    questline_cluster_decision_map: dict[str, dict[str, Any]] | None = None,
     questline_card_metadata: dict[str, dict[str, Any]] | None = None,
     included_cluster_ids: list[str] | None = None,
     faction_profile_targets: list[dict[str, Any]] | None = None,
@@ -362,17 +362,6 @@ def build_zone_page(
         cluster_groups.sort(
             key=lambda cluster: rank_order.get(str(cluster.get("cluster_id", "")), 999)
         )
-    elif questline_cluster_decision_map:
-        cluster_groups = [
-            cluster
-            for cluster in cluster_groups
-            if str(
-                (questline_cluster_decision_map or {})
-                .get(str(cluster.get("cluster_id", "")), {})
-                .get("final_decision", "include")
-            )
-            in {"include", "defer", ""}
-        ]
     emitted_cards = 0
     for cluster in cluster_groups:
         if emitted_cards >= _MAX_CLUSTER_CARDS:
@@ -386,22 +375,6 @@ def build_zone_page(
             )
             continue
         cluster_id = str(cluster.get("cluster_id", "cluster-main"))
-        cluster_decision = (questline_cluster_decision_map or {}).get(cluster_id)
-        if cluster_decision and str(cluster_decision.get("final_decision", "")) not in {
-            "include",
-            "defer",
-            "",
-        }:
-            questline_overflow_decisions.append(
-                {
-                    "entity_id": zone_id,
-                    "entity_type": "questline_cluster",
-                    "cluster_id": cluster_id,
-                    "reason": "significance_excluded",
-                    "decision": cluster_decision.get("final_decision"),
-                }
-            )
-            continue
         quests = cluster.get("quests", [])
         if not isinstance(quests, list) or not quests:
             continue
@@ -416,7 +389,7 @@ def build_zone_page(
                 "from discovery.questline_card_polish"
             )
         if card_meta:
-            cluster_title = str(card_meta["display_title"]).strip()
+            cluster_title = render_questline_title(card_meta)
             faction = str(card_meta["faction"]).strip()
             start_anchor = str(card_meta["start_anchor"]).strip()
             chain_refs = [str(ref) for ref in card_meta["chain_refs"] if str(ref).strip()]
@@ -495,7 +468,7 @@ def build_zone_page(
             questline_decision=questline_decision,
             used_source_ids=used_source_ids,
             zone_name=name,
-            cluster_decision=cluster_decision,
+            cluster_decision=None,
             card_id=card_id_override,
         )
         emitted_cards += 1
@@ -540,7 +513,7 @@ def build_zone_page(
                     used_source_ids=used_source_ids,
                     card_suffix="-segment-2",
                     zone_name=name,
-                    cluster_decision=cluster_decision,
+                    cluster_decision=None,
                 )
                 emitted_cards += 1
             else:

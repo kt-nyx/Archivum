@@ -16,9 +16,20 @@ from pipeline.discovery.questline_anchor import (
 )
 from pipeline.discovery.questline_arc_map import map_cluster_to_card_id
 
-_ALGORITHM_VERSION = "v1-card-polish"
-_METADATA_SCHEMA_VERSION = "questline_card_metadata.v1"
+_ALGORITHM_VERSION = "v2-card-polish-structured-title"
+_METADATA_SCHEMA_VERSION = "questline_card_metadata.v2"
 _MAX_RENDERED_CHAIN_REFS = 12
+
+
+def render_questline_title(metadata: dict[str, Any]) -> str:
+    """Render the structured title exactly once at the page boundary."""
+    base_title = str(metadata.get("base_title", "")).strip()
+    faction_variant = str(metadata.get("faction_variant", "")).strip()
+    phase_variant = str(metadata.get("phase_variant", "")).strip()
+    variants = ([faction_variant.title()] if faction_variant else []) + (
+        [phase_variant] if phase_variant else []
+    )
+    return base_title + "".join(f" ({variant})" for variant in variants)
 
 
 def build_zone_questline_card_metadata(
@@ -28,6 +39,8 @@ def build_zone_questline_card_metadata(
     v3_rows: list[dict[str, Any]],
     quest_records: list[dict[str, Any]],
     included_cluster_ids: list[str],
+    arc_candidates_by_id: dict[str, dict[str, Any]],
+    arc_families_by_candidate_id: dict[str, dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """Return (metadata rows, report metrics)."""
     records_by_node = {
@@ -59,7 +72,13 @@ def build_zone_questline_card_metadata(
             rows_by_cluster.get(cluster_id, []),
             key=lambda row: int(row.get("order_in_cluster", 0) or 0),
         )
-        cluster_title = str(summary.get("title", cluster_id))
+        candidate = arc_candidates_by_id.get(cluster_id)
+        family = arc_families_by_candidate_id.get(cluster_id)
+        if candidate is None or family is None:
+            raise ValueError(
+                f"questline_card_metadata producer: selected arc candidate {cluster_id!r} lacks arc-family membership"
+            )
+        base_title = str(candidate["base_title"]).strip()
         faction = str(summary.get("faction", "shared"))
         member_node_ids = [
             str(row.get("node_id", "")).strip()
@@ -103,11 +122,13 @@ def build_zone_questline_card_metadata(
             metadata_id=f"metadata-{card_id}",
             zone_id=zone_id,
             cluster_id=cluster_id,
-            source_arc_id=cluster_id,
+            source_arc_id=str(family["family_id"]),
             card_id=card_id,
-            display_title=cluster_title,
+            canonical_id=card_id,
+            base_title=base_title,
             faction=faction,
-            faction_variant=faction if faction in {"alliance", "horde"} else None,
+            faction_variant=candidate.get("faction_variant"),
+            phase_variant=candidate.get("phase_variant"),
             start_anchor=start_anchor,
             start_anchor_ref=start_anchor_ref,
             chain_refs=member_node_ids[:_MAX_RENDERED_CHAIN_REFS],
