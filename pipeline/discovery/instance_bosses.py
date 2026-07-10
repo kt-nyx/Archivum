@@ -8,16 +8,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from pipeline.common import wiki_html
-from pipeline.common.discovery_vocab import (
-    boss_reject_section_titles,
-    generic_non_person_words,
-    non_character_titles,
-    non_person_narrative_titles,
-)
 from pipeline.common.retail import is_non_retail_title
 from pipeline.common.text_ids import slugify
 from pipeline.common.text_normalize import clean_wiki_snippet
-from pipeline.discovery.entity_typing import _DATING_CONVENTION_TITLE_RE, normalize_title
+from pipeline.discovery.entity_typing import normalize_title
 from pipeline.discovery.world_registry import entry_kinds
 
 _WIKI_LINK_RE = re.compile(r"/wiki/([^|\s\]#<>\"']+)")
@@ -59,15 +53,6 @@ HIGH_CONFIDENCE_BOSS_SECTION_TOKENS = (
 # (_looks_like_person) so the two filters can never drift. Includes "place" so instance
 # subzones/areas (e.g. Caer Darrow, Chamber of Summoning) are rejected as candidates.
 _NON_CHARACTER_KINDS = frozenset({"place", "zone", "instance", "continent", "capital", "region"})
-# WS-C: title-matched denylists externalized to
-# pipeline/data/discovery_classification_vocab.v1.json (D-6).
-_REJECT_TITLES = boss_reject_section_titles()
-_NON_CHARACTER_TITLES = non_character_titles()
-# War/era event titles ("Second War", "the Third War", "Fourth War", "Great War").
-_EVENT_ERA_RE = re.compile(
-    r"^(?:the\s+)?(?:first|second|third|fourth|fifth|great)\s+war$",
-    re.IGNORECASE,
-)
 
 
 @dataclass
@@ -178,13 +163,7 @@ def should_reject_boss_title(title: str, *, instance_name: str = "") -> bool:
         return True
     if instance_name and lowered == normalize_title(instance_name):
         return True
-    if lowered in _REJECT_TITLES:
-        return True
-    if lowered in _NON_CHARACTER_TITLES:
-        return True
     if is_non_retail_title(title):
-        return True
-    if _EVENT_ERA_RE.search(title) or _DATING_CONVENTION_TITLE_RE.search(title):
         return True
     kinds = entry_kinds(title)
     if kinds & _NON_CHARACTER_KINDS:
@@ -853,55 +832,6 @@ _NARRATIVE_SECTION_TOKENS = (
     "background",
 )
 
-_PERSON_HONORIFICS = frozenset(
-    {
-        "highlord",
-        "high",
-        "lord",
-        "lady",
-        "professor",
-        "archmage",
-        "king",
-        "queen",
-        "prince",
-        "princess",
-        "sir",
-        "dame",
-        "captain",
-        "commander",
-        "general",
-        "warchief",
-        "warlord",
-        "grand",
-        "master",
-        "baron",
-        "baroness",
-        "bishop",
-        "sergeant",
-        "marshal",
-        "admiral",
-        "chief",
-        "elder",
-        "prophet",
-        "overlord",
-        "lich",
-        "emperor",
-        "empress",
-        "champion",
-        "keeper",
-        "prime",
-    }
-)
-
-# Multi-word capitalized titles that are factions/forces/concepts, not individual characters.
-# WS-C: externalized to pipeline/data/discovery_classification_vocab.v1.json (D-6).
-_NON_PERSON_NARRATIVE_TITLES = non_person_narrative_titles()
-
-# Generic common-noun / race / creature-type words that are not named characters.
-# WS-C: title-matched, externalized to discovery_classification_vocab.v1.json (D-6).
-_GENERIC_NON_PERSON_WORDS = generic_non_person_words()
-
-
 def _is_narrative_role(section_role: str) -> bool:
     lowered = _normalize_role(section_role)
     return any(token in lowered for token in _NARRATIVE_SECTION_TOKENS)
@@ -927,30 +857,9 @@ def _narrative_structured_link(row: dict[str, Any]) -> bool:
 
 
 def _looks_like_person(title: str) -> bool:
-    """Heuristic person/NPC detector for narrative-fallback link mining."""
-    norm = normalize_title(title)
-    if norm in _NON_PERSON_NARRATIVE_TITLES or norm in _GENERIC_NON_PERSON_WORDS:
-        return False
+    """Require affirmative source taxonomy for a narrative character lead."""
     kinds = entry_kinds(title)
-    if kinds & _NON_CHARACTER_KINDS:
-        return False
-    words = title.split()
-    if not words:
-        return False
-    first_word = re.sub(r"[^a-z]", "", words[0].lower())
-    if first_word in _PERSON_HONORIFICS:
-        return True
-    if "person" in kinds:
-        return True
-    if len(words) > 4:
-        return False
-    significant = [word for word in words if re.search(r"[A-Za-z]", word)]
-    if not significant or not all(word[0].isupper() for word in significant):
-        return False
-    if len(significant) == 1:
-        token = re.sub(r"[^A-Za-z'\-]", "", significant[0])
-        return len(token) >= 4
-    return True
+    return "person" in kinds and not bool(kinds & _NON_CHARACTER_KINDS)
 
 
 def mine_narrative_character_candidates(

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pipeline.discovery.entity_typing import should_reject_location_title
 from pipeline.generate.draft.location_lint import lint_location_summary
 from pipeline.generate.draft.pages import build_zone_page
 from tests.factories.wiki_first_pages import stamp_canonical_evidence_ids
@@ -145,12 +144,16 @@ def _location_candidate_map(zone_id: str) -> dict[str, dict[str, object]]:
             "location_id": "location-northwatch-hold",
             "name": "Northwatch Hold",
             "source_link": "/wiki/Northwatch_Hold",
+            "entity_kind": "place",
+            "entity_kind_decision_id": "entity-kind-northwatch-hold",
         },
         "location-defer-place": {
             "zone_id": zone_id,
             "location_id": "location-defer-place",
             "name": "Defer Place",
             "source_link": "/wiki/Defer_Place",
+            "entity_kind": "place",
+            "entity_kind_decision_id": "entity-kind-defer-place",
         },
     }
 
@@ -198,8 +201,6 @@ def test_build_zone_page_emits_include_only_location_cards_without_llm(monkeypat
     ids = [str(row.get("id", "")) for row in cards]
     assert "location-northwatch-hold" in ids
     assert "location-defer-place" not in ids
-    reject, _ = should_reject_location_title("Third War (28 ADP)")
-    assert reject
     for card in cards:
         summary = str(card.get("summary", ""))
         assert summary

@@ -169,19 +169,11 @@ def test_prefilter_keeps_mononym_without_matching_surname() -> None:
     assert kept == {"Rattlegore", "Lilian Voss"}
 
 
-def test_rejects_events_meta_and_generic_class_nouns() -> None:
-    # Non-character titles that leak from narrative/history link mining (the registry does
-    # not classify them locally): war/era events, game/meta pages, generic creature classes.
-    for title in ("Second War", "Third War", "Fourth War", "the Great War"):
-        assert should_reject_boss_title(title), title
-    for title in ("World of Warcraft", "Warcraft"):
-        assert should_reject_boss_title(title), title
-    for title in ("Lich", "Necromancer", "Abomination", "Ghoul"):
-        assert should_reject_boss_title(title), title
-    # Multi-word proper names that *contain* a generic noun are still kept.
-    assert not should_reject_boss_title("Lich King")
-    assert not should_reject_boss_title("Lord Alexei Barov")
-    assert not should_reject_boss_title("Ras Frostwhisper")
+def test_boss_title_gate_uses_source_taxonomy_not_a_curated_title_list() -> None:
+    # Slice 1 removed title/race/species denylists. Generic names remain leads
+    # until Slice 3's instance-participation + entity-kind admission resolves them.
+    assert not should_reject_boss_title("Example Creature Type")
+    assert should_reject_boss_title("Caer Darrow")  # registry-confirmed place
 
 
 def test_boss_and_denizens_section_roles_match() -> None:
@@ -263,7 +255,7 @@ def test_wikitext_pipe_links_extract_boss_names() -> None:
     assert "Jandice Barov" in names
 
 
-def test_rejects_section_header_link_titles() -> None:
+def test_section_header_links_remain_untyped_leads_until_instance_admission() -> None:
     section_blocks = [
         {
             "section_role": "adventurers",
@@ -275,7 +267,7 @@ def test_rejects_section_header_link_titles() -> None:
         instance_name="Archive Vault",
         boss_pool_items=[],
     )
-    assert candidates == []
+    assert {candidate.name for candidate in candidates} == {"Bosses", "Adventurers"}
 
 
 def test_valid_boss_names_from_pool_items() -> None:
@@ -441,7 +433,7 @@ def test_collect_character_pool_from_dungeon_table_html() -> None:
     assert "Jandice Barov" in names
 
 
-def test_collect_character_pool_includes_history_links() -> None:
+def test_collect_character_pool_abstains_on_untyped_history_links() -> None:
     pool = collect_character_pool(
         section_blocks=[],
         instance_name="Scholomance",
@@ -457,7 +449,7 @@ def test_collect_character_pool_includes_history_links() -> None:
         ],
     )
     names = {row.name for row in pool}
-    assert "Lord Alexei Barov" in names
+    assert "Lord Alexei Barov" not in names
 
 
 def test_prefilter_character_pool_drops_places() -> None:

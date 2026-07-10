@@ -21,7 +21,9 @@ The builder writes a resumable fetch cache at `pipeline/discovery/.world_registr
 | place | ~7600 | Subzone pages + lore locations; block quest traversal only |
 | person | ~1967 | Lore characters + NPCs; block quest traversal only |
 
-Manual supplements remain in `entity_denylist.json` (NPCs, races, edge rivers).
+The registry is an optional positive source signal. Missing coverage never
+classifies a link as a place; target-page categories and infobox structure can
+provide the required affirmative evidence instead.
 
 ## Pilot-relevant entries (verify)
 

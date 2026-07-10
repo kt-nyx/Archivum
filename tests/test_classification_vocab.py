@@ -10,15 +10,9 @@ from pipeline.common import discovery_vocab, draft_vocab
 
 
 def test_discovery_vocab_loaders_return_expected_shapes() -> None:
-    # faction_title_tokens / lore_faction_tokens were deleted in Slice 13: faction-ness
-    # now comes from the organization registry (wiki category taxonomy), never a vocab.
+    # Slice 1 removed all entity/card-admission title vocabularies. These remaining
+    # lists parse free-text quest records or source prose, never linked identities.
     tuple_loaders = [
-        discovery_vocab.event_title_tokens,
-        discovery_vocab.character_role_hints,
-        discovery_vocab.non_location_title_tokens,
-        discovery_vocab.location_hard_reject_tokens,
-        discovery_vocab.location_rpg_tokens,
-        discovery_vocab.lore_character_role_hints,
         discovery_vocab.quest_alliance_binding_tokens,
         discovery_vocab.quest_horde_binding_tokens,
         discovery_vocab.non_canon_body_markers,
@@ -29,15 +23,7 @@ def test_discovery_vocab_loaders_return_expected_shapes() -> None:
         assert all(isinstance(token, str) for token in value), loader.__name__
 
     frozenset_loaders = [
-        discovery_vocab.race_species_denylist,
-        discovery_vocab.meta_page_denylist,
-        discovery_vocab.location_meta_titles,
-        discovery_vocab.faction_as_location_denylist,
         discovery_vocab.entry_quest_title_keywords,
-        discovery_vocab.generic_non_person_words,
-        discovery_vocab.boss_reject_section_titles,
-        discovery_vocab.non_character_titles,
-        discovery_vocab.non_person_narrative_titles,
     ]
     for loader in frozenset_loaders:
         value = loader()
@@ -54,9 +40,7 @@ def test_draft_vocab_loaders_return_expected_shapes() -> None:
 
 
 def test_vocab_values_preserved_from_pre_externalization() -> None:
-    # Spot-check representative members survived the move into JSON unchanged.
-    assert "human" in discovery_vocab.race_species_denylist()
+    # Spot-check the remaining non-entity parsing vocabularies.
     assert "orgrimmar" in discovery_vocab.quest_horde_binding_tokens()
     assert "hero's call" in discovery_vocab.entry_quest_title_keywords()
-    assert "the burning legion" in discovery_vocab.non_person_narrative_titles()
     assert "cataclysm" in draft_vocab.era_section_role_tokens()

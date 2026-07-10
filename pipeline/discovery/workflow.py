@@ -8,27 +8,23 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-from pipeline.common.discovery_vocab import (
-    character_role_hints,
-    event_title_tokens,
-    location_type_title_rules,
-    non_location_title_tokens,
-)
 from pipeline.common.draft_vocab import era_section_role_tokens
 from pipeline.common.io import read_json, write_json
 from pipeline.common.retail import is_classic_categorized
 from pipeline.common.run_context import RunContext
 from pipeline.common.section_registry import section_content_class
 from pipeline.common.text_ids import slugify
-from pipeline.contracts.models import DecisionArtifact
-from pipeline.discovery.entity_typing import normalize_title, should_reject_location_title
+from pipeline.contracts.models import DecisionArtifact, EntityKind, EntityKindDecision
+from pipeline.discovery.entity_typing import (
+    canonical_path_for_link,
+    decide_entity_kind,
+    normalize_title,
+)
 from pipeline.discovery.instance_bosses import is_high_confidence_boss_section
 from pipeline.discovery.location_discovery import (
-    HARD_REJECT_MARKERS,
     build_location_decision_row,
     build_zone_seed_text,
     classify_location_candidate,
-    hard_reject_markers,
 )
 from pipeline.discovery.lore_sources import (
     build_instance_lore_candidates,
@@ -39,7 +35,6 @@ from pipeline.ingest.snapshots import load_source_snapshots
 
 _CLASSIC_ONLY_MARKERS = ("classic", "classic-only", "vanilla")
 _NON_RETAIL_MARKERS = ("warcraft iii", "removed", "undisplayed", "lore location")
-_HARD_REJECT_MARKERS = HARD_REJECT_MARKERS
 _SECTION_ROLE_PATTERNS: dict[str, tuple[str, ...]] = {
     "maps_subregions": ("subregion", "sub-region", "maps", "geography"),
     "instances_or_dungeons": ("instance", "dungeon", "raid"),
@@ -58,17 +53,6 @@ _NOISE_LINK_PREFIXES = (
     "user:",
     "game guide/",
 )
-# WS-C: title-token classification vocab is externalized to
-# pipeline/data/discovery_classification_vocab.v1.json (D-6). These are the
-# pre-fetch fallback signals; the link's section role is the primary classifier
-# (see _infer_entity_type_for_link).
-_LOCATION_INCLUDE_SECTION_WEIGHTS = {
-    "maps_subregions": 0.35,
-    "instances_or_dungeons": 0.1,
-    "quests_or_storyline": 0.1,
-    "history": 0.05,
-    "other": 0.0,
-}
 
 
 def _load_json(path: Path) -> Any:
@@ -278,24 +262,6 @@ def _infer_link_section_role(
     return "other"
 
 
-def _is_likely_character_title(title: str) -> bool:
-    parts = [part for part in re.split(r"\s+", title.strip()) if part]
-    if len(parts) < 2:
-        return False
-    role_hints = character_role_hints()
-    return any(
-        part.lower() in role_hints or (part[:1].isupper() and part[1:].islower() and len(part) >= 3)
-        for part in parts
-    )
-
-
-def _title_has_location_type_token(title: str) -> bool:
-    tokens = set(re.findall(r"[a-z]+", title.lower()))
-    if not tokens:
-        return False
-    return any(tokens & type_tokens for _type, type_tokens in location_type_title_rules())
-
-
 # Slice D: instance roster structured-link sections whose members are the instance's key characters
 # (faculty / adventure-guide / boss / encounter / per-dungeon boss table). Denizen/inhabitant rosters
 # are trash-heavy (random skeletons, props), so they are excluded; the cast is the curated roster.
@@ -355,8 +321,6 @@ def _collect_instance_character_targets(
             label = str(link.get("label", "")).strip()
             href = str(link.get("href", "")).strip()
             if not label or not href:
-                continue
-            if hard_reject_markers(label) or _title_has_location_type_token(label):
                 continue
             if entry_kinds(label) & _NON_CHARACTER_ENTRY_KINDS:
                 continue
@@ -470,50 +434,6 @@ def _collect_zone_faction_targets(
     ]
 
 
-def _infer_entity_type_for_link(title: str, inferred_section_role: str) -> str:
-    # WS-C: the link's section role (WS-A structural signal) is the primary
-    # classifier. The title-token fallbacks below only run when the section role
-    # is uninformative ("other"/"history") — that is the only point at which no
-    # category/section signal exists for the (not-yet-fetched) target page.
-    lowered = title.lower()
-    if (
-        "storyline" in lowered
-        or "questline" in lowered
-        or inferred_section_role == "quests_or_storyline"
-    ):
-        return "quest"
-    if inferred_section_role == "instances_or_dungeons":
-        return "instance"
-    if inferred_section_role == "notable_characters":
-        return "character"
-    if inferred_section_role == "maps_subregions":
-        return "location"
-    if "(instance)" in lowered or " dungeon" in lowered or " raid" in lowered:
-        return "instance"
-    # Slice 13: organization-ness comes from the wiki's own category taxonomy (the org
-    # registry), not a faction-word vocabulary.
-    if "organization" in entry_kinds(title):
-        return "faction"
-    if any(keyword in lowered for keyword in event_title_tokens()):
-        return "event"
-    # A descriptive place token (tomb, crypt, keep, mill, ...) marks a landmark/structure even in an
-    # ambiguous section, so a possessive name like "Uther's Tomb" is not mistaken for a character.
-    if _title_has_location_type_token(title):
-        return "location"
-    if _is_likely_character_title(title):
-        return "character"
-    return "location"
-
-
-def _should_reject_location_candidate(title: str, entity_type: str) -> bool:
-    lowered = title.lower()
-    if entity_type != "location":
-        return True
-    if any(keyword in lowered for keyword in non_location_title_tokens()):
-        return True
-    return False
-
-
 # Lore/narrative sections that mark a place as story-significant (a card-worthy landmark) vs the
 # gameplay gazetteer. A location named in the zone's history/lore prose is marquee; one appearing
 # only in maps/getting-there/travel/loot/etc. chrome is a gameplay waypoint, not a landmark.
@@ -621,6 +541,20 @@ def _collapse_location_variants(
     return kept, best_role
 
 
+def _snapshots_by_canonical_title(snapshots: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Index already-fetched target pages by their source-native canonical title."""
+    indexed: dict[str, dict[str, Any]] = {}
+    for snapshot in snapshots:
+        if not isinstance(snapshot, dict):
+            continue
+        title = str(snapshot.get("page_title", "")).strip() or _normalized_wiki_title(
+            str(snapshot.get("url", ""))
+        )
+        if title:
+            indexed.setdefault(normalize_title(title), snapshot)
+    return indexed
+
+
 def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> dict[str, Path]:
     """Build deterministic discovery artifacts from ingest snapshots."""
     snapshots = load_source_snapshots(context.stage_dir("ingest") / "source_snapshots.json")
@@ -639,6 +573,7 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
     canonical_entities: list[dict[str, Any]] = []
     location_candidates: list[dict[str, Any]] = []
     location_classification: list[dict[str, Any]] = []
+    entity_kind_decisions: list[dict[str, Any]] = []
     instance_registry: list[dict[str, Any]] = []
     instance_lore_source_map: list[dict[str, Any]] = []
     quest_graph: list[dict[str, Any]] = []
@@ -666,6 +601,7 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
             "instance_id": instance_id,
             "name": instance_name,
         }
+    snapshots_by_title = _snapshots_by_canonical_title(snapshots)
 
     for snapshot in snapshots:
         if not isinstance(snapshot, dict):
@@ -767,15 +703,18 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
             lowered = title.lower()
             candidate_id = _to_entity_id("location", title)
             inferred_role = _infer_link_section_role(link, section_blocks, structured_links)
-            inferred_entity_type = _infer_entity_type_for_link(title, inferred_role)
-            reject_location, reject_reasons = should_reject_location_title(
-                title,
-                zone_name=entity_name,
-                source_section_role=inferred_role,
-                entity_type=inferred_entity_type,
+            entity_decision = decide_entity_kind(
+                candidate_id=_to_entity_id("entity", title),
+                canonical_title=title,
+                canonical_path=canonical_path_for_link(link),
+                source_snapshot=snapshots_by_title.get(normalize_title(title)),
+                source_relation=inferred_role,
+                source_ids=[source_id],
             )
+            entity_kind_decisions.append(entity_decision.model_dump(mode="json"))
             known_instance = known_instance_by_title.get(_normalized_wiki_slug(title))
-            if known_instance is not None or inferred_entity_type == "instance":
+            registry_kinds = entry_kinds(title)
+            if known_instance is not None or "instance" in registry_kinds:
                 instance_id = (
                     known_instance["instance_id"]
                     if known_instance is not None
@@ -814,28 +753,22 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
                         "source_section_role": inferred_role,
                     }
                 )
-            elif inferred_entity_type == "faction":
+            elif entity_decision.kind == EntityKind.ORGANIZATION:
                 # Slice 13: faction profile targets are built from the seed page's block
                 # links against the org registry (see _collect_zone_faction_targets below);
                 # a faction-typed link only means "not a location candidate" here.
                 continue
-            elif inferred_entity_type == "character":
+            elif entity_decision.kind == EntityKind.NAMED_ACTOR:
                 # Zone-page characters are not crawled: zones emit no key-character cards, so a
                 # character profile here has no consumer. Instance key characters are targeted
                 # separately from the instance roster (see _collect_instance_character_targets).
                 continue
             else:
-                if reject_location or _should_reject_location_candidate(
-                    title, inferred_entity_type
-                ):
+                # A section role is useful discovery context, not type evidence.  Only a positive
+                # target-page/registry decision may enter the location-card pipeline.
+                if entity_decision.kind != EntityKind.PLACE:
                     continue
                 if normalize_title(title) in notable_character_titles:
-                    continue
-                # WS-C: section-role-first typing now admits whole maps/subregions sections,
-                # which can include meta-placeholder pages ("Lore location", "Undisplayed
-                # location"). The downstream classification already hard-rejects these by name;
-                # apply the same gate here so they never become traversal targets/candidates.
-                if hard_reject_markers(title):
                     continue
                 lore_significant = title.lower() in lore_body_text
                 location_candidates.append(
@@ -845,8 +778,8 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
                         "name": title,
                         "source_link": link,
                         "source_section_role": inferred_role,
-                        "entity_type": inferred_entity_type,
-                        "reject_reasons": reject_reasons,
+                        "entity_kind": entity_decision.kind.value,
+                        "entity_kind_decision_id": entity_decision.decision_id,
                         "lore_significant": lore_significant,
                     }
                 )
@@ -857,6 +790,8 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
                         "name": title,
                         "source_link": link,
                         "source_section_role": inferred_role,
+                        "entity_kind": entity_decision.kind.value,
+                        "entity_kind_decision_id": entity_decision.decision_id,
                         "lore_significant": lore_significant,
                     }
                 )
@@ -910,10 +845,8 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
     }
 
     for candidate in location_candidates:
-        name_lowered = str(candidate.get("name", "")).lower()
-        hard_reject_reasons = hard_reject_markers(str(candidate.get("name", "")))
         location_class = classify_location_candidate(
-            str(candidate.get("name", "")), hard_reject_reasons=hard_reject_reasons
+            str(candidate.get("name", "")), hard_reject_reasons=[]
         )
         location_classification.append(
             {
@@ -921,10 +854,10 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
                 "location_id": candidate["location_id"],
                 "name": candidate["name"],
                 "classification": location_class,
-                "hard_reject_reasons": hard_reject_reasons,
+                "entity_kind": candidate["entity_kind"],
+                "entity_kind_decision_id": candidate["entity_kind_decision_id"],
+                "hard_reject_reasons": [],
                 "typing_signals": {
-                    "contains_city_keyword": "city" in name_lowered,
-                    "contains_starter_keyword": "starter" in name_lowered,
                     "source_section_role": str(candidate.get("source_section_role", "other")),
                 },
             }
@@ -995,6 +928,7 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
         "canonical_entity_map": discovery_dir / "canonical_entity_map.jsonl",
         "zone_location_candidates": discovery_dir / "zone_location_candidates.json",
         "zone_location_classification": discovery_dir / "zone_location_classification.json",
+        "entity_kind_decisions": decisions_dir / "entity_kind_decisions.json",
         "zone_instance_registry": discovery_dir / "zone_instance_registry.json",
         "instance_lore_source_map": discovery_dir / "instance_lore_source_map.json",
         "zone_quest_graph": discovery_dir / "zone_quest_graph.json",
@@ -1015,6 +949,10 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
     )
     write_json(outputs["zone_location_candidates"], location_candidates)
     write_json(outputs["zone_location_classification"], location_classification)
+    write_json(
+        outputs["entity_kind_decisions"],
+        {"schema_version": "entity_kind_decision.v1", "decisions": entity_kind_decisions},
+    )
     write_json(outputs["zone_instance_registry"], instance_registry)
     write_json(outputs["instance_lore_source_map"], instance_lore_source_map)
     write_json(outputs["zone_quest_graph"], quest_graph)
@@ -1032,4 +970,6 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
     # Fail fast on contract drift for primary decision artifacts.
     for row in location_decisions:
         DecisionArtifact.model_validate(row)
+    for row in entity_kind_decisions:
+        EntityKindDecision.model_validate(row)
     return outputs

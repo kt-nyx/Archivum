@@ -390,9 +390,11 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(
                 {
                     "zone_id": "zone-western-plaguelands",
                     "location_id": "location-hearthglen",
-                    "name": "Hearthglen",
-                    "source_link": "/wiki/Hearthglen",
-                    "source_section_role": "maps_subregions",
+                        "name": "Hearthglen",
+                        "source_link": "/wiki/Hearthglen",
+                        "source_section_role": "maps_subregions",
+                        "entity_kind": "place",
+                        "entity_kind_decision_id": "entity-kind-hearthglen",
                 }
             ],
             indent=2,
@@ -431,6 +433,29 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(
     )
     decisions_dir = context.data_dir / "decisions"
     decisions_dir.mkdir(parents=True, exist_ok=True)
+    (decisions_dir / "entity_kind_decisions.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "entity_kind_decision.v1",
+                "decisions": [
+                    {
+                        "schema_version": "entity_kind_decision.v1",
+                        "decision_id": "entity-kind-hearthglen",
+                        "candidate_id": "entity-hearthglen",
+                        "canonical_title": "Hearthglen",
+                        "canonical_path": "/wiki/Hearthglen",
+                        "kind": "place",
+                        "confidence": 0.95,
+                        "source_signals": ["category:place"],
+                        "source_ids": ["src-zone", "src-location-hearthglen"],
+                        "reason_codes": ["affirmative_target_evidence"],
+                    }
+                ],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     (decisions_dir / "location_significance_decisions.json").write_text(
         json.dumps(
             [

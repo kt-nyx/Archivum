@@ -5,12 +5,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from pipeline.common.discovery_vocab import (
-    location_hard_reject_tokens,
-    location_rpg_tokens,
-    location_type_title_rules,
-)
-
 LOCATION_INCLUDE_MIN = 0.7
 
 LOCATION_INCLUDE_SECTION_WEIGHTS: dict[str, float] = {
@@ -21,26 +15,8 @@ LOCATION_INCLUDE_SECTION_WEIGHTS: dict[str, float] = {
     "other": 0.0,
 }
 
-# WS-C: externalized to pipeline/data/discovery_classification_vocab.v1.json (D-6).
-# These score location candidates by name pre-fetch (no category available yet);
-# S3's category check in pipeline/common/retail.py is the authoritative post-fetch
-# retail signal.
-HARD_REJECT_MARKERS = location_hard_reject_tokens()
-
-_RPG_MARKERS = location_rpg_tokens()
-_TITLE_CASE_TOKEN_RE = re.compile(r"^[A-Z][a-z]+(?:[''][a-z]+)?$")
-
-
 def _normalize_name(name: str) -> str:
     return re.sub(r"\s+", " ", name.strip()).lower()
-
-
-def is_named_place_title(name: str) -> bool:
-    tokens = [token for token in re.split(r"[^A-Za-z']+", name.strip()) if token]
-    if len(tokens) < 2:
-        return False
-    title_case = sum(1 for token in tokens if _TITLE_CASE_TOKEN_RE.match(token))
-    return title_case >= max(2, len(tokens) - 1)
 
 
 def name_in_seed_text(name: str, seed_text: str) -> bool:
@@ -55,25 +31,20 @@ def name_in_seed_text(name: str, seed_text: str) -> bool:
 SETTLEMENT_CLASSIFICATIONS = frozenset({"city", "starter_area"})
 
 
-def classify_location_candidate(name: str, *, hard_reject_reasons: list[str]) -> str:
-    """Type a sub-location from its name tokens (pre-fetch, no category signal).
+def classify_location_candidate(_name: str, *, hard_reject_reasons: list[str]) -> str:
+    """Return the neutral discovery placeholder after entity-kind admission.
 
-    Returns a ``LocationType`` value, or ``"major_location_candidate"`` when no
-    descriptive token matches (proper-noun-only names like Andorhal). Rules are
-    evaluated in vocab order; the first matching category wins.
+    Target-page categories and infoboxes, not title tokens, determine published
+    location type later in drafting.
     """
     if hard_reject_reasons:
         return "reject"
-    tokens = {token for token in re.split(r"[^a-z]+", _normalize_name(name)) if token}
-    for location_type, type_tokens in location_type_title_rules():
-        if tokens & type_tokens:
-            return location_type
     return "major_location_candidate"
 
 
-def hard_reject_markers(name: str) -> list[str]:
-    name_lowered = _normalize_name(name)
-    return [marker for marker in HARD_REJECT_MARKERS if marker in name_lowered]
+def hard_reject_markers(_name: str) -> list[str]:
+    """No title-based rejection remains; URL hygiene happens before this stage."""
+    return []
 
 
 def score_location_candidate(
@@ -82,7 +53,6 @@ def score_location_candidate(
     seed_text: str = "",
 ) -> tuple[float, str, list[str]]:
     name = str(candidate.get("name", ""))
-    name_lowered = _normalize_name(name)
     hard_reject_reasons = hard_reject_markers(name)
     location_class = classify_location_candidate(name, hard_reject_reasons=hard_reject_reasons)
     source_section_role = str(candidate.get("source_section_role", "other"))
@@ -94,12 +64,6 @@ def score_location_candidate(
     base_score += LOCATION_INCLUDE_SECTION_WEIGHTS.get(source_section_role, 0.0)
     if name_in_seed_text(name, seed_text):
         base_score += 0.15
-    if is_named_place_title(name) and location_class not in SETTLEMENT_CLASSIFICATIONS:
-        base_score += 0.15
-    if any(marker in name_lowered for marker in _RPG_MARKERS):
-        base_score -= 0.35
-    if len(name_lowered.split()) <= 1:
-        base_score -= 0.1
     score = max(0.0, min(1.0, base_score))
     rounded_score = round(score, 2)
     final_decision = (
@@ -114,8 +78,6 @@ def score_location_candidate(
     )
     if name_in_seed_text(name, seed_text) and "seed_mention" not in reason_codes:
         reason_codes.append("seed_mention")
-    if is_named_place_title(name):
-        reason_codes.append("named_place")
     borderline = 0.45 <= rounded_score <= 0.65
     if borderline and rounded_score >= 0.5 and final_decision == "defer":
         final_decision = "include"
@@ -185,7 +147,6 @@ def build_location_decision_row(
             "has_hard_reject": bool(hard_reject_reasons),
             "source_section_role": source_section_role,
             "seed_mention": name_in_seed_text(name, seed_text),
-            "named_place": is_named_place_title(name),
         },
         "hard_reject": bool(hard_reject_reasons),
         "hard_reject_reasons": hard_reject_reasons,

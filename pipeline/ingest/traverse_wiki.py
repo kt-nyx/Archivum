@@ -21,7 +21,6 @@ from pipeline.discovery.entity_typing import (
     is_bogus_traversal_link,
     is_valid_quest_graph_link,
     normalize_title,
-    should_reject_location_title,
     should_skip_registry_traversal,
 )
 from pipeline.discovery.instance_bosses import (
@@ -421,23 +420,6 @@ def _fetch_and_append(
             }
         )
         return None
-    if auxiliary_role == "location_profile":
-        title = page_title.strip() or _wiki_title(link)
-        reject, reject_reasons = should_reject_location_title(
-            title,
-            zone_name=zone_name,
-            source_section_role=source_section_role,
-        )
-        if reject:
-            report_rows.append(
-                {
-                    "status": "skipped",
-                    "link": link,
-                    "reason": reject_reasons[0] if reject_reasons else "location_reject",
-                    "role": auxiliary_role,
-                }
-            )
-            return None
     if auxiliary_role == "quest":
         valid, reasons = is_valid_quest_graph_link(link, zone_name=zone_name)
         if not valid:

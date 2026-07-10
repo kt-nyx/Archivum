@@ -128,6 +128,8 @@ def test_collect_and_select_include_only_locations() -> None:
                 "location_id": location_id,
                 "name": "Northwatch Hold",
                 "source_link": "/wiki/Northwatch_Hold",
+                "entity_kind": "place",
+                "entity_kind_decision_id": "entity-kind-northwatch-hold",
             }
         },
         location_decision_map={
@@ -185,12 +187,16 @@ def test_offzone_location_rejected_by_subzone_category() -> None:
                 "name": "Keep Hold",
                 "source_link": "/wiki/Keep_Hold",
                 "categories": ["Example subzones", "Keeps"],
+                "entity_kind": "place",
+                "entity_kind_decision_id": "entity-kind-keep-hold",
             },
             off_id: {
                 "location_id": off_id,
                 "name": "Far Village",
                 "source_link": "/wiki/Far_Village",
                 "categories": ["Neighboring Region subzones", "Destroyed settlements"],
+                "entity_kind": "place",
+                "entity_kind_decision_id": "entity-kind-far-village",
             },
         },
         location_decision_map={
@@ -224,7 +230,12 @@ def test_defer_candidates_are_not_elected() -> None:
             zone_name="Example Zone",
             location_rows=[_location_row("location-defer", "Defer Place", zone_id)],
             location_candidate_map={
-                "location-defer": {"source_link": "/wiki/Defer_Place", "name": "Defer Place"}
+                "location-defer": {
+                    "source_link": "/wiki/Defer_Place",
+                    "name": "Defer Place",
+                    "entity_kind": "place",
+                    "entity_kind_decision_id": "entity-kind-defer-place",
+                }
             },
             location_decision_map={"location-defer": _decision("location-defer", "defer")},
             pools={
@@ -241,6 +252,31 @@ def test_defer_candidates_are_not_elected() -> None:
     )
     assert candidate.score == 0.0
     assert not select_location_cards([candidate])
+
+
+def test_untyped_candidate_cannot_reach_location_card_selection() -> None:
+    location_id = "location-unresolved"
+    candidates = collect_location_candidates(
+        zone_id="zone-example",
+        zone_name="Example Zone",
+        location_rows=[_location_row(location_id, "Unresolved Target")],
+        location_candidate_map={
+            location_id: {"source_link": "/wiki/Unresolved_Target", "entity_kind": "unknown"}
+        },
+        location_decision_map={location_id: _decision(location_id, "include")},
+        pools={
+            "location_pool": [
+                _profile_item(
+                    location_id,
+                    "Unresolved Target is mentioned in Example Zone.",
+                    location_name="Unresolved Target",
+                )
+            ],
+            "location_seed_pool": [],
+        },
+    )
+    assert candidates[0].rejected
+    assert candidates[0].reject_reasons == ["entity_kind_not_admitted"]
 
 
 def test_location_zone_relevance_requires_zone_or_subregion() -> None:
@@ -281,7 +317,13 @@ def test_lede_only_profile_with_seed_mentions_remains_electable() -> None:
         zone_id=zone_id,
         zone_name="Example Zone",
         location_rows=[_location_row(location_id, "Northwatch Hold", zone_id)],
-        location_candidate_map={location_id: {"source_link": "/wiki/Northwatch_Hold"}},
+        location_candidate_map={
+            location_id: {
+                "source_link": "/wiki/Northwatch_Hold",
+                "entity_kind": "place",
+                "entity_kind_decision_id": "entity-kind-northwatch-hold",
+            }
+        },
         location_decision_map={location_id: _decision(location_id, "include")},
         pools=pools,
     )

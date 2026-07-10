@@ -11,7 +11,6 @@ from pipeline.contracts.models import LocationType
 from pipeline.discovery.entity_typing import (
     location_is_offzone,
     normalize_title,
-    should_reject_location_title,
 )
 from pipeline.generate.draft.temporal import strict_generation_category_signal
 
@@ -170,6 +169,10 @@ class LocationCandidate:
     # Empty until the Slice 12 re-crawl; the type/significance precedence skips a missing infobox.
     infobox: dict[str, Any] = field(default_factory=dict)
     significance_tag: str = "major_location"
+    # Set from Slice 1's entity-kind decision artifact. Unknown is deliberately
+    # non-renderable: source-section context and a title cannot promote it.
+    entity_kind: str = "unknown"
+    entity_kind_decision_id: str = ""
 
 
 def _normalize_role(section_role: str) -> str:
@@ -313,6 +316,10 @@ def collect_location_candidates(
                     if str(category).strip()
                 ],
                 infobox=dict(candidate_map_row.get("infobox") or {}),
+                entity_kind=str(candidate_map_row.get("entity_kind", "unknown")).strip(),
+                entity_kind_decision_id=str(
+                    candidate_map_row.get("entity_kind_decision_id", "")
+                ).strip(),
             )
         else:
             row = by_id[location_id]
@@ -370,14 +377,9 @@ def collect_location_candidates(
     for location_id, candidate in by_id.items():
         decision_row = location_decision_map.get(location_id, {})
         candidate.decision = str(decision_row.get("final_decision", "defer")).strip() or "defer"
-        reject, reasons = should_reject_location_title(
-            candidate.name,
-            zone_name=zone_name,
-            source_section_role=candidate.source_section_role,
-        )
-        if reject:
+        if candidate.entity_kind != "place" or not candidate.entity_kind_decision_id:
             candidate.rejected = True
-            candidate.reject_reasons = reasons
+            candidate.reject_reasons = ["entity_kind_not_admitted"]
             continue
         # Zone-of-record gate: a place linked from this zone's prose but tagged to a *different*
         # zone's subzone category (e.g. Strahnbrad -> Hillsbrad Foothills) is an off-zone mention,

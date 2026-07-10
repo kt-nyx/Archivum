@@ -316,7 +316,6 @@ def check_run(
     if not location_cards:
         _fail("location_cards is empty")
 
-    from pipeline.discovery.entity_typing import should_reject_location_title
     from pipeline.generate.draft.location_lint import lint_location_summary
 
     for card in location_cards:
@@ -339,14 +338,6 @@ def check_run(
             and "score_based" not in reason_codes
         ):
             _fail(f"location_cards card appears defer-only selected: {card_id!r}")
-        reject, reject_reasons = should_reject_location_title(
-            str(card.get("name", "")).strip(), zone_name=zone_name
-        )
-        hard_reasons = [reason for reason in reject_reasons if reason != "likely_npc"]
-        if hard_reasons:
-            _fail(
-                f"location_cards card name denied by location guards: {card_id!r} ({hard_reasons})"
-            )
     if len(location_cards) > MAX_LOCATION_CARDS:
         _fail(f"location_cards exceeds cap ({len(location_cards)} > {MAX_LOCATION_CARDS})")
 

@@ -12,6 +12,8 @@ from pipeline.ai.openai_client import chat_json_completion
 from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext
 from pipeline.common.text_normalize import normalize_display_payload
+from pipeline.contracts.models import EntityKindDecision
+from pipeline.discovery.entity_typing import canonical_path_for_link
 from pipeline.discovery.questline_card_polish import load_questline_card_metadata
 from pipeline.discovery.questline_significance import load_included_cluster_ids_by_zone
 from pipeline.generate.draft import (
@@ -47,6 +49,21 @@ __all__ = [
 
 def _decision_name_key(value: str) -> str:
     return " ".join(str(value).strip().casefold().split())
+
+
+def _load_entity_kind_decisions(path: Path) -> dict[str, EntityKindDecision]:
+    """Load Slice 1's versioned entity-kind artifact without a legacy fallback."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or payload.get("schema_version") != "entity_kind_decision.v1":
+        raise RuntimeError(
+            f"entity-kind decisions at '{path}' must use schema entity_kind_decision.v1; "
+            "regenerate this run from discovery"
+        )
+    rows = payload.get("decisions")
+    if not isinstance(rows, list):
+        raise RuntimeError(f"entity-kind decisions at '{path}' must contain a decisions array")
+    decisions = [EntityKindDecision.model_validate(row) for row in rows if isinstance(row, dict)]
+    return {decision.decision_id: decision for decision in decisions}
 
 
 def _build_key_character_decision_row(
@@ -155,6 +172,31 @@ def run_draft_writer(
                 if not location_id:
                     continue
                 location_candidate_map[location_id] = row
+    entity_kind_decisions_path = context.data_dir / "decisions" / "entity_kind_decisions.json"
+    if location_candidate_map and not entity_kind_decisions_path.exists():
+        raise RuntimeError(
+            "location candidates require data/decisions/entity_kind_decisions.json; "
+            "regenerate this run from discovery"
+        )
+    entity_kind_decisions = (
+        _load_entity_kind_decisions(entity_kind_decisions_path)
+        if entity_kind_decisions_path.exists()
+        else {}
+    )
+    for location_id, candidate in location_candidate_map.items():
+        decision_id = str(candidate.get("entity_kind_decision_id", "")).strip()
+        decision = entity_kind_decisions.get(decision_id)
+        if decision is None:
+            raise RuntimeError(
+                f"location candidate '{location_id}' has no matching entity-kind decision "
+                f"in '{entity_kind_decisions_path}'"
+            )
+        if canonical_path_for_link(str(candidate.get("source_link", ""))) != decision.canonical_path:
+            raise RuntimeError(
+                f"location candidate '{location_id}' disagrees with entity-kind decision "
+                f"'{decision_id}' about the target page"
+            )
+        candidate["entity_kind"] = decision.kind.value
     location_decision_map: dict[str, dict[str, Any]] = {}
     location_decisions_path = (
         context.data_dir / "decisions" / "location_significance_decisions.json"

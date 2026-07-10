@@ -56,6 +56,39 @@ class EntityType(StrEnum):
     GLOSSARY_TERM = "glossary_term"
 
 
+class EntityKind(StrEnum):
+    """Closed, domain-neutral kinds permitted at card-admission boundaries."""
+
+    PLACE = "place"
+    NAMED_ACTOR = "named_actor"
+    ORGANIZATION = "organization"
+    GROUP_OR_SPECIES = "group_or_species"
+    OBJECT_OR_CONCEPT = "object_or_concept"
+    UNKNOWN = "unknown"
+
+
+class EntityKindDecision(BaseModel):
+    """Evidence-bearing classification for one linked target page.
+
+    This is deliberately distinct from :class:`EntityType`, whose values describe
+    pipeline manifest rows.  A linked page is only admitted to a card family when
+    this decision records the corresponding output kind.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["entity_kind_decision.v1"] = "entity_kind_decision.v1"
+    decision_id: str = Field(pattern=ID_PATTERN)
+    candidate_id: str = Field(pattern=ID_PATTERN)
+    canonical_title: str = Field(min_length=1)
+    canonical_path: str = Field(min_length=1)
+    kind: EntityKind
+    confidence: float = Field(ge=0.0, le=1.0)
+    source_signals: list[str] = Field(default_factory=list)
+    source_ids: list[str] = Field(default_factory=list)
+    reason_codes: list[str] = Field(default_factory=list)
+
+
 class LocationType(StrEnum):
     CITY = "city"
     TOWN = "town"
