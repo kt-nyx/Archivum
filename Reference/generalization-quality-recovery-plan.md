@@ -632,3 +632,23 @@ acceptance criteria with a prose summary.
 - **Deferred:** no generic implementation follow-up. Repeat the normal WPL/Desolace end-to-end
   human review in an environment that permits the remote quest traversal/draft flow to finish;
   this is a live-verification environment limitation, not a schema or selection-contract deferral.
+
+### 2026-07-10 — Slice 6 complete
+
+- **Commit SHA:** `9b7ca4c` (`feat(questlines): finalize complete CTA clauses (Slice 6)`).
+- **Behavior:** deleted `strip_zone_name_from_cta` and every post-synthesis CTA text mutation.
+  CTA synthesis now consumes the matching Slice 4 entry-state setup anchor plus selected early-chain
+  evidence, never substitutes an arbitrary late cluster paragraph when early evidence is absent,
+  and emits a complete metadata-grounded fallback in that case. Final clauses are checked with the
+  repository NLP sentence/clause features plus deterministic boundary, predicate/imperative,
+  dangling-word, malformed-join, length, and excluded-outcome checks. A rejected generation gets
+  one same-evidence rewrite; a second rejection or generation error emits the validated fallback.
+  Every CTA outcome is recorded in the versioned, fail-fast `prose_finalize_decision.v1` sidecar.
+- **Verification:** focused CTA, questline assembly, draft, validation-context, validation-engine,
+  and model-version tests; `uv run --no-sync ruff check pipeline tests`; MyPy on all seven touched
+  pipeline modules; `git diff --check`; `uv run --no-sync pytest -q -ra` (passed, with the suite's
+  existing skips/xfail). Final independent review confirmed no residual zone-name strip, all primary
+  and overflow CTA paths use the same finalizer, the Slice 4 setup handoff is identity-matched, the
+  artifact reader rejects historic/unversioned shapes, and fixtures remain synthetic and generic.
+- **Fresh live runs:** not applicable; Slice 6 has no `[LIVE]` acceptance requirement.
+- **Deferred:** none.
