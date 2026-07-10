@@ -10,6 +10,7 @@ from typing import Any
 from pipeline.common.run_context import RunContext
 from pipeline.contracts.models import LocationSelectionArtifact, QuestlineCardMetadataArtifact
 from pipeline.discovery.questline_significance import selected_candidate_ids_by_zone
+from pipeline.generate.draft.model_versions import PROSE_FINALIZE_DECISION_SCHEMA
 from pipeline.ingest.snapshots import load_source_snapshots
 
 
@@ -106,23 +107,38 @@ def load_validation_run_resources(run_root: Path) -> ValidationRunResources:
     prose_finalize_path = run_root / "data" / "decisions" / "prose_finalize_decisions.json"
     if prose_finalize_path.exists():
         blob = json.loads(prose_finalize_path.read_text(encoding="utf-8"))
-        if isinstance(blob, list):
-            for row in blob:
-                if not isinstance(row, dict):
+        expected_schema = PROSE_FINALIZE_DECISION_SCHEMA
+        if not isinstance(blob, dict):
+            raise ValueError(
+                "prose_finalize_decisions artifact from draft_writer must be an object with "
+                f"schema_version {expected_schema}"
+            )
+        if blob.get("schema_version") != expected_schema or blob.get("producer") != "draft_writer":
+            raise ValueError(
+                "prose_finalize_decisions artifact from draft_writer has incompatible schema; "
+                f"expected {expected_schema}"
+            )
+        records = blob.get("decisions")
+        if not isinstance(records, list):
+            raise ValueError(
+                "prose_finalize_decisions artifact from draft_writer has non-list decisions"
+            )
+        for row in records:
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("stage", "")) != "major_factions.candidates":
+                continue
+            entity_id = row.get("entity_id")
+            if not isinstance(entity_id, str) or not entity_id:
+                continue
+            names = resources.faction_candidate_names_by_entity.setdefault(entity_id, [])
+            candidates = row.get("candidates")
+            for candidate in candidates if isinstance(candidates, list) else []:
+                if not isinstance(candidate, dict):
                     continue
-                if str(row.get("stage", "")) != "major_factions.candidates":
-                    continue
-                entity_id = row.get("entity_id")
-                if not isinstance(entity_id, str) or not entity_id:
-                    continue
-                names = resources.faction_candidate_names_by_entity.setdefault(entity_id, [])
-                candidates = row.get("candidates")
-                for candidate in candidates if isinstance(candidates, list) else []:
-                    if not isinstance(candidate, dict):
-                        continue
-                    name = str(candidate.get("name", "")).strip()
-                    if name and name not in names:
-                        names.append(name)
+                name = str(candidate.get("name", "")).strip()
+                if name and name not in names:
+                    names.append(name)
 
     questline_decisions_path = (
         run_root / "data" / "decisions" / "questline_inclusion_decisions.json"

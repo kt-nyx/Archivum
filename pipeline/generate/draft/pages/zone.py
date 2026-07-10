@@ -50,7 +50,7 @@ from pipeline.generate.draft.prose_election import (
     select_at_a_glance_pool,
     select_currently_pool,
 )
-from pipeline.generate.draft.prose_gate import prose_gate_rejects, prose_gate_violations
+from pipeline.generate.draft.prose_gate import prose_gate_violations
 from pipeline.generate.draft.prose_lint import (
     MAX_AT_A_GLANCE_WORDS,
     lint_at_a_glance,
@@ -78,6 +78,7 @@ from pipeline.generate.draft.provenance import (
 
 
 def _best_snippet_for_term(items: list[dict[str, Any]], term: str, min_words: int = 8) -> str:
+    """Return an evidence borrow for non-CTA card fields that cannot synthesize."""
     term_lower = term.lower()
     best = ""
     for item in items:
@@ -89,6 +90,41 @@ def _best_snippet_for_term(items: list[dict[str, Any]], term: str, min_words: in
         if _word_count(snippet) > _word_count(best):
             best = snippet
     return best
+
+
+def _cta_contract_inputs(
+    entry_state_contract: dict[str, Any] | None,
+    *,
+    metadata_id: str,
+    card_id: str,
+    cluster_id: str,
+) -> tuple[list[dict[str, Any]], tuple[str, ...]]:
+    """Select this card's Slice 4 setup anchors and excluded outcomes by stable identity."""
+    contract = entry_state_contract or {}
+    setup: list[dict[str, Any]] = []
+    for anchor in contract.get("source_anchor_refs", []):
+        if not isinstance(anchor, dict) or anchor.get("kind") != "questline_setup":
+            continue
+        if metadata_id and str(anchor.get("metadata_id", "")).strip() != metadata_id:
+            continue
+        if not metadata_id and card_id and str(anchor.get("card_id", "")).strip() != card_id:
+            continue
+        if not metadata_id and not card_id and str(anchor.get("cluster_id", "")).strip() != cluster_id:
+            continue
+        refs = anchor.get("setup_quest_refs", [])
+        snippets = anchor.get("setup_snippets", [])
+        if isinstance(refs, list) and isinstance(snippets, list):
+            for ref, snippet in zip(refs, snippets, strict=False):
+                setup.append({"quest_ref": str(ref), "source_id": str(ref), "snippet": str(snippet)})
+    excluded: list[str] = []
+    for hint in contract.get("excluded_outcome_hints", []):
+        if not isinstance(hint, dict) or str(hint.get("cluster_id", "")).strip() != cluster_id:
+            continue
+        for snippet in hint.get("outcome_snippets", []):
+            text = str(snippet).strip()
+            if text:
+                excluded.append(text)
+    return setup, tuple(excluded)
 
 
 def _finalize_at_a_glance(
@@ -260,6 +296,7 @@ def build_zone_page(
     questline_decision: dict[str, Any] | None,
     *,
     questline_card_metadata: dict[str, dict[str, Any]] | None = None,
+    entry_state_contract: dict[str, Any] | None = None,
     included_cluster_ids: list[str] | None = None,
     faction_profile_targets: list[dict[str, Any]] | None = None,
     snapshots: list[dict[str, Any]] | None = None,
@@ -434,6 +471,12 @@ def build_zone_page(
         scoped_pool = _faction_scoped_lore_pool(scoped_pool, quests, faction)
         if not scoped_pool:
             continue
+        cta_setup_evidence, excluded_outcome_phrases = _cta_contract_inputs(
+            entry_state_contract,
+            metadata_id=str(card_meta.get("metadata_id", "")),
+            card_id=card_id_override,
+            cluster_id=cluster_id,
+        )
         cta, cta_used = synthesize_questline_cta_hook(
             scoped_pool,
             arc_title=cluster_title,
@@ -441,12 +484,10 @@ def build_zone_page(
             faction=faction,
             chain_refs=chain_refs,
             quest_descriptions=quest_descriptions_by_node,
+            setup_evidence=cta_setup_evidence,
+            excluded_outcome_phrases=excluded_outcome_phrases,
             max_words=35,
         )
-        if not cta or prose_gate_rejects(cta):
-            cta = _best_snippet_for_term(scoped_pool, cluster_title, min_words=8) or (
-                f"Follow the {cluster_title} arc through its linked quests."
-            )
         if not card_meta:
             primary_refs, overflow_refs = _split_chain_refs(chain_refs)
         else:
@@ -467,7 +508,6 @@ def build_zone_page(
             revision_map=revision_map,
             questline_decision=questline_decision,
             used_source_ids=used_source_ids,
-            zone_name=name,
             cluster_decision=None,
             card_id=card_id_override,
         )
@@ -475,16 +515,27 @@ def build_zone_page(
         if overflow_refs:
             overflow_pool = _cluster_lore_pool(pools, cluster_id)
             overflow_pool = _faction_scoped_lore_pool(overflow_pool, quests, faction)
-            overflow_cta, overflow_used = synthesize_card_summary(
-                overflow_pool,
-                subject=f"{cluster_title} (continued)",
-                max_words=35,
-                faction=faction,
-            )
-            if not overflow_cta:
-                overflow_cta = (
-                    f"Continue the {cluster_title} arc through its remaining linked quests."
+            overflow_anchor = str(
+                next(
+                    (
+                        row.get("title", start_anchor)
+                        for row in quests[len(primary_refs) :]
+                        if isinstance(row, dict)
+                    ),
+                    start_anchor,
                 )
+            )
+            overflow_cta, overflow_used = synthesize_questline_cta_hook(
+                overflow_pool,
+                arc_title=f"{cluster_title} (continued)",
+                start_anchor=overflow_anchor,
+                faction=faction,
+                chain_refs=overflow_refs[:_MAX_CHAIN_REFS],
+                quest_descriptions=quest_descriptions_by_node,
+                setup_evidence=cta_setup_evidence,
+                excluded_outcome_phrases=excluded_outcome_phrases,
+                max_words=35,
+            )
             if emitted_cards < _MAX_CLUSTER_CARDS and overflow_pool:
                 overflow_wiki = wiki_refs[len(primary_refs) :] if wiki_refs else []
                 _append_questline_card(
@@ -493,16 +544,7 @@ def build_zone_page(
                     cluster_id=cluster_id,
                     cluster_title=f"{cluster_title} (continued)",
                     faction=faction,
-                    start_anchor=str(
-                        next(
-                            (
-                                row.get("title", start_anchor)
-                                for row in quests[len(primary_refs) :]
-                                if isinstance(row, dict)
-                            ),
-                            start_anchor,
-                        )
-                    ),
+                    start_anchor=overflow_anchor,
                     chain_refs=overflow_refs[:_MAX_CHAIN_REFS],
                     wiki_refs=overflow_wiki or wiki_refs[-1:],
                     cta=overflow_cta,
@@ -512,7 +554,6 @@ def build_zone_page(
                     questline_decision=questline_decision,
                     used_source_ids=used_source_ids,
                     card_suffix="-segment-2",
-                    zone_name=name,
                     cluster_decision=None,
                 )
                 emitted_cards += 1

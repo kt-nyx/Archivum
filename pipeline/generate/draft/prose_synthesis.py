@@ -16,7 +16,7 @@ from pipeline.contracts.models import (
     LocationType,
 )
 from pipeline.generate.draft import finalize_trace
-from pipeline.generate.draft.card_lint import finalize_cta_hook
+from pipeline.generate.draft.card_lint import finalize_cta_hook, lint_cta_hook
 from pipeline.generate.draft.compendium_voice import (
     AT_A_GLANCE_VOICE,
     COMPENDIUM_VOICE_CORE,
@@ -1053,9 +1053,80 @@ def filter_early_chain_evidence_pool(
         return items[:2]
     early_ids = set(chain_refs[:limit])
     scoped = [item for item in items if str(item.get("quest_node_id", "")).strip() in early_ids]
-    if scoped:
-        return scoped[:limit]
-    return items[:limit]
+    # A selected Slice 4 chain gives CTA synthesis a concrete entry boundary. Do not replace a
+    # missing early-chain match with arbitrary cluster prose, which can be a late-chain outcome.
+    return scoped[:limit]
+
+
+def _cta_candidate(text: str, *, max_words: int) -> str:
+    return finalize_cta_hook(
+        trim_words(clean_wiki_snippet(text), max_words), max_words=max_words
+    )
+
+
+def _deterministic_questline_cta(*, arc_title: str, start_anchor: str) -> str:
+    """A complete, neutral CTA grounded only in selected card metadata.
+
+    This is intentionally a fresh clause, never a clipped source sentence or a removal transform.
+    The anchor/title are the Slice 4 selected-card identity fields, so the fallback remains useful
+    without importing a late-chain outcome or a zone-name filler.
+    """
+    anchor = clean_wiki_snippet(start_anchor)
+    title = clean_wiki_snippet(arc_title)
+    if anchor:
+        return f"Begin with {anchor} to follow this storyline."
+    if title:
+        return f"Follow the opening lead in {title}."
+    return "Follow the opening lead through this storyline."
+
+
+def _cta_setup_pool(
+    *,
+    items: list[dict[str, Any]],
+    chain_refs: list[str],
+    quest_descriptions: dict[str, str] | None,
+    setup_evidence: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Build CTA evidence solely from Slice 4 setup anchors and early selected refs."""
+    candidates: list[dict[str, Any]] = []
+    for item in setup_evidence or []:
+        if not isinstance(item, dict):
+            continue
+        snippet = clean_wiki_snippet(str(item.get("snippet", "")))
+        if not snippet:
+            continue
+        candidates.append(
+            {
+                "source_id": str(item.get("source_id") or item.get("quest_ref") or "").strip(),
+                "quest_node_id": str(item.get("quest_ref") or item.get("quest_node_id") or "").strip(),
+                "snippet": snippet,
+                "section_role": "questline_setup",
+                "raw_section_role": "questline_setup",
+            }
+        )
+    candidates.extend(filter_early_chain_evidence_pool(items, chain_refs, arc_title=""))
+    if quest_descriptions and chain_refs:
+        limit = _early_chain_ref_limit(chain_refs, arc_title="")
+        for node_id in chain_refs[:limit]:
+            description = clean_wiki_snippet(str(quest_descriptions.get(node_id, "")))
+            if description:
+                candidates.append(
+                    {
+                        "source_id": node_id,
+                        "quest_node_id": node_id,
+                        "snippet": description,
+                        "section_role": "quest_start_description",
+                        "raw_section_role": "quest_start_description",
+                    }
+                )
+    deduped: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in candidates:
+        key = (str(item.get("source_id", "")), str(item.get("snippet", "")))
+        if key not in seen:
+            seen.add(key)
+            deduped.append(item)
+    return deduped[:4]
 
 
 def synthesize_questline_cta_hook(
@@ -1066,27 +1137,49 @@ def synthesize_questline_cta_hook(
     faction: str,
     chain_refs: list[str] | None = None,
     quest_descriptions: dict[str, str] | None = None,
+    setup_evidence: list[dict[str, Any]] | None = None,
+    excluded_outcome_phrases: tuple[str, ...] = (),
     max_words: int = 35,
 ) -> tuple[str, list[str]]:
     refs = list(chain_refs or [])
-    early_pool = filter_early_chain_evidence_pool(items, refs, arc_title=arc_title)
-    if quest_descriptions and refs:
-        limit = _early_chain_ref_limit(refs, arc_title=arc_title)
-        for node_id in refs[:limit]:
-            description = clean_wiki_snippet(str(quest_descriptions.get(node_id, "")))
-            if description and word_count(description) >= 6:
-                early_pool.insert(
-                    0,
-                    {
-                        "source_id": node_id,
-                        "quest_node_id": node_id,
-                        "snippet": description,
-                        "section_role": "quest_start_description",
-                        "raw_section_role": "quest_start_description",
-                    },
-                )
+    early_pool = _cta_setup_pool(
+        items=items,
+        chain_refs=refs,
+        quest_descriptions=quest_descriptions,
+        setup_evidence=setup_evidence,
+    )
+    setup_ids = [str(item.get("source_id", "")).strip() for item in early_pool]
+    fallback = _deterministic_questline_cta(arc_title=arc_title, start_anchor=start_anchor)
+
+    def _accept(candidate: str) -> tuple[str, list[str]]:
+        final = _cta_candidate(candidate, max_words=max_words)
+        return final, lint_cta_hook(final, forbidden_phrases=excluded_outcome_phrases)
+
+    def _record(
+        *,
+        outcome: str,
+        final_text: str,
+        initial_issues: list[str],
+        retry_issues: list[str] | None = None,
+    ) -> None:
+        finalize_trace.record(
+            "questline_cta.finalize",
+            outcome=outcome,
+            final_text=final_text,
+            final_lint_issues=lint_cta_hook(
+                final_text, forbidden_phrases=excluded_outcome_phrases
+            ),
+            initial_lint_issues=initial_issues,
+            retry_lint_issues=retry_issues or [],
+            setup_evidence_ids=[source_id for source_id in setup_ids if source_id],
+        )
+
     if not early_pool:
-        return "", []
+        final, issues = _accept(fallback)
+        if issues:
+            raise ValueError(f"deterministic questline CTA fallback failed lint: {issues}")
+        _record(outcome="fallback_missing_setup_evidence", final_text=final, initial_issues=[])
+        return final, []
     faction_addendum = ""
     if faction == "alliance":
         faction_addendum = " Name the Horde as the opposing faction when evidence supports it."
@@ -1098,56 +1191,92 @@ def synthesize_questline_cta_hook(
         "true",
         "yes",
     }:
-        ranked = sorted(
-            early_pool, key=lambda row: word_count(str(row.get("snippet", ""))), reverse=True
-        )
-        for item in ranked:
-            snippet = trim_words(clean_wiki_snippet(str(item.get("snippet", ""))), max_words)
-            if snippet and snippet.lower() != arc_title.strip().lower():
-                return finalize_cta_hook(snippet, max_words=max_words), [
-                    str(item.get("source_id", ""))
-                ]
-        return "", []
+        final, issues = _accept(fallback)
+        if issues:
+            raise ValueError(f"deterministic questline CTA fallback failed lint: {issues}")
+        _record(outcome="fallback_no_llm", final_text=final, initial_issues=[])
+        return final, [source_id for source_id in setup_ids if source_id]
     evidence_block, alias_map = _format_evidence_block(early_pool, max_items=2)
-    result = llm_json_with_retry(
-        required_keys=("summary", "used_evidence_ids"),
-        response_json_schema={
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["summary", "used_evidence_ids"],
-            "properties": {
-                "summary": {"type": "string"},
-                "used_evidence_ids": {"type": "array", "items": {"type": "string"}},
+    try:
+        result = llm_json_with_retry(
+            required_keys=("summary", "used_evidence_ids"),
+            response_json_schema={
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["summary", "used_evidence_ids"],
+                "properties": {
+                    "summary": {"type": "string"},
+                    "used_evidence_ids": {"type": "array", "items": {"type": "string"}},
+                },
             },
-        },
-        system_prompt=(
-            f"{COMPENDIUM_VOICE_CORE} {QUESTLINE_CTA_VOICE}"
-            f" Write a questline card hook for arc '{arc_title}' starting at '{start_anchor}'."
-            f" Max {max_words} words. Write as an in-universe call for help at the questline's "
-            f"opening situation. Do not describe late-chain events or outcomes.{faction_addendum}"
-        ),
-        user_prompt=f"Evidence:\n{evidence_block}",
-        response_schema_name="wiki_first_questline_cta_hook",
-        substep="wiki_first_questline_cta_hook",
-    )
-    summary = finalize_cta_hook(
-        trim_words(clean_wiki_snippet(str(result.get("summary", ""))), max_words),
-        max_words=max_words,
-    )
-    used = translate_used_evidence_ids(result.get("used_evidence_ids", []), alias_map)
-    if summary and summary.lower() != arc_title.strip().lower():
-        return summary, used
-    ranked = sorted(
-        early_pool, key=lambda row: word_count(str(row.get("snippet", ""))), reverse=True
-    )
-    for item in ranked:
-        snippet = finalize_cta_hook(
-            trim_words(clean_wiki_snippet(str(item.get("snippet", ""))), max_words),
-            max_words=max_words,
+            system_prompt=(
+                f"{COMPENDIUM_VOICE_CORE} {QUESTLINE_CTA_VOICE}"
+                f" Write a questline card hook for arc '{arc_title}' starting at '{start_anchor}'."
+                f" Max {max_words} words. Write as an in-universe call for help at the questline's "
+                f"opening situation. Do not describe late-chain events or outcomes.{faction_addendum}"
+            ),
+            user_prompt=f"Slice 4 setup / early-chain evidence:\n{evidence_block}",
+            response_schema_name="wiki_first_questline_cta_hook",
+            substep="wiki_first_questline_cta_hook",
         )
-        if snippet:
-            return snippet, [str(item.get("source_id", ""))]
-    return "", []
+    except Exception as exc:  # noqa: BLE001 - failure must reach the bounded rewrite/fallback path.
+        summary = ""
+        initial_issues = [f"synthesis_error:{exc.__class__.__name__}"]
+        used: list[str] = []
+    else:
+        summary, initial_issues = _accept(str(result.get("summary", "")))
+        used = translate_used_evidence_ids(result.get("used_evidence_ids", []), alias_map)
+    if summary and not initial_issues and summary.lower() != arc_title.strip().lower():
+        _record(outcome="accepted", final_text=summary, initial_issues=[])
+        return summary, used
+    try:
+        retry = llm_json_with_retry(
+            required_keys=("summary", "used_evidence_ids"),
+            response_json_schema={
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["summary", "used_evidence_ids"],
+                "properties": {
+                    "summary": {"type": "string"},
+                    "used_evidence_ids": {"type": "array", "items": {"type": "string"}},
+                },
+            },
+            system_prompt=(
+                f"{COMPENDIUM_VOICE_CORE} {QUESTLINE_CTA_VOICE} Rewrite exactly one complete, "
+                "spoiler-safe imperative or declarative CTA sentence from the same setup evidence."
+            ),
+            user_prompt=(
+                f"Slice 4 setup / early-chain evidence:\n{evidence_block}\n\n"
+                f"Rejected draft: {summary}\nLint reasons: {', '.join(initial_issues) or 'title-only draft'}"
+            ),
+            response_schema_name="wiki_first_questline_cta_hook_rewrite",
+            substep="wiki_first_questline_cta_hook_rewrite",
+        )
+    except Exception as exc:  # noqa: BLE001 - a failed rewrite must fall through to safe text.
+        retry_text = ""
+        retry_issues = [f"rewrite_error:{exc.__class__.__name__}"]
+        retry_used = []
+    else:
+        retry_text, retry_issues = _accept(str(retry.get("summary", "")))
+        retry_used = translate_used_evidence_ids(retry.get("used_evidence_ids", []), alias_map)
+    if retry_text and not retry_issues and retry_text.lower() != arc_title.strip().lower():
+        _record(
+            outcome="retry_accepted",
+            final_text=retry_text,
+            initial_issues=initial_issues or ["cta_hook repeats card title"],
+            retry_issues=[],
+        )
+        return retry_text, retry_used
+    final, fallback_issues = _accept(fallback)
+    if fallback_issues:
+        raise ValueError(f"deterministic questline CTA fallback failed lint: {fallback_issues}")
+    _record(
+        outcome="fallback_after_retry",
+        final_text=final,
+        initial_issues=initial_issues or ["cta_hook repeats card title"],
+        retry_issues=retry_issues or ["cta_hook repeats card title"],
+    )
+    return final, [source_id for source_id in setup_ids if source_id]
 
 
 def synthesize_card_summary(

@@ -6,11 +6,7 @@ from typing import Any
 
 from pipeline.contracts.models import ZONE_MAX_TOTAL_QUESTLINE_CARDS
 from pipeline.discovery.entity_typing import normalize_title
-from pipeline.generate.draft.card_lint import (
-    finalize_cta_hook,
-    lint_cta_hook,
-    strip_zone_name_from_cta,
-)
+from pipeline.generate.draft.card_lint import lint_cta_hook
 from pipeline.generate.draft.evidence_identity import evidence_id_for_item
 from pipeline.generate.draft.pages.assembly import (
     _cap_card_pointers,
@@ -89,19 +85,14 @@ def _append_questline_card(
     questline_decision: dict[str, Any] | None,
     used_source_ids: set[str],
     card_suffix: str = "",
-    zone_name: str = "",
     cluster_decision: dict[str, Any] | None = None,
     card_id: str = "",
 ) -> None:
     resolved_card_id = card_id.strip() or f"ql-{cluster_id}{card_suffix}"
-    if zone_name.strip():
-        cta = strip_zone_name_from_cta(cta, zone_name=zone_name)
-    cta = finalize_cta_hook(cta)
-    # Re-validate the *finalized* hook: the zone-name strip + tail repair run after the
-    # pre-strip gate in zone.py, so any residual mid-sentence breakage would otherwise ship
-    # unchecked. Fall back to a clean deterministic hook rather than emit broken prose.
+    # CTA synthesis owns every text transform and final lint decision. Assembly only verifies the
+    # clean-break handoff so it cannot silently repair or mutate a final clause.
     if lint_cta_hook(cta):
-        cta = finalize_cta_hook(f"Follow the {cluster_title} arc through its linked quests.")
+        raise ValueError(f"questline CTA reached assembly without a final lint pass: {cluster_id}")
     include_decision = str(
         (cluster_decision or {}).get("final_decision")
         or (questline_decision or {}).get("final_decision")

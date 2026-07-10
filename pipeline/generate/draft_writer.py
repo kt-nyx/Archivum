@@ -35,7 +35,10 @@ from pipeline.generate.draft.claim_routing import (
 )
 from pipeline.generate.draft.llm import draft_chat_json_completion, set_draft_verbose
 from pipeline.generate.draft.mode import draft_pipeline_mode
-from pipeline.generate.draft.model_versions import build_temporal_model_manifest
+from pipeline.generate.draft.model_versions import (
+    PROSE_FINALIZE_DECISION_SCHEMA,
+    build_temporal_model_manifest,
+)
 from pipeline.generate.draft.pages import (
     InstanceKeyCharacterSelection,
     build_instance_page,
@@ -374,6 +377,7 @@ def run_draft_writer(
     temporal_decisions: list[dict[str, Any]] = []
     point_of_use_records: dict[str, Any] = {}
     entry_state_contract_decisions: list[dict[str, Any]] = []
+    entry_state_contract_by_entity: dict[str, dict[str, Any]] = {}
     content_boundary_decisions: list[dict[str, Any]] = []
     canonical_temporal_decisions: list[dict[str, Any]] = []
     canonical_claim_decisions: list[dict[str, Any]] = []
@@ -413,6 +417,11 @@ def run_draft_writer(
             record.canonical_evidence_id: record
             for record in canonical_records
             if record.canonical_evidence_id
+        }
+        entry_state_contract_by_entity = {
+            str(row.get("entity_id", "")).strip(): row
+            for row in entry_state_contract_decisions
+            if str(row.get("entity_id", "")).strip()
         }
 
 
@@ -464,6 +473,7 @@ def run_draft_writer(
                         )
                         else None
                     ),
+                    entry_state_contract=entry_state_contract_by_entity.get(entity_id),
                     included_cluster_ids=selected_arc_candidates_by_zone.get(entity_id),
                     faction_profile_targets=[
                         row
@@ -714,7 +724,14 @@ def run_draft_writer(
             ]
         ).model_dump(mode="json"),
     )
-    write_json((decisions_dir / "prose_finalize_decisions.json"), prose_finalize_decisions)
+    write_json(
+        (decisions_dir / "prose_finalize_decisions.json"),
+        {
+            "schema_version": PROSE_FINALIZE_DECISION_SCHEMA,
+            "producer": "draft_writer",
+            "decisions": prose_finalize_decisions,
+        },
+    )
     write_json((decisions_dir / "section_coverage_decisions.json"), section_coverage_decisions)
     # Data-model version + internal-only schema record (Slice 11): lets a run's decision sidecars be
     # traced to the model generation that wrote them, and pins the claim-metadata visibility contract.

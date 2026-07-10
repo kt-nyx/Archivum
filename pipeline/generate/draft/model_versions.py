@@ -27,6 +27,7 @@ ENTRY_STATE_CONTRACT_DECISION_SCHEMA = "entry_state_contract_decision.v1"
 TEMPORAL_CLASSIFIER_VERSION = "claim_temporal_classifier_v1"
 CLAIM_VIEW_ROUTING_VERSION = "claim_view_routing_v1"
 HISTORY_COVERAGE_VERSION = "section_coverage_v1"
+PROSE_FINALIZE_DECISION_SCHEMA = "prose_finalize_decision.v1"
 
 # Visibility of claim-level metadata relative to the public addon-facing draft JSON.
 CLAIM_METADATA_VISIBILITY = "internal"
@@ -48,6 +49,9 @@ INTERNAL_DECISION_SIDECARS: dict[str, str] = {
     ),
     "section_coverage_decisions.json": (
         "History coverage units and whether required setup-bridge claims were represented."
+    ),
+    "prose_finalize_decisions.json": (
+        "Final prose decisions, including questline CTA lint, bounded rewrite, and fallback records."
     ),
 }
 
@@ -77,6 +81,7 @@ def build_temporal_model_manifest(*, run_id: str) -> dict[str, Any]:
             "temporal_classifier_version": TEMPORAL_CLASSIFIER_VERSION,
             "claim_view_routing_version": CLAIM_VIEW_ROUTING_VERSION,
             "history_coverage_version": HISTORY_COVERAGE_VERSION,
+            "prose_finalize_decision_schema": PROSE_FINALIZE_DECISION_SCHEMA,
         },
         "internal_decision_sidecars": dict(INTERNAL_DECISION_SIDECARS),
     }
