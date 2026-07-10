@@ -1113,21 +1113,16 @@ def build_location_cards(
     *,
     zone_id: str,
     zone_name: str,
-    location_rows: list[dict[str, Any]],
-    location_candidate_map: dict[str, dict[str, Any]],
+    location_selection_decisions: list[dict[str, Any]],
     location_decision_map: dict[str, dict[str, Any]],
     pools: dict[str, list[dict[str, Any]]],
     revision_map: dict[str, str],
-    location_profile_targets: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, str]]]]:
     candidates = collect_location_candidates(
         zone_id=zone_id,
         zone_name=zone_name,
-        location_rows=location_rows,
-        location_candidate_map=location_candidate_map,
-        location_decision_map=location_decision_map,
+        location_selection_decisions=location_selection_decisions,
         pools=pools,
-        location_profile_targets=location_profile_targets,
     )
     target_count, queue = location_candidates_for_finalize(candidates)
     _vet_card_pools(queue, label=f"location.{zone_id}")

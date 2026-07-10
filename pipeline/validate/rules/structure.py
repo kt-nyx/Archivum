@@ -538,6 +538,18 @@ def _validate_zone_page(
             )
         )
     location_expect_cards = int(context.get("location_expect_card_count", 0) or 0)
+    if (
+        bool(context.get("release_gate"))
+        and str(context.get("location_coverage_status", "")) == "insufficient_viable_locations"
+    ):
+        issues.append(
+            ValidationIssue(
+                code="structure.zone_page_insufficient_viable_locations",
+                message="location retrieval exhausted without minimum viable direct-evidence coverage",
+                severity=ValidationSeverity.HARD_FAIL,
+                path="$.location_cards",
+            )
+        )
     if location_expect_cards > 0 and not zone_page.location_cards:
         issues.append(
             ValidationIssue(

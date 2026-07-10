@@ -253,9 +253,9 @@ def build_zone_page(
     fact_pack: dict[str, Any],
     evidence_rows: list[dict[str, Any]],
     questline_rows: list[dict[str, Any]],
-    location_rows: list[dict[str, Any]],
+    location_selection_decisions: list[dict[str, Any]],
     instance_rows: list[dict[str, Any]],
-    location_candidate_map: dict[str, dict[str, Any]],
+    _location_selection_metadata: dict[str, dict[str, Any]],
     location_decision_map: dict[str, dict[str, Any]],
     questline_decision: dict[str, Any] | None,
     *,
@@ -263,7 +263,6 @@ def build_zone_page(
     questline_card_metadata: dict[str, dict[str, Any]] | None = None,
     included_cluster_ids: list[str] | None = None,
     faction_profile_targets: list[dict[str, Any]] | None = None,
-    location_profile_targets: list[dict[str, Any]] | None = None,
     snapshots: list[dict[str, Any]] | None = None,
     quest_descriptions_by_node: dict[str, str] | None = None,
     instance_summary_map: dict[str, str] | None = None,
@@ -534,12 +533,10 @@ def build_zone_page(
     location_cards, landmark_provenance_map = build_location_cards(
         zone_id=zone_id,
         zone_name=name,
-        location_rows=location_rows,
-        location_candidate_map=location_candidate_map,
+        location_selection_decisions=location_selection_decisions,
         location_decision_map=location_decision_map,
         pools=pools,
         revision_map=revision_map,
-        location_profile_targets=location_profile_targets,
     )
     for pointers in landmark_provenance_map.values():
         for pointer in pointers:

@@ -1,409 +1,169 @@
 from __future__ import annotations
 
+from pipeline.contracts.models import LocationSelectionDecision, LocationSelectionState
+from pipeline.discovery.location_discovery import select_profiled_locations
 from pipeline.generate.draft.location_scoring import (
-    MIN_SCORE,
     LocationCandidate,
     collect_location_candidates,
-    extract_subregion_tokens,
-    location_zone_relevant,
-    score_location_candidate,
+    finalize_evidence_pools,
     select_location_cards,
 )
-from pipeline.generate.draft.pages.assembly import _build_evidence_pools
 
 
-def _profile_item(
-    location_id: str,
-    snippet: str,
-    *,
-    section_role: str = "history",
-    location_name: str = "Northwatch Hold",
-) -> dict[str, object]:
-    return {
-        "location_id": location_id,
-        "location_name": location_name,
-        "source_id": f"src-{location_id}",
-        "snippet": snippet,
-        "section_role": section_role,
-        "source_title": location_name,
-    }
-
-
-def _seed_item(snippet: str, *, section_role: str = "maps_subregions") -> dict[str, object]:
-    return {
-        "source_id": "src-zone",
-        "snippet": snippet,
-        "section_role": section_role,
-        "field_name": "history_digest",
-    }
-
-
-def _location_row(location_id: str, name: str, zone_id: str = "zone-example") -> dict[str, str]:
-    return {
-        "zone_id": zone_id,
-        "location_id": location_id,
-        "name": name,
-        "classification": "major_location_candidate",
-        "typing_signals": {"source_section_role": "maps_subregions"},
-    }
-
-
-def _decision(location_id: str, final: str) -> dict[str, object]:
-    return {
-        "subject_id": location_id,
-        "final_decision": final,
-        "reason_codes": ["score_based"] if final == "include" else ["defer"],
-    }
-
-
-def _location_candidate(
+def _selection(
     location_id: str,
     name: str,
-    snippet: str,
     *,
-    lore_significant: bool = True,
-    source_section_role: str = "history",
-    lead_links: list[str] | None = None,
-) -> LocationCandidate:
-    profile_items: list[dict[str, object]] = [
-        {
-            "source_id": f"src-{location_id}",
-            "source_title": name,
-            "snippet": snippet,
-            "section_role": source_section_role,
-        }
-    ]
-    if lead_links is not None:
-        # A lead paragraph carrying the location's defining sentence + its inline links, the
-        # structural containment signal (Cause 1a).
-        profile_items.insert(
-            0,
-            {
-                "source_id": f"src-{location_id}",
-                "source_title": name,
-                "snippet": f"{name} lead paragraph.",
-                "section_role": "lead",
-                "content_role": "lead",
-                "raw_section_role": "lead",
-                "links": [
-                    {"anchor_text": target, "href": f"/wiki/{target.replace(' ', '_')}"}
-                    for target in lead_links
-                ],
-            },
-        )
-    return LocationCandidate(
-        location_id=location_id,
-        name=name,
-        wiki_url=f"https://warcraft.wiki.gg/wiki/{name.replace(' ', '_')}",
-        profile_items=profile_items,
-        decision="include",
-        source_section_role=source_section_role,
-        zone_relevant=True,
-        lore_significant=lore_significant,
-    )
-
-
-def test_collect_and_select_include_only_locations() -> None:
-    zone_id = "zone-example"
-    zone_name = "Example Zone"
-    location_id = "location-northwatch-hold"
-    snippet = (
-        "Northwatch Hold is a fortified outpost in Example Zone where alliance patrols "
-        "coordinate supply lines and defensive operations across the contested frontier."
-    )
-    pools = {
-        "location_pool": [_profile_item(location_id, snippet, location_name="Northwatch Hold")],
-        "location_seed_pool": [
-            _seed_item(
-                "Northwatch Hold, Broken Ridge, and Sentinel Hill anchor key routes in Example Zone."
-            )
-        ],
+    state: str = "selected",
+    kind: str = "place",
+    profile_source_id: str | None = None,
+    zone_record: str = "on_zone",
+) -> dict[str, object]:
+    return {
+        "zone_id": "zone-example",
+        "location_id": location_id,
+        "name": name,
+        "source_link": f"/wiki/{name.replace(' ', '_')}",
+        "source_relation": "maps_subregions",
+        "state": state,
+        "entity_kind": kind,
+        "entity_kind_decision_id": f"entity-kind-{location_id.removeprefix('location-')}",
+        "zone_record": zone_record,
+        "profile_source_id": profile_source_id or f"src-{location_id}",
+        "profile_evidence_count": 1,
+        "categories": ["Example subzones", "Locations"],
+        "reason_codes": ["direct_profile_evidence"],
     }
-    candidates = collect_location_candidates(
-        zone_id=zone_id,
-        zone_name=zone_name,
-        location_rows=[_location_row(location_id, "Northwatch Hold", zone_id)],
-        location_candidate_map={
-            location_id: {
-                "location_id": location_id,
-                "name": "Northwatch Hold",
-                "source_link": "/wiki/Northwatch_Hold",
-                "entity_kind": "place",
-                "entity_kind_decision_id": "entity-kind-northwatch-hold",
-            }
-        },
-        location_decision_map={
-            location_id: _decision(location_id, "include"),
-            "location-defer-only": _decision("location-defer-only", "defer"),
-        },
-        pools=pools,
-    )
-    selected = select_location_cards(candidates)
-    assert len(selected) == 1
-    assert selected[0].location_id == location_id
-    assert selected[0].score >= MIN_SCORE
 
 
-def test_location_is_offzone_helper() -> None:
-    from pipeline.discovery.entity_typing import location_is_offzone, location_subzone_zone_slugs
-
-    # in-zone: subzone category matches the subject zone
-    assert not location_is_offzone(["Western Plaguelands subzones", "Cities"], "zone-western-plaguelands")
-    # off-zone: only a different zone's subzone category (Strahnbrad's real case)
-    assert location_is_offzone(
-        ["Hillsbrad Foothills subzones", "Destroyed settlements", "Villages"],
-        "zone-western-plaguelands",
-    )
-    # no subzone category at all -> no signal, never over-reject
-    assert not location_is_offzone(["Temples", "Burial sites"], "zone-western-plaguelands")
-    assert not location_is_offzone(None, "zone-western-plaguelands")
-    assert location_subzone_zone_slugs(["Hillsbrad Foothills subzones"]) == {"hillsbrad-foothills"}
+def _profile(
+    location_id: str, name: str, text: str, *, source_id: str | None = None
+) -> dict[str, str]:
+    return {
+        "location_id": location_id,
+        "location_name": name,
+        "source_id": source_id or f"src-{location_id}",
+        "source_title": name,
+        "section_role": "lead",
+        "snippet": text,
+    }
 
 
-def test_offzone_location_rejected_by_subzone_category() -> None:
-    # An in-zone landmark and an off-zone place (a different zone's subzone, merely linked from this
-    # zone's prose) both look electable on score; only the in-zone one should survive.
-    zone_id = "zone-example"
-    zone_name = "Example Zone"
-    in_id, off_id = "location-keep-hold", "location-far-village"
-    in_snippet = (
-        "Keep Hold is a fortified outpost in Example Zone where patrols coordinate supply lines "
-        "and defensive operations across the contested frontier."
-    )
-    off_snippet = (
-        "Far Village is a ruined settlement that Example Zone's history recalls, though it lies "
-        "within the neighboring region beyond the frontier."
-    )
-    candidates = collect_location_candidates(
-        zone_id=zone_id,
-        zone_name=zone_name,
-        location_rows=[
-            _location_row(in_id, "Keep Hold", zone_id),
-            _location_row(off_id, "Far Village", zone_id),
-        ],
-        location_candidate_map={
-            in_id: {
-                "location_id": in_id,
-                "name": "Keep Hold",
-                "source_link": "/wiki/Keep_Hold",
-                "categories": ["Example subzones", "Keeps"],
-                "entity_kind": "place",
-                "entity_kind_decision_id": "entity-kind-keep-hold",
-            },
-            off_id: {
-                "location_id": off_id,
-                "name": "Far Village",
-                "source_link": "/wiki/Far_Village",
-                "categories": ["Neighboring Region subzones", "Destroyed settlements"],
-                "entity_kind": "place",
-                "entity_kind_decision_id": "entity-kind-far-village",
-            },
-        },
-        location_decision_map={
-            in_id: _decision(in_id, "include"),
-            off_id: _decision(off_id, "include"),
-        },
-        pools={
-            "location_pool": [
-                _profile_item(in_id, in_snippet, location_name="Keep Hold"),
-                _profile_item(off_id, off_snippet, location_name="Far Village"),
-            ],
-            "location_seed_pool": [
-                _seed_item("Keep Hold and Far Village both appear in Example Zone's gazetteer."),
-            ],
-        },
-    )
-    by_id = {candidate.location_id: candidate for candidate in candidates}
-    assert by_id[off_id].rejected
-    assert "offzone_subzone_category" in by_id[off_id].reject_reasons
-    assert not by_id[in_id].rejected
-    selected_ids = {candidate.location_id for candidate in select_location_cards(candidates)}
-    assert in_id in selected_ids
-    assert off_id not in selected_ids
-
-
-def test_defer_candidates_are_not_elected() -> None:
-    zone_id = "zone-example"
-    candidate = score_location_candidate(
-        collect_location_candidates(
-            zone_id=zone_id,
-            zone_name="Example Zone",
-            location_rows=[_location_row("location-defer", "Defer Place", zone_id)],
-            location_candidate_map={
-                "location-defer": {
-                    "source_link": "/wiki/Defer_Place",
-                    "name": "Defer Place",
-                    "entity_kind": "place",
-                    "entity_kind_decision_id": "entity-kind-defer-place",
-                }
-            },
-            location_decision_map={"location-defer": _decision("location-defer", "defer")},
-            pools={
-                "location_pool": [
-                    _profile_item(
-                        "location-defer",
-                        "Defer Place remains a notable landmark within Example Zone and anchors patrol routes.",
-                        location_name="Defer Place",
-                    )
-                ],
-                "location_seed_pool": [],
-            },
-        )[0]
-    )
-    assert candidate.score == 0.0
-    assert not select_location_cards([candidate])
-
-
-def test_untyped_candidate_cannot_reach_location_card_selection() -> None:
-    location_id = "location-unresolved"
+def test_selected_place_uses_only_subject_matched_profile_evidence() -> None:
+    location_id = "location-sunspire"
     candidates = collect_location_candidates(
         zone_id="zone-example",
         zone_name="Example Zone",
-        location_rows=[_location_row(location_id, "Unresolved Target")],
-        location_candidate_map={
-            location_id: {"source_link": "/wiki/Unresolved_Target", "entity_kind": "unknown"}
-        },
-        location_decision_map={location_id: _decision(location_id, "include")},
+        location_selection_decisions=[_selection(location_id, "Sunspire")],
         pools={
             "location_pool": [
-                _profile_item(
-                    location_id,
-                    "Unresolved Target is mentioned in Example Zone.",
-                    location_name="Unresolved Target",
-                )
+                _profile(location_id, "Sunspire", "Sunspire stands within Example Zone."),
+                _profile("location-other", "Other Place", "Other Place mentions Sunspire."),
             ],
             "location_seed_pool": [],
         },
     )
-    assert candidates[0].rejected
-    assert candidates[0].reject_reasons == ["entity_kind_not_admitted"]
+
+    assert len(candidates) == 1
+    assert [item["source_id"] for item in candidates[0].profile_items] == ["src-location-sunspire"]
+    assert select_location_cards(candidates)[0].location_id == location_id
 
 
-def test_location_zone_relevance_requires_zone_or_subregion() -> None:
-    tokens = extract_subregion_tokens(
-        [_seed_item("Northwatch Hold, Broken Ridge, and Sentinel Hill in Example Zone.")],
-        zone_name="Example Zone",
-    )
-    assert location_zone_relevant(
-        "Northwatch Hold anchors alliance patrol routes.",
-        zone_name="Example Zone",
-        subregion_tokens=tokens,
-    )
-    assert not location_zone_relevant(
-        "A globally famous capital with no local tie.",
-        zone_name="Example Zone",
-        subregion_tokens=tokens,
-    )
-
-
-def test_lede_only_profile_with_seed_mentions_remains_electable() -> None:
-    zone_id = "zone-example"
-    location_id = "location-northwatch-hold"
-    pools = {
-        "location_pool": [
-            _profile_item(
-                location_id,
-                "Northwatch Hold is a major location located in the region.",
-                section_role="lead",
-            )
-        ],
-        "location_seed_pool": [
-            _seed_item(
-                "Northwatch Hold anchors alliance patrol routes and supply lines across Example Zone."
-            )
-        ],
-    }
+def test_substring_mention_never_becomes_profile_evidence() -> None:
     candidates = collect_location_candidates(
-        zone_id=zone_id,
+        zone_id="zone-example",
         zone_name="Example Zone",
-        location_rows=[_location_row(location_id, "Northwatch Hold", zone_id)],
-        location_candidate_map={
-            location_id: {
-                "source_link": "/wiki/Northwatch_Hold",
-                "entity_kind": "place",
-                "entity_kind_decision_id": "entity-kind-northwatch-hold",
-            }
+        location_selection_decisions=[_selection("location-sunspire", "Sunspire")],
+        pools={
+            "location_pool": [
+                _profile("location-other", "Other Place", "Other Place contains the word Sunspire.")
+            ],
+            "location_seed_pool": [],
         },
-        location_decision_map={location_id: _decision(location_id, "include")},
-        pools=pools,
     )
-    selected = select_location_cards(candidates)
-    assert len(selected) == 1
-    assert selected[0].lede_only
-    assert selected[0].seed_mentions
+
+    assert candidates == []
 
 
-def test_location_pool_does_not_fall_back_to_history_digest() -> None:
-    evidence_rows = [
-        {
-            "subject_id": "zone-example",
-            "field_name": "location_pool",
-            "build_meta": {"source_id": "src-profile", "location_id": "location-a"},
-            "evidence_items": [
-                {"snippet": "Profile-only location evidence.", "section_role": "lead"}
-            ],
-        },
-        {
-            "subject_id": "zone-example",
-            "field_name": "history_digest",
-            "build_meta": {"source_id": "src-zone"},
-            "evidence_items": [
-                {
-                    "snippet": "History-only geography mention for Example Subregion.",
-                    "section_role": "maps_subregions",
-                }
-            ],
-        },
+def test_unqualified_or_offzone_rows_cannot_consume_rendering_budget() -> None:
+    selections = [
+        _selection("location-concept", "Mystic Principle", kind="object_or_concept"),
+        _selection("location-remote", "Remote Tower", zone_record="off_zone"),
+        _selection("location-deferred", "Deferred Hall", state="deferred"),
     ]
-    pools = _build_evidence_pools(evidence_rows)
-    assert len(pools["location_pool"]) == 1
-    assert pools["location_pool"][0]["snippet"] == "Profile-only location evidence."
-    assert len(pools["location_seed_pool"]) == 1
-    assert "Example Subregion" in pools["location_seed_pool"][0]["snippet"]
-
-
-def test_select_location_cards_suppresses_child_keep_when_parent_is_selected() -> None:
-    # Cause 1a: containment is a structural signal — the child's *lead paragraph* links to the
-    # parent. Mardenholde Keep's lead links to Hearthglen, so it folds into Hearthglen. Andorhal
-    # merely *mentions* Hearthglen in its body but its lead links only to the zone, so it is kept
-    # (the old substring test wrongly suppressed it).
-    selected = select_location_cards(
-        [
-            _location_candidate(
-                "location-hearthglen",
-                "Hearthglen",
-                "Hearthglen is a major fortified settlement in Example Zone.",
-                lead_links=["Example Zone"],
-            ),
-            _location_candidate(
-                "location-mardenholde-keep",
-                "Mardenholde Keep",
-                "Mardenholde Keep is a keep within Hearthglen in Example Zone.",
-                source_section_role="maps_subregions",
-                lead_links=["Hearthglen", "Example Zone"],
-            ),
-            _location_candidate(
-                "location-andorhal",
-                "Andorhal",
-                "Andorhal lies near Hearthglen in Example Zone and once anchored grain trade.",
-                lead_links=["Example Zone"],
-            ),
-            _location_candidate(
-                "location-caer-darrow",
-                "Caer Darrow",
-                "Caer Darrow anchors the lake crossing in Example Zone.",
-                lead_links=["Example Zone"],
-            ),
-            _location_candidate(
-                "location-uthers-tomb",
-                "Uther's Tomb",
-                "Uther's Tomb marks a major memorial in Example Zone.",
-                lead_links=["Example Zone"],
-            ),
-        ]
+    profiles = [
+        _profile(str(row["location_id"]), str(row["name"]), "Direct profile evidence.")
+        for row in selections
+    ]
+    candidates = collect_location_candidates(
+        zone_id="zone-example",
+        zone_name="Example Zone",
+        location_selection_decisions=selections,
+        pools={"location_pool": profiles, "location_seed_pool": []},
     )
-    names = [candidate.name for candidate in selected]
 
-    assert "Hearthglen" in names
-    assert "Andorhal" in names  # independent town: mentions Hearthglen but does not link to it
-    assert "Mardenholde Keep" not in names  # lead links to Hearthglen -> contained
+    assert candidates == []
+
+
+def test_seed_mentions_are_supporting_only_not_a_summary_fallback() -> None:
+    candidate = LocationCandidate(
+        location_id="location-lantern-bay",
+        name="Lantern Bay",
+        wiki_url="https://example.invalid/Lantern_Bay",
+        profile_items=[_profile("location-lantern-bay", "Lantern Bay", "Direct account.")],
+        seed_mentions=[{"snippet": "A zone page mentions Lantern Bay."}],
+    )
+
+    assert finalize_evidence_pools(candidate) == [candidate.profile_items]
+
+
+def test_containment_requires_a_directed_lead_link_not_a_name_overlap() -> None:
+    parent = LocationCandidate(
+        location_id="location-harbor",
+        name="Harbor",
+        wiki_url="https://example.invalid/Harbor",
+        decision="include",
+        zone_relevant=True,
+        lore_significant=True,
+        profile_items=[{"section_role": "lead", "links": []}],
+    )
+    independent = LocationCandidate(
+        location_id="location-market",
+        name="Market",
+        wiki_url="https://example.invalid/Market",
+        decision="include",
+        zone_relevant=True,
+        profile_items=[{"section_role": "lead", "snippet": "The market discusses Harbor."}],
+    )
+
+    selected = select_location_cards([parent, independent])
+    assert {row.location_id for row in selected} == {"location-harbor", "location-market"}
+
+
+def test_progressive_selection_never_exceeds_remaining_card_capacity() -> None:
+    def decision(number: int, state: LocationSelectionState) -> LocationSelectionDecision:
+        return LocationSelectionDecision(
+            decision_id=f"location-selection-example-{number}",
+            zone_id="zone-example",
+            location_id=f"location-place-{number}",
+            name=f"Place {number}",
+            source_link=f"/wiki/Place_{number}",
+            source_relation="history" if number % 2 else "maps_subregions",
+            candidate_rank=number,
+            state=state,
+            entity_kind="place",
+            entity_kind_decision_id=f"entity-kind-place-{number}",
+            zone_record="on_zone",
+            profile_source_id=f"src-location-place-{number}",
+            profile_evidence_count=1,
+        )
+
+    selected = select_profiled_locations(
+        [
+            *(decision(number, LocationSelectionState.SELECTED) for number in range(6)),
+            *(decision(number, LocationSelectionState.PROFILE) for number in range(6, 10)),
+        ],
+        desired_card_count=8,
+    )
+
+    assert sum(row.state is LocationSelectionState.SELECTED for row in selected) == 8

@@ -27,7 +27,6 @@ from pipeline.contracts.models import (
 from pipeline.discovery.entity_typing import location_is_offzone
 from pipeline.discovery.instance_bosses import is_boss_section_role
 from pipeline.discovery.location_discovery import (
-    build_location_decision_row,
     build_zone_seed_text,
 )
 from pipeline.discovery.quest_lore import extract_quest_lore
@@ -638,7 +637,6 @@ def run_discovery_enrich(
         "zone_quest_clusters": discovery_dir / "zone_quest_clusters.json",
         "zone_quest_cluster_rankings": discovery_dir / "zone_quest_cluster_rankings.json",
         "zone_questline_card_metadata": discovery_dir / "zone_questline_card_metadata.json",
-        "location_significance_decisions": decisions_dir / "location_significance_decisions.json",
         "questline_inclusion_decisions": decisions_dir / "questline_inclusion_decisions.json",
         "evidence_packs": evidence_dir / "evidence_packs.jsonl",
         "enrich_report": discovery_dir / "discovery_enrich_report.json",
@@ -903,12 +901,7 @@ def run_discovery_enrich(
             EvidencePack.model_validate(row)
         return outputs
 
-    location_candidates = _load_json(discovery_dir / "zone_location_candidates.json")
-    if not isinstance(location_candidates, list):
-        location_candidates = []
-
     questline_graph_v3 = []
-    location_decisions: list[dict[str, Any]] = []
     questline_decisions: list[dict[str, Any]] = []
     storyline_by_zone = _storyline_snapshots_by_zone(snapshots)
     storyline_parse_status: dict[str, str] = {}
@@ -945,22 +938,6 @@ def run_discovery_enrich(
         questline_graph_v3.extend(v3_rows)
 
     quest_graph = v3_to_legacy_v1(questline_graph_v3)
-
-    zone_seed_text_by_id = {
-        zone_id: build_zone_seed_text(snapshots, zone_id) for zone_id in sorted(zone_names)
-    }
-    for candidate in location_candidates:
-        if not isinstance(candidate, dict):
-            continue
-        zone_id = str(candidate.get("zone_id", "")).strip()
-        location_decisions.append(
-            build_location_decision_row(
-                candidate,
-                run_id=context.run_id,
-                algorithm_version="v2-enrich",
-                seed_text=zone_seed_text_by_id.get(zone_id, ""),
-            )
-        )
 
     for zone_id in sorted(set(zone_names) | set(storyline_by_zone)):
         zone_v3 = [row for row in questline_graph_v3 if str(row.get("zone_id", "")) == zone_id]
@@ -1035,7 +1012,6 @@ def run_discovery_enrich(
 
     write_json(outputs["zone_quest_graph"], quest_graph)
     write_json(outputs["zone_quest_graph_v3"], questline_graph_v3)
-    write_json(outputs["location_significance_decisions"], location_decisions)
     write_json(outputs["questline_inclusion_decisions"], questline_decisions)
     if phase in {"full", "roster"}:
         outputs["evidence_packs"].write_text(
@@ -1059,7 +1035,7 @@ def run_discovery_enrich(
         },
     )
 
-    for row in location_decisions + questline_decisions:
+    for row in questline_decisions:
         DecisionArtifact.model_validate(row)
     for row in evidence_packs:
         EvidencePack.model_validate(row)

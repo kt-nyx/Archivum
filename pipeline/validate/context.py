@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from pipeline.common.run_context import RunContext
+from pipeline.contracts.models import LocationSelectionArtifact
 from pipeline.discovery.questline_significance import load_included_cluster_ids_by_zone
 from pipeline.ingest.snapshots import load_source_snapshots
 
@@ -19,6 +20,7 @@ class ValidationRunResources:
     questline_cluster_rankings: list[dict[str, Any]] = field(default_factory=list)
     questline_card_metadata: list[dict[str, Any]] = field(default_factory=list)
     location_decisions: list[dict[str, Any]] = field(default_factory=list)
+    location_coverage: list[dict[str, Any]] = field(default_factory=list)
     fact_check_target_entity_ids: list[str] = field(default_factory=list)
     fact_check_target_reasons: dict[str, list[str]] = field(default_factory=dict)
     linker_manual_review_by_entity: dict[str, int] = field(default_factory=dict)
@@ -129,13 +131,13 @@ def load_validation_run_resources(run_root: Path) -> ValidationRunResources:
         if isinstance(blob, list):
             resources.questline_decisions = [row for row in blob if isinstance(row, dict)]
 
-    location_decisions_path = (
-        run_root / "data" / "decisions" / "location_significance_decisions.json"
-    )
+    location_decisions_path = run_root / "data" / "decisions" / "location_selection_decisions.json"
     if location_decisions_path.exists():
-        blob = json.loads(location_decisions_path.read_text(encoding="utf-8"))
-        if isinstance(blob, list):
-            resources.location_decisions = [row for row in blob if isinstance(row, dict)]
+        artifact = LocationSelectionArtifact.model_validate(
+            json.loads(location_decisions_path.read_text(encoding="utf-8"))
+        )
+        resources.location_decisions = [row.model_dump(mode="json") for row in artifact.decisions]
+        resources.location_coverage = [row.model_dump(mode="json") for row in artifact.coverage]
 
     rankings_path = run_root / "data" / "discovery" / "zone_quest_cluster_rankings.json"
     if rankings_path.exists():
@@ -163,16 +165,29 @@ def wiki_first_entity_flags(
     questline_cluster_rankings: list[dict[str, Any]] | None = None,
     questline_card_metadata: list[dict[str, Any]] | None = None,
     location_decisions: list[dict[str, Any]] | None = None,
+    location_coverage: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     questline_cluster_rankings = questline_cluster_rankings or []
     questline_card_metadata = questline_card_metadata or []
     location_decisions = location_decisions or []
+    location_coverage = location_coverage or []
     questline_row = next(
         (row for row in questline_decisions if str(row.get("subject_id", "")) == entity_id),
         None,
     )
     location_include_count = sum(
-        1 for row in location_decisions if str(row.get("final_decision", "")) == "include"
+        1
+        for row in location_decisions
+        if str(row.get("zone_id", "")).strip() == entity_id
+        and str(row.get("state", "")) == "selected"
+    )
+    location_coverage_status = next(
+        (
+            str(row.get("status", ""))
+            for row in location_coverage
+            if str(row.get("zone_id", "")).strip() == entity_id
+        ),
+        "",
     )
     rankings_by_zone = load_included_cluster_ids_by_zone(questline_cluster_rankings)
     questline_included_cluster_ids = rankings_by_zone.get(entity_id, [])
@@ -194,6 +209,7 @@ def wiki_first_entity_flags(
         "questline_expect_include": str((questline_row or {}).get("final_decision", ""))
         == "include",
         "location_expect_card_count": location_include_count,
+        "location_coverage_status": location_coverage_status,
         "questline_included_cluster_ids": questline_included_cluster_ids,
         "questline_card_metadata_by_cluster": questline_card_metadata_by_cluster,
         "questline_excluded_cluster_ids": questline_excluded_cluster_ids,
@@ -230,5 +246,6 @@ def build_entity_validation_context(
             questline_cluster_rankings=resources.questline_cluster_rankings,
             questline_card_metadata=resources.questline_card_metadata,
             location_decisions=resources.location_decisions,
+            location_coverage=resources.location_coverage,
         ),
     }

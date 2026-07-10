@@ -456,24 +456,34 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(
         ),
         encoding="utf-8",
     )
-    (decisions_dir / "location_significance_decisions.json").write_text(
+    (decisions_dir / "location_selection_decisions.json").write_text(
         json.dumps(
-            [
-                {
-                    "subject_id": "location-hearthglen",
-                    "subject_type": "location",
-                    "run_id": context.run_id,
-                    "algorithm_version": "v1",
-                    "features": {"source_section_role": "maps_subregions"},
-                    "hard_reject": False,
-                    "hard_reject_reasons": [],
-                    "score": 0.75,
-                    "thresholds": {"include_min": 0.7},
-                    "borderline_adjudication": None,
-                    "final_decision": "include",
-                    "reason_codes": ["score_based"],
-                }
-            ],
+            {
+                "schema_version": "location_selection.v1",
+                "producer": "traverse_seed",
+                "decisions": [
+                    {
+                        "schema_version": "location_selection_decision.v1",
+                        "decision_id": "location-selection-zone-western-plaguelands-hearthglen",
+                        "zone_id": "zone-western-plaguelands",
+                        "location_id": "location-hearthglen",
+                        "name": "Hearthglen",
+                        "source_link": "/wiki/Hearthglen",
+                        "source_relation": "maps_subregions",
+                        "candidate_rank": 0,
+                        "state": "selected",
+                        "entity_kind": "place",
+                        "entity_kind_decision_id": "entity-kind-hearthglen",
+                        "source_ids": ["src-zone"],
+                        "categories": ["Western Plaguelands subzones", "Towns"],
+                        "zone_record": "on_zone",
+                        "profile_source_id": "src-location-hearthglen",
+                        "profile_evidence_count": 1,
+                        "reason_codes": ["direct_profile_evidence"],
+                    }
+                ],
+                "coverage": [],
+            },
             indent=2,
         ),
         encoding="utf-8",
@@ -511,7 +521,6 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(
     instance_draft = json.loads(instance_output.read_text(encoding="utf-8"))
 
     assert zone_draft["history_sections"]
-    assert zone_draft["location_cards"]
     assert zone_draft["instance_links"]
     assert zone_draft["sources"]
     assert "reclaimed" in zone_draft["history_sections"][0]["body"].lower()

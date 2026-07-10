@@ -101,6 +101,75 @@ class LocationType(StrEnum):
     MAJOR_LOCATION = "major_location"
 
 
+class LocationSelectionState(StrEnum):
+    """Lifecycle states for a directly-evidenced location card candidate."""
+
+    CANDIDATE = "candidate"
+    PROBE = "probe"
+    PROFILE = "profile"
+    SELECTED = "selected"
+    DEFERRED = "deferred"
+    REJECTED = "rejected"
+
+
+class LocationSelectionDecision(BaseModel):
+    """One auditable location-discovery decision.
+
+    A decision's ``location_id`` is also the only acceptable subject identity for
+    its profile evidence.  This deliberately makes a name/substring join
+    impossible at the rendering boundary.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["location_selection_decision.v1"] = "location_selection_decision.v1"
+    decision_id: str = Field(pattern=ID_PATTERN)
+    zone_id: str = Field(pattern=ID_PATTERN)
+    location_id: str = Field(pattern=ID_PATTERN)
+    name: str = Field(min_length=1)
+    source_link: str = Field(min_length=1)
+    source_relation: str = "other"
+    candidate_rank: int = Field(ge=0)
+    state: LocationSelectionState
+    entity_kind: EntityKind = EntityKind.UNKNOWN
+    entity_kind_decision_id: str = ""
+    source_ids: list[str] = Field(default_factory=list)
+    categories: list[str] = Field(default_factory=list)
+    infobox: dict[str, str] = Field(default_factory=dict)
+    zone_record: Literal["on_zone", "off_zone", "unknown"] = "unknown"
+    profile_source_id: str = ""
+    profile_evidence_count: int = Field(default=0, ge=0)
+    reason_codes: list[str] = Field(default_factory=list)
+
+
+class LocationCoverageStatus(BaseModel):
+    """Per-zone bounded-retrieval result for the location-card family."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    zone_id: str = Field(pattern=ID_PATTERN)
+    desired_card_count: int = Field(ge=1)
+    selected_count: int = Field(ge=0)
+    probe_cap: int = Field(ge=1)
+    profile_cap: int = Field(ge=1)
+    probes_attempted: int = Field(ge=0)
+    profiles_attempted: int = Field(ge=0)
+    status: Literal["coverage_met", "insufficient_viable_locations"]
+    attempted_candidate_ids: list[str] = Field(default_factory=list)
+    reason_codes: list[str] = Field(default_factory=list)
+
+
+class LocationSelectionArtifact(BaseModel):
+    """Clean-break, versioned location selection handoff."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["location_selection.v1"] = "location_selection.v1"
+    producer: Literal["discovery", "traverse_seed"]
+    decisions: list[LocationSelectionDecision] = Field(default_factory=list)
+    coverage: list[LocationCoverageStatus] = Field(default_factory=list)
+
+
 class RetailEligibility(StrEnum):
     ELIGIBLE = "eligible"
     INELIGIBLE_CLASSIC_ONLY = "ineligible_classic_only"

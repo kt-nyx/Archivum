@@ -1,19 +1,24 @@
-"""Shared location significance scoring for discovery workflow and enrich."""
+"""Generic staged location-discovery decisions and bounded coverage selection."""
 
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Literal
 
-LOCATION_INCLUDE_MIN = 0.7
+from pipeline.common.text_ids import slugify
+from pipeline.contracts.models import (
+    EntityKind,
+    LocationCoverageStatus,
+    LocationSelectionDecision,
+    LocationSelectionState,
+)
 
-LOCATION_INCLUDE_SECTION_WEIGHTS: dict[str, float] = {
-    "maps_subregions": 0.35,
-    "instances_or_dungeons": 0.1,
-    "quests_or_storyline": 0.2,
-    "history": 0.2,
-    "other": 0.0,
-}
+LOCATION_PROBE_BATCH_SIZE = 4
+LOCATION_PROBE_CAP = 24
+LOCATION_PROFILE_CAP = 12
+LOCATION_DESIRED_CARD_COUNT = 8
+LOCATION_MIN_VIABLE_CARDS = 3
+
 
 def _normalize_name(name: str) -> str:
     return re.sub(r"\s+", " ", name.strip()).lower()
@@ -25,67 +30,8 @@ def name_in_seed_text(name: str, seed_text: str) -> bool:
     return _normalize_name(name) in _normalize_name(seed_text)
 
 
-# Settlement-tier classifications receive the large significance boost in
-# score_location_candidate; every other typed value is landmark-tier and shares
-# the generic scoring path with "major_location_candidate".
-SETTLEMENT_CLASSIFICATIONS = frozenset({"city", "starter_area"})
-
-
-def classify_location_candidate(_name: str, *, hard_reject_reasons: list[str]) -> str:
-    """Return the neutral discovery placeholder after entity-kind admission.
-
-    Target-page categories and infoboxes, not title tokens, determine published
-    location type later in drafting.
-    """
-    if hard_reject_reasons:
-        return "reject"
-    return "major_location_candidate"
-
-
-def hard_reject_markers(_name: str) -> list[str]:
-    """No title-based rejection remains; URL hygiene happens before this stage."""
-    return []
-
-
-def score_location_candidate(
-    candidate: dict[str, Any],
-    *,
-    seed_text: str = "",
-) -> tuple[float, str, list[str]]:
-    name = str(candidate.get("name", ""))
-    hard_reject_reasons = hard_reject_markers(name)
-    location_class = classify_location_candidate(name, hard_reject_reasons=hard_reject_reasons)
-    source_section_role = str(candidate.get("source_section_role", "other"))
-    base_score = 0.15
-    if location_class in SETTLEMENT_CLASSIFICATIONS:
-        base_score += 0.6
-    else:
-        base_score += 0.25
-    base_score += LOCATION_INCLUDE_SECTION_WEIGHTS.get(source_section_role, 0.0)
-    if name_in_seed_text(name, seed_text):
-        base_score += 0.15
-    score = max(0.0, min(1.0, base_score))
-    rounded_score = round(score, 2)
-    final_decision = (
-        "exclude"
-        if hard_reject_reasons
-        else ("include" if rounded_score >= LOCATION_INCLUDE_MIN else "defer")
-    )
-    reason_codes = (
-        ["hard_reject"]
-        if hard_reject_reasons
-        else ["score_based", f"source_role:{source_section_role}"]
-    )
-    if name_in_seed_text(name, seed_text) and "seed_mention" not in reason_codes:
-        reason_codes.append("seed_mention")
-    borderline = 0.45 <= rounded_score <= 0.65
-    if borderline and rounded_score >= 0.5 and final_decision == "defer":
-        final_decision = "include"
-        reason_codes.append("borderline_include")
-    return score, final_decision, reason_codes
-
-
 def build_zone_seed_text(snapshots: list[dict[str, Any]], zone_id: str) -> str:
+    """Collect zone narrative text for generic questline significance inputs."""
     from pipeline.common.text_normalize import clean_wiki_snippet
 
     seed_roles = {
@@ -105,18 +51,14 @@ def build_zone_seed_text(snapshots: list[dict[str, Any]], zone_id: str) -> str:
             continue
         if str(snapshot.get("auxiliary_role", "")).strip():
             continue
-        section_blocks = snapshot.get("section_blocks", [])
-        if not isinstance(section_blocks, list):
+        blocks = snapshot.get("section_blocks", [])
+        if not isinstance(blocks, list):
             continue
-        for block in section_blocks:
+        for block in blocks:
             if not isinstance(block, dict):
                 continue
-            raw_role = (
-                re.sub(r"\s+", " ", str(block.get("section_role", "")).strip())
-                .lower()
-                .replace(" ", "_")
-            )
-            if raw_role not in seed_roles and "history" not in raw_role:
+            role = _normalize_name(str(block.get("section_role", ""))).replace(" ", "_")
+            if role not in seed_roles and "history" not in role:
                 continue
             snippet = clean_wiki_snippet(str(block.get("text", "")))
             if snippet:
@@ -124,46 +66,163 @@ def build_zone_seed_text(snapshots: list[dict[str, Any]], zone_id: str) -> str:
     return " ".join(parts)
 
 
-def build_location_decision_row(
-    candidate: dict[str, Any],
+def location_candidate_rank(source_relation: str, name: str) -> tuple[int, str]:
+    """Stable preliminary ordering from the source relationship, never title facts."""
+    role = _normalize_name(source_relation).replace(" ", "_")
+    if "history" in role:
+        priority = 0
+    elif any(marker in role for marker in ("map", "subregion", "geography")):
+        priority = 1
+    elif any(marker in role for marker in ("quest", "story", "current")):
+        priority = 2
+    else:
+        priority = 3
+    return priority, _normalize_name(name)
+
+
+def build_location_candidate_decision(
     *,
-    run_id: str,
-    algorithm_version: str,
-    seed_text: str = "",
-) -> dict[str, Any]:
-    name = str(candidate.get("name", ""))
-    hard_reject_reasons = hard_reject_markers(name)
-    source_section_role = str(candidate.get("source_section_role", "other"))
-    score, final_decision, reason_codes = score_location_candidate(candidate, seed_text=seed_text)
-    rounded_score = round(score, 2)
-    borderline = 0.45 <= rounded_score <= 0.65
-    return {
-        "subject_id": candidate["location_id"],
-        "subject_type": "location",
-        "run_id": run_id,
-        "algorithm_version": algorithm_version,
-        "features": {
-            "keyword_density": 1 if score > 0.6 else 0,
-            "has_hard_reject": bool(hard_reject_reasons),
-            "source_section_role": source_section_role,
-            "seed_mention": name_in_seed_text(name, seed_text),
-        },
-        "hard_reject": bool(hard_reject_reasons),
-        "hard_reject_reasons": hard_reject_reasons,
-        "score": score,
-        "thresholds": {
-            "include_min": LOCATION_INCLUDE_MIN,
-            "borderline_min": 0.45,
-            "borderline_max": 0.65,
-        },
-        "borderline_adjudication": (
-            {
-                "prompt_class": "location_significance_borderline",
-                "ruling": "include" if rounded_score >= 0.5 else "exclude",
-            }
-            if borderline
-            else None
-        ),
-        "final_decision": final_decision,
-        "reason_codes": reason_codes,
+    zone_id: str,
+    location_id: str,
+    name: str,
+    source_link: str,
+    source_relation: str,
+    candidate_rank: int,
+    entity_kind: EntityKind,
+    entity_kind_decision_id: str,
+    source_ids: list[str],
+    reason_codes: list[str],
+) -> LocationSelectionDecision:
+    """Create the initial broad-discovery state for one valid outbound link."""
+    state = (
+        LocationSelectionState.REJECTED
+        if entity_kind not in {EntityKind.PLACE, EntityKind.UNKNOWN}
+        else LocationSelectionState.CANDIDATE
+    )
+    reasons = list(reason_codes)
+    if state is LocationSelectionState.REJECTED:
+        reasons.append("entity_kind_not_place")
+    return LocationSelectionDecision(
+        decision_id=f"location-selection-{slugify(zone_id)}-{slugify(name)}",
+        zone_id=zone_id,
+        location_id=location_id,
+        name=name,
+        source_link=source_link,
+        source_relation=source_relation or "other",
+        candidate_rank=candidate_rank,
+        state=state,
+        entity_kind=entity_kind,
+        entity_kind_decision_id=entity_kind_decision_id,
+        source_ids=source_ids,
+        reason_codes=reasons,
+    )
+
+
+def profile_evidence_count(snapshot: dict[str, Any]) -> int:
+    blocks = snapshot.get("section_blocks")
+    if not isinstance(blocks, list):
+        return 0
+    return sum(
+        1 for block in blocks if isinstance(block, dict) and str(block.get("text", "")).strip()
+    )
+
+
+def profile_establishes_zone_record(snapshot: dict[str, Any], zone_name: str) -> bool:
+    """Whether the location's own fetched page affirmatively names its parent zone."""
+    if not zone_name.strip():
+        return False
+    text_parts = [str(snapshot.get("body", ""))]
+    blocks = snapshot.get("section_blocks")
+    if isinstance(blocks, list):
+        text_parts.extend(str(block.get("text", "")) for block in blocks if isinstance(block, dict))
+    return name_in_seed_text(zone_name, " ".join(text_parts))
+
+
+def select_profiled_locations(
+    decisions: list[LocationSelectionDecision],
+    *,
+    desired_card_count: int = LOCATION_DESIRED_CARD_COUNT,
+) -> list[LocationSelectionDecision]:
+    """Choose direct profiles with generic history/geography/current coverage."""
+    viable = [
+        row
+        for row in decisions
+        if row.state is LocationSelectionState.PROFILE
+        and row.entity_kind is EntityKind.PLACE
+        and row.zone_record == "on_zone"
+        and row.profile_source_id
+        and row.profile_evidence_count > 0
+    ]
+    viable.sort(key=lambda row: (row.candidate_rank, _normalize_name(row.name)))
+
+    def family(row: LocationSelectionDecision) -> str:
+        role = _normalize_name(row.source_relation).replace(" ", "_")
+        if "history" in role:
+            return "history"
+        if any(marker in role for marker in ("map", "subregion", "geography")):
+            return "geography"
+        if any(marker in role for marker in ("quest", "story", "current")):
+            return "current"
+        return "other"
+
+    selected_ids = {
+        row.location_id for row in decisions if row.state is LocationSelectionState.SELECTED
     }
+    for wanted in ("history", "geography", "current", "other"):
+        row = next(
+            (
+                row
+                for row in viable
+                if row.location_id not in selected_ids and family(row) == wanted
+            ),
+            None,
+        )
+        if row is not None and len(selected_ids) < desired_card_count:
+            selected_ids.add(row.location_id)
+    for row in viable:
+        if len(selected_ids) >= desired_card_count:
+            break
+        selected_ids.add(row.location_id)
+    return [
+        row.model_copy(update={"state": LocationSelectionState.SELECTED})
+        if row.location_id in selected_ids
+        else row
+        for row in decisions
+    ]
+
+
+def location_coverage_status(
+    *,
+    zone_id: str,
+    decisions: list[LocationSelectionDecision],
+    probes_attempted: int,
+    profiles_attempted: int,
+    probe_cap: int = LOCATION_PROBE_CAP,
+    profile_cap: int = LOCATION_PROFILE_CAP,
+    desired_card_count: int = LOCATION_DESIRED_CARD_COUNT,
+) -> LocationCoverageStatus:
+    selected_count = sum(1 for row in decisions if row.state is LocationSelectionState.SELECTED)
+    exhausted = probes_attempted >= probe_cap or profiles_attempted >= profile_cap
+    status: Literal["coverage_met", "insufficient_viable_locations"] = (
+        "coverage_met"
+        if selected_count >= LOCATION_MIN_VIABLE_CARDS
+        else "insufficient_viable_locations"
+    )
+    reasons = []
+    if status == "insufficient_viable_locations":
+        reasons = [
+            "insufficient_viable_locations",
+            "retrieval_budget_exhausted" if exhausted else "candidate_pool_exhausted",
+        ]
+    return LocationCoverageStatus(
+        zone_id=zone_id,
+        desired_card_count=desired_card_count,
+        selected_count=selected_count,
+        probe_cap=probe_cap,
+        profile_cap=profile_cap,
+        probes_attempted=probes_attempted,
+        profiles_attempted=profiles_attempted,
+        status=status,
+        attempted_candidate_ids=[row.location_id for row in decisions],
+        reason_codes=reasons,
+    )

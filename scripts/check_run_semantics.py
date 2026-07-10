@@ -491,17 +491,21 @@ def check_run(
             zone_evidence_rows.append(row)
 
         location_decisions_path = (
-            run_root / "data" / "decisions" / "location_significance_decisions.json"
+            run_root / "data" / "decisions" / "location_selection_decisions.json"
         )
         include_location_ids: set[str] | None = None
         if location_decisions_path.exists():
             decisions_blob = _load_json(location_decisions_path)
-            if isinstance(decisions_blob, list):
+            if (
+                isinstance(decisions_blob, dict)
+                and decisions_blob.get("schema_version") == "location_selection.v1"
+                and isinstance(decisions_blob.get("decisions"), list)
+            ):
                 include_location_ids = {
-                    str(row.get("subject_id", "")).strip()
-                    for row in decisions_blob
+                    str(row.get("location_id", "")).strip()
+                    for row in decisions_blob["decisions"]
                     if isinstance(row, dict)
-                    and str(row.get("final_decision", "")).strip() == "include"
+                    and str(row.get("state", "")).strip() == "selected"
                 }
                 include_location_ids = {
                     location_id for location_id in include_location_ids if location_id
@@ -575,21 +579,6 @@ def check_run(
                         eligible_faction_candidates.add(faction_id)
                         if faction_name:
                             faction_names_by_id.setdefault(faction_id, faction_name)
-        location_targets_path = run_root / "data" / "discovery" / "location_profile_targets.json"
-        if location_targets_path.exists():
-            targets_blob = _load_json(location_targets_path)
-            if isinstance(targets_blob, list):
-                for row in targets_blob:
-                    if not isinstance(row, dict):
-                        continue
-                    if str(row.get("zone_id", "")).strip() != resolved_zone_id:
-                        continue
-                    location_id = str(row.get("location_id", "")).strip()
-                    location_name = str(row.get("name", "")).strip()
-                    if location_id and _location_is_include(location_id):
-                        eligible_location_candidates.add(location_id)
-                        if location_name:
-                            location_names_by_id.setdefault(location_id, location_name)
         for card in location_cards:
             card_id = str(card.get("id", "")).strip()
             card_name = str(card.get("name", "")).strip()

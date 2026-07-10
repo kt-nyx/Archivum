@@ -12,7 +12,7 @@ from pipeline.ai.openai_client import chat_json_completion
 from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext
 from pipeline.common.text_normalize import normalize_display_payload
-from pipeline.contracts.models import EntityKindDecision
+from pipeline.contracts.models import EntityKindDecision, LocationSelectionArtifact
 from pipeline.discovery.entity_typing import canonical_path_for_link
 from pipeline.discovery.questline_card_polish import load_questline_card_metadata
 from pipeline.discovery.questline_significance import load_included_cluster_ids_by_zone
@@ -64,6 +64,21 @@ def _load_entity_kind_decisions(path: Path) -> dict[str, EntityKindDecision]:
         raise RuntimeError(f"entity-kind decisions at '{path}' must contain a decisions array")
     decisions = [EntityKindDecision.model_validate(row) for row in rows if isinstance(row, dict)]
     return {decision.decision_id: decision for decision in decisions}
+
+
+def _load_location_selection(path: Path) -> LocationSelectionArtifact:
+    if not path.exists():
+        raise RuntimeError(
+            "location cards require data/decisions/location_selection_decisions.json; "
+            "regenerate this run from discovery"
+        )
+    try:
+        return LocationSelectionArtifact.model_validate(json.loads(path.read_text(encoding="utf-8")))
+    except Exception as exc:  # noqa: BLE001 - make schema/producer drift actionable
+        raise RuntimeError(
+            f"location selection at '{path}' must use schema location_selection.v1 "
+            "produced by traverse_seed; regenerate this run"
+        ) from exc
 
 
 def _build_key_character_decision_row(
@@ -148,34 +163,34 @@ def run_draft_writer(
         blob = json.loads(lore_map_path.read_text(encoding="utf-8"))
         if isinstance(blob, list):
             instance_lore_rows = [row for row in blob if isinstance(row, dict)]
-    location_rows: list[dict[str, Any]] = []
-    location_rows_path = context.data_dir / "discovery" / "zone_location_classification.json"
-    if location_rows_path.exists():
-        blob = json.loads(location_rows_path.read_text(encoding="utf-8"))
-        if isinstance(blob, list):
-            location_rows = [row for row in blob if isinstance(row, dict)]
+    location_selection_path = context.data_dir / "decisions" / "location_selection_decisions.json"
+    has_location_evidence = any(
+        str(row.get("field_name", "")).strip() == "location_pool"
+        for row in evidence_rows
+        if isinstance(row, dict)
+    )
+    if location_selection_path.exists():
+        location_selection = _load_location_selection(location_selection_path)
+    elif has_location_evidence:
+        raise RuntimeError(
+            "location profile evidence requires data/decisions/location_selection_decisions.json; "
+            "regenerate this run from discovery"
+        )
+    else:
+        location_selection = LocationSelectionArtifact(producer="traverse_seed")
+    location_selection_decisions = [
+        row.model_dump(mode="json") for row in location_selection.decisions
+    ]
     instance_rows: list[dict[str, Any]] = []
     instance_rows_path = context.data_dir / "discovery" / "zone_instance_registry.json"
     if instance_rows_path.exists():
         blob = json.loads(instance_rows_path.read_text(encoding="utf-8"))
         if isinstance(blob, list):
             instance_rows = [row for row in blob if isinstance(row, dict)]
-    location_candidate_map: dict[str, dict[str, Any]] = {}
-    location_candidates_path = context.data_dir / "discovery" / "zone_location_candidates.json"
-    if location_candidates_path.exists():
-        blob = json.loads(location_candidates_path.read_text(encoding="utf-8"))
-        if isinstance(blob, list):
-            for row in blob:
-                if not isinstance(row, dict):
-                    continue
-                location_id = str(row.get("location_id", "")).strip()
-                if not location_id:
-                    continue
-                location_candidate_map[location_id] = row
     entity_kind_decisions_path = context.data_dir / "decisions" / "entity_kind_decisions.json"
-    if location_candidate_map and not entity_kind_decisions_path.exists():
+    if location_selection_decisions and not entity_kind_decisions_path.exists():
         raise RuntimeError(
-            "location candidates require data/decisions/entity_kind_decisions.json; "
+            "location selection requires data/decisions/entity_kind_decisions.json; "
             "regenerate this run from discovery"
         )
     entity_kind_decisions = (
@@ -183,7 +198,8 @@ def run_draft_writer(
         if entity_kind_decisions_path.exists()
         else {}
     )
-    for location_id, candidate in location_candidate_map.items():
+    for candidate in location_selection_decisions:
+        location_id = str(candidate.get("location_id", "")).strip()
         decision_id = str(candidate.get("entity_kind_decision_id", "")).strip()
         decision = entity_kind_decisions.get(decision_id)
         if decision is None:
@@ -197,19 +213,11 @@ def run_draft_writer(
                 f"'{decision_id}' about the target page"
             )
         candidate["entity_kind"] = decision.kind.value
-    location_decision_map: dict[str, dict[str, Any]] = {}
-    location_decisions_path = (
-        context.data_dir / "decisions" / "location_significance_decisions.json"
-    )
-    if location_decisions_path.exists():
-        blob = json.loads(location_decisions_path.read_text(encoding="utf-8"))
-        if isinstance(blob, list):
-            for row in blob:
-                if not isinstance(row, dict):
-                    continue
-                subject_id = str(row.get("subject_id", "")).strip()
-                if subject_id:
-                    location_decision_map[subject_id] = row
+    location_decision_map = {
+        str(row.get("location_id", "")).strip(): row
+        for row in location_selection_decisions
+        if str(row.get("location_id", "")).strip()
+    }
     questline_decision_map: dict[str, dict[str, Any]] = {}
     questline_cluster_decision_map: dict[str, dict[str, Any]] = {}
     cluster_rankings_by_zone: dict[str, list[str]] = {}
@@ -261,12 +269,6 @@ def run_draft_writer(
         targets_blob = json.loads(faction_targets_path.read_text(encoding="utf-8"))
         if isinstance(targets_blob, list):
             faction_profile_targets = [row for row in targets_blob if isinstance(row, dict)]
-    location_profile_targets: list[dict[str, Any]] = []
-    location_targets_path = context.data_dir / "discovery" / "location_profile_targets.json"
-    if location_targets_path.exists():
-        targets_blob = json.loads(location_targets_path.read_text(encoding="utf-8"))
-        if isinstance(targets_blob, list):
-            location_profile_targets = [row for row in targets_blob if isinstance(row, dict)]
     snapshots_path = context.data_dir / "ingest" / "source_snapshots.json"
     source_snapshots: list[dict[str, Any]] = load_source_snapshots(snapshots_path, missing_ok=True)
 
@@ -323,23 +325,6 @@ def run_draft_writer(
             if record.canonical_evidence_id
         }
 
-    # Carry each traversed location page's own MediaWiki categories and infobox onto its
-    # candidate row so the draft can type the card from the authoritative wiki signals
-    # (e.g. Andorhal -> "Destroyed settlements" -> ruins; Hearthglen -> "Towns" -> town;
-    # infobox "Type" as the Slice 10 category -> infobox -> LLM precedence's second step)
-    # instead of fragile evidence-text words.
-    for snapshot in source_snapshots:
-        if str(snapshot.get("auxiliary_role", "")).strip() != "location_profile":
-            continue
-        location_id = str(snapshot.get("auxiliary_target_id", "")).strip()
-        if not location_id or location_id not in location_candidate_map:
-            continue
-        categories = snapshot.get("categories") or []
-        if categories:
-            location_candidate_map[location_id]["categories"] = list(categories)
-        infobox = snapshot.get("infobox")
-        if isinstance(infobox, dict) and infobox:
-            location_candidate_map[location_id]["infobox"] = dict(infobox)
 
     def _write(
         path: Path,
@@ -364,16 +349,13 @@ def run_draft_writer(
                     for row in quest_graph_v3_rows
                     if row.get("zone_id") == entity_id and str(row.get("node_type", "")) == "quest"
                 ]
-                scoped_location_rows = [
-                    row for row in location_rows if str(row.get("zone_id", "")).strip() == entity_id
-                ]
                 draft = build_zone_page(
                     fact_pack,
                     scoped_evidence,
                     scoped_quest_rows,
-                    scoped_location_rows,
+                    location_selection_decisions,
                     instance_rows,
-                    location_candidate_map,
+                    {},
                     location_decision_map,
                     questline_decision_map.get(entity_id),
                     questline_cluster_decision_map=questline_cluster_decision_map,
@@ -386,11 +368,6 @@ def run_draft_writer(
                     faction_profile_targets=[
                         row
                         for row in faction_profile_targets
-                        if str(row.get("zone_id", "")).strip() == entity_id
-                    ],
-                    location_profile_targets=[
-                        row
-                        for row in location_profile_targets
                         if str(row.get("zone_id", "")).strip() == entity_id
                     ],
                     snapshots=source_snapshots,

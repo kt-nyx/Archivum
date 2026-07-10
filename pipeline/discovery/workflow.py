@@ -14,7 +14,7 @@ from pipeline.common.retail import is_classic_categorized
 from pipeline.common.run_context import RunContext
 from pipeline.common.section_registry import section_content_class
 from pipeline.common.text_ids import slugify
-from pipeline.contracts.models import DecisionArtifact, EntityKind, EntityKindDecision
+from pipeline.contracts.models import EntityKind, EntityKindDecision, LocationSelectionArtifact
 from pipeline.discovery.entity_typing import (
     canonical_path_for_link,
     decide_entity_kind,
@@ -22,9 +22,8 @@ from pipeline.discovery.entity_typing import (
 )
 from pipeline.discovery.instance_bosses import is_high_confidence_boss_section
 from pipeline.discovery.location_discovery import (
-    build_location_decision_row,
-    build_zone_seed_text,
-    classify_location_candidate,
+    build_location_candidate_decision,
+    location_candidate_rank,
 )
 from pipeline.discovery.lore_sources import (
     build_instance_lore_candidates,
@@ -572,15 +571,13 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
     zone_registry: list[dict[str, Any]] = []
     canonical_entities: list[dict[str, Any]] = []
     location_candidates: list[dict[str, Any]] = []
-    location_classification: list[dict[str, Any]] = []
+    location_selection_decisions: list[dict[str, Any]] = []
     entity_kind_decisions: list[dict[str, Any]] = []
     instance_registry: list[dict[str, Any]] = []
     instance_lore_source_map: list[dict[str, Any]] = []
     quest_graph: list[dict[str, Any]] = []
-    location_decisions: list[dict[str, Any]] = []
     questline_decisions: list[dict[str, Any]] = []
     faction_profile_targets: list[dict[str, Any]] = []
-    location_profile_targets: list[dict[str, Any]] = []
     storyline_traversal_targets: list[dict[str, Any]] = []
     instance_zone_profiles: list[dict[str, Any]] = []
 
@@ -686,18 +683,6 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
 
         processing_links = sorted(set(clean_links))
 
-        # The zone page's "notable characters" links are the cast roster; a sub-location candidate
-        # whose title matches one is a misfiled NPC (e.g. Thassarian), not a place. Reject those.
-        notable_character_titles = {
-            normalize_title(str(link_row.get("label", "")))
-            for link_row in structured_links
-            if isinstance(link_row, dict)
-            and "character" in str(link_row.get("section_role", "")).lower()
-            and str(link_row.get("label", "")).strip()
-        }
-
-        lore_body_text = _zone_lore_body_text(section_blocks)
-
         for link in processing_links:
             title = _normalized_wiki_title(link)
             lowered = title.lower()
@@ -753,24 +738,10 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
                         "source_section_role": inferred_role,
                     }
                 )
-            elif entity_decision.kind == EntityKind.ORGANIZATION:
-                # Slice 13: faction profile targets are built from the seed page's block
-                # links against the org registry (see _collect_zone_faction_targets below);
-                # a faction-typed link only means "not a location candidate" here.
-                continue
-            elif entity_decision.kind == EntityKind.NAMED_ACTOR:
-                # Zone-page characters are not crawled: zones emit no key-character cards, so a
-                # character profile here has no consumer. Instance key characters are targeted
-                # separately from the instance roster (see _collect_instance_character_targets).
-                continue
             else:
-                # A section role is useful discovery context, not type evidence.  Only a positive
-                # target-page/registry decision may enter the location-card pipeline.
-                if entity_decision.kind != EntityKind.PLACE:
-                    continue
-                if normalize_title(title) in notable_character_titles:
-                    continue
-                lore_significant = title.lower() in lore_body_text
+                # A location lead is intentionally broad: an unknown target is allowed to reach the
+                # lightweight probe, while a known non-place is retained as a rejected audit row.
+                # Only the probe can advance a target to a direct profile fetch.
                 location_candidates.append(
                     {
                         "zone_id": str(snapshot.get("entity_id", "")),
@@ -780,19 +751,8 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
                         "source_section_role": inferred_role,
                         "entity_kind": entity_decision.kind.value,
                         "entity_kind_decision_id": entity_decision.decision_id,
-                        "lore_significant": lore_significant,
-                    }
-                )
-                location_profile_targets.append(
-                    {
-                        "zone_id": str(snapshot.get("entity_id", "")),
-                        "location_id": candidate_id,
-                        "name": title,
-                        "source_link": link,
-                        "source_section_role": inferred_role,
-                        "entity_kind": entity_decision.kind.value,
-                        "entity_kind_decision_id": entity_decision.decision_id,
-                        "lore_significant": lore_significant,
+                        "source_ids": [source_id],
+                        "reason_codes": list(entity_decision.reason_codes),
                     }
                 )
 
@@ -814,63 +774,36 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
         deduped_candidates.append(candidate)
     location_candidates = deduped_candidates
 
-    # Collapse same-place variants (Ruins of Andorhal -> Andorhal; Hearthglen Hills -> Hearthglen)
-    # and drop the matching profile targets so traversal/enrich don't re-introduce them.
-    location_candidates, _variant_best_role = _collapse_location_variants(location_candidates)
-    kept_location_ids = {str(row.get("location_id", "")) for row in location_candidates}
-    collapsed_profile_targets: list[dict[str, Any]] = []
-    for target in location_profile_targets:
-        target_id = str(target.get("location_id", ""))
-        if target_id not in kept_location_ids:
-            continue
-        upgraded_role = _variant_best_role.get(target_id)
-        if upgraded_role:
-            target["source_section_role"] = upgraded_role
-        collapsed_profile_targets.append(target)
-    location_profile_targets = collapsed_profile_targets
-
     # Slice D: character crawl targets come from each instance's key-character roster (the only
     # consumer of character biography), scoped to the instance — not from the zone link loop above,
     # whose character-typed links are noisy places/meta with no key-character consumer.
     character_profile_targets = _collect_instance_character_targets(snapshots)
 
-    zone_seed_text_by_id = {
-        str(snapshot.get("entity_id", "")).strip(): build_zone_seed_text(
-            snapshots, str(snapshot.get("entity_id", "")).strip()
-        )
-        for snapshot in snapshots
-        if isinstance(snapshot, dict)
-        and str(snapshot.get("entity_type", "")).strip() == "zone"
-        and not str(snapshot.get("auxiliary_role", "")).strip()
-    }
-
+    by_zone: dict[str, list[dict[str, Any]]] = {}
     for candidate in location_candidates:
-        location_class = classify_location_candidate(
-            str(candidate.get("name", "")), hard_reject_reasons=[]
+        by_zone.setdefault(str(candidate.get("zone_id", "")), []).append(candidate)
+    for zone_id, candidates in sorted(by_zone.items()):
+        ordered = sorted(
+            candidates,
+            key=lambda row: location_candidate_rank(
+                str(row.get("source_section_role", "other")), str(row.get("name", ""))
+            ),
         )
-        location_classification.append(
-            {
-                "zone_id": candidate["zone_id"],
-                "location_id": candidate["location_id"],
-                "name": candidate["name"],
-                "classification": location_class,
-                "entity_kind": candidate["entity_kind"],
-                "entity_kind_decision_id": candidate["entity_kind_decision_id"],
-                "hard_reject_reasons": [],
-                "typing_signals": {
-                    "source_section_role": str(candidate.get("source_section_role", "other")),
-                },
-            }
-        )
-        zone_id = str(candidate.get("zone_id", "")).strip()
-        location_decisions.append(
-            build_location_decision_row(
-                candidate,
-                run_id=context.run_id,
-                algorithm_version="v1",
-                seed_text=zone_seed_text_by_id.get(zone_id, ""),
+        for candidate_rank, candidate in enumerate(ordered):
+            location_selection_decisions.append(
+                build_location_candidate_decision(
+                    zone_id=zone_id,
+                    location_id=str(candidate["location_id"]),
+                    name=str(candidate["name"]),
+                    source_link=str(candidate["source_link"]),
+                    source_relation=str(candidate.get("source_section_role", "other")),
+                    candidate_rank=candidate_rank,
+                    entity_kind=EntityKind(str(candidate.get("entity_kind", "unknown"))),
+                    entity_kind_decision_id=str(candidate.get("entity_kind_decision_id", "")),
+                    source_ids=[str(value) for value in candidate.get("source_ids", []) if value],
+                    reason_codes=[str(value) for value in candidate.get("reason_codes", []) if value],
+                ).model_dump(mode="json")
             )
-        )
 
     deduped_instances: list[dict[str, Any]] = []
     seen_instances: set[str] = set()
@@ -926,20 +859,17 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
     outputs = {
         "zone_coverage_registry": discovery_dir / "zone_coverage_registry.json",
         "canonical_entity_map": discovery_dir / "canonical_entity_map.jsonl",
-        "zone_location_candidates": discovery_dir / "zone_location_candidates.json",
-        "zone_location_classification": discovery_dir / "zone_location_classification.json",
+        "location_selection_decisions": decisions_dir / "location_selection_decisions.json",
         "entity_kind_decisions": decisions_dir / "entity_kind_decisions.json",
         "zone_instance_registry": discovery_dir / "zone_instance_registry.json",
         "instance_lore_source_map": discovery_dir / "instance_lore_source_map.json",
         "zone_quest_graph": discovery_dir / "zone_quest_graph.json",
         "zone_quest_graph_v3": discovery_dir / "zone_quest_graph_v3.json",
         "faction_profile_targets": discovery_dir / "faction_profile_targets.json",
-        "location_profile_targets": discovery_dir / "location_profile_targets.json",
         "character_profile_targets": discovery_dir / "character_profile_targets.json",
         "storyline_traversal_targets": discovery_dir / "storyline_traversal_targets.json",
         "lore_traversal_targets": discovery_dir / "lore_traversal_targets.json",
         "instance_zone_profiles": discovery_dir / "instance_zone_profiles.json",
-        "location_significance_decisions": decisions_dir / "location_significance_decisions.json",
         "questline_inclusion_decisions": decisions_dir / "questline_inclusion_decisions.json",
         "evidence_packs": evidence_dir / "evidence_packs.jsonl",
     }
@@ -947,8 +877,15 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
     outputs["canonical_entity_map"].write_text(
         "\n".join(json.dumps(row) for row in canonical_entities) + "\n", encoding="utf-8"
     )
-    write_json(outputs["zone_location_candidates"], location_candidates)
-    write_json(outputs["zone_location_classification"], location_classification)
+    write_json(
+        outputs["location_selection_decisions"],
+        {
+            "schema_version": "location_selection.v1",
+            "producer": "discovery",
+            "decisions": location_selection_decisions,
+            "coverage": [],
+        },
+    )
     write_json(
         outputs["entity_kind_decisions"],
         {"schema_version": "entity_kind_decision.v1", "decisions": entity_kind_decisions},
@@ -958,18 +895,17 @@ def run_discovery_workflow(context: RunContext, source_manifest_path: Path) -> d
     write_json(outputs["zone_quest_graph"], quest_graph)
     write_json(outputs["zone_quest_graph_v3"], [])
     write_json(outputs["faction_profile_targets"], faction_profile_targets)
-    write_json(outputs["location_profile_targets"], location_profile_targets)
     write_json(outputs["character_profile_targets"], character_profile_targets)
     write_json(outputs["storyline_traversal_targets"], storyline_traversal_targets)
     write_json(outputs["lore_traversal_targets"], lore_traversal_targets)
     write_json(outputs["instance_zone_profiles"], instance_zone_profiles)
-    write_json(outputs["location_significance_decisions"], location_decisions)
     write_json(outputs["questline_inclusion_decisions"], questline_decisions)
     outputs["evidence_packs"].write_text("", encoding="utf-8")
 
     # Fail fast on contract drift for primary decision artifacts.
-    for row in location_decisions:
-        DecisionArtifact.model_validate(row)
+    LocationSelectionArtifact.model_validate(
+        _load_json(outputs["location_selection_decisions"])
+    )
     for row in entity_kind_decisions:
         EntityKindDecision.model_validate(row)
     return outputs
