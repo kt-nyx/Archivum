@@ -603,3 +603,32 @@ acceptance criteria with a prose summary.
   complete selected-metadata-to-entry-state grounding.
 - **Fresh live runs:** not applicable; Slice 4 has no `[LIVE]` acceptance requirement.
 - **Deferred:** none.
+
+### 2026-07-10 — Slice 5 complete
+
+- **Commit SHA:** `1087935` (`feat(questlines): select arc families and structured titles`).
+- **Behavior:** replaced proxy component top-N scoring and the retired
+  `zone_quest_cluster_rankings.json` handoff with fail-fast `questline_arc_selection.v1`.
+  Discovery now records typed `ArcCandidate` and `ArcFamily` models, source-backed campaign
+  signals, deterministic merge/keep-separate decisions, bounded ambiguity rulings, family ranking,
+  variant selection/exclusion reasons, and per-zone coverage state. Selected metadata is now
+  `questline_card_metadata.v2`: it carries a canonical id plus structured `base_title`, faction,
+  and phase fields. The page boundary renders the title once; old rendered-title mutation and
+  cluster-decision gating paths were removed. Missing quest records, weak one-quest candidates,
+  duplicate normalized labels, and non-distinct variants are explicit exclusions rather than
+  downstream metadata failures.
+- **Verification:** focused Slice 5, metadata/entry-state, promotion, draft, temporal, claim, and
+  pipeline-stage tests (109 passed); `uv run --no-sync ruff check pipeline scripts tests`; `uv run
+  --no-sync mypy pipeline`; `git diff --check`; `uv run --no-sync pytest -q` (passed, with the
+  suite's existing skips/xfail). The final independent review checked producer/consumer handoffs,
+  artifact versioning, coverage/exclusion evidence, title uniqueness, generic fixture scope, and
+  the absence of new pilot-, zone-, instance-, title-, race-, or species-specific rules.
+- **Fresh live runs:** foreground `test-run-wpl-37` and `test-run-desolace-9` completed ingest,
+  discovery, coalesce, and the initial enrich stage, then the host terminated the foreground
+  command at its 60-second limit during quest traversal. Fresh hidden retries
+  `test-run-wpl-39` and `test-run-desolace-11` reached `traverse_quests` but stalled there without
+  emitting `questline_arc_selection.json`; the verified process trees were stopped. Thus no fresh
+  full live output is claimed for Slice 5 in this execution environment.
+- **Deferred:** no generic implementation follow-up. Repeat the normal WPL/Desolace end-to-end
+  human review in an environment that permits the remote quest traversal/draft flow to finish;
+  this is a live-verification environment limitation, not a schema or selection-contract deferral.
