@@ -10,10 +10,7 @@ from pipeline.discovery.questline_anchor import (
     ENTRY_QUEST_TITLE_KEYWORDS,
     resolve_cluster_start_anchor,
 )
-from pipeline.discovery.questline_arc_map import (
-    load_pilot_questline_registry,
-    map_cluster_to_card_id,
-)
+from pipeline.discovery.questline_arc_map import map_cluster_to_card_id
 
 _ALGORITHM_VERSION = "v1-card-polish"
 
@@ -47,11 +44,8 @@ def build_zone_questline_card_metadata(
         if cluster_id:
             rows_by_cluster.setdefault(cluster_id, []).append(row)
 
-    registry = load_pilot_questline_registry(zone_id)
     metadata_rows: list[dict[str, Any]] = []
     entry_anchor_count = 0
-    mapped_registry_count = 0
-    unmapped_count = 0
 
     for cluster_id in included_cluster_ids:
         summary = summaries_by_id.get(cluster_id, {})
@@ -71,41 +65,7 @@ def build_zone_questline_card_metadata(
             ordered_quest_rows=quest_rows,
             records_by_node=records_by_node,
         )
-        card_id, registry_arc_id, display_title, suppress_continued = map_cluster_to_card_id(
-            zone_id=zone_id,
-            cluster_id=cluster_id,
-            cluster_title=cluster_title,
-            faction=faction,
-            member_node_ids=member_node_ids,
-            registry=registry,
-        )
-        if not card_id:
-            # Cluster matched no included registry arc (pilot zone): drop it — never emit a
-            # raw cluster-* card. The inclusion filter in scoring normally prevents this,
-            # but guard here too so a stray cluster can't leak a non-ql id.
-            unmapped_count += 1
-            continue
-        registry_chain_refs: list[str] = []
-        registry_wiki_refs: list[str] = []
-        if registry_arc_id and registry:
-            for arc in registry.get("included_arcs", []):
-                if isinstance(arc, dict) and str(arc.get("id", "")).strip() == registry_arc_id:
-                    registry_anchor = str(arc.get("start_anchor", "")).strip()
-                    if registry_anchor:
-                        start_anchor = registry_anchor
-                    # WS-2: the registry arc is the authoritative chain (membership + order).
-                    # A single cluster only covers one fragment of a multi-part arc, so carry
-                    # the registry's chain_refs/wiki_refs forward and let the draft publish them
-                    # instead of the lone cluster's members.
-                    registry_chain_refs = [
-                        str(ref).strip() for ref in arc.get("chain_refs", []) if str(ref).strip()
-                    ]
-                    registry_wiki_refs = [
-                        str(ref).strip() for ref in arc.get("wiki_refs", []) if str(ref).strip()
-                    ]
-                    break
-        if registry_arc_id:
-            mapped_registry_count += 1
+        card_id = map_cluster_to_card_id(cluster_id)
         if any(keyword in start_anchor.lower() for keyword in ENTRY_QUEST_TITLE_KEYWORDS):
             entry_anchor_count += 1
         metadata_rows.append(
@@ -113,22 +73,17 @@ def build_zone_questline_card_metadata(
                 "zone_id": zone_id,
                 "cluster_id": cluster_id,
                 "card_id": card_id,
-                "registry_arc_id": registry_arc_id or "",
                 "start_anchor": start_anchor,
-                "display_title": display_title,
+                "display_title": cluster_title,
                 "faction": faction,
-                "suppress_continued_card": suppress_continued,
-                "registry_chain_refs": registry_chain_refs,
-                "registry_wiki_refs": registry_wiki_refs,
+                "ordered_chain_refs": member_node_ids,
                 "algorithm_version": _ALGORITHM_VERSION,
             }
         )
 
     metrics = {
         "card_polish_cluster_count": len(metadata_rows),
-        "card_polish_registry_mapped_count": mapped_registry_count,
         "card_polish_entry_anchor_count": entry_anchor_count,
-        "card_polish_unmapped_count": unmapped_count,
     }
     return metadata_rows, metrics
 

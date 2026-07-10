@@ -7,10 +7,6 @@ discovery/draft roster paths, and the gold-fixture audit can never drift:
   ``categories`` captured per page; the most reliable retail-eligibility check).
 - ``is_non_retail_title`` — structural title parenthetical (``Foo (Classic)``, expansion
   variants); deterministic and offline.
-- ``KNOWN_CLASSIC_ENTITIES`` / ``is_known_classic_entity`` — a small, documented offline
-  backstop for Classic-only entities whose clean wiki links carry no parenthetical
-  (e.g. original-Scholomance bosses). Authoritative filtering is the category check; this
-  list only guarantees deterministic offline exclusion of named, justified contaminants.
 """
 
 from __future__ import annotations
@@ -42,25 +38,6 @@ def _build_non_retail_parenthetical_re() -> re.Pattern[str]:
 
 _NON_RETAIL_PARENTHETICAL_RE = _build_non_retail_parenthetical_re()
 
-# Classic-only entities that lack a "(Classic)" marker on their wiki link. Keep this small,
-# justified, and retail-universal (no retail instance legitimately features these). The
-# original-Scholomance roster + a couple of removed Scholomance NPCs.
-KNOWN_CLASSIC_ENTITIES: frozenset[str] = frozenset(
-    {
-        "ravenian",
-        "doctor theolen krastinov",
-        "professor slate",
-        "weldon barov",
-        "lord alexei barov",
-        "kirtonos the herald",
-        "ras frostwhisper",
-    }
-)
-
-
-def _norm(text: str) -> str:
-    return " ".join(str(text or "").strip().casefold().split())
-
 
 def is_classic_categorized(categories: Iterable[str] | None) -> bool:
     """True when any wiki category name matches a Classic/legacy/removed marker."""
@@ -74,8 +51,3 @@ def is_classic_categorized(categories: Iterable[str] | None) -> bool:
 def is_non_retail_title(title: str) -> bool:
     """True for explicitly version-suffixed titles/hrefs (e.g. ``Foo (Classic)``)."""
     return bool(_NON_RETAIL_PARENTHETICAL_RE.search(str(title or "")))
-
-
-def is_known_classic_entity(name: str) -> bool:
-    """True when ``name`` is on the documented Classic-only backstop denylist."""
-    return _norm(name) in KNOWN_CLASSIC_ENTITIES

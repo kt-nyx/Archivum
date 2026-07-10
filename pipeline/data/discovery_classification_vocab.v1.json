@@ -125,7 +125,7 @@
   },
   "entry_quest_title_keywords": {
     "_why_no_structural_signal": "Chain heads are computed structurally (indegree 0); this list only PREFERS the player-facing breadcrumb quest among heads, judged on the quest title. No structural signal distinguishes a breadcrumb from another head.",
-    "_pilot_bias_note": "Game-wide conventions only: \"hero's call\"/\"warchief's command\" are the universal Alliance/Horde zone-breadcrumb quest series. Zone-specific quest titles were evicted (generalization refactor Slice 11); registry start_anchor overrides cover curated pilot arcs.",
+    "_pilot_bias_note": "Game-wide conventions only: \"hero's call\"/\"warchief's command\" are the universal Alliance/Horde zone-breadcrumb quest series. Zone-specific quest titles are intentionally absent.",
     "tokens": [
       "hero's call",
       "warchief's command"

@@ -2098,13 +2098,12 @@ def _paragraph_has_confident_setup_verdict(record: CanonicalEvidenceRecord) -> b
 def _subject_name_terms(record: CanonicalEvidenceRecord) -> set[str]:
     """Normalized terms for the subject's own name.
 
-    Excluded from the contested-locus set: the zone/instance's own name (e.g. "Western Plaguelands")
+    Excluded from the contested-locus set: the zone/instance's own name
     is too broad to mark a specific contested place, and would otherwise drag safe sentences that
     merely mention the zone into the outcome bucket.
     """
     terms: set[str] = set()
-    # Claims reference the subject by both its display name ("Western Plaguelands") and its id
-    # ("zone-western-plaguelands"); exclude both forms.
+    # Claims reference the subject by both its display name and stable id; exclude both forms.
     _add_normalized_contract_term(terms, record.subject_id)
     contract = record.boundary.get("entry_state_contract")
     if isinstance(contract, dict):
@@ -3097,7 +3096,7 @@ def _build_zone_entry_state_contract(
             continue
         chain_refs = [
             str(ref)
-            for ref in card.get("registry_chain_refs") or card.get("chain_refs") or []
+            for ref in card.get("chain_refs") or []
             if str(ref).strip()
         ]
         overflow_refs = [str(ref) for ref in card.get("overflow_chain_refs") or [] if str(ref).strip()]
@@ -3453,7 +3452,7 @@ def _quest_card_index(metadata: dict[str, dict[str, Any]]) -> dict[str, dict[str
         if not isinstance(row, dict):
             continue
         result[str(cluster_id)] = {
-            "chain_refs": list(row.get("registry_chain_refs") or row.get("chain_refs") or []),
+            "chain_refs": list(row.get("chain_refs") or []),
             "overflow_refs": list(row.get("overflow_chain_refs") or []),
         }
     return result

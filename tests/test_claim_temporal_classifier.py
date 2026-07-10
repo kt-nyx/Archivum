@@ -175,7 +175,7 @@ def test_active_storyline_outcome_claim_is_unsafe(monkeypatch) -> None:
             "cluster-1": {
                 "zone_id": "zone-example",
                 "display_title": "Battle for Andorhal",
-                "registry_chain_refs": ["q1", "q2", "q3", "q4"],
+                "chain_refs": ["q1", "q2", "q3", "q4"],
             }
         },
         quest_records_by_node={

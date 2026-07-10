@@ -1,27 +1,29 @@
 from __future__ import annotations
 
-from scripts.diff_zone_questline_runs import build_diff
-from tests.test_questline_promotion_gate import _write_wpl_run
+import json
+
+import pytest
+
+from scripts.diff_zone_questline_runs import main
 
 
-def test_diff_detects_anchor_change(tmp_path) -> None:
-    import json
-    from pathlib import Path
+def _write_zone(run_root, zone_id: str) -> None:
+    target = run_root / "data" / "drafts" / "zone_page"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / f"{zone_id}.json").write_text(json.dumps({"major_questlines": []}))
 
-    questlines = json.loads(
-        Path("tests/fixtures/pilot/zone_page_western_plaguelands_gold.json").read_text(
-            encoding="utf-8"
-        )
-    )["major_questlines"]
-    baseline_root = _write_wpl_run(tmp_path / "baseline", questlines=questlines)
-    changed = [dict(card) for card in questlines]
-    changed[0] = {**changed[0], "start_anchor": "Changed Anchor"}
-    candidate_root = _write_wpl_run(tmp_path / "candidate", questlines=changed)
-    diff = build_diff(
-        baseline_root=baseline_root,
-        candidate_root=candidate_root,
-        zone_id="zone-western-plaguelands",
-        notes="test",
-    )
-    assert diff["card_changes"]
-    assert diff["card_changes"][0]["card_id"] == "ql-andorhal-horde"
+
+def test_diff_autodetects_single_shared_zone(tmp_path) -> None:
+    baseline, candidate = tmp_path / "a", tmp_path / "b"
+    _write_zone(baseline, "zone-example")
+    _write_zone(candidate, "zone-example")
+    assert main(["--baseline", str(baseline), "--candidate", str(candidate)]) == 0
+
+
+def test_diff_requires_zone_when_ambiguous(tmp_path) -> None:
+    baseline, candidate = tmp_path / "a", tmp_path / "b"
+    _write_zone(baseline, "zone-one")
+    _write_zone(baseline, "zone-two")
+    _write_zone(candidate, "zone-one")
+    with pytest.raises(SystemExit):
+        main(["--baseline", str(baseline), "--candidate", str(candidate)])

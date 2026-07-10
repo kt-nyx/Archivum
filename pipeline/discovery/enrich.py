@@ -838,14 +838,8 @@ def run_discovery_enrich(
                 "enrich_phase": phase,
                 "quest_record_count": len(quest_records),
                 "card_polish_cluster_count": aggregate_metrics.get("card_polish_cluster_count", 0),
-                "card_polish_registry_mapped_count": aggregate_metrics.get(
-                    "card_polish_registry_mapped_count", 0
-                ),
                 "card_polish_entry_anchor_count": aggregate_metrics.get(
                     "card_polish_entry_anchor_count", 0
-                ),
-                "card_polish_unmapped_count": aggregate_metrics.get(
-                    "card_polish_unmapped_count", 0
                 ),
                 "quest_records_path": str(quest_records_path),
             }

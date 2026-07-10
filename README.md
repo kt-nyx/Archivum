@@ -59,11 +59,11 @@ Minimal local flow:
    - `uv run lore-pipeline ingest --run-id run-local-mp3`
    - `uv run lore-pipeline run --run-id run-local-mp3 --fact-check-profile warn`
 
-### Pilot promotion (Western Plaguelands)
+### Generalization acceptance
 
-Dual-run checklist for dev (`test-run-wpl-1`) and CI (`run-western-plaguelands`) lives in
-[`docs/planning/pilot-promotion.md`](docs/planning/pilot-promotion.md). Use `--release-gate` on promotion runs so
-pipeline `validate_passed` matches `check_run_semantics.py --strict`.
+Run each candidate zone through the same release and semantic checks. No zone has a curated
+output override or exact-output promotion gate; differences are reviewed from source evidence.
+Use `--release-gate` so pipeline `validate_passed` matches `check_run_semantics.py --strict`.
 
 ### Wiki ingest (MediaWiki)
 

@@ -7,7 +7,6 @@ import re
 from typing import Any
 
 from pipeline.common.content_role import classify_content_role
-from pipeline.common.retail import KNOWN_CLASSIC_ENTITIES
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.contracts.models import required_pointer_count
 from pipeline.discovery.entity_typing import normalize_title
@@ -630,22 +629,22 @@ def _extract_instance_infobox(
     return {}
 
 
-def _classic_excluded_names(snapshots: list[dict[str, Any]] | None, instance_id: str) -> set[str]:
-    """S3 retail/Classic cast exclusion set (normalized names).
-
-    Union of the known-Classic backstop denylist and the instance snapshot's
-    ``classic_excluded_characters`` (the authoritative wiki-category exclusions captured
-    during traverse). Names are normalized to match ``prefilter_character_pool``.
-    """
-    excluded = {normalize_title(name) for name in KNOWN_CLASSIC_ENTITIES}
+def _retail_confirmed_character_names(
+    snapshots: list[dict[str, Any]] | None, instance_id: str
+) -> set[str] | None:
+    """Return confirmed-retail candidate names, or ``None`` without instance evidence."""
     for snapshot in snapshots or []:
         if (
             str(snapshot.get("entity_id", "")).strip() == instance_id
             and str(snapshot.get("entity_type", "")).strip() == "instance"
             and not str(snapshot.get("auxiliary_role", "")).strip()
         ):
-            names = snapshot.get("classic_excluded_characters", [])
-            if isinstance(names, list):
-                excluded.update(normalize_title(str(name)) for name in names)
-            break
-    return excluded
+            records = snapshot.get("character_retail_eligibility")
+            if not isinstance(records, list):
+                return set()
+            return {
+                    normalize_title(str(row.get("candidate_name", "")))
+                    for row in records
+                    if isinstance(row, dict) and row.get("status") == "retail_confirmed"
+                }
+    return None

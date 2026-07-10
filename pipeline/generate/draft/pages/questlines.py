@@ -93,7 +93,7 @@ def _append_questline_card(
     cluster_decision: dict[str, Any] | None = None,
     card_id: str = "",
 ) -> None:
-    resolved_card_id = card_id.strip() or f"cluster-{cluster_id}{card_suffix}"
+    resolved_card_id = card_id.strip() or f"ql-{cluster_id}{card_suffix}"
     if zone_name.strip():
         cta = strip_zone_name_from_cta(cta, zone_name=zone_name)
     cta = finalize_cta_hook(cta)

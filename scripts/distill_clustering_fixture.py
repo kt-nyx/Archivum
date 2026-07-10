@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate the WPL clustering fixture from a real pipeline run.
+"""Regenerate a zone clustering fixture from a real pipeline run.
 
 The clustering test fixtures (`tests/fixtures/clustering/`) used to be hand-authored and
 synthetic (21 quests, rep-org simplified, ``start_location`` hand-set), which let the
@@ -19,8 +19,8 @@ keep the fixture lean.
 
 Usage:
     python scripts/distill_clustering_fixture.py \
-        --run-dir artifacts/runs/test-run-wpl-1 \
-        --zone-id zone-western-plaguelands
+        --run-dir artifacts/runs/<run-id> \
+        --zone-id zone-example
 """
 
 from __future__ import annotations
@@ -93,7 +93,7 @@ def _distill_roster(graph_rows: list[dict], zone_id: str) -> list[dict]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", required=True, type=Path)
-    parser.add_argument("--zone-id", default="zone-western-plaguelands")
+    parser.add_argument("--zone-id", required=True)
     parser.add_argument(
         "--out-dir", type=Path, default=Path("tests/fixtures/clustering"), help="fixture output dir"
     )
@@ -105,8 +105,9 @@ def main() -> None:
     roster = _distill_roster(graph_rows, args.zone_id)
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    records_path = args.out_dir / "western_plaguelands_quest_records.jsonl"
-    roster_path = args.out_dir / "western_plaguelands_roster_v3.json"
+    fixture_stem = args.zone_id.removeprefix("zone-").replace("-", "_")
+    records_path = args.out_dir / f"{fixture_stem}_quest_records.jsonl"
+    roster_path = args.out_dir / f"{fixture_stem}_roster_v3.json"
     records_path.write_text(
         "\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n", encoding="utf-8"
     )

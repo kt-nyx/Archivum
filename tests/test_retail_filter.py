@@ -32,12 +32,6 @@ def test_is_non_retail_title_parenthetical() -> None:
     assert not retail.is_non_retail_title("Darkmaster Gandling")
 
 
-def test_known_classic_entity_backstop() -> None:
-    assert retail.is_known_classic_entity("Lord Alexei Barov")
-    assert retail.is_known_classic_entity("ravenian")
-    assert not retail.is_known_classic_entity("Darkmaster Gandling")
-
-
 def test_should_reject_boss_title_drops_classic_parenthetical() -> None:
     assert should_reject_boss_title("Scholomance (Classic)")
     # Clean-href Classic NPCs are NOT rejected here (handled by the exclusion set), so the
@@ -117,7 +111,7 @@ def test_fetch_categories_for_titles_resolves_and_strips(monkeypatch: pytest.Mon
     assert not retail.is_classic_categorized(result["darkmaster gandling"])
 
 
-def test_exclude_classic_instance_characters_tags_snapshot(
+def test_retail_eligibility_records_confirmed_non_retail_and_unresolved_candidates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     instance = {
@@ -150,12 +144,27 @@ def test_exclude_classic_instance_characters_tags_snapshot(
 
     monkeypatch.setattr(traverse_wiki, "fetch_categories_for_titles", fake_categories)
     report: list[dict[str, object]] = []
-    traverse_wiki._exclude_classic_instance_characters([instance], report)
-    assert instance["classic_excluded_characters"] == ["ravenian"]
-    assert any(row["status"] == "excluded_classic" for row in report)
+    traverse_wiki._record_instance_character_retail_eligibility([instance], report)
+    records = {row["candidate_name"]: row for row in instance["character_retail_eligibility"]}
+    assert records["ravenian"]["status"] == "non_retail"
+    assert records["darkmaster gandling"]["status"] == "retail_confirmed"
+    assert any(row["status"] == "retail_eligibility_recorded" for row in report)
 
 
-def test_exclude_classic_instance_characters_no_instances_is_noop() -> None:
+def test_retail_eligibility_no_instances_is_noop() -> None:
     report: list[dict[str, object]] = []
-    traverse_wiki._exclude_classic_instance_characters([{"entity_type": "zone"}], report)
+    traverse_wiki._record_instance_character_retail_eligibility([{"entity_type": "zone"}], report)
     assert report == []
+
+
+def test_retail_eligibility_marks_category_fetch_failure_unresolved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    instance = {
+        "entity_type": "instance", "name": "Example", "auxiliary_role": "",
+        "section_blocks": [{"section_role": "bosses", "text": '<a href="/wiki/Example_Boss">Example Boss</a>'}],
+        "structured_links": [{"href": "/wiki/Example_Boss", "section_role": "bosses", "label": "Example Boss"}],
+    }
+    monkeypatch.setattr(traverse_wiki, "fetch_categories_for_titles", lambda _titles: (_ for _ in ()).throw(RuntimeError("offline")))
+    traverse_wiki._record_instance_character_retail_eligibility([instance], [])
+    assert instance["character_retail_eligibility"][0]["status"] == "unresolved"

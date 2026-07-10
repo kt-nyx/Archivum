@@ -51,10 +51,10 @@ from pipeline.generate.draft.instance_lint import (
 from pipeline.generate.draft.pages.assembly import (
     _build_instance_evidence_pools,
     _cap_card_pointers,
-    _classic_excluded_names,
     _extract_instance_infobox,
     _extract_instance_structured_links,
     _pointers_for_evidence_ids,
+    _retail_confirmed_character_names,
 )
 from pipeline.generate.draft.prose_gate import prose_gate_violations
 from pipeline.generate.draft.prose_lint import word_count
@@ -249,10 +249,16 @@ def build_instance_key_character_selection(
         narrative_pool=narrative_pool,
         history_pool=history_pool,
     )
+    confirmed_retail = _retail_confirmed_character_names(snapshots, instance_id)
+    if confirmed_retail is not None:
+        raw_pool = [
+            candidate
+            for candidate in raw_pool
+            if normalize_title(candidate.name) in confirmed_retail
+        ]
     pool = prefilter_character_pool(
         raw_pool,
         instance_name=instance_name,
-        excluded_normalized_names=_classic_excluded_names(snapshots, instance_id),
     )
     if not pool:
         return InstanceKeyCharacterSelection(context_text=context_text)

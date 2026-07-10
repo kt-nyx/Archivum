@@ -26,6 +26,12 @@ def _load_zone_draft(run_root: Path, zone_id: str) -> dict[str, Any] | None:
     return raw if isinstance(raw, dict) else None
 
 
+def _single_zone_id(run_root: Path) -> str | None:
+    draft_dir = run_root / "data" / "drafts" / "zone_page"
+    candidates = sorted(path.stem for path in draft_dir.glob("zone-*.json")) if draft_dir.exists() else []
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def _card_snapshot(card: dict[str, Any]) -> dict[str, Any]:
     chain_refs = card.get("chain_refs", [])
     return {
@@ -123,18 +129,25 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Diff zone questline cards between two runs.")
     parser.add_argument("--baseline", type=Path, required=True)
     parser.add_argument("--candidate", type=Path, required=True)
-    parser.add_argument("--zone-id", default="zone-western-plaguelands")
+    parser.add_argument("--zone-id", default=None)
     parser.add_argument("--out", default=None)
     parser.add_argument("--notes", default="")
     parser.add_argument("--notes-file", default=None)
     args = parser.parse_args(argv)
+    baseline_zone_id = _single_zone_id(args.baseline)
+    candidate_zone_id = _single_zone_id(args.candidate)
+    zone_id = args.zone_id or (
+        baseline_zone_id if baseline_zone_id and baseline_zone_id == candidate_zone_id else None
+    )
+    if not zone_id:
+        parser.error("--zone-id is required when either run contains zero or multiple zone drafts")
     notes = args.notes
     if args.notes_file:
         notes = Path(args.notes_file).read_text(encoding="utf-8")
     diff = build_diff(
         baseline_root=args.baseline,
         candidate_root=args.candidate,
-        zone_id=args.zone_id,
+        zone_id=zone_id,
         notes=notes,
     )
     if args.out:

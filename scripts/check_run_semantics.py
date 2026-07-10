@@ -148,13 +148,11 @@ def check_run(
     run_root: Path,
     *,
     zone_id: str | None = None,
-    pilot_questline_gate: bool | None = None,
     require_questline_evidence: bool = False,
 ) -> None:
     from pipeline.discovery.questline_promotion_gate import (
         QuestlineRunArtifacts,
         check_questline_promotion,
-        default_pilot_strict_for_zone,
         load_questline_run_artifacts,
         warn_questline_promotion,
     )
@@ -792,15 +790,10 @@ def check_run(
         card_id_to_cluster_id=artifacts.card_id_to_cluster_id,
         excluded_cluster_ids=artifacts.excluded_cluster_ids,
         v3_quest_rows=artifacts.v3_quest_rows,
-        pilot_expectations=artifacts.pilot_expectations,
-    )
-    pilot_strict = default_pilot_strict_for_zone(
-        resolved_zone_id, pilot_questline_gate, run_root=run_root
     )
     for error in check_questline_promotion(
         artifacts,
-        pilot_strict=pilot_strict,
-        require_rankings=bool(pilot_strict and artifacts.included_cluster_ids),
+        require_rankings=bool(artifacts.included_cluster_ids),
         require_evidence_coverage=require_questline_evidence
         and bool(artifacts.included_cluster_ids),
         covered_cluster_ids=covered_clusters,
@@ -1270,7 +1263,7 @@ def main() -> None:
     parser.add_argument(
         "--zone-id",
         default=None,
-        help="Zone entity id (e.g. zone-western-plaguelands). Auto-detected when omitted.",
+        help="Zone entity id. Auto-detected when omitted.",
     )
     parser.add_argument(
         "--strict",
@@ -1280,23 +1273,12 @@ def main() -> None:
             "and fact_check_profile=off."
         ),
     )
-    parser.add_argument(
-        "--pilot-questline-gate",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help=(
-            "Enable WPL registry structural questline checks "
-            "(default on for zone-western-plaguelands)."
-        ),
-    )
     args = parser.parse_args()
-    pilot_gate = args.pilot_questline_gate
-    require_evidence = bool(args.strict or pilot_gate)
+    require_evidence = bool(args.strict)
     try:
         check_run(
             args.run_root,
             zone_id=args.zone_id,
-            pilot_questline_gate=pilot_gate,
             require_questline_evidence=require_evidence,
         )
         if args.strict:

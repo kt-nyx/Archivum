@@ -2,7 +2,8 @@
 
 From Slice 12 on, the ingest schema requires every snapshot to carry ``infobox``
 (``{}`` when the page genuinely has none) and every section block to carry
-``links`` (``[]`` when the paragraph has none). There are no dual-shape loaders:
+``links`` (``[]`` when the paragraph has none). Retail eligibility is added later by
+the traversal stage, after the initial ingest schema is checked. There are no dual-shape loaders:
 a snapshot missing the new keys predates the schema and its whole run is stale —
 the fix is a fresh crawl, never a special case. Every pipeline consumer of
 ``source_snapshots.json`` must load it through :func:`load_source_snapshots`.

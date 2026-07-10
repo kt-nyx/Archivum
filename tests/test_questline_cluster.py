@@ -309,16 +309,6 @@ def test_distinct_chains_sharing_rep_org_do_not_collapse() -> None:
     assert all(summary["reputation_orgs"] == ["Argent Crusade"] for summary in summaries)
 
 
-def _load_wpl_registry_arcs() -> dict[str, list[str]]:
-    """Return {arc_title: [chain_ref node_ids]} from the canonical questline oracle."""
-    registry = json.loads(
-        (Path("tests/fixtures/pilot/western_plaguelands_questline_registry.json")).read_text(
-            encoding="utf-8"
-        )
-    )
-    return {arc["title"]: list(arc.get("chain_refs", [])) for arc in registry["included_arcs"]}
-
-
 def test_materialize_variant_beats_splits_stranded_shared_node() -> None:
     roster = [
         _quest_row("quest-a1", "Alpha One", 1, faction="alliance"),
@@ -366,15 +356,8 @@ def test_materialize_variant_beats_leaves_genuine_shared_quest_untouched() -> No
     assert "quest-shared-alliance" not in roster_ids
 
 
-def test_wpl_fixture_clusters_match_registry_arc_separation() -> None:
-    """Real-data clustering must keep the canonical storyline arcs apart (Fix A).
-
-    The fixture is distilled from the live ``test-run-wpl-1`` discovery artifacts
-    (`scripts/distill_clustering_fixture.py`), so this asserts the *component layer*
-    invariants against the questline registry oracle, not the synthetic ">=5 clusters"
-    heuristic that passed while the live run was wrong. The final 3-card grouping is a
-    later layer (significance/cluster-layers) and is out of scope here.
-    """
+def test_regression_fixture_clusters_preserve_structural_separation() -> None:
+    """A real quest graph must retain faction-specific components without an oracle."""
     roster, records = _load_wpl_fixture()
     rows, summaries, _unresolved = cluster_zone_questlines(
         zone_id=ZONE_ID,
@@ -399,25 +382,7 @@ def test_wpl_fixture_clusters_match_registry_arc_separation() -> None:
         for org in ("Argent Crusade", "Undercity", "Stormwind", "Cenarion"):
             assert org not in summary["title"], summary["title"]
 
-    # 3. Distinct registry arcs never share a cluster (no cross-arc bleed). Exclude
-    #    combat-training: it is the cross-faction shared beat both arcs legitimately claim
-    #    and is currently an isolated singleton (#11, asserted separately below).
-    arcs = _load_wpl_registry_arcs()
-    arc_clusters: dict[str, set[str]] = {}
-    for title, refs in arcs.items():
-        arc_clusters[title] = {
-            cluster_by_node[ref]
-            for ref in refs
-            if ref in cluster_by_node and ref != "quest-combat-training"
-        }
-    arc_titles = list(arc_clusters)
-    for i in range(len(arc_titles)):
-        for j in range(i + 1, len(arc_titles)):
-            left, right = arc_clusters[arc_titles[i]], arc_clusters[arc_titles[j]]
-            assert left.isdisjoint(right), (arc_titles[i], arc_titles[j], left & right)
-
-    # 4. The Andorhal Alliance and Horde entry quests anchor different, faction-pure
-    #    clusters (the live run fragmented and cross-wired these).
+    # 3. The opposing entry quests anchor different, faction-pure clusters.
     alliance_entry = cluster_by_node["quest-heros-call-western-plaguelands"]
     horde_entry = cluster_by_node["quest-warchiefs-command-western-plaguelands"]
     assert alliance_entry != horde_entry

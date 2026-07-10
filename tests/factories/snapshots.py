@@ -18,6 +18,11 @@ def with_required_snapshot_schema(snapshots: list[dict[str, Any]]) -> list[dict[
         if not isinstance(snapshot, dict):
             continue
         snapshot.setdefault("infobox", {})
+        if (
+            str(snapshot.get("entity_type", "")).strip() == "instance"
+            and not str(snapshot.get("auxiliary_role", "")).strip()
+        ):
+            snapshot.setdefault("character_retail_eligibility", [])
         blocks = snapshot.setdefault("section_blocks", [])
         if isinstance(blocks, list):
             for block in blocks:

@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 from pipeline.common.run_context import RunContext
-from pipeline.discovery.pilot_questline_registry import structural_expectations_for_zone
 from pipeline.discovery.questline_significance import load_included_cluster_ids_by_zone
 from pipeline.ingest.snapshots import load_source_snapshots
 
@@ -198,7 +197,6 @@ def wiki_first_entity_flags(
         "questline_included_cluster_ids": questline_included_cluster_ids,
         "questline_card_metadata_by_cluster": questline_card_metadata_by_cluster,
         "questline_excluded_cluster_ids": questline_excluded_cluster_ids,
-        "pilot_questline_expectations": structural_expectations_for_zone(entity_id),
     }
 
 

@@ -13,7 +13,6 @@ from typing import Any
 from pipeline.discovery.questline_promotion_gate import (
     QuestlineRunArtifacts,
     check_questline_promotion,
-    default_pilot_strict_for_zone,
     load_questline_run_artifacts,
     warn_questline_promotion,
 )
@@ -92,8 +91,6 @@ def _covered_cluster_ids(run_root: Path, zone_id: str) -> set[str]:
 def evaluate_zone(
     run_root: Path,
     zone_id: str,
-    *,
-    pilot_questline_gate: bool | None = None,
 ) -> ZoneQuestlineScore:
     draft_path = run_root / "data" / "drafts" / "zone_page" / f"{zone_id}.json"
     raw = _load_json(draft_path)
@@ -138,14 +135,11 @@ def evaluate_zone(
         card_id_to_cluster_id=artifacts.card_id_to_cluster_id,
         excluded_cluster_ids=artifacts.excluded_cluster_ids,
         v3_quest_rows=artifacts.v3_quest_rows,
-        pilot_expectations=artifacts.pilot_expectations,
     )
-    pilot_strict = default_pilot_strict_for_zone(zone_id, pilot_questline_gate, run_root=run_root)
     for error in check_questline_promotion(
         artifacts,
-        pilot_strict=pilot_strict,
-        require_rankings=bool(pilot_strict and artifacts.included_cluster_ids),
-        require_evidence_coverage=bool(pilot_strict and artifacts.included_cluster_ids),
+        require_rankings=bool(artifacts.included_cluster_ids),
+        require_evidence_coverage=bool(artifacts.included_cluster_ids),
         covered_cluster_ids=_covered_cluster_ids(run_root, zone_id),
     ):
         findings.append(Finding("fail", "semantics.questline_promotion", error))
@@ -164,7 +158,6 @@ def evaluate_run(
     run_root: Path,
     *,
     zone_id: str | None = None,
-    pilot_questline_gate: bool | None = None,
 ) -> list[ZoneQuestlineScore]:
     draft_dir = run_root / "data" / "drafts" / "zone_page"
     if not draft_dir.exists():
@@ -174,7 +167,7 @@ def evaluate_run(
     else:
         targets = sorted(path.stem for path in draft_dir.glob("zone-*.json"))
     return [
-        evaluate_zone(run_root, target, pilot_questline_gate=pilot_questline_gate)
+        evaluate_zone(run_root, target)
         for target in targets
     ]
 
@@ -239,16 +232,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--zone-id", default=None)
     parser.add_argument("--out", default=None)
     parser.add_argument("--gate", action="store_true", help="Treat WARN as failure (exit 1).")
-    parser.add_argument(
-        "--pilot-questline-gate",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-    )
     args = parser.parse_args(argv)
     scores = evaluate_run(
         args.run_root,
         zone_id=args.zone_id,
-        pilot_questline_gate=args.pilot_questline_gate,
     )
     summary = run_summary(scores)
     json_path, md_path = write_reports(args.run_root, summary, args.out)

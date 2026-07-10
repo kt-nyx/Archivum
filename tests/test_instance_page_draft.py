@@ -263,6 +263,10 @@ def test_build_instance_page_wires_scoped_links_and_parent_roles(monkeypatch) ->
         {
             "entity_id": instance_id,
             "entity_type": "instance",
+            "character_retail_eligibility": [
+                {"candidate_name": "archivist maelor", "status": "retail_confirmed"},
+                {"candidate_name": "warden voss", "status": "retail_confirmed"},
+            ],
             "structured_links": [
                 {
                     "href": "/wiki/Archivist_Maelor",

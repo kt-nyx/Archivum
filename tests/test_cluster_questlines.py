@@ -113,7 +113,7 @@ def test_build_zone_page_skips_cluster_without_lore_evidence() -> None:
         {"final_decision": "include"},
     )
     assert len(draft["major_questlines"]) == 1
-    assert draft["major_questlines"][0]["id"] == "cluster-part-1"
+    assert draft["major_questlines"][0]["id"] == "ql-part-1"
 
 
 def test_build_zone_page_emits_cluster_cards() -> None:
@@ -175,10 +175,66 @@ def test_build_zone_page_emits_cluster_cards() -> None:
     assert len(draft["major_questlines"]) == 1
     card = draft["major_questlines"][0]
     assert card["title"] == "Part 1 - Example Arc"
-    assert card["id"] == "cluster-part-1"
+    assert card["id"] == "ql-part-1"
     assert card["wiki_refs"] == ["/wiki/Quest_A"]
     assert draft["provenance"]["major_questlines_alliance"]
     assert draft["provenance"]["major_questlines_alliance"][card["id"]]
+
+
+def test_build_zone_page_replaces_parent_zone_cluster_title_with_entry_anchor() -> None:
+    zone_id = "zone-example"
+    questline_rows = [
+        {
+            "zone_id": zone_id,
+            "node_type": "quest",
+            "cluster_id": "entry",
+            "cluster_title": "Example Zone",
+            "cluster_order": 1,
+            "order_in_cluster": 1,
+            "node_id": "quest-entry",
+            "title": "A New Threat",
+            "faction_binding": "shared",
+            "source_link": "/wiki/A_New_Threat",
+        }
+    ]
+    evidence_rows = [
+        {
+            "subject_id": zone_id,
+            "subject_type": "zone",
+            "field_name": "quest_cluster_lore",
+            "evidence_items": [
+                {
+                    "source_url": "https://warcraft.wiki.gg/wiki/A_New_Threat",
+                    "source_title": "A New Threat",
+                    "snippet": "A new threat gathers beyond the ridge.",
+                    "section_role": "description",
+                    "confidence": 1.0,
+                }
+            ],
+            "build_meta": {
+                "source_id": "src-entry",
+                "cluster_id": "entry",
+                "subject_zone_id": zone_id,
+            },
+        }
+    ]
+    draft = build_zone_page(
+        {
+            "entity_id": zone_id,
+            "name": "Example Zone",
+            "source_ids": ["src-entry"],
+            "revision_ids": ["mw:1"],
+            "source_urls": {"src-entry": "https://warcraft.wiki.gg/wiki/A_New_Threat"},
+        },
+        evidence_rows,
+        questline_rows,
+        [],
+        [],
+        {},
+        {},
+        {"final_decision": "include"},
+    )
+    assert draft["major_questlines"][0]["title"] == "A New Threat"
 
 
 def test_build_zone_page_filters_excluded_clusters_by_ranking() -> None:
@@ -275,5 +331,5 @@ def test_build_zone_page_filters_excluded_clusters_by_ranking() -> None:
         },
     )
     assert len(draft["major_questlines"]) == 1
-    assert draft["major_questlines"][0]["id"] == "cluster-included-arc"
+    assert draft["major_questlines"][0]["id"] == "ql-included-arc"
     assert draft["major_questlines"][0]["reason_codes"] == ["score_threshold_met"]

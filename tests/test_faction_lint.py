@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 from pipeline.generate.draft.faction_lint import (
     ensure_sentence_terminator,
     lint_faction_summary,
@@ -10,8 +7,6 @@ from pipeline.generate.draft.faction_lint import (
     trim_faction_summary,
 )
 from pipeline.generate.draft.prose_lint import word_count
-
-_PILOT_FIXTURES = Path(__file__).parent / "fixtures" / "pilot"
 
 
 def test_trim_faction_summary_adds_terminal_punctuation_when_truncated() -> None:
@@ -130,33 +125,6 @@ def test_lint_faction_summary_tolerates_past_supporting_detail() -> None:
     assert not lint_faction_summary(
         summary, zone_name="Western Plaguelands", faction_name="Forsaken"
     )
-
-
-def _gold_faction_cards(fixture_name: str) -> list[dict[str, str]]:
-    payload = json.loads((_PILOT_FIXTURES / fixture_name).read_text(encoding="utf-8"))
-    return [card for card in payload["major_factions"] if isinstance(card, dict)]
-
-
-def test_all_gold_faction_summaries_pass_the_recomposed_gate() -> None:
-    # The slice's acceptance floor: every gold faction summary — five WPL zone cards and both
-    # Scholomance instance cards — passes the whitelist-free gate.
-    zone_cards = _gold_faction_cards("zone_page_western_plaguelands_gold.json")
-    assert len(zone_cards) == 5
-    for card in zone_cards:
-        assert not lint_faction_summary(
-            card["summary"],
-            zone_name="Western Plaguelands",
-            faction_name=card["name"],
-        ), card["name"]
-    instance_cards = _gold_faction_cards("instance_page_scholomance_gold.json")
-    assert len(instance_cards) == 2
-    for card in instance_cards:
-        assert not lint_faction_summary(
-            card["summary"],
-            zone_name="Scholomance",
-            subregion_tokens=["Caer Darrow"],
-            faction_name=card["name"],
-        ), card["name"]
 
 
 def test_lint_faction_summary_rejects_self_negating_non_answer() -> None:

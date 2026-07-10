@@ -104,7 +104,16 @@ end
 SLASH_LORECOMPANION1 = "/lorecompanion"
 SLASH_LORECOMPANION2 = "/lore"
 SlashCmdList["LORECOMPANION"] = function(msg)
-  local pageId = msg and msg ~= "" and msg or "Western_Plaguelands"
+  local pageId = msg and msg:match("^%s*(.-)%s*$") or ""
+  if pageId == "" then
+    local frame = ensureFrame()
+    ensureBodyWidgets(frame)
+    LoreCompanion.state.currentPageId = nil
+    LoreCompanion.state.currentWikiUrl = nil
+    frame.title:SetText("Lore Companion")
+    frame.body:SetText("Use /lore <zone-or-instance-id> to open a page.")
+    frame:Show()
+    return
+  end
   LoreCompanion:OpenPage("zone", pageId, false)
 end
-

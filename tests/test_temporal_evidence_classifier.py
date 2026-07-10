@@ -305,7 +305,7 @@ def test_boundary_uses_early_quest_records_not_late_outcomes(monkeypatch) -> Non
                 "zone_id": "zone-example",
                 "display_title": "Road to the Gate",
                 "faction": "Alliance",
-                "registry_chain_refs": ["q1", "q2", "q3", "q4"],
+                "chain_refs": ["q1", "q2", "q3", "q4"],
                 "overflow_chain_refs": ["q5"],
             }
         },
@@ -451,7 +451,7 @@ def test_boundary_llm_classifies_unregistered_war_names(monkeypatch) -> None:
             "cluster-1": {
                 "zone_id": "zone-example",
                 "display_title": "Hold the Gate",
-                "registry_chain_refs": ["q1"],
+                "chain_refs": ["q1"],
             }
         },
         quest_records_by_node={
@@ -526,7 +526,7 @@ def test_contract_aware_llm_keeps_background_campaign_pre_entry(monkeypatch) -> 
                 "zone_id": "zone-example",
                 "display_title": "Battle for the Town",
                 "faction": "Argent Crusade",
-                "registry_chain_refs": ["q1", "q2", "q3"],
+                "chain_refs": ["q1", "q2", "q3"],
             }
         },
         quest_records_by_node={
@@ -613,7 +613,7 @@ def test_profile_context_with_independent_contract_match_can_be_entry_state(monk
                 "zone_id": "zone-example",
                 "display_title": "Road Defense",
                 "faction": "Argent Crusade",
-                "registry_chain_refs": ["q1", "q2"],
+                "chain_refs": ["q1", "q2"],
             }
         },
         quest_records_by_node={
@@ -825,7 +825,7 @@ def test_zone_history_duplicate_uses_current_entry_state_as_setup_bridge(monkeyp
             "cluster-1": {
                 "zone_id": "zone-example",
                 "display_title": "Hold the Town",
-                "registry_chain_refs": ["q1"],
+                "chain_refs": ["q1"],
             }
         },
         quest_records_by_node={

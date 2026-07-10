@@ -1,6 +1,6 @@
 # Plan: Generalization Refactor — Registries, Guarantees & Editorial Selection
 
-**Status: IN PROGRESS — Slices 1–15 done (Slice 15: 2026-07-07). Implement remaining slices in the order given.**
+**Status: ARCHIVED 2026-07-09 — superseded by `Reference/generalization-quality-recovery-plan.md`.**
 
 ## Why this plan exists
 
@@ -1422,6 +1422,24 @@ Kingdoms contrast; pick one and record the choice in the plan doc when implement
   This slice defines the bar for promoting WPL/Scholomance to gold: pilot pages get promoted only
   once the second zone runs clean through the same machinery.
 
+## Slice 17 — Remove pilot authority and enforce shared evidence contracts
+
+**Status: IMPLEMENTING (2026-07-09).** The Desolace run established that a WPL-only questline
+registry and exact gold gates make WPL an invalid generalization baseline. Remove the runtime
+registry, all fixture fallbacks, curated card overrides, and pilot-only gates. Every zone uses
+cluster-derived IDs, anchors, chain references, ranking, provenance, and semantic validation.
+
+- Replace all hand-authored WPL/Scholomance output fixtures with raw-input and synthetic edge-case
+  fixtures. WPL and Desolace are equal regression inputs; neither prescribes generated prose,
+  card counts, IDs, or anchors.
+- Replace the Scholomance name denylist with per-candidate wiki-category retail eligibility.
+  `retail_confirmed` is required for selection; `non_retail` and `unresolved` candidates never
+  enter retail output, and failed category fetches are recorded rather than treated as clean.
+- Remove WPL defaults from local launchers, diff tooling, and the addon slash command. Bare
+  `/lore` opens neutral usage help.
+- Acceptance requires fresh WPL and Desolace runs through identical release/semantic checks;
+  output differences are evidence-review findings, never justification for a zone exception.
+
 ---
 
 ## Standing notes for implementers
@@ -1430,8 +1448,8 @@ Kingdoms contrast; pick one and record the choice in the plan doc when implement
   checks per slice as marked. The draft stage requires `OPENAI_API_KEY` for page regeneration
   (memory: `draft-stage-requires-openai`).
 - Never re-run into an existing run id (Slice 1 enforces this).
-- When a fix legitimately changes pilot output, update gold fixtures **in the same PR** with a
-  note in the fixture README — divergences are reconciled deliberately, never left ambiguous
-  (memory: `gold-fixtures-are-canonical`).
+- When a fix changes zone output, record the evidence-based reason in its decision artifacts and
+  review it under the shared semantic contract. Do not create or update a zone-specific gold
+  output fixture.
 - Do not add new keyword/regex denylists anywhere in these slices; if a defect seems to need one,
   it belongs to the substance gate / retry loop, or it is a new root cause to record — not patch.

@@ -685,16 +685,14 @@ def _instance_character_candidates(snapshot: dict[str, Any]) -> list[tuple[str, 
     return candidates
 
 
-def _exclude_classic_instance_characters(
+def _record_instance_character_retail_eligibility(
     snapshots: list[dict[str, Any]],
     report_rows: list[dict[str, Any]],
 ) -> None:
-    """S3 authoritative pass: tag each instance's Classic-categorized cast candidates.
+    """Record per-candidate retail eligibility from resolved wiki categories.
 
-    Mines every instance seed page's character candidates, batch-fetches their wiki
-    categories, and records the Classic/legacy/removed ones on the snapshot as
-    ``classic_excluded_characters`` so the offline draft stage can drop them from the
-    cast. Network failures degrade to no exclusions (best-effort).
+    ``unresolved`` is deliberately not eligible: a retail page must not select a
+    candidate whose category lookup failed or returned no result.
     """
     instances = _instance_seed_snapshots(snapshots)
     if not instances:
@@ -708,35 +706,53 @@ def _exclude_classic_instance_characters(
             title_by_key[_category_lookup_key(title)] = title
     if not title_by_key:
         return
-    try:
-        categories = fetch_categories_for_titles(sorted(title_by_key.values()))
-    except Exception as exc:  # noqa: BLE001 - best-effort network category check
+    categories: dict[str, list[str]] | None = None
+    failure: Exception | None = None
+    for _attempt in range(2):
+        try:
+            categories = fetch_categories_for_titles(sorted(title_by_key.values()))
+            break
+        except Exception as exc:  # noqa: BLE001 - category status is evidence
+            failure = exc
+    if categories is None:
         report_rows.append(
             {
-                "status": "skipped",
-                "link": "<classic-category-check>",
-                "reason": f"category_fetch_failed:{exc!r}",
-                "role": "classic_filter",
+                "status": "unresolved_retail_eligibility",
+                "link": "<retail-category-check>",
+                "reason": f"category_fetch_failed:{failure!r}",
+                "role": "retail_eligibility",
             }
         )
-        return
     for snap in instances:
-        excluded = sorted(
-            {
-                norm
-                for norm, title in per_instance[id(snap)]
-                if is_classic_categorized(categories.get(_category_lookup_key(title), []))
-            }
-        )
-        if excluded:
-            snap["classic_excluded_characters"] = excluded
+        eligibility: list[dict[str, Any]] = []
+        for name, title in per_instance[id(snap)]:
+            values = categories.get(_category_lookup_key(title)) if categories is not None else None
+            if values is None:
+                status = "unresolved"
+                values = []
+            elif is_non_retail_title(title) or is_classic_categorized(values):
+                status = "non_retail"
+            else:
+                status = "retail_confirmed"
+            eligibility.append(
+                {
+                    "candidate_name": name,
+                    "wiki_title": title,
+                    "categories": sorted(str(value) for value in values),
+                    "status": status,
+                }
+            )
+        snap["character_retail_eligibility"] = eligibility
+        non_retail = [row["candidate_name"] for row in eligibility if row["status"] == "non_retail"]
+        unresolved = [row["candidate_name"] for row in eligibility if row["status"] == "unresolved"]
+        if non_retail or unresolved:
             report_rows.append(
                 {
-                    "status": "excluded_classic",
+                    "status": "retail_eligibility_recorded",
                     "link": str(snap.get("url", "")),
-                    "reason": "classic_category",
-                    "role": "classic_filter",
-                    "names": excluded,
+                    "role": "retail_eligibility",
+                    "non_retail": non_retail,
+                    "unresolved": unresolved,
                 }
             )
 
@@ -1257,7 +1273,7 @@ def run_traverse_seed(context: RunContext) -> dict[str, Path]:
                 continue
             _increment(instance_id, aux_role)
 
-    _exclude_classic_instance_characters(snapshots, report_rows)
+    _record_instance_character_retail_eligibility(snapshots, report_rows)
     link_category_cache = _build_link_category_cache(
         context,
         snapshots,

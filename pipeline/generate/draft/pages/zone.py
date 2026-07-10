@@ -421,33 +421,22 @@ def build_zone_page(
         start_anchor = str(card_meta.get("start_anchor", "")).strip() or str(
             first_quest.get("title", cluster_title)
         )
+        # A graph component may inherit its parent zone as a title. That is a routing label,
+        # not a questline subject; use the graph-resolved entry anchor instead.
+        if _sanitize_cluster_title(cluster_title, zone_name=name) == "Main storylines":
+            cluster_title = start_anchor or "Main storylines"
         card_id_override = str(card_meta.get("card_id", "")).strip()
-        suppress_continued_card = bool(card_meta.get("suppress_continued_card"))
         quests = _lead_chain_with_anchor(quests, start_anchor)
-        # WS-2: when the cluster maps to a registry arc, the registry is the authoritative
-        # chain (full membership + canonical order across all fragments of a multi-part arc).
-        # Publish it directly so a single cluster fragment can't truncate/misorder the chain;
-        # fall back to the cluster's own node order for non-registry (generic) zones.
-        registry_chain_refs = [
-            str(ref).strip() for ref in card_meta.get("registry_chain_refs", []) if str(ref).strip()
+        chain_refs = [
+            str(row.get("node_id", ""))
+            for row in quests
+            if isinstance(row, dict) and row.get("node_id")
         ]
-        registry_wiki_refs = [
-            str(ref).strip() for ref in card_meta.get("registry_wiki_refs", []) if str(ref).strip()
+        wiki_refs = [
+            str(row.get("source_link", ""))
+            for row in quests
+            if isinstance(row, dict) and str(row.get("source_link", "")).strip()
         ]
-        if registry_chain_refs:
-            chain_refs = registry_chain_refs
-            wiki_refs = registry_wiki_refs
-        else:
-            chain_refs = [
-                str(row.get("node_id", ""))
-                for row in quests
-                if isinstance(row, dict) and row.get("node_id")
-            ]
-            wiki_refs = [
-                str(row.get("source_link", ""))
-                for row in quests
-                if isinstance(row, dict) and str(row.get("source_link", "")).strip()
-            ]
         scoped_pool = _cluster_lore_pool(pools, cluster_id)
         scoped_pool = _faction_scoped_lore_pool(scoped_pool, quests, faction)
         if not scoped_pool:
@@ -488,18 +477,6 @@ def build_zone_page(
         )
         emitted_cards += 1
         if overflow_refs:
-            if suppress_continued_card:
-                questline_overflow_decisions.append(
-                    {
-                        "entity_id": zone_id,
-                        "entity_type": "questline_cluster",
-                        "cluster_id": cluster_id,
-                        "card_id": card_id_override or f"cluster-{cluster_id}",
-                        "reason": "questline_chain_refs_cap",
-                        "overflow_chain_refs": overflow_refs,
-                    }
-                )
-                continue
             overflow_pool = _cluster_lore_pool(pools, cluster_id)
             overflow_pool = _faction_scoped_lore_pool(overflow_pool, quests, faction)
             overflow_cta, overflow_used = synthesize_card_summary(
@@ -538,7 +515,7 @@ def build_zone_page(
                     revision_map=revision_map,
                     questline_decision=questline_decision,
                     used_source_ids=used_source_ids,
-                    card_suffix="-continued",
+                    card_suffix="-segment-2",
                     zone_name=name,
                     cluster_decision=cluster_decision,
                 )

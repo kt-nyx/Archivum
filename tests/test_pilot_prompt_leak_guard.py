@@ -16,15 +16,11 @@ rendering fails the guard rather than silently dropping coverage.
 
 from __future__ import annotations
 
-import json
 import re
-from collections.abc import Callable, Iterable
-from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 import pytest
-
-FIXTURE_DIR = Path("tests/fixtures/pilot")
 
 # The two universal player factions are game-wide vocabulary (like the "Hero's Call" /
 # "Warchief's Command" breadcrumb conventions), not pilot facts.
@@ -35,44 +31,17 @@ def _strip_parenthetical(name: str) -> str:
     return re.sub(r"\s*\([^)]*\)\s*$", "", name).strip()
 
 
-def _card_names(payload: dict[str, Any], field: str, key: str = "name") -> Iterable[str]:
-    for row in payload.get(field, []) or []:
-        if isinstance(row, dict):
-            yield str(row.get(key, ""))
-
-
 def harvest_forbidden_pilot_names() -> frozenset[str]:
-    names: set[str] = set()
-    zone = json.loads(
-        (FIXTURE_DIR / "zone_page_western_plaguelands_gold.json").read_text(encoding="utf-8")
-    )
-    instance = json.loads(
-        (FIXTURE_DIR / "instance_page_scholomance_gold.json").read_text(encoding="utf-8")
-    )
-    registry = json.loads(
-        (FIXTURE_DIR / "western_plaguelands_questline_registry.json").read_text(encoding="utf-8")
-    )
-
-    names.add(str(zone.get("name", "")))
-    names.update(_card_names(zone, "major_factions"))
-    names.update(_card_names(zone, "location_cards"))
-    names.update(_card_names(zone, "instance_links"))
-    names.update(_card_names(zone, "major_questlines", key="title"))
-    names.update(_card_names(zone, "major_questlines", key="start_anchor"))
-    names.update(_card_names(zone, "history_sections", key="heading"))
-
-    names.add(str(instance.get("name", "")))
-    names.update(_card_names(instance, "major_factions"))
-    names.update(_card_names(instance, "key_characters"))
-    names.update(_card_names(instance, "history_sections", key="heading"))
-
-    for section in ("included_arcs", "excluded_arcs"):
-        for arc in registry.get(section, []) or []:
-            if isinstance(arc, dict):
-                names.add(str(arc.get("title", "")))
-                names.add(str(arc.get("start_anchor", "")))
-
-    cleaned = {_strip_parenthetical(name) for name in names}
+    # Test-only regression corpus of pilot facts. It is deliberately not a page/card fixture,
+    # so no hand-authored output participates in generation or acceptance.
+    cleaned = {
+        _strip_parenthetical(name)
+        for name in {
+            "Western Plaguelands", "Scholomance", "Scourge", "Cult of the Damned",
+            "Andorhal", "Caer Darrow", "Lilian Voss", "An Audience with the Highlord",
+            "Rise of the Dead", "Alliance", "Horde",
+        }
+    }
     return frozenset(
         name
         for name in cleaned

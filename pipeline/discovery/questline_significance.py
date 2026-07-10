@@ -10,10 +10,6 @@ from pipeline.contracts.models import (
     ZONE_MIN_TOTAL_QUESTLINE_CARDS,
 )
 from pipeline.discovery.location_discovery import name_in_seed_text
-from pipeline.discovery.questline_arc_map import (
-    load_pilot_questline_registry,
-    match_registry_arc_by_membership,
-)
 
 _ALGORITHM_VERSION = "v2-questline-structural"
 
@@ -110,8 +106,6 @@ def _score_single_cluster(
     seed_text: str,
     storyline_html: str,
     run_id: str,
-    registry_arc_id: str | None,
-    has_registry: bool,
 ) -> dict[str, Any]:
     cluster_id = str(summary.get("cluster_id", "")).strip()
     zone_id = str(summary.get("zone_id", "")).strip()
@@ -134,23 +128,12 @@ def _score_single_cluster(
         "inclusion_score": inclusion_score,
         "faction": faction,
         "cluster_title": str(summary.get("title", cluster_id)),
-        "registry_arc_id": registry_arc_id or "",
     }
     for key, value in criteria.items():
         feature_payload[f"criterion_{key}"] = int(value)
 
     borderline = None
-    if has_registry:
-        # Pilot zones: the curated registry (data, not code keywords) is the inclusion
-        # oracle. A cluster is included iff its quest membership binds it to an included
-        # arc; everything else is dropped. Structural score only drives ranking/cap order.
-        if registry_arc_id:
-            final_decision = "include"
-            reason_codes = ["registry_arc_match", f"arc:{registry_arc_id}"]
-        else:
-            final_decision = "exclude"
-            reason_codes = ["no_registry_arc_match"]
-    elif inclusion_score >= ZONE_MIN_QUESTLINE_INCLUSION_SCORE:
+    if inclusion_score >= ZONE_MIN_QUESTLINE_INCLUSION_SCORE:
         final_decision = "include"
         reason_codes = ["score_threshold_met"]
     elif inclusion_score <= 5:
@@ -279,11 +262,6 @@ def score_zone_questline_clusters(
         for summary in cluster_summaries
         if str(summary.get("zone_id", "")).strip() == zone_id and summary.get("cluster_id")
     ]
-    # The curated registry (when present) is the inclusion oracle for this zone: clusters
-    # bind to included arcs by quest-membership overlap, not by keyword tables.
-    registry = load_pilot_questline_registry(zone_id)
-    has_registry = registry is not None
-
     scored: list[dict[str, Any]] = []
     for summary in zone_summaries:
         cluster_id = str(summary.get("cluster_id", "")).strip()
@@ -295,12 +273,6 @@ def score_zone_questline_clusters(
             rows_by_cluster.get(cluster_id, []),
             key=lambda row: int(row.get("order_in_cluster", 0) or 0),
         )
-        matched_arc = match_registry_arc_by_membership(
-            node_ids,
-            faction=str(summary.get("faction", "shared")),
-            registry=registry,
-        )
-        registry_arc_id = str(matched_arc.get("id", "")).strip() if matched_arc else None
         scored.append(
             _score_single_cluster(
                 summary,
@@ -309,39 +281,29 @@ def score_zone_questline_clusters(
                 seed_text=seed_text,
                 storyline_html=storyline_html,
                 run_id=run_id,
-                registry_arc_id=registry_arc_id,
-                has_registry=has_registry,
             )
         )
 
-    # One card per registry arc: when several clusters bind to the same included arc
-    # (e.g. an entry-breadcrumb fragment plus the main chain both map to the Andorhal
-    # campaign), keep only the richest cluster and supersede the rest.
-    if has_registry:
-        best_by_arc: dict[str, tuple[tuple[int, int], str]] = {}
-        for row in scored:
-            features = row.get("features") or {}
-            arc_id = str(features.get("registry_arc_id", "")).strip()
-            if not arc_id or str(row.get("final_decision", "")) != "include":
-                continue
-            rank_key = (
-                int(features.get("quest_count", 0)),
-                int(features.get("inclusion_score", 0)),
+    # Sparse or imperfect quest records can leave every cluster just below the score floor.
+    # Emit the strongest structurally connected cluster rather than silently producing no
+    # questline coverage; the explicit reason makes this reviewable on every zone.
+    if not any(str(row.get("final_decision", "")) == "include" for row in scored):
+        fallback_candidates = [
+            row
+            for row in scored
+            if int((row.get("features") or {}).get("quest_count", 0)) >= 1
+        ]
+        if fallback_candidates:
+            fallback = max(
+                fallback_candidates,
+                key=lambda row: (
+                    int(row.get("_sort_score", 0)),
+                    -int((row.get("features") or {}).get("cluster_order", 0)),
+                    str(row.get("subject_id", "")),
+                ),
             )
-            current = best_by_arc.get(arc_id)
-            if current is None or rank_key > current[0]:
-                best_by_arc[arc_id] = (rank_key, str(row.get("subject_id", "")))
-        keep_ids = {subject_id for _key, subject_id in best_by_arc.values()}
-        for row in scored:
-            features = row.get("features") or {}
-            arc_id = str(features.get("registry_arc_id", "")).strip()
-            if (
-                arc_id
-                and str(row.get("final_decision", "")) == "include"
-                and str(row.get("subject_id", "")) not in keep_ids
-            ):
-                row["final_decision"] = "exclude"
-                row["reason_codes"] = ["superseded_by_richer_arc_cluster", f"arc:{arc_id}"]
+            fallback["final_decision"] = "include"
+            fallback["reason_codes"] = ["structural_fallback_top_cluster"]
 
     scored, included_ids = _apply_cap_trim(
         scored,
