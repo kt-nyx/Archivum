@@ -251,7 +251,9 @@ def test_wiki_first_stage_chain_includes_discovery_and_enrich(
     metadata = json.loads(
         card_polish_outputs["zone_questline_card_metadata"].read_text(encoding="utf-8")
     )
-    assert isinstance(metadata, list)
+    assert metadata["schema_version"] == "questline_card_metadata.v1"
+    assert metadata["producer"] == "discovery.questline_card_polish"
+    assert isinstance(metadata["metadata"], list)
     decisions = json.loads(
         significance_outputs["questline_inclusion_decisions"].read_text(encoding="utf-8")
     )

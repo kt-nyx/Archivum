@@ -91,7 +91,7 @@ def test_prompt_item_recency_unknown_without_active_expansion() -> None:
     assert _canonical_prompt_item(record)["expansion_recency"] == "unknown"
 
 
-def test_derive_active_expansion_none_when_llm_disabled(monkeypatch) -> None:
+def test_derive_active_expansion_is_explicitly_unknown_when_llm_disabled(monkeypatch) -> None:
     monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
     rows = [
         {
@@ -99,7 +99,20 @@ def test_derive_active_expansion_none_when_llm_disabled(monkeypatch) -> None:
             "evidence_items": [{"snippet": "Redesigned in the expansion Mists of Pandaria."}],
         }
     ]
-    assert _derive_active_expansion(rows, name="Scholomance") is None
+    decision = _derive_active_expansion(
+        rows,
+        name="Example Site",
+        source_anchor_refs=[
+            {
+                "kind": "questline_setup",
+                "metadata_id": "metadata-ql-example",
+                "setup_quest_refs": ["quest-entry"],
+                "setup_snippets": ["The wardens prepare the current defense."],
+            }
+        ],
+    )
+    assert decision["status"] == "unknown"
+    assert decision["fallbacks"] == ["active_expansion_adjudication_unavailable"]
 
 
 def test_rubric_documents_expansion_recency() -> None:

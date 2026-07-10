@@ -22,7 +22,8 @@ from pipeline.generate.draft.claims import (
     LLM_CLAIM_EXTRACTOR_VERSION,
 )
 
-ENTRY_STATE_CONTRACT_VERSION = "entry_state_contract_v1"
+ENTRY_STATE_CONTRACT_VERSION = "entry_state_contract_v2"
+ENTRY_STATE_CONTRACT_DECISION_SCHEMA = "entry_state_contract_decision.v1"
 TEMPORAL_CLASSIFIER_VERSION = "claim_temporal_classifier_v1"
 CLAIM_VIEW_ROUTING_VERSION = "claim_view_routing_v1"
 HISTORY_COVERAGE_VERSION = "section_coverage_v1"
@@ -70,6 +71,7 @@ def build_temporal_model_manifest(*, run_id: str) -> dict[str, Any]:
         },
         "versions": {
             "entry_state_contract_version": ENTRY_STATE_CONTRACT_VERSION,
+            "entry_state_contract_decision_schema": ENTRY_STATE_CONTRACT_DECISION_SCHEMA,
             "claim_extractor_version": CLAIM_EXTRACTOR_VERSION,
             "claim_llm_extractor_version": LLM_CLAIM_EXTRACTOR_VERSION,
             "temporal_classifier_version": TEMPORAL_CLASSIFIER_VERSION,

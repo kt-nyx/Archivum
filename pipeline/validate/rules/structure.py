@@ -527,6 +527,25 @@ def _validate_zone_page(
             )
         )
     context = validation_context or {}
+    active_expansion = context.get("entry_state_active_expansion")
+    active_expansion_status = (
+        str(active_expansion.get("status", "")).strip()
+        if isinstance(active_expansion, dict)
+        else "unknown"
+    )
+    if bool(context.get("release_gate")) and _non_empty_text(zone_page.currently):
+        if active_expansion_status != "resolved":
+            issues.append(
+                ValidationIssue(
+                    code="structure.zone_page_currently_active_state_unknown",
+                    message=(
+                        "currently cannot be released as confident current state while active "
+                        "expansion evidence is unknown"
+                    ),
+                    severity=ValidationSeverity.HARD_FAIL,
+                    path="$.currently",
+                )
+            )
     questline_expect_include = bool(context.get("questline_expect_include"))
     if questline_expect_include and not zone_page.major_questlines:
         issues.append(

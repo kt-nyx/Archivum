@@ -2,7 +2,15 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
+from pipeline.contracts.models import ZonePage
+from pipeline.discovery.questline_card_polish import (
+    load_questline_card_metadata,
+    questline_card_metadata_artifact,
+)
 from pipeline.generate.draft.temporal import build_entry_state_contracts
+from pipeline.validate.rules.structure import validate_structural_rules
 
 
 def _row(
@@ -373,3 +381,159 @@ def test_optional_llm_distillation_cannot_add_invented_contract_labels(monkeypat
     assert contract["current_threats"] == [
         {"label": "Scourge", "source": "llm_contract_distillation"}
     ]
+
+
+def test_selected_metadata_round_trips_into_entry_state_setup_evidence(
+    tmp_path, monkeypatch
+) -> None:
+    """The discovery artifact, not graph reconstruction, owns entry-state setup evidence."""
+    monkeypatch.setenv("WOW_LORE_WIKI_FIRST_NO_LLM", "1")
+    metadata_path = tmp_path / "zone_questline_card_metadata.json"
+    metadata_path.write_text(
+        json.dumps(
+            questline_card_metadata_artifact(
+                [
+                    {
+                        "metadata_id": "metadata-ql-arc-lantern-watch",
+                        "zone_id": "zone-amber-marsh",
+                        "cluster_id": "arc-lantern-watch",
+                        "source_arc_id": "arc-lantern-watch",
+                        "card_id": "ql-arc-lantern-watch",
+                        "display_title": "Lantern Watch",
+                        "faction": "shared",
+                        "start_anchor": "Lantern Call",
+                        "start_anchor_ref": "quest-lantern-call",
+                        "chain_refs": ["quest-lantern-call", "quest-marsh-watch"],
+                        "source_refs": ["/wiki/Lantern_Call"],
+                        "evidence_refs": ["quest-lantern-call", "quest-marsh-watch"],
+                        "algorithm_version": "test",
+                    }
+                ]
+            )
+        ),
+        encoding="utf-8",
+    )
+    metadata = load_questline_card_metadata(metadata_path)
+
+    contracts, decisions = build_entry_state_contracts(
+        [],
+        fact_packs_by_entity={
+            "zone-amber-marsh": {
+                "entity_id": "zone-amber-marsh",
+                "entity_type": "zone",
+                "name": "Amber Marsh",
+            }
+        },
+        source_snapshots=[],
+        questline_card_metadata=metadata,
+        quest_records_by_node={
+            "quest-lantern-call": {
+                "node_id": "quest-lantern-call",
+                "title": "Lantern Call",
+                "description": "Meet the watch captain at the marsh lantern.",
+                "start_npc": "Watch Captain",
+            },
+            "quest-marsh-watch": {
+                "node_id": "quest-marsh-watch",
+                "title": "Marsh Watch",
+                "description": "Secure the crossing before nightfall.",
+            },
+        },
+        run_id="test",
+    )
+
+    setup = decisions[0]["source_anchor_refs"][0]
+    assert setup["metadata_id"] == "metadata-ql-arc-lantern-watch"
+    assert setup["setup_quest_refs"]
+    assert setup["setup_snippets"]
+    assert setup["setup_npcs"] == [
+        {
+            "role": "start_npc",
+            "label": "Watch Captain",
+            "quest_ref": "quest-lantern-call",
+        }
+    ]
+    active_expansion = contracts["zone-amber-marsh"].active_expansion
+    assert active_expansion is not None
+    assert active_expansion["status"] == "unknown"
+    assert active_expansion["fallbacks"] == ["active_expansion_adjudication_unavailable"]
+    assert [row["quest_ref"] for row in active_expansion["source_evidence"]] == [
+        "quest-lantern-call",
+        "quest-marsh-watch",
+    ]
+    assert all(
+        row["metadata_id"] == "metadata-ql-arc-lantern-watch"
+        for row in active_expansion["source_evidence"]
+    )
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {
+            "metadata_id": "metadata-ql-broken",
+            "zone_id": "zone-amber-marsh",
+            "cluster_id": "arc-broken",
+            "source_arc_id": "arc-broken",
+            "card_id": "ql-broken",
+            "display_title": "Broken Arc",
+            "faction": "shared",
+            "start_anchor": "Missing Start",
+            "start_anchor_ref": "quest-missing",
+            "chain_refs": ["quest-entry"],
+            "algorithm_version": "test",
+        },
+        {
+            "metadata_id": "metadata-ql-order",
+            "zone_id": "zone-amber-marsh",
+            "cluster_id": "arc-order",
+            "source_arc_id": "arc-order",
+            "card_id": "ql-order",
+            "display_title": "Order Arc",
+            "faction": "shared",
+            "start_anchor": "Entry",
+            "start_anchor_ref": "quest-entry",
+            "chain_refs": ["quest-entry", "quest-entry"],
+            "algorithm_version": "test",
+        },
+    ],
+)
+def test_invalid_metadata_artifact_fails_fast(tmp_path, metadata: dict) -> None:
+    path = tmp_path / "zone_questline_card_metadata.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "questline_card_metadata.v1",
+                "producer": "discovery.questline_card_polish",
+                "metadata": [metadata],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="questline_card_metadata reader"):
+        load_questline_card_metadata(path)
+
+
+def test_release_rejects_confident_currently_when_active_expansion_is_unknown() -> None:
+    page = ZonePage.model_validate(
+        {
+            "zone_id": "zone-amber-marsh",
+            "name": "Amber Marsh",
+            "wiki_url": "https://example.test/amber-marsh",
+            "parent_continent": "example-continent",
+            "expansion_context": "retail",
+            "at_a_glance": "A wetland frontier with a fortified crossing.",
+            "currently": "Wardens patrol the crossing while raiders threaten the causeway.",
+            "history_sections": [{"heading": "Earlier settlement", "body": "The marsh was settled long ago."}],
+            "provenance": {},
+        }
+    )
+    issues = validate_structural_rules(
+        "zone_page",
+        page,
+        validation_context={
+            "release_gate": True,
+            "entry_state_active_expansion": {"status": "unknown", "confidence": 0.0},
+        },
+    )
+    assert any(issue.code == "structure.zone_page_currently_active_state_unknown" for issue in issues)

@@ -377,6 +377,14 @@ def _prompt_renderers(
         "temporal_active_expansion": lambda: temporal._derive_active_expansion(
             [{"field_name": anchor_field, "evidence_items": [{"snippet": "Current text."}]}],
             name=FAKE_ZONE,
+            source_anchor_refs=[
+                {
+                    "kind": "questline_setup",
+                    "metadata_id": "metadata-ql-fake",
+                    "setup_quest_refs": ["quest-fake"],
+                    "setup_snippets": ["Current text."],
+                }
+            ],
         ),
         "temporal_contract_distillation": lambda: (
             temporal._maybe_distill_entry_state_contract_llm(contract)

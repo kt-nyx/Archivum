@@ -306,6 +306,56 @@ class QuestlineCardV2(BaseModel):
     wiki_refs: list[str] = Field(default_factory=list)
 
 
+class QuestlineCardMetadata(BaseModel):
+    """The one discovery-to-draft contract for a selected questline card.
+
+    ``chain_refs`` is deliberately the only name for the ordered, rendered
+    portion of a chain.  Any remaining graph members belong in
+    ``overflow_chain_refs``; readers must never reconstruct either list from
+    a second discovery artifact.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["questline_card_metadata.v1"] = "questline_card_metadata.v1"
+    metadata_id: str = Field(pattern=ID_PATTERN)
+    zone_id: str = Field(pattern=ID_PATTERN)
+    cluster_id: str = Field(pattern=ID_PATTERN)
+    source_arc_id: str = Field(pattern=ID_PATTERN)
+    card_id: str = Field(pattern=ID_PATTERN)
+    display_title: str = Field(min_length=1)
+    faction: str = Field(min_length=1)
+    faction_variant: str | None = None
+    phase_variant: str | None = None
+    segment_index: int = Field(default=1, ge=1)
+    start_anchor: str = Field(min_length=1)
+    start_anchor_ref: str = Field(pattern=ID_PATTERN)
+    chain_refs: list[str] = Field(min_length=1)
+    overflow_chain_refs: list[str] = Field(default_factory=list)
+    source_refs: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+    algorithm_version: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_chain_contract(self) -> QuestlineCardMetadata:
+        if self.start_anchor_ref not in self.chain_refs + self.overflow_chain_refs:
+            raise ValueError("start_anchor_ref must belong to the serialized quest chain")
+        refs = self.chain_refs + self.overflow_chain_refs
+        if len(refs) != len(set(refs)):
+            raise ValueError("questline metadata chain refs must be unique")
+        return self
+
+
+class QuestlineCardMetadataArtifact(BaseModel):
+    """Versioned, fail-fast questline metadata handoff written by discovery."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["questline_card_metadata.v1"] = "questline_card_metadata.v1"
+    producer: Literal["discovery.questline_card_polish"] = "discovery.questline_card_polish"
+    metadata: list[QuestlineCardMetadata] = Field(default_factory=list)
+
+
 class DecisionArtifact(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

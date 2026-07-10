@@ -271,8 +271,9 @@ def run_draft_writer(
         rankings_blob = json.loads(rankings_path.read_text(encoding="utf-8"))
         if isinstance(rankings_blob, list):
             cluster_rankings_by_zone = load_included_cluster_ids_by_zone(rankings_blob)
-    card_metadata_by_cluster = load_questline_card_metadata(
-        context.data_dir / "discovery" / "zone_questline_card_metadata.json"
+    card_metadata_path = context.data_dir / "discovery" / "zone_questline_card_metadata.json"
+    card_metadata_by_cluster = (
+        load_questline_card_metadata(card_metadata_path) if card_metadata_path.exists() else None
     )
     quest_descriptions_by_node: dict[str, str] = {}
     quest_records_by_node: dict[str, dict[str, Any]] = {}
@@ -387,7 +388,7 @@ def run_draft_writer(
             evidence_rows,
             fact_packs_by_entity=fact_packs_by_entity,
             source_snapshots=source_snapshots,
-            questline_card_metadata=card_metadata_by_cluster,
+            questline_card_metadata=card_metadata_by_cluster or {},
             quest_records_by_node=quest_records_by_node,
             run_id=context.run_id,
             return_entry_state_contract_decisions=True,
@@ -443,11 +444,22 @@ def run_draft_writer(
                     location_decision_map,
                     questline_decision_map.get(entity_id),
                     questline_cluster_decision_map=questline_cluster_decision_map,
-                    questline_card_metadata={
-                        cluster_id: row
-                        for cluster_id, row in card_metadata_by_cluster.items()
-                        if str(row.get("zone_id", "")).strip() == entity_id
-                    },
+                    questline_card_metadata=(
+                        {
+                            cluster_id: row
+                            for cluster_id, row in card_metadata_by_cluster.items()
+                            if str(row.get("zone_id", "")).strip() == entity_id
+                        }
+                        if card_metadata_by_cluster is not None
+                        and (
+                            any(
+                                str(row.get("zone_id", "")).strip() == entity_id
+                                for row in card_metadata_by_cluster.values()
+                            )
+                            or bool(cluster_rankings_by_zone.get(entity_id))
+                        )
+                        else None
+                    ),
                     included_cluster_ids=cluster_rankings_by_zone.get(entity_id),
                     faction_profile_targets=[
                         row
@@ -672,7 +684,11 @@ def run_draft_writer(
     write_json((decisions_dir / "temporal_evidence_decisions.json"), temporal_decisions)
     write_json(
         (decisions_dir / "entry_state_contract_decisions.json"),
-        entry_state_contract_decisions,
+        {
+            "schema_version": "entry_state_contract_decision.v1",
+            "producer": "draft_writer",
+            "decisions": entry_state_contract_decisions,
+        },
     )
     write_json((decisions_dir / "content_boundary_decisions.json"), content_boundary_decisions)
     write_json(

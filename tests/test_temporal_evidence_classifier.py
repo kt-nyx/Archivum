@@ -1069,6 +1069,25 @@ def test_seed_recency_floor_overrides_confident_llm_boundary_verdict(monkeypatch
                 "name": "Example Zone",
             }
         },
+        questline_card_metadata={
+            "arc-example": {
+                "metadata_id": "metadata-ql-arc-example",
+                "zone_id": "zone-example",
+                "cluster_id": "arc-example",
+                "card_id": "ql-arc-example",
+                "display_title": "Example Defense",
+                "start_anchor": "First Watch",
+                "start_anchor_ref": "quest-first-watch",
+                "chain_refs": ["quest-first-watch"],
+            }
+        },
+        quest_records_by_node={
+            "quest-first-watch": {
+                "node_id": "quest-first-watch",
+                "title": "First Watch",
+                "description": "Defenders organize the current watch.",
+            }
+        },
         run_id="test",
         return_boundary_decisions=True,
         return_canonical_decisions=True,

@@ -31,7 +31,10 @@ from pipeline.discovery.location_discovery import (
 )
 from pipeline.discovery.quest_lore import extract_quest_lore
 from pipeline.discovery.quest_roster import build_quest_roster
-from pipeline.discovery.questline_card_polish import build_zone_questline_card_metadata
+from pipeline.discovery.questline_card_polish import (
+    build_zone_questline_card_metadata,
+    questline_card_metadata_artifact,
+)
 from pipeline.discovery.questline_cluster import apply_cluster_layers, cluster_zone_questlines
 from pipeline.discovery.questline_significance import (
     load_included_cluster_ids_by_zone,
@@ -827,7 +830,10 @@ def run_discovery_enrich(
             for key, value in metrics.items():
                 aggregate_metrics[key] += int(value)
 
-        write_json(outputs["zone_questline_card_metadata"], metadata_rows)
+        write_json(
+            outputs["zone_questline_card_metadata"],
+            questline_card_metadata_artifact(metadata_rows),
+        )
         prior_report = _load_json(outputs["enrich_report"])
         report_payload = prior_report if isinstance(prior_report, dict) else {}
         report_payload.update(

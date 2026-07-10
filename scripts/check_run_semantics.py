@@ -128,10 +128,12 @@ def _cluster_id_from_card_id(
 
 
 def _card_id_to_cluster_id_map(run_root: Path, zone_id: str) -> dict[str, str]:
+    from pipeline.discovery.questline_card_polish import load_questline_card_metadata
+
     metadata_path = run_root / "data" / "discovery" / "zone_questline_card_metadata.json"
-    rows = _load_json(metadata_path)
-    if not isinstance(rows, list):
+    if not metadata_path.exists():
         return {}
+    rows = load_questline_card_metadata(metadata_path).values()
     mapping: dict[str, str] = {}
     for row in rows:
         if not isinstance(row, dict):

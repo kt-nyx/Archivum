@@ -258,9 +258,10 @@ class EntryStateContract:
     active_encounters: list[dict[str, Any]] = field(default_factory=list)
     excluded_outcome_hints: list[dict[str, Any]] = field(default_factory=list)
     source_anchor_refs: list[dict[str, Any]] = field(default_factory=list)
-    # Expansion whose content defines the CURRENT playable version of this subject, as a soft,
-    # relative recency anchor for temporal classification: {"label": str, "rank": int} or None.
+    # Expansion whose content defines the CURRENT playable version.  This is always an auditable
+    # decision: unknown is explicit rather than an implicit Classic-era default.
     active_expansion: dict[str, Any] | None = None
+    fallbacks: list[dict[str, Any]] = field(default_factory=list)
     confidence: float = 0.0
     reason: str = ""
 
@@ -283,6 +284,7 @@ class EntryStateContract:
             "excluded_outcome_hints": self.excluded_outcome_hints,
             "source_anchor_refs": self.source_anchor_refs,
             "active_expansion": self.active_expansion,
+            "fallbacks": self.fallbacks,
             "confidence": self.confidence,
             "reason": self.reason,
         }
@@ -1093,19 +1095,51 @@ def _current_anchor_snippets(rows: list[dict[str, Any]], *, limit: int = 8) -> l
     return snippets
 
 
-def _derive_active_expansion(rows: list[dict[str, Any]], *, name: str) -> dict[str, Any] | None:
+def _derive_active_expansion(
+    rows: list[dict[str, Any]],
+    *,
+    name: str,
+    source_anchor_refs: list[dict[str, Any]],
+) -> dict[str, Any]:
     """One-shot LLM extraction of the subject's active-content expansion.
 
     Reads the current-anchor evidence (at-a-glance / current dungeon description / roster) and asks
-    which expansion introduced or last redesigned the CURRENT playable version. Returns
-    {"label", "rank"} or None (LLM unavailable, no anchors, or 'unknown' — the recency prior then
-    simply is not applied).
+    which expansion introduced or last redesigned the CURRENT playable version.  Zone decisions
+    consume selected questline setup anchors, rather than a generic synthesis fallback.  Every
+    unresolved case remains an explicit, reviewable ``unknown`` decision.
     """
+    setup_evidence: list[dict[str, Any]] = []
+    for anchor in source_anchor_refs:
+        if not isinstance(anchor, dict) or anchor.get("kind") != "questline_setup":
+            continue
+        for index, snippet in enumerate(anchor.get("setup_snippets", []) or []):
+            text = str(snippet).strip()
+            if not text:
+                continue
+            refs = anchor.get("setup_quest_refs", []) or []
+            setup_evidence.append(
+                {
+                    "kind": "questline_setup",
+                    "metadata_id": str(anchor.get("metadata_id", "")).strip(),
+                    "quest_ref": str(refs[index]).strip() if index < len(refs) else "",
+                    "snippet": text[:400],
+                }
+            )
+    if not setup_evidence:
+        return {
+            "status": "unknown",
+            "confidence": 0.0,
+            "source_evidence": [],
+            "fallbacks": ["missing_selected_questline_setup_evidence"],
+        }
     if _llm_temporal_adjudication_disabled():
-        return None
-    snippets = _current_anchor_snippets(rows)
-    if not snippets:
-        return None
+        return {
+            "status": "unknown",
+            "confidence": 0.0,
+            "source_evidence": setup_evidence,
+            "fallbacks": ["active_expansion_adjudication_unavailable"],
+        }
+    snippets = [str(item["snippet"]) for item in setup_evidence]
     tokens = list(expansion_release_order())
     try:
         result = llm_json_with_retry(
@@ -1130,13 +1164,30 @@ def _derive_active_expansion(rows: list[dict[str, Any]], *, name: str) -> dict[s
             substep="wiki_first_active_expansion",
             max_attempts=2,
         )
-    except Exception:  # pragma: no cover - provider failures leave the prior unapplied
-        return None
+    except Exception:  # pragma: no cover - provider failures remain reviewable
+        return {
+            "status": "unknown",
+            "confidence": 0.0,
+            "source_evidence": setup_evidence,
+            "fallbacks": ["active_expansion_adjudication_failed"],
+        }
     label = str(result.get("expansion", "")).strip().lower()
     rank = _expansion_rank_for_role(label)
     if rank is None:
-        return None
-    return {"label": label, "rank": rank}
+        return {
+            "status": "unknown",
+            "confidence": 0.0,
+            "source_evidence": setup_evidence,
+            "fallbacks": ["active_expansion_adjudication_unknown"],
+        }
+    return {
+        "status": "resolved",
+        "label": label,
+        "rank": rank,
+        "confidence": 0.8,
+        "source_evidence": setup_evidence,
+        "fallbacks": [],
+    }
 
 
 def _contract_relation_hint(relation: dict[str, Any], *, prefix: str) -> str:
@@ -2480,7 +2531,13 @@ def build_entry_state_contracts(
         contract.run_id = run_id or "unknown"
         contract = _maybe_distill_entry_state_contract_llm(contract)
         if contract.active_expansion is None:
-            contract.active_expansion = _derive_active_expansion(rows, name=contract.name)
+            contract.active_expansion = _derive_active_expansion(
+                rows,
+                name=contract.name,
+                source_anchor_refs=contract.source_anchor_refs,
+            )
+        for fallback in contract.active_expansion.get("fallbacks", []):
+            contract.fallbacks.append({"stage": "active_expansion", "reason": str(fallback)})
         contract.contract_id = _entry_state_contract_id(contract)
         contracts[entity_id] = contract
         decisions.append(contract.to_dict())
@@ -3100,8 +3157,9 @@ def _build_zone_entry_state_contract(
             if str(ref).strip()
         ]
         overflow_refs = [str(ref) for ref in card.get("overflow_chain_refs") or [] if str(ref).strip()]
+        start_anchor_ref = str(card.get("start_anchor_ref", "")).strip()
         setup_refs = _first_nonempty_quest_refs(
-            chain_refs,
+            [start_anchor_ref, *chain_refs],
             quest_records_by_node,
             limit=_SETUP_QUEST_LIMIT,
         )
@@ -3125,6 +3183,8 @@ def _build_zone_entry_state_contract(
             "kind": "questline_setup",
             "cluster_id": str(cluster_id),
             "card_id": str(card.get("card_id", "")).strip(),
+            "metadata_id": str(card.get("metadata_id", "")).strip(),
+            "metadata_schema_version": str(card.get("schema_version", "")).strip(),
             "title": title,
             "faction": faction,
             "start_anchor": str(card.get("start_anchor", "")).strip(),
@@ -3132,7 +3192,7 @@ def _build_zone_entry_state_contract(
             "setup_snippets": setup_snippets,
             "setup_npcs": _quest_record_people(setup_refs, quest_records_by_node),
         }
-        if title or setup_snippets:
+        if setup_refs and setup_snippets:
             contract.source_anchor_refs.append(anchor)
             _append_contract_entry(
                 contract.active_storylines,
@@ -3174,6 +3234,15 @@ def _build_zone_entry_state_contract(
                     "outcome_snippets": late_snippets[:_OUTCOME_QUEST_LIMIT],
                 }
             )
+        else:
+            contract.fallbacks.append(
+                {
+                    "stage": "questline_setup",
+                    "reason": "selected_metadata_setup_refs_unresolved",
+                    "metadata_id": str(card.get("metadata_id", "")).strip(),
+                    "setup_refs": [start_anchor_ref, *chain_refs[:_SETUP_QUEST_LIMIT]],
+                }
+            )
 
     current_context_anchors = _supplemental_current_state_anchors(
         rows,
@@ -3184,6 +3253,12 @@ def _build_zone_entry_state_contract(
     if not contract.source_anchor_refs:
         fallback_anchors = _fallback_current_anchors(rows, kind="zone_current_setup")
         contract.source_anchor_refs.extend(current_context_anchors or fallback_anchors)
+        contract.fallbacks.append(
+            {
+                "stage": "entry_state_setup",
+                "reason": "fallback_current_structural_evidence",
+            }
+        )
         contract.reason = "fallback_current_structural_evidence"
         contract.confidence = 0.45 if contract.source_anchor_refs else 0.25
     else:
@@ -3466,6 +3541,8 @@ def _first_nonempty_quest_refs(
 ) -> list[str]:
     refs: list[str] = []
     for ref in chain_refs:
+        if ref in refs:
+            continue
         if _quest_record_summary(quest_records_by_node.get(ref, {})):
             refs.append(ref)
         if len(refs) >= limit:

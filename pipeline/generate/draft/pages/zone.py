@@ -39,7 +39,6 @@ from pipeline.generate.draft.pages.questlines import (
     _cluster_lore_pool,
     _faction_scoped_lore_pool,
     _group_v3_clusters,
-    _lead_chain_with_anchor,
     _majority_faction,
     _split_chain_refs,
 )
@@ -411,26 +410,48 @@ def build_zone_page(
             zone_name=name,
         )
         card_meta = (questline_card_metadata or {}).get(cluster_id, {})
-        if str(card_meta.get("display_title", "")).strip():
-            cluster_title = str(card_meta.get("display_title", "")).strip()
-        faction = _majority_faction(
-            [str(row.get("faction_binding", "shared")) for row in quests if isinstance(row, dict)]
-        )
-        first_quest = quests[0] if isinstance(quests[0], dict) else {}
-        start_anchor = str(card_meta.get("start_anchor", "")).strip() or str(
-            first_quest.get("title", cluster_title)
-        )
+        if questline_card_metadata is not None and not card_meta:
+            raise ValueError(
+                f"zone draft reader: selected cluster {cluster_id!r} has no questline metadata "
+                "from discovery.questline_card_polish"
+            )
+        if card_meta:
+            cluster_title = str(card_meta["display_title"]).strip()
+            faction = str(card_meta["faction"]).strip()
+            start_anchor = str(card_meta["start_anchor"]).strip()
+            chain_refs = [str(ref) for ref in card_meta["chain_refs"] if str(ref).strip()]
+            overflow_refs = [
+                str(ref) for ref in card_meta.get("overflow_chain_refs", []) if str(ref).strip()
+            ]
+            quest_by_node = {
+                str(row.get("node_id", "")).strip(): row
+                for row in quests
+                if isinstance(row, dict) and str(row.get("node_id", "")).strip()
+            }
+            missing_refs = [ref for ref in chain_refs + overflow_refs if ref not in quest_by_node]
+            if missing_refs:
+                raise ValueError(
+                    f"zone draft reader: metadata for {cluster_id!r} references quest graph nodes "
+                    f"not present in the selected cluster: {missing_refs}"
+                )
+            quests = [quest_by_node[ref] for ref in chain_refs + overflow_refs]
+        else:
+            faction = _majority_faction(
+                [str(row.get("faction_binding", "shared")) for row in quests if isinstance(row, dict)]
+            )
+            first_quest = quests[0] if isinstance(quests[0], dict) else {}
+            start_anchor = str(first_quest.get("title", cluster_title))
+            chain_refs = [
+                str(row.get("node_id", ""))
+                for row in quests
+                if isinstance(row, dict) and row.get("node_id")
+            ]
+            overflow_refs = []
         # A graph component may inherit its parent zone as a title. That is a routing label,
         # not a questline subject; use the graph-resolved entry anchor instead.
         if _sanitize_cluster_title(cluster_title, zone_name=name) == "Main storylines":
             cluster_title = start_anchor or "Main storylines"
         card_id_override = str(card_meta.get("card_id", "")).strip()
-        quests = _lead_chain_with_anchor(quests, start_anchor)
-        chain_refs = [
-            str(row.get("node_id", ""))
-            for row in quests
-            if isinstance(row, dict) and row.get("node_id")
-        ]
         wiki_refs = [
             str(row.get("source_link", ""))
             for row in quests
@@ -453,7 +474,10 @@ def build_zone_page(
             cta = _best_snippet_for_term(scoped_pool, cluster_title, min_words=8) or (
                 f"Follow the {cluster_title} arc through its linked quests."
             )
-        primary_refs, overflow_refs = _split_chain_refs(chain_refs)
+        if not card_meta:
+            primary_refs, overflow_refs = _split_chain_refs(chain_refs)
+        else:
+            primary_refs = chain_refs
         primary_wiki_refs = wiki_refs[: len(primary_refs)] if wiki_refs else []
         _append_questline_card(
             major_questlines=major_questlines,
