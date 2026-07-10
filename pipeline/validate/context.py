@@ -8,8 +8,13 @@ from pathlib import Path
 from typing import Any
 
 from pipeline.common.run_context import RunContext
-from pipeline.contracts.models import LocationSelectionArtifact, QuestlineCardMetadataArtifact
+from pipeline.contracts.models import (
+    InstanceKeyCharacterDecisionArtifact,
+    LocationSelectionArtifact,
+    QuestlineCardMetadataArtifact,
+)
 from pipeline.discovery.questline_significance import selected_candidate_ids_by_zone
+from pipeline.generate.draft.card_evidence_pack import load_card_evidence_pack_artifact
 from pipeline.generate.draft.model_versions import PROSE_FINALIZE_DECISION_SCHEMA
 from pipeline.ingest.snapshots import load_source_snapshots
 
@@ -23,6 +28,11 @@ class ValidationRunResources:
     entry_state_contracts: list[dict[str, Any]] = field(default_factory=list)
     location_decisions: list[dict[str, Any]] = field(default_factory=list)
     location_coverage: list[dict[str, Any]] = field(default_factory=list)
+    # Slice 8 release-gate sidecars: per-card evidence packs, instance participant admissions, and
+    # the questline CTA finalize records whose final lint outcome the strict gate re-checks.
+    card_evidence_packs: list[dict[str, Any]] = field(default_factory=list)
+    instance_participant_decisions: list[dict[str, Any]] = field(default_factory=list)
+    cta_finalize_records: list[dict[str, Any]] = field(default_factory=list)
     fact_check_target_entity_ids: list[str] = field(default_factory=list)
     fact_check_target_reasons: dict[str, list[str]] = field(default_factory=dict)
     linker_manual_review_by_entity: dict[str, int] = field(default_factory=dict)
@@ -126,10 +136,17 @@ def load_validation_run_resources(run_root: Path) -> ValidationRunResources:
         for row in records:
             if not isinstance(row, dict):
                 continue
-            if str(row.get("stage", "")) != "major_factions.candidates":
-                continue
+            stage = str(row.get("stage", ""))
             entity_id = row.get("entity_id")
             if not isinstance(entity_id, str) or not entity_id:
+                continue
+            if stage == "questline_cta.finalize":
+                # Slice 8 release gate re-checks the *persisted* final CTA lint outcome: a finalize
+                # record whose ``final_lint_issues`` is non-empty is a malformed final clause that
+                # slipped past the synthesis-time gate.
+                resources.cta_finalize_records.append(row)
+                continue
+            if stage != "major_factions.candidates":
                 continue
             names = resources.faction_candidate_names_by_entity.setdefault(entity_id, [])
             candidates = row.get("candidates")
@@ -187,6 +204,24 @@ def load_validation_run_resources(run_root: Path) -> ValidationRunResources:
             )
         resources.entry_state_contracts = [
             row for row in blob["decisions"] if isinstance(row, dict)
+        ]
+
+    card_pack_path = run_root / "data" / "decisions" / "card_evidence_pack_decisions.json"
+    if card_pack_path.exists():
+        pack_artifact = load_card_evidence_pack_artifact(
+            json.loads(card_pack_path.read_text(encoding="utf-8"))
+        )
+        resources.card_evidence_packs = [
+            row.model_dump(mode="json") for row in pack_artifact.decisions
+        ]
+
+    kc_path = run_root / "data" / "decisions" / "instance_key_character_decisions.json"
+    if kc_path.exists():
+        kc_artifact = InstanceKeyCharacterDecisionArtifact.model_validate(
+            json.loads(kc_path.read_text(encoding="utf-8"))
+        )
+        resources.instance_participant_decisions = [
+            row.model_dump(mode="json") for row in kc_artifact.decisions
         ]
 
     return resources
@@ -273,6 +308,77 @@ def wiki_first_entity_flags(
     }
 
 
+def release_gate_entity_flags(
+    entity_id: str,
+    *,
+    resources: ValidationRunResources,
+) -> dict[str, Any]:
+    """Per-entity release-gate context: card evidence packs, participant admissions, questline
+    setup coverage, and the final-CTA lint outcome (Slice 8 strict release gate).
+
+    The gate rules consult these only when ``release_gate`` is set. Each map is keyed by the same
+    id the rendered card carries (``card_id``/``location_id``/``candidate_id``), so the strict gate
+    can confirm every rendered card agrees with the selection/evidence sidecar it was drawn from.
+    """
+    packs_by_card_id = {
+        str(row.get("card_id", "")).strip(): row
+        for row in resources.card_evidence_packs
+        if str(row.get("card_id", "")).strip()
+    }
+    location_selection_by_id = {
+        str(row.get("location_id", "")).strip(): row
+        for row in resources.location_decisions
+        if str(row.get("location_id", "")).strip()
+    }
+    instance_participants_by_candidate_id: dict[str, dict[str, Any]] = {}
+    instance_decision_present = False
+    for row in resources.instance_participant_decisions:
+        if str(row.get("instance_id", "")).strip() != entity_id:
+            continue
+        instance_decision_present = True
+        for candidate in row.get("candidates", []) or []:
+            if not isinstance(candidate, dict):
+                continue
+            candidate_id = str(candidate.get("candidate_id", "")).strip()
+            if candidate_id:
+                instance_participants_by_candidate_id[candidate_id] = candidate
+
+    entry_state_contract = next(
+        (
+            row
+            for row in resources.entry_state_contracts
+            if str(row.get("entity_id", "")).strip() == entity_id
+        ),
+        None,
+    )
+    questline_setup_clusters: set[str] = set()
+    if isinstance(entry_state_contract, dict):
+        for anchor in entry_state_contract.get("source_anchor_refs", []) or []:
+            if not isinstance(anchor, dict):
+                continue
+            if str(anchor.get("kind", "")) != "questline_setup":
+                continue
+            if anchor.get("setup_snippets"):
+                cluster_id = str(anchor.get("cluster_id", "")).strip()
+                if cluster_id:
+                    questline_setup_clusters.add(cluster_id)
+
+    cta_lint_failed = any(
+        str(row.get("entity_id", "")).strip() == entity_id and (row.get("final_lint_issues") or [])
+        for row in resources.cta_finalize_records
+    )
+    return {
+        "release_card_evidence_packs": packs_by_card_id,
+        "release_card_packs_present": bool(packs_by_card_id),
+        "release_location_selection_by_id": location_selection_by_id,
+        "release_instance_participants": instance_participants_by_candidate_id,
+        "release_instance_decision_present": instance_decision_present,
+        "release_questline_setup_clusters": questline_setup_clusters,
+        "release_entry_state_present": entry_state_contract is not None,
+        "release_cta_lint_failed": cta_lint_failed,
+    }
+
+
 def build_entity_validation_context(
     *,
     entity_id: str,
@@ -306,4 +412,5 @@ def build_entity_validation_context(
             location_decisions=resources.location_decisions,
             location_coverage=resources.location_coverage,
         ),
+        **release_gate_entity_flags(entity_id, resources=resources),
     }

@@ -428,6 +428,39 @@ def test_validate_stage_records_release_gate_in_report(tmp_path: Path) -> None:
     payload = json.loads(output["validation_report_path"].read_text(encoding="utf-8"))
     assert payload["release_gate"] is True
     assert output["passed"] is True
+    # Slice 8, item 5: an `off`-profile pass under the release gate is not a certified strict run.
+    assert payload["release_certified"] is False
+    assert output["release_certified"] is False
+
+
+def test_validate_stage_release_certified_only_under_strict_release_gate(tmp_path: Path) -> None:
+    """Slice 8, item 5: release certification requires a strict release-gated pass; a warn pass is
+    an exploratory success and never labelled equivalent."""
+    context = ensure_run_context(
+        "run-test-validate-release-certified",
+        artifacts_root=tmp_path / "runs",
+    )
+    certified = run_validate_stage(
+        context,
+        [],
+        fact_check_profile="strict",
+        release_gate=True,
+    )
+    assert certified["passed"] is True
+    assert certified["release_certified"] is True
+
+    warn_context = ensure_run_context(
+        "run-test-validate-release-warn-not-certified",
+        artifacts_root=tmp_path / "runs",
+    )
+    warn_output = run_validate_stage(
+        warn_context,
+        [],
+        fact_check_profile="warn",
+        no_llm_fact_check=True,
+    )
+    assert warn_output["passed"] is True
+    assert warn_output["release_certified"] is False
 
 
 def test_coalesce_prefers_manifest_priority_for_tie_break(

@@ -52,11 +52,18 @@ _EVIDENCE_BODY_MAX_LEN = 2000
 
 @dataclass(frozen=True)
 class CheckedUnit:
-    """One passage whose assertions are checked against its cited sources."""
+    """One passage whose assertions are checked against its cited sources.
+
+    ``central`` marks an identity / relationship / central-storyline assertion (a card's defining
+    sentence or a page's central section claim). In the strict release profile an unsupported or
+    contradicted *central* unit is a hard failure; a noncentral stylistic unit stays a warning
+    (Slice 8, item 4).
+    """
 
     path: str
     text: str
     source_ids: tuple[str, ...]
+    central: bool = True
 
 
 def _section_claims(entity_type: str, payload: dict[str, Any]) -> list[tuple[str, str]]:
@@ -352,13 +359,13 @@ def _status_issue(
     path: str,
     status: str,
     profile: FactCheckProfile,
+    central: bool,
 ) -> ValidationIssue | None:
+    strict = profile == FactCheckProfile.STRICT
     if status == "contradicted":
-        severity = (
-            ValidationSeverity.HARD_FAIL
-            if profile == FactCheckProfile.STRICT
-            else ValidationSeverity.WARN
-        )
+        # A contradiction is always a hard failure in the strict profile (item 4); noncentral
+        # stylistic contradictions still hard-fail because a contradiction is never merely stylistic.
+        severity = ValidationSeverity.HARD_FAIL if strict else ValidationSeverity.WARN
         return ValidationIssue(
             code="fact_check.contradiction",
             message=f"passage at {path} was adjudicated as contradicted by its cited sources",
@@ -366,10 +373,15 @@ def _status_issue(
             path=path,
         )
     if status == "unsupported":
+        # Strict release: an unsupported *central* assertion (identity/relationship/central
+        # storyline) is a hard failure; a noncentral stylistic unit stays a distinct warning.
+        severity = (
+            ValidationSeverity.HARD_FAIL if (strict and central) else ValidationSeverity.WARN
+        )
         return ValidationIssue(
             code="fact_check.unsupported",
             message=f"passage at {path} is not supported by its cited sources",
-            severity=ValidationSeverity.WARN,
+            severity=severity,
             path=path,
         )
     if status == "unchecked_missing_pointers":
@@ -396,6 +408,7 @@ def _off_report(entity_type: str, entity_id: str, settings: AISettings) -> dict[
         "llm_available": settings.openai_ready,
         "llm_model": settings.openai_model,
         "targeted_for_adjudication": False,
+        "risk_flagged": False,
         "target_reasons": [],
         "claim_count": 0,
         "claims": [],
@@ -462,11 +475,14 @@ def validate_fact_check_rules(
             for key, value in raw_reason_map.items()
             if isinstance(key, str) and isinstance(value, list)
         }
-    targeted_for_adjudication = (
-        profile in {FactCheckProfile.WARN, FactCheckProfile.STRICT}
-        and bool(entity_id)
-        and entity_id in target_entity_ids
+    # Slice 8, item 3: fact-check coverage is no longer confined to manual-link / coalescing risk
+    # entities. Every drafted page's central section claims and every selected card's identity /
+    # relationship summary are adjudicated. The risk set is retained only as recorded *reasons*, so
+    # a run with no manual-link event still fact-checks its cards.
+    targeted_for_adjudication = profile in {FactCheckProfile.WARN, FactCheckProfile.STRICT} and bool(
+        entity_id
     )
+    risk_flagged = entity_id in target_entity_ids
     target_reasons = target_reason_map.get(entity_id, [])
 
     issues: list[ValidationIssue] = []
@@ -525,7 +541,9 @@ def validate_fact_check_rules(
             llm_model=llm_model,
         )
 
-        claim_issue = _status_issue(path=path, status=claim_status, profile=profile)
+        claim_issue = _status_issue(
+            path=path, status=claim_status, profile=profile, central=unit.central
+        )
         if claim_issue is not None:
             issues.append(claim_issue)
             review_queue.append(path)
@@ -550,6 +568,7 @@ def validate_fact_check_rules(
         "llm_available": llm_available,
         "llm_model": llm_model,
         "targeted_for_adjudication": targeted_for_adjudication,
+        "risk_flagged": risk_flagged,
         "target_reasons": target_reasons,
         "claim_count": len(claim_rows),
         "claims": claim_rows,

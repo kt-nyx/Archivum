@@ -328,12 +328,19 @@ def run_pipeline_flow(
         verbose=verbose,
     )
 
+    release_certified = bool(validate_output.get("release_certified"))
     append_trace_event(
         context,
         stage_name="pipeline",
         attempt=1,
+        # A warn/off pass is an exploratory success; only a strict release-gated pass is certified,
+        # and the two are never labelled equivalent (Slice 8, item 5).
         status="success" if validate_output["passed"] else "failed",
-        details={"linker_report_path": str(linker_report_path)},
+        details={
+            "linker_report_path": str(linker_report_path),
+            "release_gate": bool(validate_output.get("release_gate")),
+            "release_certified": release_certified,
+        },
     )
     return {
         "run_id": context.run_id,
@@ -342,6 +349,9 @@ def run_pipeline_flow(
         "linker_report_path": str(linker_report_path),
         "validate": {
             "passed": bool(validate_output["passed"]),
+            "release_gate": bool(validate_output.get("release_gate")),
+            "fact_check_profile": str(validate_output.get("fact_check_profile", "")),
+            "release_certified": release_certified,
             "validation_report_path": str(validate_output["validation_report_path"]),
             "fact_check_report_path": str(validate_output["fact_check_report_path"]),
             "fact_check_summary_path": str(validate_output["fact_check_summary_path"]),

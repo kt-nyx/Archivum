@@ -282,6 +282,7 @@ def validate(
     )
     typer.echo(
         f"run_id={context.run_id} stage=validate passed={result['passed']} "
+        f"release_certified={result['release_certified']} "
         f"profile={normalized_profile} release_gate={release_gate}"
     )
 
@@ -384,6 +385,7 @@ def run_all(
         raise typer.Exit(code=1) from exc
     typer.echo(
         f"run_id={result['run_id']} validate_passed={result['validate']['passed']} "
+        f"release_certified={result['validate']['release_certified']} "
         f"profile={normalized_profile} release_gate={release_gate} retail_only={retail_only} "
         f"instance_variant_policy={instance_variant_policy}"
     )

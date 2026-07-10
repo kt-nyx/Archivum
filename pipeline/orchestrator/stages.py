@@ -496,6 +496,11 @@ def run_validate_stage(
             if fact_check_row:
                 fact_check_rows.append(fact_check_row)
 
+    # Slice 8, item 5: a run is *release-certified* only when every entity passed under the strict
+    # release gate. A warn/off pass remains useful for exploration but is never labelled equivalent
+    # to a strict successful run.
+    release_certified = all_passed and release_gate and normalized_fact_check_profile == "strict"
+
     report_dir = context.reports_dir / "validate"
     report_dir.mkdir(parents=True, exist_ok=True)
 
@@ -513,6 +518,7 @@ def run_validate_stage(
             "max_entity_concurrency": max_entity_concurrency,
             "entity_reports": report_rows,
             "passed": all_passed,
+            "release_certified": release_certified,
         },
     )
 
@@ -560,6 +566,7 @@ def run_validate_stage(
         ],
         metadata={
             "passed": all_passed,
+            "release_certified": release_certified,
             "fact_check_profile": normalized_fact_check_profile,
             "release_gate": release_gate,
             "web_search_enabled": fact_check_web_search,
@@ -572,6 +579,9 @@ def run_validate_stage(
     )
     return {
         "passed": all_passed,
+        "release_gate": release_gate,
+        "fact_check_profile": normalized_fact_check_profile,
+        "release_certified": release_certified,
         "validation_report_path": validation_report_path,
         "fact_check_report_path": fact_check_report_path,
         "fact_check_summary_path": fact_check_summary_path,
