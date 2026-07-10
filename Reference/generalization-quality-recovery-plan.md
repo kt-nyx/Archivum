@@ -499,3 +499,34 @@ tests and the full suite pass.
 Add a short dated entry after each completed slice: commit SHA, tests run, fresh run ids where
 applicable, intentional behavior changes, and any deferred generic follow-up. Do not replace the
 acceptance criteria with a prose summary.
+
+### 2026-07-09 — Slice 0 complete
+
+- **Baseline SHA:** `a8e1f48` (`feat(generalization): complete pilot-eviction baseline`). Local
+  `main` fast-forwarded to this commit; recovery work begins on
+  `fix/generalization-quality-recovery` from the same SHA.
+- **Verification:** `git diff --check`; `uv run --no-sync ruff check pipeline tests`; `uv run
+  --no-sync mypy pipeline`; focused questline/location/instance/temporal/validation tests
+  (49 passed); `uv run --no-sync pytest -q` (passed, with the suite's existing skips/xfail).
+- **Baseline correction:** the new no-pilot-scaffolding guard no longer scans `.vscode` run
+  configurations, because pilot names are permitted in evaluation/run configuration and forbidden
+  only in shared runtime logic.
+
+### 2026-07-09 — Slice 1 complete
+
+- **Commit SHA:** `737519c` (`feat(discovery): add evidence-based entity-kind admission`).
+- **Behavior:** added the versioned `EntityKindDecision` contract and
+  `entity_kind_decisions.json`; a link with no affirmative target-page or positive registry signal
+  remains `unknown`, and only `place` decisions enter the location-card path. Removed the entity
+  denylist, race/species and faction title lists, location-title type rules, title-shape entity
+  fallbacks, and their vocabulary consumers. The draft reader rejects a missing/mismatched entity
+  decision artifact or a candidate/decision identity mismatch.
+- **Verification:** `uv run --no-sync ruff check pipeline scripts tests`; `uv run --no-sync mypy
+  pipeline`; focused entity/discovery/location/registry/vocabulary tests (55 passed); `uv run
+  --no-sync pytest -q` (passed, with the suite's existing skips/xfail). `mypy pipeline scripts`
+  still reports 14 pre-existing errors in `scripts/harvest_section_labels.py` and
+  `scripts/check_run_semantics.py`; the baseline has never type-checked all scripts, and this
+  slice introduced no additional pipeline MyPy errors.
+- **Deferred:** Slice 2 will progressively probe/fetch unknown location leads and rebuild direct
+  evidence ownership; Slice 3 will apply this contract to named instance participants and their
+  instance-presence evidence.
