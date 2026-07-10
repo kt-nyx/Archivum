@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from pipeline.contracts.models import InstanceKeyCharacterDecisionArtifact
 from pipeline.discovery.entity_typing import is_valid_quest_graph_link, normalize_title
 from pipeline.discovery.storyline_html import parse_storyline_html
 from pipeline.discovery.world_registry import entry_kinds
@@ -1030,14 +1031,20 @@ def _check_instance_drafts(run_root: Path) -> None:
     kc_decisions_by_instance: dict[str, list[dict[str, Any]]] = {}
     kc_decisions_path = run_root / "data" / "decisions" / "instance_key_character_decisions.json"
     kc_decisions_blob = _load_json(kc_decisions_path)
-    if isinstance(kc_decisions_blob, list):
-        for row in kc_decisions_blob:
-            if not isinstance(row, dict):
-                continue
-            decision_instance_id = str(row.get("instance_id", "")).strip()
-            candidates = [c for c in row.get("candidates", []) if isinstance(c, dict)]
-            if decision_instance_id:
-                kc_decisions_by_instance[decision_instance_id] = candidates
+    if kc_decisions_blob is not None:
+        try:
+            kc_artifact = InstanceKeyCharacterDecisionArtifact.model_validate(kc_decisions_blob)
+        except Exception as exc:  # noqa: BLE001 - clean-break artifact diagnostic
+            _fail(
+                "instance key-character decisions must use schema "
+                "instance_key_character_decision.v1 from draft_writer; regenerate this run"
+            )
+            raise AssertionError from exc
+        for row in kc_artifact.decisions:
+            candidates = [candidate.model_dump(mode="json") for candidate in row.candidates]
+            for candidate in candidates:
+                candidate["role"] = candidate["final_role"]
+            kc_decisions_by_instance[row.instance_id] = candidates
 
     for draft_path in sorted(draft_dir.glob("instance-*.json")):
         draft = _load_json(draft_path)

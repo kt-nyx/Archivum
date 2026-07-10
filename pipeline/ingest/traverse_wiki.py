@@ -31,10 +31,10 @@ from pipeline.discovery.entity_typing import (
     is_valid_quest_graph_link,
     location_is_offzone,
     location_subzone_zone_slugs,
-    normalize_title,
     should_skip_registry_traversal,
 )
 from pipeline.discovery.instance_bosses import (
+    BossCandidate,
     collect_character_pool,
     prefilter_character_pool,
 )
@@ -663,8 +663,8 @@ def _instance_seed_snapshots(snapshots: list[dict[str, Any]]) -> list[dict[str, 
     ]
 
 
-def _instance_character_candidates(snapshot: dict[str, Any]) -> list[tuple[str, str]]:
-    """Mine ``(normalized_name, page_title)`` character candidates from an instance page."""
+def _instance_participant_candidates(snapshot: dict[str, Any]) -> list[BossCandidate]:
+    """Collect encounter links as auditable participant leads, never as cards."""
     blocks = snapshot.get("section_blocks") or []
     if not isinstance(blocks, list):
         blocks = []
@@ -680,32 +680,27 @@ def _instance_character_candidates(snapshot: dict[str, Any]) -> list[tuple[str, 
         ),
         instance_name=instance_name,
     )
-    candidates: list[tuple[str, str]] = []
-    for candidate in pool:
-        title = _title_from_wiki_url(candidate.wiki_url)
-        if title:
-            candidates.append((normalize_title(candidate.name), title))
-    return candidates
+    return pool
 
 
-def _record_instance_character_retail_eligibility(
+def _record_instance_participant_evidence(
     snapshots: list[dict[str, Any]],
     report_rows: list[dict[str, Any]],
+    entity_kind_decisions: dict[str, EntityKindDecision],
 ) -> None:
-    """Record per-candidate retail eligibility from resolved wiki categories.
-
-    ``unresolved`` is deliberately not eligible: a retail page must not select a
-    candidate whose category lookup failed or returned no result.
-    """
+    """Record separate kind, presence, retail, and encounter facts for each lead."""
     instances = _instance_seed_snapshots(snapshots)
     if not instances:
         return
-    per_instance: dict[int, list[tuple[str, str]]] = {}
+    per_instance: dict[int, list[BossCandidate]] = {}
     title_by_key: dict[str, str] = {}
     for snap in instances:
-        candidates = _instance_character_candidates(snap)
+        candidates = _instance_participant_candidates(snap)
         per_instance[id(snap)] = candidates
-        for _norm, title in candidates:
+        for candidate in candidates:
+            title = _title_from_wiki_url(candidate.wiki_url)
+            if not title:
+                continue
             title_by_key[_category_lookup_key(title)] = title
     if not title_by_key:
         return
@@ -727,35 +722,71 @@ def _record_instance_character_retail_eligibility(
             }
         )
     for snap in instances:
-        eligibility: list[dict[str, Any]] = []
-        for name, title in per_instance[id(snap)]:
+        participant_evidence: list[dict[str, Any]] = []
+        source_id = str(snap.get("source_id", "")).strip()
+        for candidate in per_instance[id(snap)]:
+            title = _title_from_wiki_url(candidate.wiki_url)
+            if not title:
+                continue
             values = categories.get(_category_lookup_key(title)) if categories is not None else None
             if values is None:
-                status = "unresolved"
+                retail_scope = "unknown"
                 values = []
             elif is_non_retail_title(title) or is_classic_categorized(values):
-                status = "non_retail"
+                retail_scope = "non_retail"
             else:
-                status = "retail_confirmed"
-            eligibility.append(
+                retail_scope = "retail_confirmed"
+            entity_decision = decide_entity_kind(
+                candidate_id=candidate.boss_id,
+                canonical_title=title,
+                canonical_path=candidate.canonical_path or canonical_path_for_link(candidate.wiki_url),
+                source_snapshot={"categories": values},
+                source_relation=candidate.source_section_role,
+                source_ids=[source_id] if source_id else [],
+            )
+            entity_kind_decisions[entity_decision.decision_id] = entity_decision
+            presence = [
+                f"source:{source_id}:section:{role.removeprefix('instance_section:')}"
+                for role in candidate.instance_presence_evidence
+                if source_id
+            ]
+            encounter_relation = list(candidate.encounter_relation_evidence)
+            reasons = [*entity_decision.reason_codes]
+            if not presence:
+                reasons.append("missing_direct_instance_presence")
+            if retail_scope == "unknown":
+                reasons.append("retail_scope_unknown")
+            participant_evidence.append(
                 {
-                    "candidate_name": name,
+                    "candidate_id": candidate.boss_id,
+                    "candidate_name": candidate.name,
                     "wiki_title": title,
+                    "canonical_path": entity_decision.canonical_path,
+                    "entity_kind_decision_id": entity_decision.decision_id,
+                    "entity_kind": entity_decision.kind.value,
+                    "instance_presence_evidence": presence,
+                    "encounter_relation_evidence": encounter_relation,
+                    "retail_scope": retail_scope,
+                    "retail_scope_evidence": [f"category:{value}" for value in sorted(values)],
                     "categories": sorted(str(value) for value in values),
-                    "status": status,
+                    "reason_codes": reasons,
                 }
             )
-        snap["character_retail_eligibility"] = eligibility
-        non_retail = [row["candidate_name"] for row in eligibility if row["status"] == "non_retail"]
-        unresolved = [row["candidate_name"] for row in eligibility if row["status"] == "unresolved"]
-        if non_retail or unresolved:
+        snap["instance_participant_evidence"] = participant_evidence
+        not_admissible = [
+            row["candidate_name"]
+            for row in participant_evidence
+            if row["entity_kind"] != EntityKind.NAMED_ACTOR.value
+            or not row["instance_presence_evidence"]
+            or row["retail_scope"] != "retail_confirmed"
+        ]
+        if not_admissible:
             report_rows.append(
                 {
-                    "status": "retail_eligibility_recorded",
+                    "status": "instance_participant_evidence_recorded",
                     "link": str(snap.get("url", "")),
-                    "role": "retail_eligibility",
-                    "non_retail": non_retail,
-                    "unresolved": unresolved,
+                    "role": "instance_participant_admission",
+                    "not_admissible": not_admissible,
                 }
             )
 
@@ -1376,17 +1407,6 @@ def run_traverse_seed(context: RunContext) -> dict[str, Path]:
         coverage=coverage_rows,
     )
     write_json(location_selection_path, location_selection_result.model_dump(mode="json"))
-    write_json(
-        entity_kind_path,
-        {
-            "schema_version": "entity_kind_decision.v1",
-            "decisions": [
-                decision.model_dump(mode="json")
-                for _id, decision in sorted(entity_kind_decisions.items())
-            ],
-        },
-    )
-
     if isinstance(character_targets, list):
         seen_character: set[tuple[str, str]] = set()
         for target in character_targets:
@@ -1520,7 +1540,17 @@ def run_traverse_seed(context: RunContext) -> dict[str, Path]:
                 continue
             _increment(instance_id, aux_role)
 
-    _record_instance_character_retail_eligibility(snapshots, report_rows)
+    _record_instance_participant_evidence(snapshots, report_rows, entity_kind_decisions)
+    write_json(
+        entity_kind_path,
+        {
+            "schema_version": "entity_kind_decision.v1",
+            "decisions": [
+                decision.model_dump(mode="json")
+                for _id, decision in sorted(entity_kind_decisions.items())
+            ],
+        },
+    )
     link_category_cache = _build_link_category_cache(
         context,
         snapshots,

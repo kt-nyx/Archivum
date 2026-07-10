@@ -17,6 +17,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from pipeline.contracts.models import InstanceKeyCharacterDecisionArtifact
+
 
 def _load_json(path: Path) -> object:
     if not path.exists():
@@ -43,13 +45,13 @@ def _load_instances(run_root: Path) -> dict[str, dict[str, Any]]:
 def _load_sidecar(run_root: Path) -> dict[str, list[dict[str, Any]]]:
     roster: dict[str, list[dict[str, Any]]] = {}
     blob = _load_json(run_root / "data" / "decisions" / "instance_key_character_decisions.json")
-    if isinstance(blob, list):
-        for row in blob:
-            if not isinstance(row, dict):
-                continue
-            instance_id = str(row.get("instance_id", "")).strip()
-            if instance_id:
-                roster[instance_id] = [c for c in row.get("candidates", []) if isinstance(c, dict)]
+    if blob is not None:
+        artifact = InstanceKeyCharacterDecisionArtifact.model_validate(blob)
+        for row in artifact.decisions:
+            candidates = [candidate.model_dump(mode="json") for candidate in row.candidates]
+            for candidate in candidates:
+                candidate["role"] = candidate["final_role"]
+            roster[row.instance_id] = candidates
     return roster
 
 

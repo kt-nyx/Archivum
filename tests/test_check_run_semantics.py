@@ -691,8 +691,45 @@ def _write_instance_semantics_run(
         )
     if key_character_decisions is not None:
         (run_root / "data" / "decisions").mkdir(parents=True, exist_ok=True)
+        artifact_decisions: list[dict[str, object]] = []
+        for decision in key_character_decisions:
+            if not isinstance(decision, dict):
+                continue
+            candidates: list[dict[str, object]] = []
+            for index, candidate in enumerate(decision.get("candidates", []), start=1):
+                if not isinstance(candidate, dict):
+                    continue
+                emitted = bool(candidate.get("emitted"))
+                candidates.append(
+                    {
+                        "candidate_id": f"character-synthetic-{index}",
+                        "name": str(candidate.get("name", f"Candidate {index}")),
+                        "canonical_path": f"/wiki/Synthetic_Candidate_{index}",
+                        "entity_kind_decision_id": f"entity-kind-synthetic-{index}",
+                        "entity_kind": "named_actor",
+                        "instance_presence_evidence": ["source:synthetic:section:encounter"],
+                        "retail_scope": "retail_confirmed",
+                        "retail_scope_evidence": ["category:Characters"],
+                        "encounter_relation_evidence": ["high_confidence_encounter_roster"],
+                        "admission": "eligible",
+                        "reason_codes": ["affirmative_target_evidence"],
+                        "final_selection_reason": "synthetic_selected" if emitted else None,
+                        "final_role": str(candidate.get("role", "uncertain")),
+                        "emitted": emitted,
+                    }
+                )
+            artifact_decisions.append(
+                {"instance_id": str(decision.get("instance_id", instance_id)), "candidates": candidates}
+            )
         (run_root / "data" / "decisions" / "instance_key_character_decisions.json").write_text(
-            json.dumps(key_character_decisions, indent=2),
+            json.dumps(
+                {
+                    "schema_version": "instance_key_character_decision.v1",
+                    "producer": "draft_writer",
+                    "decisions": artifact_decisions,
+                },
+                indent=2,
+            ),
             encoding="utf-8",
         )
     return run_root

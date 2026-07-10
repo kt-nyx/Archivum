@@ -77,7 +77,28 @@ def test_must_include_appears_when_llm_returns_empty(monkeypatch) -> None:
             }
         ],
         section_blocks=[],
-        snapshots=[],
+        snapshots=[
+            {
+                "entity_id": "instance-test",
+                "entity_type": "instance",
+                "instance_participant_evidence": [
+                    {
+                        "candidate_id": "character-must-include-boss",
+                        "candidate_name": "Must Include Boss",
+                        "canonical_path": "/wiki/Must_Include_Boss",
+                        "entity_kind_decision_id": "entity-kind-must-include-boss",
+                        "entity_kind": "named_actor",
+                        "instance_presence_evidence": [
+                            "source:src-instance:section:dungeon_journal"
+                        ],
+                        "retail_scope": "retail_confirmed",
+                        "retail_scope_evidence": ["category:Characters"],
+                        "encounter_relation_evidence": ["high_confidence_encounter_roster"],
+                        "reason_codes": ["affirmative_target_evidence"],
+                    }
+                ],
+            }
+        ],
     )
     assert [row.name for row in selection.cast] == ["Must Include Boss"]
     assert selection.selection_reasons["Must Include Boss"] == "must_include_floor"
@@ -127,7 +148,40 @@ def test_structural_roster_is_not_padded_with_denizen_llm_picks(monkeypatch) -> 
                 "text": '<a href="/wiki/Story_Figure">Story Figure</a>',
             }
         ],
-        snapshots=[],
+        snapshots=[
+            {
+                "entity_id": "instance-test",
+                "entity_type": "instance",
+                "instance_participant_evidence": [
+                    {
+                        "candidate_id": "character-floor-boss",
+                        "candidate_name": "Floor Boss",
+                        "canonical_path": "/wiki/Floor_Boss",
+                        "entity_kind_decision_id": "entity-kind-floor-boss",
+                        "entity_kind": "named_actor",
+                        "instance_presence_evidence": [
+                            "source:src-instance:section:dungeon_journal"
+                        ],
+                        "retail_scope": "retail_confirmed",
+                        "retail_scope_evidence": ["category:Characters"],
+                        "encounter_relation_evidence": ["high_confidence_encounter_roster"],
+                        "reason_codes": ["affirmative_target_evidence"],
+                    },
+                    {
+                        "candidate_id": "character-story-figure",
+                        "candidate_name": "Story Figure",
+                        "canonical_path": "/wiki/Story_Figure",
+                        "entity_kind_decision_id": "entity-kind-story-figure",
+                        "entity_kind": "unknown",
+                        "instance_presence_evidence": ["source:src-instance:section:denizens"],
+                        "retail_scope": "retail_confirmed",
+                        "retail_scope_evidence": [],
+                        "encounter_relation_evidence": ["instance_roster_link"],
+                        "reason_codes": ["insufficient_target_evidence"],
+                    }
+                ],
+            }
+        ],
     )
     assert [row.name for row in selection.cast] == ["Floor Boss"]
     assert selection.selection_reasons["Floor Boss"] == "must_include_floor"
@@ -186,7 +240,7 @@ def test_finalize_emits_selection_reason_codes(monkeypatch) -> None:
     assert "must_include_floor" in codes
 
 
-def test_sidecar_rows_include_merge_rank() -> None:
+def test_sidecar_rows_include_admission_and_final_selection() -> None:
     from pipeline.generate.draft_writer import _build_key_character_decision_row
 
     build_meta = {"source_id": "src-instance", "source_kind": "seed"}
@@ -214,7 +268,38 @@ def test_sidecar_rows_include_merge_rank() -> None:
                 "text": '<a href="/wiki/Story_Figure">Story Figure</a>',
             }
         ],
-        snapshots=[],
+        snapshots=[
+            {
+                "entity_id": "instance-test",
+                "entity_type": "instance",
+                "instance_participant_evidence": [
+                    {
+                        "candidate_id": "character-floor-boss",
+                        "candidate_name": "Floor Boss",
+                        "canonical_path": "/wiki/Floor_Boss",
+                        "entity_kind_decision_id": "entity-kind-floor-boss",
+                        "entity_kind": "named_actor",
+                        "instance_presence_evidence": ["source:src-instance:section:dungeon_journal"],
+                        "retail_scope": "retail_confirmed",
+                        "retail_scope_evidence": ["category:Characters"],
+                        "encounter_relation_evidence": ["high_confidence_encounter_roster"],
+                        "reason_codes": ["affirmative_target_evidence"],
+                    },
+                    {
+                        "candidate_id": "character-story-figure",
+                        "candidate_name": "Story Figure",
+                        "canonical_path": "/wiki/Story_Figure",
+                        "entity_kind_decision_id": "entity-kind-story-figure",
+                        "entity_kind": "unknown",
+                        "instance_presence_evidence": ["source:src-instance:section:denizens"],
+                        "retail_scope": "retail_confirmed",
+                        "retail_scope_evidence": [],
+                        "encounter_relation_evidence": ["instance_roster_link"],
+                        "reason_codes": ["insufficient_target_evidence"],
+                    }
+                ],
+            }
+        ],
     )
     row = _build_key_character_decision_row(
         instance_id="instance-test",
@@ -224,15 +309,75 @@ def test_sidecar_rows_include_merge_rank() -> None:
     candidates = row["candidates"]
     assert len(candidates) >= 2
     emitted = [item for item in candidates if item["emitted"]]
-    assert emitted[0]["merge_rank"] == 1
-    assert emitted[0]["selection_reason"] == "must_include_floor"
-    assert "significance" not in emitted[0]
+    assert emitted[0]["final_selection_reason"] == "must_include_floor"
+    assert emitted[0]["entity_kind"] == "named_actor"
+    assert emitted[0]["instance_presence_evidence"]
+    assert emitted[0]["retail_scope"] == "retail_confirmed"
     non_emitted = [item for item in candidates if not item["emitted"]]
-    assert all(item["merge_rank"] is None for item in non_emitted)
-    # Single-source invariant: every emitted sidecar row carries a merge_rank, and the
-    # emitted set equals the page-emitted cast (no emitted&&merge_rank==null divergence).
-    assert all(item["merge_rank"] is not None for item in emitted)
+    assert all(item["admission"] == "rejected" for item in non_emitted)
+    # Single-source invariant: the emitted set equals the page-emitted cast.
     assert {item["name"] for item in emitted} == {"Floor Boss"}
+
+
+def test_named_participant_admission_excludes_generic_encounter_links_and_non_retail_leads() -> None:
+    """Slice 3 adversarial fixture: encounter links are leads, not automatic cards."""
+    from pipeline.generate.draft_writer import _build_key_character_decision_row
+
+    names_and_kinds = [
+        ("Marshal Arlen", "named_actor", "retail_confirmed"),
+        ("Lady Nira", "named_actor", "retail_confirmed"),
+        ("Centaur", "group_or_species", "retail_confirmed"),
+        ("Earth elemental", "group_or_species", "retail_confirmed"),
+        ("Creeping Sludge", "group_or_species", "retail_confirmed"),
+        ("AoE", "object_or_concept", "retail_confirmed"),
+        ("Star Mother", "object_or_concept", "retail_confirmed"),
+        ("Old Commander", "named_actor", "non_retail"),
+    ]
+    evidence_links = " ".join(f"/wiki/{name.replace(' ', '_')}" for name, _kind, _scope in names_and_kinds)
+    records = []
+    for name, kind, scope in names_and_kinds:
+        slug = name.lower().replace(" ", "-")
+        records.append(
+            {
+                "candidate_id": f"character-{slug}",
+                "candidate_name": name,
+                "canonical_path": f"/wiki/{name.replace(' ', '_')}",
+                "entity_kind_decision_id": f"entity-kind-{slug}",
+                "entity_kind": kind,
+                "instance_presence_evidence": ["source:synthetic:section:dungeon_journal"],
+                "retail_scope": scope,
+                "retail_scope_evidence": ["category:Synthetic"],
+                "encounter_relation_evidence": ["high_confidence_encounter_roster"],
+                "reason_codes": ["affirmative_target_evidence"],
+            }
+        )
+    selection = build_instance_key_character_selection(
+        instance_id="instance-synthetic-vault",
+        instance_name="Synthetic Vault",
+        evidence_rows=[
+            {
+                "subject_id": "instance-synthetic-vault",
+                "field_name": "boss_pool",
+                "evidence_items": [{"snippet": evidence_links, "section_role": "dungeon_journal"}],
+            }
+        ],
+        snapshots=[
+            {
+                "entity_id": "instance-synthetic-vault",
+                "entity_type": "instance",
+                "instance_participant_evidence": records,
+            }
+        ],
+    )
+    assert [candidate.name for candidate in selection.cast] == ["Lady Nira", "Marshal Arlen"]
+    sidecar = _build_key_character_decision_row(
+        instance_id="instance-synthetic-vault",
+        selection=selection,
+        emitted_cards=[{"name": candidate.name} for candidate in selection.cast],
+    )
+    by_name = {row["name"]: row for row in sidecar["candidates"]}
+    assert all(by_name[name]["admission"] == "rejected" for name, _kind, _scope in names_and_kinds[2:])
+    assert all(by_name[name]["final_role"] == "uncertain" for name in ["Lady Nira", "Marshal Arlen"])
 
 
 def test_finalize_keeps_structural_role_when_summary_mentions_ally(monkeypatch) -> None:

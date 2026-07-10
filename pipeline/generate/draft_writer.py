@@ -5,14 +5,21 @@ from __future__ import annotations
 import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from pipeline.ai.config import load_ai_settings
 from pipeline.ai.openai_client import chat_json_completion
 from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext
 from pipeline.common.text_normalize import normalize_display_payload
-from pipeline.contracts.models import EntityKindDecision, LocationSelectionArtifact
+from pipeline.contracts.models import (
+    EntityKind,
+    EntityKindDecision,
+    InstanceKeyCharacterDecision,
+    InstanceKeyCharacterDecisionArtifact,
+    InstanceParticipantDecision,
+    LocationSelectionArtifact,
+)
 from pipeline.discovery.entity_typing import canonical_path_for_link
 from pipeline.discovery.questline_card_polish import load_questline_card_metadata
 from pipeline.discovery.questline_significance import load_included_cluster_ids_by_zone
@@ -97,26 +104,51 @@ def _build_key_character_decision_row(
     emitted_keys = {
         _decision_name_key(card.get("name", "")) for card in emitted_cards if isinstance(card, dict)
     }
-    merge_rank_by_name = {
-        candidate.name: index for index, candidate in enumerate(selection.cast, start=1)
-    }
-    candidates = []
+    candidates: list[InstanceParticipantDecision] = []
     for candidate in selection.pool:
         emitted = _decision_name_key(candidate.name) in emitted_keys
         # Role is an LLM judgment (Slice 10): the deterministic classifier is honestly
         # ``uncertain``, so the sidecar records the pool candidate's role as set during emit.
         role = candidate.role or "uncertain"
-        row = {
-            "name": candidate.name,
-            "role": role,
-            "emitted": emitted,
-            "merge_rank": merge_rank_by_name.get(candidate.name) if emitted else None,
-            "selection_reason": selection.selection_reasons.get(candidate.name)
-            if emitted
-            else None,
-        }
-        candidates.append(row)
-    return {"instance_id": instance_id, "candidates": candidates}
+        eligible = (
+            candidate.entity_kind is EntityKind.NAMED_ACTOR
+            and bool(candidate.entity_kind_decision_id)
+            and bool(candidate.instance_presence_evidence)
+            and candidate.retail_scope == "retail_confirmed"
+        )
+        retail_scope = cast(
+            Literal["retail_confirmed", "non_retail", "unknown"],
+            candidate.retail_scope
+            if candidate.retail_scope in {"retail_confirmed", "non_retail", "unknown"}
+            else "unknown",
+        )
+        final_role = cast(
+            Literal["ally", "enemy", "neutral", "uncertain"],
+            role if role in {"ally", "enemy", "neutral", "uncertain"} else "uncertain",
+        )
+        candidates.append(
+            InstanceParticipantDecision(
+                candidate_id=candidate.boss_id,
+                name=candidate.name,
+                canonical_path=candidate.canonical_path,
+                entity_kind_decision_id=candidate.entity_kind_decision_id,
+                entity_kind=candidate.entity_kind,
+                instance_presence_evidence=candidate.instance_presence_evidence,
+                retail_scope=retail_scope,
+                retail_scope_evidence=candidate.retail_scope_evidence,
+                encounter_relation_evidence=candidate.encounter_relation_evidence,
+                admission="eligible" if eligible else "rejected",
+                reason_codes=candidate.admission_reason_codes,
+                final_selection_reason=selection.selection_reasons.get(candidate.name)
+                if emitted
+                else None,
+                final_role=final_role,
+                emitted=emitted,
+            )
+        )
+    return InstanceKeyCharacterDecision(
+        instance_id=instance_id, candidates=candidates
+    ).model_dump(mode="json")
 
 
 def run_draft_writer(
@@ -271,6 +303,58 @@ def run_draft_writer(
             faction_profile_targets = [row for row in targets_blob if isinstance(row, dict)]
     snapshots_path = context.data_dir / "ingest" / "source_snapshots.json"
     source_snapshots: list[dict[str, Any]] = load_source_snapshots(snapshots_path, missing_ok=True)
+    instance_ids_with_roster_leads = {
+        str(row.get("subject_id", "")).strip()
+        for row in evidence_rows
+        if str(row.get("field_name", "")).strip() == "boss_pool"
+        and any(
+            "/wiki/" in str(item.get("snippet", ""))
+            for item in row.get("evidence_items", [])
+            if isinstance(item, dict)
+        )
+    }
+    if instance_ids_with_roster_leads and any(
+        str(snapshot.get("entity_type", "")).strip() == "instance"
+        and not str(snapshot.get("auxiliary_role", "")).strip()
+        for snapshot in source_snapshots
+    ):
+        if not entity_kind_decisions_path.exists():
+            raise RuntimeError(
+                "instance key-character admission requires data/decisions/"
+                "entity_kind_decisions.json; regenerate this run from traverse"
+            )
+        for snapshot in source_snapshots:
+            if (
+                str(snapshot.get("entity_type", "")).strip() != "instance"
+                or str(snapshot.get("auxiliary_role", "")).strip()
+                or str(snapshot.get("entity_id", "")).strip()
+                not in instance_ids_with_roster_leads
+            ):
+                continue
+            records = snapshot.get("instance_participant_evidence")
+            if not isinstance(records, list):
+                raise RuntimeError(
+                    "instance source snapshot is missing instance_participant_evidence; "
+                    "regenerate this run from traverse"
+                )
+            for record in records:
+                if not isinstance(record, dict):
+                    raise RuntimeError("instance participant evidence contains a non-object record")
+                decision_id = str(record.get("entity_kind_decision_id", "")).strip()
+                decision = entity_kind_decisions.get(decision_id)
+                if decision is None:
+                    raise RuntimeError(
+                        "instance participant evidence references a missing entity-kind decision "
+                        f"'{decision_id}'; regenerate this run from traverse"
+                    )
+                if (
+                    decision.canonical_path != str(record.get("canonical_path", "")).strip()
+                    or decision.kind.value != str(record.get("entity_kind", "")).strip()
+                ):
+                    raise RuntimeError(
+                        "instance participant evidence disagrees with its entity-kind decision; "
+                        "regenerate this run from traverse"
+                    )
 
     fact_packs_by_entity: dict[str, dict[str, Any]] = {}
     for fact_path in fact_pack_paths:
@@ -602,7 +686,13 @@ def run_draft_writer(
     write_json((decisions_dir / "claim_temporal_decisions.json"), claim_temporal_decisions)
     write_json((decisions_dir / "claim_view_routing_decisions.json"), claim_view_routing_decisions)
     write_json(
-        (decisions_dir / "instance_key_character_decisions.json"), instance_key_character_decisions
+        (decisions_dir / "instance_key_character_decisions.json"),
+        InstanceKeyCharacterDecisionArtifact(
+            decisions=[
+                InstanceKeyCharacterDecision.model_validate(row)
+                for row in instance_key_character_decisions
+            ]
+        ).model_dump(mode="json"),
     )
     write_json((decisions_dir / "prose_finalize_decisions.json"), prose_finalize_decisions)
     write_json((decisions_dir / "section_coverage_decisions.json"), section_coverage_decisions)

@@ -629,22 +629,25 @@ def _extract_instance_infobox(
     return {}
 
 
-def _retail_confirmed_character_names(
+def _instance_participant_records(
     snapshots: list[dict[str, Any]] | None, instance_id: str
-) -> set[str] | None:
-    """Return confirmed-retail candidate names, or ``None`` without instance evidence."""
+) -> list[dict[str, Any]] | None:
+    """Return Slice 3's direct participant facts for this instance.
+
+    A seed snapshot without the records is stale rather than an invitation to
+    reconstruct them from encounter prose at draft time.
+    """
     for snapshot in snapshots or []:
         if (
             str(snapshot.get("entity_id", "")).strip() == instance_id
             and str(snapshot.get("entity_type", "")).strip() == "instance"
             and not str(snapshot.get("auxiliary_role", "")).strip()
         ):
-            records = snapshot.get("character_retail_eligibility")
+            records = snapshot.get("instance_participant_evidence")
             if not isinstance(records, list):
-                return set()
-            return {
-                    normalize_title(str(row.get("candidate_name", "")))
-                    for row in records
-                    if isinstance(row, dict) and row.get("status") == "retail_confirmed"
-                }
+                # No participant records means no candidate can cross the admission
+                # boundary.  The draft writer separately fails stale runs that do
+                # contain roster leads, naming the missing traverse handoff.
+                return []
+            return [row for row in records if isinstance(row, dict)]
     return None

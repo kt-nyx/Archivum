@@ -13,6 +13,7 @@ from pipeline.contracts.models import Zone
 from pipeline.generate.draft.instance_lint import MIN_OVERVIEW_WORDS
 from pipeline.generate.draft_writer import run_draft_writer
 from tests.draft_llm_mocks import fake_draft_chat_by_schema
+from tests.factories.snapshots import with_required_snapshot_schema
 
 
 def _mock_draft(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -449,6 +450,30 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(
                         "source_signals": ["category:place"],
                         "source_ids": ["src-zone", "src-location-hearthglen"],
                         "reason_codes": ["affirmative_target_evidence"],
+                    },
+                    {
+                        "schema_version": "entity_kind_decision.v1",
+                        "decision_id": "entity-kind-darkmaster-gandling",
+                        "candidate_id": "character-darkmaster-gandling",
+                        "canonical_title": "Darkmaster Gandling",
+                        "canonical_path": "/wiki/Darkmaster_Gandling",
+                        "kind": "named_actor",
+                        "confidence": 0.95,
+                        "source_signals": ["category:named_actor"],
+                        "source_ids": ["src-instance"],
+                        "reason_codes": ["affirmative_target_evidence"],
+                    },
+                    {
+                        "schema_version": "entity_kind_decision.v1",
+                        "decision_id": "entity-kind-instructor-malicia",
+                        "candidate_id": "character-instructor-malicia",
+                        "canonical_title": "Instructor Malicia",
+                        "canonical_path": "/wiki/Instructor_Malicia",
+                        "kind": "named_actor",
+                        "confidence": 0.95,
+                        "source_signals": ["category:named_actor"],
+                        "source_ids": ["src-instance"],
+                        "reason_codes": ["affirmative_target_evidence"],
                     }
                 ],
             },
@@ -506,6 +531,50 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(
                     "reason_codes": ["graph_depth"],
                 }
             ],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    ingest_dir = context.data_dir / "ingest"
+    ingest_dir.mkdir(parents=True, exist_ok=True)
+    (ingest_dir / "source_snapshots.json").write_text(
+        json.dumps(
+            with_required_snapshot_schema(
+                [
+                    {
+                        "entity_id": "instance-scholomance",
+                        "entity_type": "instance",
+                        "name": "Scholomance",
+                        "source_id": "src-instance",
+                        "instance_participant_evidence": [
+                            {
+                                "candidate_id": "character-darkmaster-gandling",
+                                "candidate_name": "Darkmaster Gandling",
+                                "canonical_path": "/wiki/Darkmaster_Gandling",
+                                "entity_kind_decision_id": "entity-kind-darkmaster-gandling",
+                                "entity_kind": "named_actor",
+                                "instance_presence_evidence": ["source:src-instance:section:adventurers"],
+                                "retail_scope": "retail_confirmed",
+                                "retail_scope_evidence": ["category:Characters"],
+                                "encounter_relation_evidence": ["high_confidence_encounter_roster"],
+                                "reason_codes": ["affirmative_target_evidence"],
+                            },
+                            {
+                                "candidate_id": "character-instructor-malicia",
+                                "candidate_name": "Instructor Malicia",
+                                "canonical_path": "/wiki/Instructor_Malicia",
+                                "entity_kind_decision_id": "entity-kind-instructor-malicia",
+                                "entity_kind": "named_actor",
+                                "instance_presence_evidence": ["source:src-instance:section:adventurers"],
+                                "retail_scope": "retail_confirmed",
+                                "retail_scope_evidence": ["category:Characters"],
+                                "encounter_relation_evidence": ["high_confidence_encounter_roster"],
+                                "reason_codes": ["affirmative_target_evidence"],
+                            },
+                        ],
+                    }
+                ]
+            ),
             indent=2,
         ),
         encoding="utf-8",

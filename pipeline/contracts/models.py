@@ -89,6 +89,54 @@ class EntityKindDecision(BaseModel):
     reason_codes: list[str] = Field(default_factory=list)
 
 
+class InstanceParticipantDecision(BaseModel):
+    """Admission record for one linked instance-participant candidate.
+
+    Encounter links are leads, not character cards.  This record keeps the three
+    independent facts required to admit one: target-page kind, direct presence on
+    this instance page, and current retail scope.  ``encounter_relation`` remains
+    descriptive evidence and never substitutes for either admission fact.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_id: str = Field(pattern=ID_PATTERN)
+    name: str = Field(min_length=1)
+    canonical_path: str = Field(min_length=1)
+    entity_kind_decision_id: str = Field(min_length=1)
+    entity_kind: EntityKind
+    instance_presence_evidence: list[str] = Field(default_factory=list)
+    retail_scope: Literal["retail_confirmed", "non_retail", "unknown"]
+    retail_scope_evidence: list[str] = Field(default_factory=list)
+    encounter_relation_evidence: list[str] = Field(default_factory=list)
+    admission: Literal["eligible", "rejected"]
+    reason_codes: list[str] = Field(default_factory=list)
+    final_selection_reason: str | None = None
+    final_role: Literal["ally", "enemy", "neutral", "uncertain"] = "uncertain"
+    emitted: bool = False
+
+
+class InstanceKeyCharacterDecision(BaseModel):
+    """The one auditable key-character decision for an instance page."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    instance_id: str = Field(pattern=ID_PATTERN)
+    candidates: list[InstanceParticipantDecision] = Field(default_factory=list)
+
+
+class InstanceKeyCharacterDecisionArtifact(BaseModel):
+    """Clean-break sidecar consumed by render checks and instance reports."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["instance_key_character_decision.v1"] = (
+        "instance_key_character_decision.v1"
+    )
+    producer: Literal["draft_writer"] = "draft_writer"
+    decisions: list[InstanceKeyCharacterDecision] = Field(default_factory=list)
+
+
 class LocationType(StrEnum):
     CITY = "city"
     TOWN = "town"

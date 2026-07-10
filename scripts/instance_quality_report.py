@@ -23,7 +23,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from pipeline.contracts.models import INSTANCE_MIN_KEY_CHARACTERS
+from pipeline.contracts.models import (
+    INSTANCE_MIN_KEY_CHARACTERS,
+    InstanceKeyCharacterDecisionArtifact,
+)
 from pipeline.generate.draft.instance_lint import (
     assess_role_diversity,
     cast_registry_place_violations,
@@ -92,17 +95,16 @@ def _load_json(path: Path) -> object:
 
 
 def _load_sidecar_roster(run_root: Path) -> dict[str, list[dict[str, Any]]]:
-    """Map instance_id -> ranked candidate roster from the decision sidecar."""
+    """Map instance_id -> admission-complete candidate roster from the decision sidecar."""
     roster_by_instance: dict[str, list[dict[str, Any]]] = {}
     blob = _load_json(run_root / "data" / "decisions" / "instance_key_character_decisions.json")
-    if isinstance(blob, list):
-        for row in blob:
-            if not isinstance(row, dict):
-                continue
-            instance_id = str(row.get("instance_id", "")).strip()
-            candidates = [c for c in row.get("candidates", []) if isinstance(c, dict)]
-            if instance_id:
-                roster_by_instance[instance_id] = candidates
+    if blob is not None:
+        artifact = InstanceKeyCharacterDecisionArtifact.model_validate(blob)
+        for row in artifact.decisions:
+            candidates = [candidate.model_dump(mode="json") for candidate in row.candidates]
+            for candidate in candidates:
+                candidate["role"] = candidate["final_role"]
+            roster_by_instance[row.instance_id] = candidates
     return roster_by_instance
 
 
@@ -204,10 +206,9 @@ def _sidecar_coherence_findings(
 ) -> list[Finding]:
     """Assert the page cast and the decision sidecar agree (single-source invariant).
 
-    Catches the class of bug where the page and sidecar were derived from two divergent
-    selections: an emitted row without a ``merge_rank``, a ranked row not marked emitted,
-    the page ``key_characters`` set differing from the sidecar's emitted set, or the page
-    cast emit-order disagreeing with the sidecar ``merge_rank`` order.
+    Catches a page/sidecar divergence, an emitted non-admitted candidate, or a
+    missing final-selection reason.  The sidecar is emitted-first, so its emitted
+    order is the rendering order without reconstructing a second candidate set.
     """
     findings: list[Finding] = []
 
@@ -217,21 +218,29 @@ def _sidecar_coherence_findings(
     for candidate in roster:
         name = str(candidate.get("name", "")).strip()
         emitted = bool(candidate.get("emitted"))
-        has_rank = candidate.get("merge_rank") is not None
-        if emitted and not has_rank:
+        selection_reason = str(candidate.get("final_selection_reason", "")).strip()
+        if emitted and candidate.get("admission") != "eligible":
             findings.append(
                 Finding(
                     "fail",
-                    "semantics.sidecar_emitted_without_rank",
-                    f"{name!r} is emitted but has no merge_rank (page/sidecar divergence)",
+                    "semantics.sidecar_emitted_without_admission",
+                    f"{name!r} is emitted without passing named-participant admission",
                 )
             )
-        if has_rank and not emitted:
+        if emitted and not selection_reason:
             findings.append(
                 Finding(
                     "fail",
-                    "semantics.sidecar_rank_without_emit",
-                    f"{name!r} has merge_rank but is not marked emitted",
+                    "semantics.sidecar_emitted_without_selection_reason",
+                    f"{name!r} is emitted without a final selection reason",
+                )
+            )
+        if not emitted and selection_reason:
+            findings.append(
+                Finding(
+                    "fail",
+                    "semantics.sidecar_unemitted_with_selection_reason",
+                    f"{name!r} has a final selection reason but is not emitted",
                 )
             )
 
@@ -253,24 +262,16 @@ def _sidecar_coherence_findings(
         )
         return findings
 
-    # Sets agree: the page cast order must follow the sidecar merge_rank order, so the
-    # emit ordering is reproducible from the recorded ranks (catches a page rendered from a
-    # different selection ordering than the sidecar it shipped with).
-    def _rank(candidate: dict[str, Any]) -> int:
-        return int(candidate["merge_rank"])
-
-    ranked_emitted = [c for c in roster if c.get("emitted") and c.get("merge_rank") is not None]
-    if len(ranked_emitted) == len(page_order):
-        expected_order = [_key(c.get("name", "")) for c in sorted(ranked_emitted, key=_rank)]
-        if page_order != expected_order:
-            findings.append(
-                Finding(
-                    "fail",
-                    "semantics.page_sidecar_order_mismatch",
-                    "page key_characters order disagrees with sidecar merge_rank order "
-                    f"(page: {page_order}; by merge_rank: {expected_order})",
-                )
+    expected_order = [_key(c.get("name", "")) for c in roster if c.get("emitted")]
+    if page_order != expected_order:
+        findings.append(
+            Finding(
+                "fail",
+                "semantics.page_sidecar_order_mismatch",
+                "page key_characters order disagrees with the emitted-first decision sidecar "
+                f"(page: {page_order}; sidecar: {expected_order})",
             )
+        )
     return findings
 
 
