@@ -633,6 +633,38 @@ acceptance criteria with a prose summary.
   human review in an environment that permits the remote quest traversal/draft flow to finish;
   this is a live-verification environment limitation, not a schema or selection-contract deferral.
 
+### 2026-07-10 — Slice 7 complete
+
+- **Commit SHA:** `5a48669` (`feat(draft): build selected-card evidence packs (Slice 7)`).
+- **Behavior:** every selected location/faction/questline/key-character card now owns one typed,
+  versioned `card_evidence_pack.v1` decision built *after* selection (never per crawled paragraph).
+  The pack separates direct identity evidence from directional relationship evidence (owner subject
+  id + `mentions_subject`), records paragraph-granular provenance ids, and runs the targeted claim
+  work — the compound-support check splits a claim keyed on its subject and drops a clause whose
+  grammatical proper-noun agent is a different named entity, rejecting a claim outright when no
+  clause is grounded. The claim extractor is invoked on identity paragraphs of selected cards only,
+  so unselected crawl data incurs no claim-extraction work. Removed the faction `source_title`
+  same-name substring fallback: faction-profile identity now requires an exact `faction_id` match,
+  so an untyped same-name paragraph can no longer establish a card's identity. A card whose pack has
+  no direct identity evidence is dropped (locations/factions) with a recorded reason, and card
+  provenance falls back to the pack's own identity paragraph ids rather than an arbitrary pool
+  source. `draft_writer` writes the fail-fast `card_evidence_pack_decisions.json` sidecar
+  (schema version stamped in `temporal_model_manifest`), and the clean-break reader rejects a
+  missing/mismatched version.
+- **Verification:** new `tests/test_card_evidence_pack.py` (5 required behaviors — mention-only
+  drop, containment-direction preservation, identity-only provenance, compound split/reject,
+  targeted claim work — plus adversarial id/malformed/empty-subject/version cases and a
+  `build_major_factions` producer-wiring test) and the faction same-name-leak test in
+  `tests/test_faction_scoring.py`; focused faction/location/zone-draft/instance/key-character/
+  questline/claim-routing/pipeline-stage/draft-baseline/evidence-pool suites; Ruff on all touched
+  modules; MyPy on the 10 touched pipeline modules (clean); `git diff --check`; full `pytest -q`
+  (passed, with the suite's existing skips/xfail). Checks were run with the project venv
+  (`.venv/Scripts/python.exe -m ...`) because `uv` is not on PATH in this environment; the venv is
+  the same interpreter `uv run --no-sync` selects.
+- **Fresh live runs:** not applicable; Slice 7 has no `[LIVE]` acceptance requirement.
+- **Deferred:** none. Consuming the packs to drive strict fact-checking / release gates is Slice 8,
+  as scheduled by the plan (the reader and artifact are in place for it).
+
 ### 2026-07-10 — Slice 6 complete
 
 - **Commit SHA:** `9b7ca4c` (`feat(questlines): finalize complete CTA clauses (Slice 6)`).
