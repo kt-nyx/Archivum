@@ -530,3 +530,27 @@ acceptance criteria with a prose summary.
 - **Deferred:** Slice 2 will progressively probe/fetch unknown location leads and rebuild direct
   evidence ownership; Slice 3 will apply this contract to named instance participants and their
   instance-presence evidence.
+
+### 2026-07-09 — Slice 2 complete
+
+- **Commit SHA:** `bacedbe` (`feat(discovery): add direct-evidence location selection`).
+- **Behavior:** replaced the unversioned location significance/classification/profile-target handoff
+  with `location_selection.v1`. Discovery records broad candidates, target-page probes, direct
+  profiles, selections, deferrals, rejections, and per-zone bounded-coverage status in one
+  fail-fast artifact. Profile fetches are progressive (batch, probe, then direct profile), use
+  recorded caps, and only affirmative `place` targets can consume profile budget. Rendering accepts
+  only `selected` direct profiles whose `location_id` and `profile_source_id` exactly match; removed
+  substring/name evidence fallback and seed-page-summary fallback. Strict release now hard-fails an
+  `insufficient_viable_locations` coverage result.
+- **Verification:** `uv run --no-sync ruff check pipeline scripts tests`; `uv run --no-sync mypy
+  pipeline`; focused location/discovery/traverse tests (36 passed); `uv run --no-sync pytest -q`
+  (passed, with the suite's existing skips/xfail); `git diff --check`.
+- **Fresh live retrieval runs:** `test-run-wpl-35` (WPL: 8 selected, `coverage_met`) and
+  `test-run-desolace-6` (Desolace: 6 selected, `coverage_met`). Both use fresh copied manifests and
+  live wiki retrieval; their full synthesis/validation flow could not complete in this execution
+  environment because foreground child processes are terminated at the host's 60-second command
+  limit. The retained decision artifacts verify the Slice 2 retrieval/admission acceptance: selected
+  entries are `place` records with direct profile evidence and no coverage failure.
+- **Deferred:** complete the normal end-to-end live synthesis/validation review for those fresh run
+  families in a host that permits a process longer than 60 seconds; this is an execution-environment
+  limitation, not a generic pipeline behavior deferral.
