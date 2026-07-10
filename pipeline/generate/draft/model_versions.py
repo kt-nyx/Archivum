@@ -28,6 +28,7 @@ TEMPORAL_CLASSIFIER_VERSION = "claim_temporal_classifier_v1"
 CLAIM_VIEW_ROUTING_VERSION = "claim_view_routing_v1"
 HISTORY_COVERAGE_VERSION = "section_coverage_v1"
 PROSE_FINALIZE_DECISION_SCHEMA = "prose_finalize_decision.v1"
+CARD_EVIDENCE_PACK_SCHEMA = "card_evidence_pack.v1"
 
 # Visibility of claim-level metadata relative to the public addon-facing draft JSON.
 CLAIM_METADATA_VISIBILITY = "internal"
@@ -52,6 +53,10 @@ INTERNAL_DECISION_SIDECARS: dict[str, str] = {
     ),
     "prose_finalize_decisions.json": (
         "Final prose decisions, including questline CTA lint, bounded rewrite, and fallback records."
+    ),
+    "card_evidence_pack_decisions.json": (
+        "Per-card evidence packs: direct identity evidence, directional relationship evidence, "
+        "support-checked claim views, and provenance ids for every rendered card."
     ),
 }
 
@@ -82,6 +87,7 @@ def build_temporal_model_manifest(*, run_id: str) -> dict[str, Any]:
             "claim_view_routing_version": CLAIM_VIEW_ROUTING_VERSION,
             "history_coverage_version": HISTORY_COVERAGE_VERSION,
             "prose_finalize_decision_schema": PROSE_FINALIZE_DECISION_SCHEMA,
+            "card_evidence_pack_schema": CARD_EVIDENCE_PACK_SCHEMA,
         },
         "internal_decision_sidecars": dict(INTERNAL_DECISION_SIDECARS),
     }

@@ -8,8 +8,15 @@ from typing import Any
 from pipeline.common.linguistics import tense_profile
 from pipeline.common.text_normalize import clean_wiki_snippet
 from pipeline.common.wiki_evidence_filters import cap_history_pool
-from pipeline.contracts.models import PAGE_HISTORY_SECTION_BUDGET_RULE
+from pipeline.contracts.models import (
+    PAGE_HISTORY_SECTION_BUDGET_RULE,
+    CardEvidencePackDecision,
+)
 from pipeline.generate.draft import finalize_trace
+from pipeline.generate.draft.card_evidence_pack import (
+    build_card_evidence_pack,
+    pack_is_sufficient,
+)
 from pipeline.generate.draft.coverage import (
     build_section_coverage_decisions,
     covered_coverage_ids,
@@ -910,6 +917,7 @@ def build_major_factions(
     instance_name: str | None = None,
     extra_subregion_tokens: list[str] | None = None,
     snapshots: list[dict[str, Any]] | None = None,
+    pack_sink: list[CardEvidencePackDecision] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, str]]]]:
     subregion_tokens = extract_subregion_tokens(
         pools.get("location_seed_pool", []), zone_name=zone_name
@@ -950,6 +958,27 @@ def build_major_factions(
     for candidate in queue:
         if len(cards) >= MAX_FACTION_CARDS:
             break
+        # Slice 7: a faction card describes the faction's role, so evidence that directly names the
+        # subject — its own profile page (exact ``faction_id``) and zone-prose seed mentions of it —
+        # is its identity evidence. The removed ``source_title`` substring fallback is what let an
+        # untyped same-name paragraph masquerade as ownership.
+        pack = build_card_evidence_pack(
+            card_id=candidate.faction_id,
+            card_type="faction",
+            subject_id=candidate.faction_id,
+            subject_name=candidate.name,
+            identity_items=[*candidate.seed_mentions, *candidate.profile_items],
+        )
+        if pack_sink is not None:
+            pack_sink.append(pack)
+        if not pack_is_sufficient(pack):
+            _record_faction_drop(
+                candidate,
+                rejected_summary="",
+                reasons=["insufficient_identity_evidence"],
+                attempts=0,
+            )
+            continue
         card, used, pool = _finalize_faction_card(
             candidate,
             zone_name=zone_name,
@@ -964,16 +993,11 @@ def build_major_factions(
             # The summary's reported used-ids resolved to no pointer — either none were
             # reported, or they reference a related-lore source absent from the page's
             # revision_map (e.g. a deterministic fallback that borrowed a snippet from a linked
-            # "abomination" page). Fall back to any pool item the card was synthesized from whose
-            # source *is* resolvable, so an emitted card always carries >=1 provenance pointer —
-            # the release gate hard-fails (provenance.missing_card_pointers) without one.
-            pool_source_ids = [
-                str(item.get("source_id", ""))
-                for item in pool
-                if str(item.get("source_id", "")).strip()
-            ]
+            # "abomination" page). Fall back to the pack's own identity paragraph ids so an
+            # emitted card always carries >=1 provenance pointer resolving to its direct identity
+            # source — the release gate hard-fails (provenance.missing_card_pointers) without one.
             pointers = _cap_card_pointers(
-                _pointers_for_evidence_ids(pool, pool_source_ids, revision_map)
+                _pointers_for_evidence_ids(pool, pack.provenance_ids, revision_map)
             )
         if pointers:
             provenance_map[str(card["id"])] = pointers
@@ -1117,6 +1141,7 @@ def build_location_cards(
     location_decision_map: dict[str, dict[str, Any]],
     pools: dict[str, list[dict[str, Any]]],
     revision_map: dict[str, str],
+    pack_sink: list[CardEvidencePackDecision] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, str]]]]:
     candidates = collect_location_candidates(
         zone_id=zone_id,
@@ -1131,6 +1156,22 @@ def build_location_cards(
     for candidate in queue:
         if len(cards) >= MAX_LOCATION_CARDS:
             break
+        # Slice 7: the pack owns identity. ``profile_items`` are the selected place's own page
+        # (exact subject/source match, Slice 2); ``seed_mentions`` are zone-page mentions kept as
+        # directional relationship evidence only. A place with no direct identity evidence is
+        # dropped rather than described from a borrowed mention.
+        pack = build_card_evidence_pack(
+            card_id=candidate.location_id,
+            card_type="location",
+            subject_id=candidate.location_id,
+            subject_name=candidate.name,
+            identity_items=candidate.profile_items,
+            relationship_items=candidate.seed_mentions,
+        )
+        if pack_sink is not None:
+            pack_sink.append(pack)
+        if not pack_is_sufficient(pack):
+            continue
         card_body, used_ids, source_pool = _finalize_location_card(
             candidate,
             zone_name=zone_name,
@@ -1141,6 +1182,12 @@ def build_location_cards(
         pointers = _cap_card_pointers(
             _pointers_for_evidence_ids(source_pool, used_ids, revision_map)
         )
+        if not pointers:
+            # Provenance must resolve to the card's own identity source, never a relational
+            # mention: fall back to the pack's identity paragraph ids (Slice 7 acceptance).
+            pointers = _cap_card_pointers(
+                _pointers_for_evidence_ids(source_pool, pack.provenance_ids, revision_map)
+            )
         card = {
             **card_body,
             "zone_id": zone_id,

@@ -9,7 +9,11 @@ from typing import Any
 from pipeline.common.draft_vocab import expansion_release_order
 from pipeline.common.linguistics import action_relations
 from pipeline.common.text_normalize import clean_wiki_snippet
-from pipeline.contracts.models import INSTANCE_MAX_KEY_CHARACTERS, EntityKind
+from pipeline.contracts.models import (
+    INSTANCE_MAX_KEY_CHARACTERS,
+    CardEvidencePackDecision,
+    EntityKind,
+)
 from pipeline.discovery.adventure_guide import (
     AdventureGuideInstance,
     default_provider,
@@ -26,6 +30,7 @@ from pipeline.discovery.instance_bosses import (
     must_include_key_character_names,
     prefilter_character_pool,
 )
+from pipeline.generate.draft.card_evidence_pack import build_card_evidence_pack
 from pipeline.generate.draft.claim_routing import (
     CLAIM_VIEW_KEY,
     KEY_CHARACTER_ROUTE,
@@ -945,6 +950,7 @@ def _finalize_key_characters(
     revision_map: dict[str, str],
     selection_reasons: dict[str, str] | None = None,
     adventure_guide: AdventureGuideInstance | None = None,
+    pack_sink: list[CardEvidencePackDecision] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, str]]], set[str]]:
     cards: list[dict[str, Any]] = []
     provenance_map: dict[str, list[dict[str, str]]] = {}
@@ -971,6 +977,7 @@ def _finalize_key_characters(
 
         card: dict[str, Any] | None = None
         card_pointers: list[dict[str, str]] = []
+        card_pack: CardEvidencePackDecision | None = None
         structural_role = candidate.role or "uncertain"
         # A must-include boss is a confirmed encounter: it must always ship (Cause 2a). On
         # validation failure it falls back to the spoiler-free structural-presence seed rather
@@ -1273,10 +1280,22 @@ def _finalize_key_characters(
                 "thumbnail_asset_id": None,
             }
             card_pointers = pointers
+            # Slice 7: a named participant's identity evidence is the very material its summary was
+            # synthesized from (its own crawled biography / boss-section presence, scoped to this
+            # named actor). Recorded so every emitted key-character card carries an evidence pack.
+            card_pack = build_card_evidence_pack(
+                card_id=candidate.boss_id,
+                card_type="key_character",
+                subject_id=candidate.boss_id,
+                subject_name=candidate.name,
+                identity_items=synthesis_items,
+            )
             break
         if card is None:
             continue
         cards.append(card)
+        if pack_sink is not None and card_pack is not None:
+            pack_sink.append(card_pack)
         provenance_map[str(card["id"])] = card_pointers
         used_source_ids.update(str(pointer["source_id"]) for pointer in card_pointers)
         if len(cards) >= INSTANCE_MAX_KEY_CHARACTERS:

@@ -13,6 +13,7 @@ from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext
 from pipeline.common.text_normalize import normalize_display_payload
 from pipeline.contracts.models import (
+    CardEvidencePackDecision,
     EntityKind,
     EntityKindDecision,
     InstanceKeyCharacterDecision,
@@ -29,6 +30,7 @@ from pipeline.generate.draft import (
     is_valid_draft,
     point_of_use_temporal,
 )
+from pipeline.generate.draft.card_evidence_pack import build_card_evidence_pack_artifact
 from pipeline.generate.draft.claim_routing import (
     apply_claim_views_to_evidence_rows,
     build_claim_view_routing_decisions,
@@ -552,6 +554,7 @@ def run_draft_writer(
             out_path = entity_dir / f"{entity_id}.json"
             overflow = draft.pop("draft_overflow_decisions", None)
             coverage = draft.pop("section_coverage_decisions", None)
+            card_packs = draft.pop("card_evidence_pack_decisions", None)
             draft = cast(dict[str, Any], normalize_display_payload(draft))
             write_json(out_path, draft)
             decision: dict[str, object] = {
@@ -565,6 +568,8 @@ def run_draft_writer(
                 decision["questline_overflow"] = overflow
             if isinstance(coverage, list):
                 decision["section_coverage"] = coverage
+            if isinstance(card_packs, list):
+                decision["card_evidence_packs"] = card_packs
             if prose_finalize_records:
                 decision["prose_finalize"] = prose_finalize_records
             if instance_key_character_decisions is not None:
@@ -620,6 +625,7 @@ def run_draft_writer(
     instance_key_character_decisions: list[dict[str, Any]] = []
     prose_finalize_decisions: list[dict[str, Any]] = []
     section_coverage_decisions: list[dict[str, Any]] = []
+    card_evidence_pack_decisions: list[dict[str, Any]] = []
     instance_summary_map: dict[str, str] = {}
 
     def _record_result(output_path: Path | None, decision: dict[str, object] | None) -> None:
@@ -635,6 +641,9 @@ def run_draft_writer(
             coverage_records = decision.pop("section_coverage", None)
             if isinstance(coverage_records, list):
                 section_coverage_decisions.extend(coverage_records)
+            card_pack_records = decision.pop("card_evidence_packs", None)
+            if isinstance(card_pack_records, list):
+                card_evidence_pack_decisions.extend(card_pack_records)
             overflow = decision.pop("questline_overflow", None)
             decisions.append(decision)
             if isinstance(overflow, list):
@@ -733,6 +742,15 @@ def run_draft_writer(
         },
     )
     write_json((decisions_dir / "section_coverage_decisions.json"), section_coverage_decisions)
+    write_json(
+        (decisions_dir / "card_evidence_pack_decisions.json"),
+        build_card_evidence_pack_artifact(
+            [
+                CardEvidencePackDecision.model_validate(row)
+                for row in card_evidence_pack_decisions
+            ]
+        ),
+    )
     # Data-model version + internal-only schema record (Slice 11): lets a run's decision sidecars be
     # traced to the model generation that wrote them, and pins the claim-metadata visibility contract.
     write_json(

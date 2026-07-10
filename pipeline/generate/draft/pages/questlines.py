@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from pipeline.contracts.models import ZONE_MAX_TOTAL_QUESTLINE_CARDS
+from pipeline.contracts.models import (
+    ZONE_MAX_TOTAL_QUESTLINE_CARDS,
+    CardEvidencePackDecision,
+)
 from pipeline.discovery.entity_typing import normalize_title
+from pipeline.generate.draft.card_evidence_pack import build_card_evidence_pack
 from pipeline.generate.draft.card_lint import lint_cta_hook
 from pipeline.generate.draft.evidence_identity import evidence_id_for_item
 from pipeline.generate.draft.pages.assembly import (
@@ -87,8 +91,23 @@ def _append_questline_card(
     card_suffix: str = "",
     cluster_decision: dict[str, Any] | None = None,
     card_id: str = "",
+    pack_sink: list[CardEvidencePackDecision] | None = None,
 ) -> None:
     resolved_card_id = card_id.strip() or f"ql-{cluster_id}{card_suffix}"
+    # Slice 7: the arc's identity evidence is its cluster-scoped quest lore (cluster_id match).
+    # Cluster membership is structural rather than name-based, so the compound-support check is
+    # not keyed on a title; each cluster paragraph directly documents the arc. The pack anchors
+    # provenance to that cluster-scoped evidence, never a general zone pool.
+    if pack_sink is not None:
+        pack_sink.append(
+            build_card_evidence_pack(
+                card_id=resolved_card_id,
+                card_type="questline",
+                subject_id=cluster_id,
+                subject_name="",
+                identity_items=scoped_pool,
+            )
+        )
     # CTA synthesis owns every text transform and final lint decision. Assembly only verifies the
     # clean-break handoff so it cannot silently repair or mutate a final clause.
     if lint_cta_hook(cta):

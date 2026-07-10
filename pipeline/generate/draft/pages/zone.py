@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from pipeline.common.text_normalize import clean_wiki_snippet
-from pipeline.contracts.models import ZONE_PAGE_BUDGET_RULES
+from pipeline.contracts.models import ZONE_PAGE_BUDGET_RULES, CardEvidencePackDecision
 from pipeline.discovery.geography import resolve_parent_continent
 from pipeline.discovery.questline_card_polish import render_questline_title
 from pipeline.generate.draft.instance_link_lint import (
@@ -309,6 +309,7 @@ def build_zone_page(
     source_url = select_identity_url(source_urls, name)
     pools = _build_evidence_pools(evidence_rows)
     used_source_ids: set[str] = set()
+    card_evidence_packs: list[CardEvidencePackDecision] = []
 
     at_pool = select_at_a_glance_pool(pools["at_a_glance_pool"])
     currently_pool = select_currently_pool(pools, zone_name=name)
@@ -510,6 +511,7 @@ def build_zone_page(
             used_source_ids=used_source_ids,
             cluster_decision=None,
             card_id=card_id_override,
+            pack_sink=card_evidence_packs,
         )
         emitted_cards += 1
         if overflow_refs:
@@ -555,6 +557,7 @@ def build_zone_page(
                     used_source_ids=used_source_ids,
                     card_suffix="-segment-2",
                     cluster_decision=None,
+                    pack_sink=card_evidence_packs,
                 )
                 emitted_cards += 1
             else:
@@ -575,6 +578,7 @@ def build_zone_page(
         location_decision_map=location_decision_map,
         pools=pools,
         revision_map=revision_map,
+        pack_sink=card_evidence_packs,
     )
     for pointers in landmark_provenance_map.values():
         for pointer in pointers:
@@ -644,6 +648,7 @@ def build_zone_page(
         faction_profile_targets=faction_profile_targets,
         extra_subregion_tokens=location_subregion_tokens,
         snapshots=snapshots,
+        pack_sink=card_evidence_packs,
     )
     for pointers in faction_provenance_map.values():
         for pointer in pointers:
@@ -686,4 +691,8 @@ def build_zone_page(
         page_entity["draft_overflow_decisions"] = questline_overflow_decisions
     if section_coverage_decisions:
         page_entity["section_coverage_decisions"] = section_coverage_decisions
+    if card_evidence_packs:
+        page_entity["card_evidence_pack_decisions"] = [
+            pack.model_dump(mode="json") for pack in card_evidence_packs
+        ]
     return page_entity

@@ -137,6 +137,82 @@ class InstanceKeyCharacterDecisionArtifact(BaseModel):
     decisions: list[InstanceKeyCharacterDecision] = Field(default_factory=list)
 
 
+class CardEvidenceRole(StrEnum):
+    """Why an evidence paragraph belongs to a card's pack (Slice 7).
+
+    ``identity`` paragraphs are owned by the card's own subject and may ground the card's
+    defining sentence. ``relationship`` paragraphs mention the subject but are owned by another
+    subject; they support directional relational claims only and can never establish identity.
+    """
+
+    IDENTITY = "identity"
+    RELATIONSHIP = "relationship"
+
+
+class CardEvidenceRef(BaseModel):
+    """One paragraph-granular evidence pointer inside a card evidence pack."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: CardEvidenceRole
+    evidence_id: str = Field(min_length=1)
+    source_id: str = ""
+    owner_subject_id: str = ""
+    # For a relationship ref: the directed relation reads owner_subject_id --mentions--> subject_id.
+    direction: Literal["identity", "mentions_subject"] = "identity"
+
+
+class CardClaimView(BaseModel):
+    """A support-checked claim view admitted to a card pack, keyed to its source paragraph."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    claim_id: str = ""
+    evidence_id: str = Field(min_length=1)
+    claim_text: str = Field(min_length=1)
+    supported: bool = True
+    # Clauses dropped from a compound claim because they were not grounded in the card's identity.
+    dropped_clauses: list[str] = Field(default_factory=list)
+
+
+class CardEvidencePackSufficiency(StrEnum):
+    OK = "ok"
+    INSUFFICIENT_IDENTITY_EVIDENCE = "insufficient_identity_evidence"
+
+
+class CardEvidencePackDecision(BaseModel):
+    """The typed per-card evidence pack constructed after card selection (Slice 7).
+
+    Every rendered location/faction/questline/key-character card owns exactly one pack. The pack
+    records the card's direct identity evidence, directional relationship evidence, support-checked
+    claim views, and the paragraph ids that back its provenance — so a card's defining claim can
+    never be established by a same-name or general-pool paragraph fallback.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    card_id: str = Field(min_length=1)
+    card_type: Literal["location", "faction", "questline", "key_character"]
+    subject_id: str = Field(min_length=1)
+    subject_name: str = ""
+    sufficiency: CardEvidencePackSufficiency
+    reason: str = ""
+    identity_evidence: list[CardEvidenceRef] = Field(default_factory=list)
+    relationship_evidence: list[CardEvidenceRef] = Field(default_factory=list)
+    claim_views: list[CardClaimView] = Field(default_factory=list)
+    provenance_ids: list[str] = Field(default_factory=list)
+
+
+class CardEvidencePackArtifact(BaseModel):
+    """Clean-break, versioned sidecar of every rendered card's evidence pack."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["card_evidence_pack.v1"] = "card_evidence_pack.v1"
+    producer: Literal["draft_writer"] = "draft_writer"
+    decisions: list[CardEvidencePackDecision] = Field(default_factory=list)
+
+
 class LocationType(StrEnum):
     CITY = "city"
     TOWN = "town"
