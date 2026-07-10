@@ -580,3 +580,26 @@ acceptance criteria with a prose summary.
 - **Deferred:** a normal end-to-end live LLM synthesis/validation review of the fresh run remains
   blocked by the host's foreground-command limit and stalled remote draft invocation. This is an
   execution-environment verification limitation, not a schema or admission-contract deferral.
+
+### 2026-07-10 — Slice 4 complete
+
+- **Commit SHA:** `7c8002b` (`feat(questlines): unify metadata and entry-state evidence`).
+- **Behavior:** replaced the retired `ordered_chain_refs` handoff with the versioned,
+  fail-fast `questline_card_metadata.v1` artifact and typed `QuestlineCardMetadata` contract.
+  Discovery, promotion validation, draft rendering, validation context, semantic checks, and
+  decision reporting now consume `chain_refs` as the sole canonical field. Selected metadata
+  carries canonical identity, structured variant fields, a resolved start-anchor ref, ordered and
+  overflow refs, plus source/evidence refs; discovery rejects missing quest records or unresolved
+  anchors, promotion checks graph order, and rendering rejects metadata/graph identity gaps.
+  Entry-state decisions now record metadata identity, setup refs/snippets/NPCs, explicit fallback
+  records, and an active-expansion decision with source evidence and confidence. Unknown active
+  expansion remains reviewable rather than defaulting to a historic era; strict release rejects a
+  non-empty confident `currently` section when that evidence is unknown.
+- **Verification:** focused Slice 4/adversarial metadata, temporal, promotion, pipeline-stage, and
+  model-version tests (52 passed); `uv run --no-sync ruff check pipeline scripts tests`; MyPy on
+  all 11 touched pipeline modules (passed); `git diff --check`; `uv run --no-sync pytest -q`
+  (passed, with the suite's existing skips/xfail). A final semantic review confirmed no production
+  read of `ordered_chain_refs`, versioned producer/consumer handoffs, no pilot-specific rules, and
+  complete selected-metadata-to-entry-state grounding.
+- **Fresh live runs:** not applicable; Slice 4 has no `[LIVE]` acceptance requirement.
+- **Deferred:** none.
