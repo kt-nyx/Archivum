@@ -684,3 +684,55 @@ acceptance criteria with a prose summary.
   artifact reader rejects historic/unversioned shapes, and fixtures remain synthetic and generic.
 - **Fresh live runs:** not applicable; Slice 6 has no `[LIVE]` acceptance requirement.
 - **Deferred:** none.
+
+### 2026-07-10 — Slice 8 complete
+
+- **Commit SHA:** `558304b` (`feat(validate): convert semantic/evidence checks into strict release
+  gates (Slice 8)`). Implementation record committed separately as a `docs(plan)` follow-up.
+- **Behavior:** added a new `pipeline/validate/rules/release_gate.py` rule set, wired into the
+  engine after structural/promotion rules, that runs only under `release_gate` and consults the
+  selection/evidence sidecars carried in the validation context. It hard-fails on: a non-`place`
+  location card (item 1a), a non-`named_actor` key character (item 1b, the Maraudon-style generic
+  roster), a card whose Slice 7 evidence pack lacks direct identity evidence or is missing/mistyped
+  (item 1c/2, the Cenarion-Wildlands-style identity inversion), invalid instance-presence/retail
+  scope (item 1d), empty required questline setup evidence in the entry-state contract (item 1f),
+  duplicate normalized card labels within a family (item 1g), and a persisted final CTA clause that
+  still fails lint (item 1h). It also enforces final-card/sidecar agreement (item 2): a location or
+  key-character the selection sidecar never recorded, a key-character that is not an eligible/emitted
+  admission, and a key-character role that disagrees with the recorded selection role. Metadata
+  handoff mismatch (item 1e) remains enforced by the existing `questline_promotion` rules. Every
+  gate is sidecar-gated — when the relevant sidecar was not loaded (unit payload in isolation, or a
+  run without that artifact) the check no-ops rather than inventing a failure. `pipeline/validate/
+  context.py` now loads the `card_evidence_pack.v1` and `instance_key_character_decision.v1`
+  sidecars through their clean-break readers and captures `questline_cta.finalize` records from the
+  `prose_finalize_decision.v1` artifact, and exposes them per entity via `release_gate_entity_flags`.
+- **Fact-check (items 3–4):** fact-check adjudication coverage is no longer confined to
+  manual-link/coalescing risk entities; every drafted page's central section claims and every
+  selected card's identity/relationship summary are now adjudicated (`targeted_for_adjudication`
+  is universal for warn/strict), with the risk set retained only as recorded `target_reasons` plus
+  a new `risk_flagged` report field. `CheckedUnit` gained a `central` flag; in the strict profile an
+  unsupported *central* assertion is now a hard failure (contradictions already were), while a
+  noncentral stylistic unit stays a distinct warning.
+- **Run success (item 5):** `run_validate_stage` computes `release_certified = all_passed and
+  release_gate and profile == strict` and records it in `validation_report.json`, the stage
+  manifest, and its return; the flow return and both CLI echoes surface it, so a warn/off pass is an
+  exploratory success and is never labelled equivalent to a strict certified run.
+- **Intentional behavior changes:** the former "skip LLM for non-target entities" fact-check
+  behavior is replaced by universal coverage (the obsolete `test_..._skips_llm_for_non_target_...`
+  test was rewritten as `test_..._adjudicates_non_risk_flagged_entity`); CLI/flow validate return
+  shapes gained `release_gate`/`fact_check_profile`/`release_certified` keys (affected CLI test
+  fakes updated). No zone/instance/title/race/species-specific logic was introduced.
+- **Verification:** new `tests/test_release_gate.py` (every hard gate independently, sidecar-gated
+  no-op, positive controls, severity check, acceptance adversarial cases) plus new warn-vs-strict
+  unsupported-central and universal-coverage tests in `tests/test_validation_engine.py` and a
+  release-certification test in `tests/test_pipeline_stages.py`; `ruff check pipeline scripts tests`
+  (clean); `mypy pipeline` (128 files, clean); `git diff --check`; full `pytest -q`
+  (1140 passed, 4 skipped, 1 xfailed — the suite's existing skips/xfail). Checks were run with the
+  project venv (`.venv/Scripts/python.exe -m ...`) because `uv` is not on PATH in this environment;
+  it is the same interpreter `uv run --no-sync` selects.
+- **Fresh live runs:** not applicable; Slice 8 has no `[LIVE]` acceptance requirement (the strict
+  multi-subject pilot matrix is Slice 9).
+- **Deferred:** none. The strict gate additionally consumes the Slice 7 pack provenance transitively
+  (card provenance already resolves to the pack's direct identity paragraph ids); routing the pack's
+  support-checked `claim_views` directly into the adjudicator, rather than via the rendered card
+  provenance, remains an optional Slice 9 reporting refinement, not a contract gap.
