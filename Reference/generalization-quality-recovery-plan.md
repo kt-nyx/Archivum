@@ -554,3 +554,29 @@ acceptance criteria with a prose summary.
 - **Deferred:** complete the normal end-to-end live synthesis/validation review for those fresh run
   families in a host that permits a process longer than 60 seconds; this is an execution-environment
   limitation, not a generic pipeline behavior deferral.
+
+### 2026-07-10 — Slice 3 complete
+
+- **Commit SHA:** `b1e4c5f` (`feat(discovery): admit named instance participants`).
+- **Behavior:** replaced the retired instance `retail_confirmed` roster filter with separate,
+  evidence-bearing entity-kind, direct-instance-presence, retail-scope, and encounter-relation facts
+  for every participant lead. Only `named_actor` candidates with direct roster-shaped presence and
+  confirmed retail scope can enter the floor or card selection. The versioned
+  `instance_key_character_decision.v1` sidecar records every admitted/rejected candidate, final
+  selection reason, final role, and emitted state; draft-writer, semantic checks, diff reporting,
+  and the instance quality report all fail closed on the new schema. Broad Adventure Guide/guide
+  prose remains a lead but does not itself prove participant presence.
+- **Verification:** targeted instance-admission/retail/draft/semantic tests (58 passed); `uv run
+  --no-sync ruff check pipeline scripts tests`; MyPy on all touched pipeline modules (passed); `git
+  diff --check`; `uv run --no-sync pytest -q` (passed, with the suite's existing skips/xfail).
+- **Fresh live retrieval runs:** `test-run-desolace-7` completed ingest through traverse, coalesce,
+  and the post-traverse evidence artifacts; its remote full-draft attempt stalled and the verified
+  process tree was stopped. `test-run-desolace-8` was then created from a copied fresh manifest and
+  completed ingest, discovery, traverse, and coalesce. Its live Maraudon participant selection
+  admitted only three `named_actor` candidates, each with a direct `encounters_edit` or
+  `dungeon_denizens_edit` presence record; `Centaur`, `Earth elemental`, `Creeping Sludge`, and
+  `Area of Effect` remained rejected kind decisions (`group_or_species`, `unknown`, `unknown`, and
+  `object_or_concept`, respectively).
+- **Deferred:** a normal end-to-end live LLM synthesis/validation review of the fresh run remains
+  blocked by the host's foreground-command limit and stalled remote draft invocation. This is an
+  execution-environment verification limitation, not a schema or admission-contract deferral.
