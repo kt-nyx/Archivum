@@ -1,0 +1,35 @@
+{
+  "schema_version": "pilot_matrix.v1",
+  "description": "Slice 9 pilot matrix. These are evaluation subjects only: pilot names are permitted here (a run configuration) and are forbidden in shared classification/selection logic. Every subject runs through identical strict settings and is reviewed with the shared editorial-review rubric; findings become generic regression cases, never a one-zone exception.",
+  "strict_settings": {
+    "fact_check_profile": "strict",
+    "release_gate": true,
+    "quality_summary": true
+  },
+  "subjects": [
+    {
+      "pair_id": "wpl-scholomance",
+      "zone": { "entity_id": "zone-western-plaguelands", "name": "Western Plaguelands" },
+      "linked_instance": { "entity_id": "instance-scholomance", "name": "Scholomance" },
+      "manifest": "tests/fixtures/pilot/source_manifest.json",
+      "run_prefix": "test-run-wpl",
+      "hold_out": false
+    },
+    {
+      "pair_id": "desolace-maraudon",
+      "zone": { "entity_id": "zone-desolace", "name": "Desolace" },
+      "linked_instance": { "entity_id": "instance-maraudon", "name": "Maraudon" },
+      "manifest": "evaluation/desolace/source_manifest.json",
+      "run_prefix": "test-run-desolace",
+      "hold_out": false
+    },
+    {
+      "pair_id": "westfall-deadmines",
+      "zone": { "entity_id": "zone-westfall", "name": "Westfall" },
+      "linked_instance": { "entity_id": "instance-deadmines", "name": "Deadmines" },
+      "manifest": "evaluation/westfall/source_manifest.json",
+      "run_prefix": "test-run-westfall",
+      "hold_out": true
+    }
+  ]
+}

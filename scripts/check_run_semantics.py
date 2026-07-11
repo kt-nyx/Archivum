@@ -1262,8 +1262,28 @@ def main() -> None:
             "and fact_check_profile=off."
         ),
     )
+    parser.add_argument(
+        "--quality-summary",
+        nargs="?",
+        const="",
+        default=None,
+        help=(
+            "Write the machine-readable run quality summary. With no value it goes to "
+            "<run_root>/reports/run_quality_summary.json; pass a path to override."
+        ),
+    )
     args = parser.parse_args()
     require_evidence = bool(args.strict)
+
+    def _write_quality_summary() -> None:
+        if args.quality_summary is None:
+            return
+        from pipeline.validate.quality_summary import write_run_quality_summary
+
+        out = Path(args.quality_summary) if args.quality_summary else None
+        summary_path = write_run_quality_summary(args.run_root, out)
+        print(f"Wrote quality summary {summary_path}")
+
     try:
         check_run(
             args.run_root,
@@ -1273,8 +1293,12 @@ def main() -> None:
         if args.strict:
             check_strict_validation(args.run_root)
     except SemanticCheckError as exc:
+        # Emit the review surface even on a gate failure, so a reviewer can inspect why.
+        _write_quality_summary()
         print(f"FAIL: {exc}")
         sys.exit(1)
+
+    _write_quality_summary()
 
 
 if __name__ == "__main__":

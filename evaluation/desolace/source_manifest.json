@@ -1,0 +1,42 @@
+[
+  {
+    "entity_id": "zone-desolace",
+    "entity_type": "zone",
+    "slug": "desolace",
+    "name": "Desolace",
+    "source_id": "src-desolace-warcraft-overview",
+    "source_url": "https://warcraft.wiki.gg/wiki/Desolace",
+    "source_class": "warcraft_wiki",
+    "priority": 1,
+    "selection_version": "eval-v1",
+    "policy_version": "policy-v1",
+    "manifest_run_id": "manifest-eval-desolace-v1"
+  },
+  {
+    "entity_id": "zone-desolace",
+    "entity_type": "zone",
+    "slug": "desolace",
+    "name": "Desolace",
+    "source_id": "src-desolace-warcraft-storyline",
+    "source_url": "https://warcraft.wiki.gg/wiki/Desolace_storyline",
+    "source_class": "warcraft_wiki",
+    "priority": 2,
+    "selection_version": "eval-v1",
+    "policy_version": "policy-v1",
+    "manifest_run_id": "manifest-eval-desolace-v1"
+  },
+  {
+    "entity_id": "instance-maraudon",
+    "entity_type": "instance",
+    "slug": "maraudon",
+    "name": "Maraudon",
+    "source_id": "src-maraudon-warcraft-overview",
+    "source_url": "https://warcraft.wiki.gg/wiki/Maraudon",
+    "source_class": "warcraft_wiki",
+    "priority": 1,
+    "parent_zone_id": "zone-desolace",
+    "selection_version": "eval-v1",
+    "policy_version": "policy-v1",
+    "manifest_run_id": "manifest-eval-desolace-v1"
+  }
+]
