@@ -736,3 +736,56 @@ acceptance criteria with a prose summary.
   (card provenance already resolves to the pack's direct identity paragraph ids); routing the pack's
   support-checked `claim_views` directly into the adjudicator, rather than via the rendered card
   provenance, remains an optional Slice 9 reporting refinement, not a contract gap.
+
+### 2026-07-11 — Slice 9 complete (non-live deliverables; [LIVE] matrix deferred by environment)
+
+- **Commit SHA:** `a3f6da7` (`feat(eval): add behavioral fixtures, quality summary, pilot matrix,
+  no-pilot guard (Slice 9)`). Implementation record committed separately as a `docs(plan)` follow-up.
+- **Item 1 — behavioral fixtures:** new `tests/test_behavioral_regression.py` is the single durable
+  cross-cutting regression surface. One compact synthetic fixture per behavior, each driven through
+  its real public entry point, with the required adversarial case: entity-kind admission
+  (`decide_entity_kind`; untyped link and conflicting-evidence abstain to `unknown`); direct evidence
+  ownership + containment direction (`build_card_evidence_pack`; a mention owned by another subject
+  cannot establish identity and keeps `mentions_subject` direction with the container as owner); named
+  instance participation (`is_direct_instance_participant_section` + kind gate; a generic type linked
+  in a boss section is not admitted); metadata handoff (`QuestlineCardMetadata` rejects missing start
+  anchor, duplicate refs, canonical/card id disagreement); arc-family/variant selection
+  (`select_zone_arc_families`; parallel faction arcs merge into one family with both variants
+  selected, a weak single-quest fragment is excluded, and the artifact rejects duplicate normalized
+  labels); title idempotence (`render_questline_title`); final CTA validity (`finalize_cta_hook` /
+  `lint_cta_hook`). All names invented; no pilot output is encoded.
+- **Item 2 — machine-readable quality summary:** new `pipeline/validate/quality_summary.py`
+  (`run_quality_summary.v1`) aggregates the existing versioned sidecars + validation report into one
+  object: selected-card kinds, direct-evidence coverage, deferred retrieval reasons, questline setup
+  coverage, arc-family/variant coverage, title collisions, final CTA lint, fact-check scope/verdicts,
+  strict release outcome, observed schema versions, source/input hashes, and model/prompt identifiers.
+  It reuses `load_validation_run_resources` and its clean-break readers; a missing artifact degrades to
+  an empty/None section. Wired into `scripts/check_run_semantics.py` via `--quality-summary` (default
+  path `reports/run_quality_summary.json`), emitted even on a gate failure so a reviewer can inspect.
+  No existing producer/consumer schema changed — this is a read-only reporter.
+- **Item 3 — pilot matrix + Westfall run config:** `evaluation/pilot_matrix.json`
+  (`pilot_matrix.v1`) declares WPL+Scholomance, Desolace+Maraudon, and the Westfall+Deadmines
+  hold-out under identical strict settings. Fresh run-config manifests `evaluation/desolace/` and
+  `evaluation/westfall/source_manifest.json` (schema-valid, not hand-authored output fixtures);
+  WPL reuses the committed `tests/fixtures/pilot` manifest. `evaluation/README.md` documents the
+  hold-out status and the strict-settings + quality-summary run/review flow.
+- **Item 5 — no-pilot-authority guard:** new `tests/test_no_pilot_authority_guard.py` parses every
+  shared `pipeline/`/`scripts/` module and flags a pilot subject name in an *executable* string
+  literal (docstrings/comments excluded; source-native JSON data out of scope). It complements
+  `test_no_zone_specific_scaffolding` (scaffolding ids) and `test_pilot_prompt_leak_guard` (prompts).
+  The guard passes on the current tree — no pilot name drives shared classification/selection logic.
+- **Verification:** new Slice 9 tests (behavioral 16, quality-summary 4, matrix 2, guard 2) plus a
+  CLI smoke run of `check_run_semantics --quality-summary` on a synthetic run; `ruff check pipeline
+  scripts tests` (clean); `mypy pipeline` (129 files, clean); `git diff --check`; full `pytest`
+  (1164 passed, 4 skipped, 1 xfailed — the suite's existing skips/xfail). Checks were run with the
+  project venv (`.venv/Scripts/python.exe -m ...`) because `uv` is not on PATH in this environment;
+  it is the same interpreter `uv run --no-sync` selects.
+- **[LIVE] acceptance deferred (execution environment):** the strict multi-subject matrix runs
+  (item 4) require live wiki retrieval and an OpenAI key for synthesis, and — as recorded for the
+  earlier `[LIVE]` slices (2, 3, 5) — the host terminates foreground pipeline commands at a
+  60-second limit and the remote draft invocation stalls, so a full strict end-to-end run cannot
+  complete here. The matrix definition, the fresh Westfall/Desolace run configs, the strict release
+  gate (Slice 8), and the quality-summary/rubric review surface are all in place to execute the
+  matrix and record findings as generic regression cases in an environment that permits a
+  longer-running live flow. This is an execution-environment verification limitation, not a schema,
+  reporting, guard, or fixture deferral.
