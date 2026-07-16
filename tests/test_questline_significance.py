@@ -79,6 +79,21 @@ def test_one_quest_candidate_requires_explicit_high_signal_exception() -> None:
     assert selected == ["signal"]
 
 
+def test_arc_family_id_normalizes_title_punctuation_to_the_id_contract() -> None:
+    summary = {
+        "zone_id": "zone-example",
+        "cluster_id": "brams-watch",
+        "title": "Bram's Watch",
+        "faction": "shared",
+        "quest_node_ids": ["q1", "q2"],
+    }
+    _candidates, families, _decisions, _selected = _select(
+        [summary], [_record("q1"), _record("q2")]
+    )
+
+    assert families[0]["family_id"] == "arc-zone-example-bram-s-watch-brams-watch"
+
+
 def test_ambiguous_variant_processing_never_doubles_structured_suffixes() -> None:
     summaries = [
         {"zone_id": "zone-example", "cluster_id": "first", "title": "Beacon Run (Alliance)", "faction": "alliance", "quest_node_ids": ["a1", "a2"]},

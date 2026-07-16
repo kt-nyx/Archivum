@@ -265,7 +265,10 @@ def test_sidecar_rows_include_admission_and_final_selection() -> None:
         section_blocks=[
             {
                 "section_role": "denizens",
-                "text": '<a href="/wiki/Story_Figure">Story Figure</a>',
+                "text": (
+                    '<a href="/wiki/Story_Figure">Story Figure</a> '
+                    '<a href="/wiki/Unadmitted_Lead">Unadmitted Lead</a>'
+                ),
             }
         ],
         snapshots=[
@@ -315,6 +318,7 @@ def test_sidecar_rows_include_admission_and_final_selection() -> None:
     assert emitted[0]["retail_scope"] == "retail_confirmed"
     non_emitted = [item for item in candidates if not item["emitted"]]
     assert all(item["admission"] == "rejected" for item in non_emitted)
+    assert "Unadmitted Lead" not in {item["name"] for item in candidates}
     # Single-source invariant: the emitted set equals the page-emitted cast.
     assert {item["name"] for item in emitted} == {"Floor Boss"}
 

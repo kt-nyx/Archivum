@@ -319,8 +319,14 @@ def build_instance_key_character_selection(
         raw_pool,
         instance_name=instance_name,
     )
+    # The decision sidecar records candidates that reached the participant-decision boundary.
+    # A lead without such a decision is not an admissible participant and cannot satisfy the
+    # sidecar's required entity_kind_decision_id contract.
+    sidecar_candidates = [
+        candidate for candidate in all_candidates if candidate.entity_kind_decision_id
+    ]
     if not pool:
-        return InstanceKeyCharacterSelection(pool=all_candidates, context_text=context_text)
+        return InstanceKeyCharacterSelection(pool=sidecar_candidates, context_text=context_text)
 
     floor = must_include_key_character_names(
         boss_pool_items=pools["boss_pool"],
@@ -360,7 +366,7 @@ def build_instance_key_character_selection(
     cast = merged_cast_candidates(pool, merged_names, instance_name=instance_name)
     _merge_character_profile_evidence(cast, pools.get("character_pool", []))
     sidecar_pool = _order_sidecar_pool_candidates(
-        all_candidates,
+        sidecar_candidates,
         cast_names=merged_names,
         context_text=context_text,
     )

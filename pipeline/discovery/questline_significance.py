@@ -159,7 +159,9 @@ def _relationship(left: ArcCandidate, right: ArcCandidate) -> tuple[Literal["mer
 
 
 def _family_id(zone_id: str, members: list[ArcCandidate]) -> str:
-    stem = normalize_quest_title(members[0].base_title).replace(" ", "-") or "arc"
+    # Quest-title normalization preserves apostrophes for matching, while contract IDs permit only
+    # lowercase alphanumeric segments separated by single hyphens.
+    stem = re.sub(r"[^a-z0-9]+", "-", normalize_quest_title(members[0].base_title)).strip("-") or "arc"
     return f"arc-{zone_id}-{stem}-{members[0].candidate_id}"
 
 
