@@ -263,9 +263,31 @@ def test_build_instance_page_wires_scoped_links_and_parent_roles(monkeypatch) ->
         {
             "entity_id": instance_id,
             "entity_type": "instance",
-            "character_retail_eligibility": [
-                {"candidate_name": "archivist maelor", "status": "retail_confirmed"},
-                {"candidate_name": "warden voss", "status": "retail_confirmed"},
+            "instance_participant_evidence": [
+                {
+                    "candidate_id": "character-archivist-maelor",
+                    "candidate_name": "Archivist Maelor",
+                    "canonical_path": "/wiki/Archivist_Maelor",
+                    "entity_kind_decision_id": "entity-kind-archivist-maelor",
+                    "entity_kind": "named_actor",
+                    "instance_presence_evidence": ["source:src-instance:section:denizens"],
+                    "retail_scope": "retail_confirmed",
+                    "retail_scope_evidence": ["category:Characters"],
+                    "encounter_relation_evidence": ["instance_roster_link"],
+                    "reason_codes": ["affirmative_target_evidence"],
+                },
+                {
+                    "candidate_id": "character-warden-voss",
+                    "candidate_name": "Warden Voss",
+                    "canonical_path": "/wiki/Warden_Voss",
+                    "entity_kind_decision_id": "entity-kind-warden-voss",
+                    "entity_kind": "named_actor",
+                    "instance_presence_evidence": ["source:src-instance:section:denizens"],
+                    "retail_scope": "retail_confirmed",
+                    "retail_scope_evidence": ["category:Characters"],
+                    "encounter_relation_evidence": ["instance_roster_link"],
+                    "reason_codes": ["affirmative_target_evidence"],
+                },
             ],
             "structured_links": [
                 {

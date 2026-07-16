@@ -1,0 +1,42 @@
+[
+  {
+    "entity_id": "zone-westfall",
+    "entity_type": "zone",
+    "slug": "westfall",
+    "name": "Westfall",
+    "source_id": "src-westfall-warcraft-overview",
+    "source_url": "https://warcraft.wiki.gg/wiki/Westfall",
+    "source_class": "warcraft_wiki",
+    "priority": 1,
+    "selection_version": "eval-v1",
+    "policy_version": "policy-v1",
+    "manifest_run_id": "manifest-eval-westfall-v1"
+  },
+  {
+    "entity_id": "zone-westfall",
+    "entity_type": "zone",
+    "slug": "westfall",
+    "name": "Westfall",
+    "source_id": "src-westfall-warcraft-storyline",
+    "source_url": "https://warcraft.wiki.gg/wiki/Westfall_storyline",
+    "source_class": "warcraft_wiki",
+    "priority": 2,
+    "selection_version": "eval-v1",
+    "policy_version": "policy-v1",
+    "manifest_run_id": "manifest-eval-westfall-v1"
+  },
+  {
+    "entity_id": "instance-deadmines",
+    "entity_type": "instance",
+    "slug": "deadmines",
+    "name": "Deadmines",
+    "source_id": "src-deadmines-warcraft-overview",
+    "source_url": "https://warcraft.wiki.gg/wiki/Deadmines",
+    "source_class": "warcraft_wiki",
+    "priority": 1,
+    "parent_zone_id": "zone-westfall",
+    "selection_version": "eval-v1",
+    "policy_version": "policy-v1",
+    "manifest_run_id": "manifest-eval-westfall-v1"
+  }
+]

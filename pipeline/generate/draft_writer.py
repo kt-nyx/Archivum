@@ -5,28 +5,42 @@ from __future__ import annotations
 import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from pipeline.ai.config import load_ai_settings
 from pipeline.ai.openai_client import chat_json_completion
 from pipeline.common.io import write_json
 from pipeline.common.run_context import RunContext
 from pipeline.common.text_normalize import normalize_display_payload
+from pipeline.contracts.models import (
+    CardEvidencePackDecision,
+    EntityKind,
+    EntityKindDecision,
+    InstanceKeyCharacterDecision,
+    InstanceKeyCharacterDecisionArtifact,
+    InstanceParticipantDecision,
+    LocationSelectionArtifact,
+)
+from pipeline.discovery.entity_typing import canonical_path_for_link
 from pipeline.discovery.questline_card_polish import load_questline_card_metadata
-from pipeline.discovery.questline_significance import load_included_cluster_ids_by_zone
+from pipeline.discovery.questline_significance import selected_candidate_ids_by_zone
 from pipeline.generate.draft import (
     finalize_trace,
     generate_entity_draft,
     is_valid_draft,
     point_of_use_temporal,
 )
+from pipeline.generate.draft.card_evidence_pack import build_card_evidence_pack_artifact
 from pipeline.generate.draft.claim_routing import (
     apply_claim_views_to_evidence_rows,
     build_claim_view_routing_decisions,
 )
 from pipeline.generate.draft.llm import draft_chat_json_completion, set_draft_verbose
 from pipeline.generate.draft.mode import draft_pipeline_mode
-from pipeline.generate.draft.model_versions import build_temporal_model_manifest
+from pipeline.generate.draft.model_versions import (
+    PROSE_FINALIZE_DECISION_SCHEMA,
+    build_temporal_model_manifest,
+)
 from pipeline.generate.draft.pages import (
     InstanceKeyCharacterSelection,
     build_instance_page,
@@ -49,6 +63,36 @@ def _decision_name_key(value: str) -> str:
     return " ".join(str(value).strip().casefold().split())
 
 
+def _load_entity_kind_decisions(path: Path) -> dict[str, EntityKindDecision]:
+    """Load Slice 1's versioned entity-kind artifact without a legacy fallback."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or payload.get("schema_version") != "entity_kind_decision.v1":
+        raise RuntimeError(
+            f"entity-kind decisions at '{path}' must use schema entity_kind_decision.v1; "
+            "regenerate this run from discovery"
+        )
+    rows = payload.get("decisions")
+    if not isinstance(rows, list):
+        raise RuntimeError(f"entity-kind decisions at '{path}' must contain a decisions array")
+    decisions = [EntityKindDecision.model_validate(row) for row in rows if isinstance(row, dict)]
+    return {decision.decision_id: decision for decision in decisions}
+
+
+def _load_location_selection(path: Path) -> LocationSelectionArtifact:
+    if not path.exists():
+        raise RuntimeError(
+            "location cards require data/decisions/location_selection_decisions.json; "
+            "regenerate this run from discovery"
+        )
+    try:
+        return LocationSelectionArtifact.model_validate(json.loads(path.read_text(encoding="utf-8")))
+    except Exception as exc:  # noqa: BLE001 - make schema/producer drift actionable
+        raise RuntimeError(
+            f"location selection at '{path}' must use schema location_selection.v1 "
+            "produced by traverse_seed; regenerate this run"
+        ) from exc
+
+
 def _build_key_character_decision_row(
     *,
     instance_id: str,
@@ -65,26 +109,51 @@ def _build_key_character_decision_row(
     emitted_keys = {
         _decision_name_key(card.get("name", "")) for card in emitted_cards if isinstance(card, dict)
     }
-    merge_rank_by_name = {
-        candidate.name: index for index, candidate in enumerate(selection.cast, start=1)
-    }
-    candidates = []
+    candidates: list[InstanceParticipantDecision] = []
     for candidate in selection.pool:
         emitted = _decision_name_key(candidate.name) in emitted_keys
         # Role is an LLM judgment (Slice 10): the deterministic classifier is honestly
         # ``uncertain``, so the sidecar records the pool candidate's role as set during emit.
         role = candidate.role or "uncertain"
-        row = {
-            "name": candidate.name,
-            "role": role,
-            "emitted": emitted,
-            "merge_rank": merge_rank_by_name.get(candidate.name) if emitted else None,
-            "selection_reason": selection.selection_reasons.get(candidate.name)
-            if emitted
-            else None,
-        }
-        candidates.append(row)
-    return {"instance_id": instance_id, "candidates": candidates}
+        eligible = (
+            candidate.entity_kind is EntityKind.NAMED_ACTOR
+            and bool(candidate.entity_kind_decision_id)
+            and bool(candidate.instance_presence_evidence)
+            and candidate.retail_scope == "retail_confirmed"
+        )
+        retail_scope = cast(
+            Literal["retail_confirmed", "non_retail", "unknown"],
+            candidate.retail_scope
+            if candidate.retail_scope in {"retail_confirmed", "non_retail", "unknown"}
+            else "unknown",
+        )
+        final_role = cast(
+            Literal["ally", "enemy", "neutral", "uncertain"],
+            role if role in {"ally", "enemy", "neutral", "uncertain"} else "uncertain",
+        )
+        candidates.append(
+            InstanceParticipantDecision(
+                candidate_id=candidate.boss_id,
+                name=candidate.name,
+                canonical_path=candidate.canonical_path,
+                entity_kind_decision_id=candidate.entity_kind_decision_id,
+                entity_kind=candidate.entity_kind,
+                instance_presence_evidence=candidate.instance_presence_evidence,
+                retail_scope=retail_scope,
+                retail_scope_evidence=candidate.retail_scope_evidence,
+                encounter_relation_evidence=candidate.encounter_relation_evidence,
+                admission="eligible" if eligible else "rejected",
+                reason_codes=candidate.admission_reason_codes,
+                final_selection_reason=selection.selection_reasons.get(candidate.name)
+                if emitted
+                else None,
+                final_role=final_role,
+                emitted=emitted,
+            )
+        )
+    return InstanceKeyCharacterDecision(
+        instance_id=instance_id, candidates=candidates
+    ).model_dump(mode="json")
 
 
 def run_draft_writer(
@@ -131,46 +200,63 @@ def run_draft_writer(
         blob = json.loads(lore_map_path.read_text(encoding="utf-8"))
         if isinstance(blob, list):
             instance_lore_rows = [row for row in blob if isinstance(row, dict)]
-    location_rows: list[dict[str, Any]] = []
-    location_rows_path = context.data_dir / "discovery" / "zone_location_classification.json"
-    if location_rows_path.exists():
-        blob = json.loads(location_rows_path.read_text(encoding="utf-8"))
-        if isinstance(blob, list):
-            location_rows = [row for row in blob if isinstance(row, dict)]
+    location_selection_path = context.data_dir / "decisions" / "location_selection_decisions.json"
+    has_location_evidence = any(
+        str(row.get("field_name", "")).strip() == "location_pool"
+        for row in evidence_rows
+        if isinstance(row, dict)
+    )
+    if location_selection_path.exists():
+        location_selection = _load_location_selection(location_selection_path)
+    elif has_location_evidence:
+        raise RuntimeError(
+            "location profile evidence requires data/decisions/location_selection_decisions.json; "
+            "regenerate this run from discovery"
+        )
+    else:
+        location_selection = LocationSelectionArtifact(producer="traverse_seed")
+    location_selection_decisions = [
+        row.model_dump(mode="json") for row in location_selection.decisions
+    ]
     instance_rows: list[dict[str, Any]] = []
     instance_rows_path = context.data_dir / "discovery" / "zone_instance_registry.json"
     if instance_rows_path.exists():
         blob = json.loads(instance_rows_path.read_text(encoding="utf-8"))
         if isinstance(blob, list):
             instance_rows = [row for row in blob if isinstance(row, dict)]
-    location_candidate_map: dict[str, dict[str, Any]] = {}
-    location_candidates_path = context.data_dir / "discovery" / "zone_location_candidates.json"
-    if location_candidates_path.exists():
-        blob = json.loads(location_candidates_path.read_text(encoding="utf-8"))
-        if isinstance(blob, list):
-            for row in blob:
-                if not isinstance(row, dict):
-                    continue
-                location_id = str(row.get("location_id", "")).strip()
-                if not location_id:
-                    continue
-                location_candidate_map[location_id] = row
-    location_decision_map: dict[str, dict[str, Any]] = {}
-    location_decisions_path = (
-        context.data_dir / "decisions" / "location_significance_decisions.json"
+    entity_kind_decisions_path = context.data_dir / "decisions" / "entity_kind_decisions.json"
+    if location_selection_decisions and not entity_kind_decisions_path.exists():
+        raise RuntimeError(
+            "location selection requires data/decisions/entity_kind_decisions.json; "
+            "regenerate this run from discovery"
+        )
+    entity_kind_decisions = (
+        _load_entity_kind_decisions(entity_kind_decisions_path)
+        if entity_kind_decisions_path.exists()
+        else {}
     )
-    if location_decisions_path.exists():
-        blob = json.loads(location_decisions_path.read_text(encoding="utf-8"))
-        if isinstance(blob, list):
-            for row in blob:
-                if not isinstance(row, dict):
-                    continue
-                subject_id = str(row.get("subject_id", "")).strip()
-                if subject_id:
-                    location_decision_map[subject_id] = row
+    for candidate in location_selection_decisions:
+        location_id = str(candidate.get("location_id", "")).strip()
+        decision_id = str(candidate.get("entity_kind_decision_id", "")).strip()
+        decision = entity_kind_decisions.get(decision_id)
+        if decision is None:
+            raise RuntimeError(
+                f"location candidate '{location_id}' has no matching entity-kind decision "
+                f"in '{entity_kind_decisions_path}'"
+            )
+        if canonical_path_for_link(str(candidate.get("source_link", ""))) != decision.canonical_path:
+            raise RuntimeError(
+                f"location candidate '{location_id}' disagrees with entity-kind decision "
+                f"'{decision_id}' about the target page"
+            )
+        candidate["entity_kind"] = decision.kind.value
+    location_decision_map = {
+        str(row.get("location_id", "")).strip(): row
+        for row in location_selection_decisions
+        if str(row.get("location_id", "")).strip()
+    }
     questline_decision_map: dict[str, dict[str, Any]] = {}
-    questline_cluster_decision_map: dict[str, dict[str, Any]] = {}
-    cluster_rankings_by_zone: dict[str, list[str]] = {}
+    selected_arc_candidates_by_zone: dict[str, list[str]] = {}
     questline_decisions_path = context.data_dir / "decisions" / "questline_inclusion_decisions.json"
     if questline_decisions_path.exists():
         blob = json.loads(questline_decisions_path.read_text(encoding="utf-8"))
@@ -182,15 +268,22 @@ def run_draft_writer(
                 subject_id = str(row.get("subject_id", "")).strip()
                 if subject_type == "zone_questline_set" and subject_id:
                     questline_decision_map[subject_id] = row
-                elif subject_type == "questline_cluster" and subject_id:
-                    questline_cluster_decision_map[subject_id] = row
-    rankings_path = context.data_dir / "discovery" / "zone_quest_cluster_rankings.json"
-    if rankings_path.exists():
-        rankings_blob = json.loads(rankings_path.read_text(encoding="utf-8"))
-        if isinstance(rankings_blob, list):
-            cluster_rankings_by_zone = load_included_cluster_ids_by_zone(rankings_blob)
-    card_metadata_by_cluster = load_questline_card_metadata(
-        context.data_dir / "discovery" / "zone_questline_card_metadata.json"
+    arc_selection_path = context.data_dir / "discovery" / "questline_arc_selection.json"
+    card_metadata_path = context.data_dir / "discovery" / "zone_questline_card_metadata.json"
+    if card_metadata_path.exists() and not arc_selection_path.exists():
+        raise FileNotFoundError(
+            "zone draft reader: missing arc selection artifact from discovery.questline_significance; "
+            f"expected questline_arc_selection.v1 at {arc_selection_path}"
+        )
+    if arc_selection_path.exists() and not card_metadata_path.exists():
+        raise FileNotFoundError(
+            "zone draft reader: missing selected-card metadata from discovery.questline_card_polish; "
+            f"expected questline_card_metadata.v2 at {card_metadata_path}"
+        )
+    if arc_selection_path.exists():
+        selected_arc_candidates_by_zone = selected_candidate_ids_by_zone(arc_selection_path)
+    card_metadata_by_cluster = (
+        load_questline_card_metadata(card_metadata_path) if card_metadata_path.exists() else None
     )
     quest_descriptions_by_node: dict[str, str] = {}
     quest_records_by_node: dict[str, dict[str, Any]] = {}
@@ -219,14 +312,60 @@ def run_draft_writer(
         targets_blob = json.loads(faction_targets_path.read_text(encoding="utf-8"))
         if isinstance(targets_blob, list):
             faction_profile_targets = [row for row in targets_blob if isinstance(row, dict)]
-    location_profile_targets: list[dict[str, Any]] = []
-    location_targets_path = context.data_dir / "discovery" / "location_profile_targets.json"
-    if location_targets_path.exists():
-        targets_blob = json.loads(location_targets_path.read_text(encoding="utf-8"))
-        if isinstance(targets_blob, list):
-            location_profile_targets = [row for row in targets_blob if isinstance(row, dict)]
     snapshots_path = context.data_dir / "ingest" / "source_snapshots.json"
     source_snapshots: list[dict[str, Any]] = load_source_snapshots(snapshots_path, missing_ok=True)
+    instance_ids_with_roster_leads = {
+        str(row.get("subject_id", "")).strip()
+        for row in evidence_rows
+        if str(row.get("field_name", "")).strip() == "boss_pool"
+        and any(
+            "/wiki/" in str(item.get("snippet", ""))
+            for item in row.get("evidence_items", [])
+            if isinstance(item, dict)
+        )
+    }
+    if instance_ids_with_roster_leads and any(
+        str(snapshot.get("entity_type", "")).strip() == "instance"
+        and not str(snapshot.get("auxiliary_role", "")).strip()
+        for snapshot in source_snapshots
+    ):
+        if not entity_kind_decisions_path.exists():
+            raise RuntimeError(
+                "instance key-character admission requires data/decisions/"
+                "entity_kind_decisions.json; regenerate this run from traverse"
+            )
+        for snapshot in source_snapshots:
+            if (
+                str(snapshot.get("entity_type", "")).strip() != "instance"
+                or str(snapshot.get("auxiliary_role", "")).strip()
+                or str(snapshot.get("entity_id", "")).strip()
+                not in instance_ids_with_roster_leads
+            ):
+                continue
+            records = snapshot.get("instance_participant_evidence")
+            if not isinstance(records, list):
+                raise RuntimeError(
+                    "instance source snapshot is missing instance_participant_evidence; "
+                    "regenerate this run from traverse"
+                )
+            for record in records:
+                if not isinstance(record, dict):
+                    raise RuntimeError("instance participant evidence contains a non-object record")
+                decision_id = str(record.get("entity_kind_decision_id", "")).strip()
+                decision = entity_kind_decisions.get(decision_id)
+                if decision is None:
+                    raise RuntimeError(
+                        "instance participant evidence references a missing entity-kind decision "
+                        f"'{decision_id}'; regenerate this run from traverse"
+                    )
+                if (
+                    decision.canonical_path != str(record.get("canonical_path", "")).strip()
+                    or decision.kind.value != str(record.get("entity_kind", "")).strip()
+                ):
+                    raise RuntimeError(
+                        "instance participant evidence disagrees with its entity-kind decision; "
+                        "regenerate this run from traverse"
+                    )
 
     fact_packs_by_entity: dict[str, dict[str, Any]] = {}
     for fact_path in fact_pack_paths:
@@ -240,6 +379,7 @@ def run_draft_writer(
     temporal_decisions: list[dict[str, Any]] = []
     point_of_use_records: dict[str, Any] = {}
     entry_state_contract_decisions: list[dict[str, Any]] = []
+    entry_state_contract_by_entity: dict[str, dict[str, Any]] = {}
     content_boundary_decisions: list[dict[str, Any]] = []
     canonical_temporal_decisions: list[dict[str, Any]] = []
     canonical_claim_decisions: list[dict[str, Any]] = []
@@ -259,7 +399,7 @@ def run_draft_writer(
             evidence_rows,
             fact_packs_by_entity=fact_packs_by_entity,
             source_snapshots=source_snapshots,
-            questline_card_metadata=card_metadata_by_cluster,
+            questline_card_metadata=card_metadata_by_cluster or {},
             quest_records_by_node=quest_records_by_node,
             run_id=context.run_id,
             return_entry_state_contract_decisions=True,
@@ -280,24 +420,12 @@ def run_draft_writer(
             for record in canonical_records
             if record.canonical_evidence_id
         }
+        entry_state_contract_by_entity = {
+            str(row.get("entity_id", "")).strip(): row
+            for row in entry_state_contract_decisions
+            if str(row.get("entity_id", "")).strip()
+        }
 
-    # Carry each traversed location page's own MediaWiki categories and infobox onto its
-    # candidate row so the draft can type the card from the authoritative wiki signals
-    # (e.g. Andorhal -> "Destroyed settlements" -> ruins; Hearthglen -> "Towns" -> town;
-    # infobox "Type" as the Slice 10 category -> infobox -> LLM precedence's second step)
-    # instead of fragile evidence-text words.
-    for snapshot in source_snapshots:
-        if str(snapshot.get("auxiliary_role", "")).strip() != "location_profile":
-            continue
-        location_id = str(snapshot.get("auxiliary_target_id", "")).strip()
-        if not location_id or location_id not in location_candidate_map:
-            continue
-        categories = snapshot.get("categories") or []
-        if categories:
-            location_candidate_map[location_id]["categories"] = list(categories)
-        infobox = snapshot.get("infobox")
-        if isinstance(infobox, dict) and infobox:
-            location_candidate_map[location_id]["infobox"] = dict(infobox)
 
     def _write(
         path: Path,
@@ -322,33 +450,36 @@ def run_draft_writer(
                     for row in quest_graph_v3_rows
                     if row.get("zone_id") == entity_id and str(row.get("node_type", "")) == "quest"
                 ]
-                scoped_location_rows = [
-                    row for row in location_rows if str(row.get("zone_id", "")).strip() == entity_id
-                ]
                 draft = build_zone_page(
                     fact_pack,
                     scoped_evidence,
                     scoped_quest_rows,
-                    scoped_location_rows,
+                    location_selection_decisions,
                     instance_rows,
-                    location_candidate_map,
+                    {},
                     location_decision_map,
                     questline_decision_map.get(entity_id),
-                    questline_cluster_decision_map=questline_cluster_decision_map,
-                    questline_card_metadata={
-                        cluster_id: row
-                        for cluster_id, row in card_metadata_by_cluster.items()
-                        if str(row.get("zone_id", "")).strip() == entity_id
-                    },
-                    included_cluster_ids=cluster_rankings_by_zone.get(entity_id),
+                    questline_card_metadata=(
+                        {
+                            cluster_id: row
+                            for cluster_id, row in card_metadata_by_cluster.items()
+                            if str(row.get("zone_id", "")).strip() == entity_id
+                        }
+                        if card_metadata_by_cluster is not None
+                        and (
+                            any(
+                                str(row.get("zone_id", "")).strip() == entity_id
+                                for row in card_metadata_by_cluster.values()
+                            )
+                            or bool(selected_arc_candidates_by_zone.get(entity_id))
+                        )
+                        else None
+                    ),
+                    entry_state_contract=entry_state_contract_by_entity.get(entity_id),
+                    included_cluster_ids=selected_arc_candidates_by_zone.get(entity_id),
                     faction_profile_targets=[
                         row
                         for row in faction_profile_targets
-                        if str(row.get("zone_id", "")).strip() == entity_id
-                    ],
-                    location_profile_targets=[
-                        row
-                        for row in location_profile_targets
                         if str(row.get("zone_id", "")).strip() == entity_id
                     ],
                     snapshots=source_snapshots,
@@ -423,6 +554,7 @@ def run_draft_writer(
             out_path = entity_dir / f"{entity_id}.json"
             overflow = draft.pop("draft_overflow_decisions", None)
             coverage = draft.pop("section_coverage_decisions", None)
+            card_packs = draft.pop("card_evidence_pack_decisions", None)
             draft = cast(dict[str, Any], normalize_display_payload(draft))
             write_json(out_path, draft)
             decision: dict[str, object] = {
@@ -436,6 +568,8 @@ def run_draft_writer(
                 decision["questline_overflow"] = overflow
             if isinstance(coverage, list):
                 decision["section_coverage"] = coverage
+            if isinstance(card_packs, list):
+                decision["card_evidence_packs"] = card_packs
             if prose_finalize_records:
                 decision["prose_finalize"] = prose_finalize_records
             if instance_key_character_decisions is not None:
@@ -491,6 +625,7 @@ def run_draft_writer(
     instance_key_character_decisions: list[dict[str, Any]] = []
     prose_finalize_decisions: list[dict[str, Any]] = []
     section_coverage_decisions: list[dict[str, Any]] = []
+    card_evidence_pack_decisions: list[dict[str, Any]] = []
     instance_summary_map: dict[str, str] = {}
 
     def _record_result(output_path: Path | None, decision: dict[str, object] | None) -> None:
@@ -506,6 +641,9 @@ def run_draft_writer(
             coverage_records = decision.pop("section_coverage", None)
             if isinstance(coverage_records, list):
                 section_coverage_decisions.extend(coverage_records)
+            card_pack_records = decision.pop("card_evidence_packs", None)
+            if isinstance(card_pack_records, list):
+                card_evidence_pack_decisions.extend(card_pack_records)
             overflow = decision.pop("questline_overflow", None)
             decisions.append(decision)
             if isinstance(overflow, list):
@@ -569,7 +707,11 @@ def run_draft_writer(
     write_json((decisions_dir / "temporal_evidence_decisions.json"), temporal_decisions)
     write_json(
         (decisions_dir / "entry_state_contract_decisions.json"),
-        entry_state_contract_decisions,
+        {
+            "schema_version": "entry_state_contract_decision.v1",
+            "producer": "draft_writer",
+            "decisions": entry_state_contract_decisions,
+        },
     )
     write_json((decisions_dir / "content_boundary_decisions.json"), content_boundary_decisions)
     write_json(
@@ -583,10 +725,32 @@ def run_draft_writer(
     write_json((decisions_dir / "claim_temporal_decisions.json"), claim_temporal_decisions)
     write_json((decisions_dir / "claim_view_routing_decisions.json"), claim_view_routing_decisions)
     write_json(
-        (decisions_dir / "instance_key_character_decisions.json"), instance_key_character_decisions
+        (decisions_dir / "instance_key_character_decisions.json"),
+        InstanceKeyCharacterDecisionArtifact(
+            decisions=[
+                InstanceKeyCharacterDecision.model_validate(row)
+                for row in instance_key_character_decisions
+            ]
+        ).model_dump(mode="json"),
     )
-    write_json((decisions_dir / "prose_finalize_decisions.json"), prose_finalize_decisions)
+    write_json(
+        (decisions_dir / "prose_finalize_decisions.json"),
+        {
+            "schema_version": PROSE_FINALIZE_DECISION_SCHEMA,
+            "producer": "draft_writer",
+            "decisions": prose_finalize_decisions,
+        },
+    )
     write_json((decisions_dir / "section_coverage_decisions.json"), section_coverage_decisions)
+    write_json(
+        (decisions_dir / "card_evidence_pack_decisions.json"),
+        build_card_evidence_pack_artifact(
+            [
+                CardEvidencePackDecision.model_validate(row)
+                for row in card_evidence_pack_decisions
+            ]
+        ),
+    )
     # Data-model version + internal-only schema record (Slice 11): lets a run's decision sidecars be
     # traced to the model generation that wrote them, and pins the claim-metadata visibility contract.
     write_json(

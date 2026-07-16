@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from pipeline.contracts.models import InstanceKeyCharacterDecisionArtifact
 from pipeline.discovery.entity_typing import is_valid_quest_graph_link, normalize_title
 from pipeline.discovery.storyline_html import parse_storyline_html
 from pipeline.discovery.world_registry import entry_kinds
@@ -127,10 +128,12 @@ def _cluster_id_from_card_id(
 
 
 def _card_id_to_cluster_id_map(run_root: Path, zone_id: str) -> dict[str, str]:
+    from pipeline.discovery.questline_card_polish import load_questline_card_metadata
+
     metadata_path = run_root / "data" / "discovery" / "zone_questline_card_metadata.json"
-    rows = _load_json(metadata_path)
-    if not isinstance(rows, list):
+    if not metadata_path.exists():
         return {}
+    rows = load_questline_card_metadata(metadata_path).values()
     mapping: dict[str, str] = {}
     for row in rows:
         if not isinstance(row, dict):
@@ -316,7 +319,6 @@ def check_run(
     if not location_cards:
         _fail("location_cards is empty")
 
-    from pipeline.discovery.entity_typing import should_reject_location_title
     from pipeline.generate.draft.location_lint import lint_location_summary
 
     for card in location_cards:
@@ -339,14 +341,6 @@ def check_run(
             and "score_based" not in reason_codes
         ):
             _fail(f"location_cards card appears defer-only selected: {card_id!r}")
-        reject, reject_reasons = should_reject_location_title(
-            str(card.get("name", "")).strip(), zone_name=zone_name
-        )
-        hard_reasons = [reason for reason in reject_reasons if reason != "likely_npc"]
-        if hard_reasons:
-            _fail(
-                f"location_cards card name denied by location guards: {card_id!r} ({hard_reasons})"
-            )
     if len(location_cards) > MAX_LOCATION_CARDS:
         _fail(f"location_cards exceeds cap ({len(location_cards)} > {MAX_LOCATION_CARDS})")
 
@@ -500,17 +494,21 @@ def check_run(
             zone_evidence_rows.append(row)
 
         location_decisions_path = (
-            run_root / "data" / "decisions" / "location_significance_decisions.json"
+            run_root / "data" / "decisions" / "location_selection_decisions.json"
         )
         include_location_ids: set[str] | None = None
         if location_decisions_path.exists():
             decisions_blob = _load_json(location_decisions_path)
-            if isinstance(decisions_blob, list):
+            if (
+                isinstance(decisions_blob, dict)
+                and decisions_blob.get("schema_version") == "location_selection.v1"
+                and isinstance(decisions_blob.get("decisions"), list)
+            ):
                 include_location_ids = {
-                    str(row.get("subject_id", "")).strip()
-                    for row in decisions_blob
+                    str(row.get("location_id", "")).strip()
+                    for row in decisions_blob["decisions"]
                     if isinstance(row, dict)
-                    and str(row.get("final_decision", "")).strip() == "include"
+                    and str(row.get("state", "")).strip() == "selected"
                 }
                 include_location_ids = {
                     location_id for location_id in include_location_ids if location_id
@@ -584,21 +582,6 @@ def check_run(
                         eligible_faction_candidates.add(faction_id)
                         if faction_name:
                             faction_names_by_id.setdefault(faction_id, faction_name)
-        location_targets_path = run_root / "data" / "discovery" / "location_profile_targets.json"
-        if location_targets_path.exists():
-            targets_blob = _load_json(location_targets_path)
-            if isinstance(targets_blob, list):
-                for row in targets_blob:
-                    if not isinstance(row, dict):
-                        continue
-                    if str(row.get("zone_id", "")).strip() != resolved_zone_id:
-                        continue
-                    location_id = str(row.get("location_id", "")).strip()
-                    location_name = str(row.get("name", "")).strip()
-                    if location_id and _location_is_include(location_id):
-                        eligible_location_candidates.add(location_id)
-                        if location_name:
-                            location_names_by_id.setdefault(location_id, location_name)
         for card in location_cards:
             card_id = str(card.get("id", "")).strip()
             card_name = str(card.get("name", "")).strip()
@@ -1050,14 +1033,20 @@ def _check_instance_drafts(run_root: Path) -> None:
     kc_decisions_by_instance: dict[str, list[dict[str, Any]]] = {}
     kc_decisions_path = run_root / "data" / "decisions" / "instance_key_character_decisions.json"
     kc_decisions_blob = _load_json(kc_decisions_path)
-    if isinstance(kc_decisions_blob, list):
-        for row in kc_decisions_blob:
-            if not isinstance(row, dict):
-                continue
-            decision_instance_id = str(row.get("instance_id", "")).strip()
-            candidates = [c for c in row.get("candidates", []) if isinstance(c, dict)]
-            if decision_instance_id:
-                kc_decisions_by_instance[decision_instance_id] = candidates
+    if kc_decisions_blob is not None:
+        try:
+            kc_artifact = InstanceKeyCharacterDecisionArtifact.model_validate(kc_decisions_blob)
+        except Exception as exc:  # noqa: BLE001 - clean-break artifact diagnostic
+            _fail(
+                "instance key-character decisions must use schema "
+                "instance_key_character_decision.v1 from draft_writer; regenerate this run"
+            )
+            raise AssertionError from exc
+        for row in kc_artifact.decisions:
+            candidates = [candidate.model_dump(mode="json") for candidate in row.candidates]
+            for candidate in candidates:
+                candidate["role"] = candidate["final_role"]
+            kc_decisions_by_instance[row.instance_id] = candidates
 
     for draft_path in sorted(draft_dir.glob("instance-*.json")):
         draft = _load_json(draft_path)
@@ -1273,8 +1262,28 @@ def main() -> None:
             "and fact_check_profile=off."
         ),
     )
+    parser.add_argument(
+        "--quality-summary",
+        nargs="?",
+        const="",
+        default=None,
+        help=(
+            "Write the machine-readable run quality summary. With no value it goes to "
+            "<run_root>/reports/run_quality_summary.json; pass a path to override."
+        ),
+    )
     args = parser.parse_args()
     require_evidence = bool(args.strict)
+
+    def _write_quality_summary() -> None:
+        if args.quality_summary is None:
+            return
+        from pipeline.validate.quality_summary import write_run_quality_summary
+
+        out = Path(args.quality_summary) if args.quality_summary else None
+        summary_path = write_run_quality_summary(args.run_root, out)
+        print(f"Wrote quality summary {summary_path}")
+
     try:
         check_run(
             args.run_root,
@@ -1284,8 +1293,12 @@ def main() -> None:
         if args.strict:
             check_strict_validation(args.run_root)
     except SemanticCheckError as exc:
+        # Emit the review surface even on a gate failure, so a reviewer can inspect why.
+        _write_quality_summary()
         print(f"FAIL: {exc}")
         sys.exit(1)
+
+    _write_quality_summary()
 
 
 if __name__ == "__main__":

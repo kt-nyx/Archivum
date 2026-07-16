@@ -14,7 +14,7 @@ def _artifacts(cards: list[dict]) -> QuestlineRunArtifacts:
         metadata_by_cluster={
             "main-story": {
                 "card_id": "ql-main-story",
-                "ordered_chain_refs": ["quest-entry", "quest-next", "quest-final"],
+                "chain_refs": ["quest-entry", "quest-next", "quest-final"],
             }
         },
         card_id_to_cluster_id={"ql-main-story": "main-story"},
@@ -39,3 +39,18 @@ def test_graph_validation_rejects_title_ids_and_out_of_cluster_refs() -> None:
     cards = [{"id": "ql-main-story", "title": "Main Story", "include_decision": "include", "chain_refs": ["outside"]}]
     errors = check_questline_promotion(_artifacts(cards), require_rankings=True)
     assert any("outside its cluster" in error for error in errors)
+
+
+def test_graph_validation_rejects_metadata_chain_order_that_reverses_the_graph() -> None:
+    artifacts = _artifacts(
+        [
+            {
+                "id": "ql-main-story",
+                "title": "Main Story",
+                "include_decision": "include",
+                "chain_refs": ["quest-next", "quest-entry"],
+            }
+        ]
+    )
+    errors = check_questline_promotion(artifacts, require_rankings=True)
+    assert any("out of graph order" in error for error in errors)

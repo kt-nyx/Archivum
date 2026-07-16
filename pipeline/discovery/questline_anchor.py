@@ -78,13 +78,13 @@ def chain_head_node_ids(
     return [node_id for node_id in member_node_ids if indegree.get(node_id, 0) == 0]
 
 
-def resolve_cluster_start_anchor(
+def _resolve_cluster_start_anchor_node(
     *,
     cluster_id: str,
     ordered_quest_rows: list[dict[str, Any]],
     records_by_node: dict[str, dict[str, Any]],
-) -> str:
-    """Pick the player-facing breadcrumb quest title for a cluster card."""
+) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    """Return the selected chain-head id and its record/roster evidence."""
     _ = cluster_id
     roster_by_node = {
         str(row.get("node_id", "")): row
@@ -96,7 +96,7 @@ def resolve_cluster_start_anchor(
         key=lambda node_id: int(roster_by_node[node_id].get("order_in_cluster", 0) or 0),
     )
     if not member_node_ids:
-        return "Questline"
+        return "", {}, {}
 
     heads = chain_head_node_ids(
         member_node_ids,
@@ -114,7 +114,34 @@ def resolve_cluster_start_anchor(
         entry_heads or heads or member_node_ids,
         key=lambda node_id: int(roster_by_node[node_id].get("order_in_cluster", 0) or 0),
     )[0]
-    record = records_by_node.get(chosen, {})
-    roster = roster_by_node.get(chosen, {})
-    title = _quest_title(record, roster)
-    return title or str(roster.get("title", "Questline"))
+    return chosen, records_by_node.get(chosen, {}), roster_by_node.get(chosen, {})
+
+
+def resolve_cluster_start_anchor(
+    *,
+    cluster_id: str,
+    ordered_quest_rows: list[dict[str, Any]],
+    records_by_node: dict[str, dict[str, Any]],
+) -> str:
+    """Pick the player-facing breadcrumb quest title for a cluster card."""
+    _node_id, record, roster = _resolve_cluster_start_anchor_node(
+        cluster_id=cluster_id,
+        ordered_quest_rows=ordered_quest_rows,
+        records_by_node=records_by_node,
+    )
+    return _quest_title(record, roster) or str(roster.get("title", "Questline"))
+
+
+def resolve_cluster_start_anchor_ref(
+    *,
+    cluster_id: str,
+    ordered_quest_rows: list[dict[str, Any]],
+    records_by_node: dict[str, dict[str, Any]],
+) -> str:
+    """Return the graph node backing the selected player-facing start anchor."""
+    node_id, _record, _roster = _resolve_cluster_start_anchor_node(
+        cluster_id=cluster_id,
+        ordered_quest_rows=ordered_quest_rows,
+        records_by_node=records_by_node,
+    )
+    return node_id

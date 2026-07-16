@@ -65,6 +65,12 @@ Run each candidate zone through the same release and semantic checks. No zone ha
 output override or exact-output promotion gate; differences are reviewed from source evidence.
 Use `--release-gate` so pipeline `validate_passed` matches `check_run_semantics.py --strict`.
 
+Questline discovery writes `data/discovery/questline_arc_selection.json` as a versioned,
+family-first contract. It records component candidates, structured campaign signals, deterministic
+merge/split decisions, ranked families, variant selections/exclusions, and bounded coverage.
+Selected cards then use `questline_card_metadata.v2`: identity is stored as `base_title`, optional
+faction/phase variants, and canonical id; the page renderer formats that title once.
+
 ### Wiki ingest (MediaWiki)
 
 `pipeline/ingest/fetch_wiki.py` uses MediaWiki `api.php?action=parse` for canonical article paths (`/wiki/...`) and now captures:

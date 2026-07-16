@@ -56,6 +56,163 @@ class EntityType(StrEnum):
     GLOSSARY_TERM = "glossary_term"
 
 
+class EntityKind(StrEnum):
+    """Closed, domain-neutral kinds permitted at card-admission boundaries."""
+
+    PLACE = "place"
+    NAMED_ACTOR = "named_actor"
+    ORGANIZATION = "organization"
+    GROUP_OR_SPECIES = "group_or_species"
+    OBJECT_OR_CONCEPT = "object_or_concept"
+    UNKNOWN = "unknown"
+
+
+class EntityKindDecision(BaseModel):
+    """Evidence-bearing classification for one linked target page.
+
+    This is deliberately distinct from :class:`EntityType`, whose values describe
+    pipeline manifest rows.  A linked page is only admitted to a card family when
+    this decision records the corresponding output kind.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["entity_kind_decision.v1"] = "entity_kind_decision.v1"
+    decision_id: str = Field(pattern=ID_PATTERN)
+    candidate_id: str = Field(pattern=ID_PATTERN)
+    canonical_title: str = Field(min_length=1)
+    canonical_path: str = Field(min_length=1)
+    kind: EntityKind
+    confidence: float = Field(ge=0.0, le=1.0)
+    source_signals: list[str] = Field(default_factory=list)
+    source_ids: list[str] = Field(default_factory=list)
+    reason_codes: list[str] = Field(default_factory=list)
+
+
+class InstanceParticipantDecision(BaseModel):
+    """Admission record for one linked instance-participant candidate.
+
+    Encounter links are leads, not character cards.  This record keeps the three
+    independent facts required to admit one: target-page kind, direct presence on
+    this instance page, and current retail scope.  ``encounter_relation`` remains
+    descriptive evidence and never substitutes for either admission fact.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_id: str = Field(pattern=ID_PATTERN)
+    name: str = Field(min_length=1)
+    canonical_path: str = Field(min_length=1)
+    entity_kind_decision_id: str = Field(min_length=1)
+    entity_kind: EntityKind
+    instance_presence_evidence: list[str] = Field(default_factory=list)
+    retail_scope: Literal["retail_confirmed", "non_retail", "unknown"]
+    retail_scope_evidence: list[str] = Field(default_factory=list)
+    encounter_relation_evidence: list[str] = Field(default_factory=list)
+    admission: Literal["eligible", "rejected"]
+    reason_codes: list[str] = Field(default_factory=list)
+    final_selection_reason: str | None = None
+    final_role: Literal["ally", "enemy", "neutral", "uncertain"] = "uncertain"
+    emitted: bool = False
+
+
+class InstanceKeyCharacterDecision(BaseModel):
+    """The one auditable key-character decision for an instance page."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    instance_id: str = Field(pattern=ID_PATTERN)
+    candidates: list[InstanceParticipantDecision] = Field(default_factory=list)
+
+
+class InstanceKeyCharacterDecisionArtifact(BaseModel):
+    """Clean-break sidecar consumed by render checks and instance reports."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["instance_key_character_decision.v1"] = (
+        "instance_key_character_decision.v1"
+    )
+    producer: Literal["draft_writer"] = "draft_writer"
+    decisions: list[InstanceKeyCharacterDecision] = Field(default_factory=list)
+
+
+class CardEvidenceRole(StrEnum):
+    """Why an evidence paragraph belongs to a card's pack (Slice 7).
+
+    ``identity`` paragraphs are owned by the card's own subject and may ground the card's
+    defining sentence. ``relationship`` paragraphs mention the subject but are owned by another
+    subject; they support directional relational claims only and can never establish identity.
+    """
+
+    IDENTITY = "identity"
+    RELATIONSHIP = "relationship"
+
+
+class CardEvidenceRef(BaseModel):
+    """One paragraph-granular evidence pointer inside a card evidence pack."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: CardEvidenceRole
+    evidence_id: str = Field(min_length=1)
+    source_id: str = ""
+    owner_subject_id: str = ""
+    # For a relationship ref: the directed relation reads owner_subject_id --mentions--> subject_id.
+    direction: Literal["identity", "mentions_subject"] = "identity"
+
+
+class CardClaimView(BaseModel):
+    """A support-checked claim view admitted to a card pack, keyed to its source paragraph."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    claim_id: str = ""
+    evidence_id: str = Field(min_length=1)
+    claim_text: str = Field(min_length=1)
+    supported: bool = True
+    # Clauses dropped from a compound claim because they were not grounded in the card's identity.
+    dropped_clauses: list[str] = Field(default_factory=list)
+
+
+class CardEvidencePackSufficiency(StrEnum):
+    OK = "ok"
+    INSUFFICIENT_IDENTITY_EVIDENCE = "insufficient_identity_evidence"
+
+
+class CardEvidencePackDecision(BaseModel):
+    """The typed per-card evidence pack constructed after card selection (Slice 7).
+
+    Every rendered location/faction/questline/key-character card owns exactly one pack. The pack
+    records the card's direct identity evidence, directional relationship evidence, support-checked
+    claim views, and the paragraph ids that back its provenance — so a card's defining claim can
+    never be established by a same-name or general-pool paragraph fallback.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    card_id: str = Field(min_length=1)
+    card_type: Literal["location", "faction", "questline", "key_character"]
+    subject_id: str = Field(min_length=1)
+    subject_name: str = ""
+    sufficiency: CardEvidencePackSufficiency
+    reason: str = ""
+    identity_evidence: list[CardEvidenceRef] = Field(default_factory=list)
+    relationship_evidence: list[CardEvidenceRef] = Field(default_factory=list)
+    claim_views: list[CardClaimView] = Field(default_factory=list)
+    provenance_ids: list[str] = Field(default_factory=list)
+
+
+class CardEvidencePackArtifact(BaseModel):
+    """Clean-break, versioned sidecar of every rendered card's evidence pack."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["card_evidence_pack.v1"] = "card_evidence_pack.v1"
+    producer: Literal["draft_writer"] = "draft_writer"
+    decisions: list[CardEvidencePackDecision] = Field(default_factory=list)
+
+
 class LocationType(StrEnum):
     CITY = "city"
     TOWN = "town"
@@ -66,6 +223,75 @@ class LocationType(StrEnum):
     OUTPOST = "outpost"
     NATURAL_FEATURE = "natural_feature"
     MAJOR_LOCATION = "major_location"
+
+
+class LocationSelectionState(StrEnum):
+    """Lifecycle states for a directly-evidenced location card candidate."""
+
+    CANDIDATE = "candidate"
+    PROBE = "probe"
+    PROFILE = "profile"
+    SELECTED = "selected"
+    DEFERRED = "deferred"
+    REJECTED = "rejected"
+
+
+class LocationSelectionDecision(BaseModel):
+    """One auditable location-discovery decision.
+
+    A decision's ``location_id`` is also the only acceptable subject identity for
+    its profile evidence.  This deliberately makes a name/substring join
+    impossible at the rendering boundary.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["location_selection_decision.v1"] = "location_selection_decision.v1"
+    decision_id: str = Field(pattern=ID_PATTERN)
+    zone_id: str = Field(pattern=ID_PATTERN)
+    location_id: str = Field(pattern=ID_PATTERN)
+    name: str = Field(min_length=1)
+    source_link: str = Field(min_length=1)
+    source_relation: str = "other"
+    candidate_rank: int = Field(ge=0)
+    state: LocationSelectionState
+    entity_kind: EntityKind = EntityKind.UNKNOWN
+    entity_kind_decision_id: str = ""
+    source_ids: list[str] = Field(default_factory=list)
+    categories: list[str] = Field(default_factory=list)
+    infobox: dict[str, str] = Field(default_factory=dict)
+    zone_record: Literal["on_zone", "off_zone", "unknown"] = "unknown"
+    profile_source_id: str = ""
+    profile_evidence_count: int = Field(default=0, ge=0)
+    reason_codes: list[str] = Field(default_factory=list)
+
+
+class LocationCoverageStatus(BaseModel):
+    """Per-zone bounded-retrieval result for the location-card family."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    zone_id: str = Field(pattern=ID_PATTERN)
+    desired_card_count: int = Field(ge=1)
+    selected_count: int = Field(ge=0)
+    probe_cap: int = Field(ge=1)
+    profile_cap: int = Field(ge=1)
+    probes_attempted: int = Field(ge=0)
+    profiles_attempted: int = Field(ge=0)
+    status: Literal["coverage_met", "insufficient_viable_locations"]
+    attempted_candidate_ids: list[str] = Field(default_factory=list)
+    reason_codes: list[str] = Field(default_factory=list)
+
+
+class LocationSelectionArtifact(BaseModel):
+    """Clean-break, versioned location selection handoff."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["location_selection.v1"] = "location_selection.v1"
+    producer: Literal["discovery", "traverse_seed"]
+    decisions: list[LocationSelectionDecision] = Field(default_factory=list)
+    coverage: list[LocationCoverageStatus] = Field(default_factory=list)
 
 
 class RetailEligibility(StrEnum):
@@ -154,6 +380,167 @@ class QuestlineCardV2(BaseModel):
     include_decision: IncludeDecision
     reason_codes: list[str] = Field(default_factory=list)
     wiki_refs: list[str] = Field(default_factory=list)
+
+
+class QuestlineCardMetadata(BaseModel):
+    """The one discovery-to-draft contract for a selected questline card.
+
+    ``chain_refs`` is deliberately the only name for the ordered, rendered
+    portion of a chain.  Any remaining graph members belong in
+    ``overflow_chain_refs``; readers must never reconstruct either list from
+    a second discovery artifact.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["questline_card_metadata.v2"] = "questline_card_metadata.v2"
+    metadata_id: str = Field(pattern=ID_PATTERN)
+    zone_id: str = Field(pattern=ID_PATTERN)
+    cluster_id: str = Field(pattern=ID_PATTERN)
+    source_arc_id: str = Field(pattern=ID_PATTERN)
+    card_id: str = Field(pattern=ID_PATTERN)
+    canonical_id: str = Field(pattern=ID_PATTERN)
+    base_title: str = Field(min_length=1)
+    faction: str = Field(min_length=1)
+    faction_variant: str | None = None
+    phase_variant: str | None = None
+    segment_index: int = Field(default=1, ge=1)
+    start_anchor: str = Field(min_length=1)
+    start_anchor_ref: str = Field(pattern=ID_PATTERN)
+    chain_refs: list[str] = Field(min_length=1)
+    overflow_chain_refs: list[str] = Field(default_factory=list)
+    source_refs: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+    algorithm_version: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_chain_contract(self) -> QuestlineCardMetadata:
+        if self.canonical_id != self.card_id:
+            raise ValueError("canonical_id must equal card_id")
+        if self.start_anchor_ref not in self.chain_refs + self.overflow_chain_refs:
+            raise ValueError("start_anchor_ref must belong to the serialized quest chain")
+        refs = self.chain_refs + self.overflow_chain_refs
+        if len(refs) != len(set(refs)):
+            raise ValueError("questline metadata chain refs must be unique")
+        return self
+
+
+class QuestlineCardMetadataArtifact(BaseModel):
+    """Versioned, fail-fast questline metadata handoff written by discovery."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["questline_card_metadata.v2"] = "questline_card_metadata.v2"
+    producer: Literal["discovery.questline_card_polish"] = "discovery.questline_card_polish"
+    metadata: list[QuestlineCardMetadata] = Field(default_factory=list)
+
+
+class ArcSignalEvidence(BaseModel):
+    """Structured source signal used to form or rank a story-arc family."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    signal: Literal[
+        "shared_hub",
+        "recurring_actor",
+        "recurring_organization",
+        "prerequisite_followup",
+        "conflict_theme",
+        "faction",
+        "phase_expansion",
+    ]
+    values: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
+class ArcCandidate(BaseModel):
+    """A graph-component input expressed as an auditable arc candidate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_id: str = Field(pattern=ID_PATTERN)
+    zone_id: str = Field(pattern=ID_PATTERN)
+    component_ids: list[str] = Field(min_length=1)
+    quest_node_ids: list[str] = Field(min_length=1)
+    base_title: str = Field(min_length=1)
+    faction_variant: str | None = None
+    phase_variant: str | None = None
+    signal_evidence: list[ArcSignalEvidence] = Field(default_factory=list)
+    coherent_score: float = Field(ge=0)
+    reason_codes: list[str] = Field(default_factory=list)
+
+
+class ArcFamily(BaseModel):
+    """A campaign family with one or more independently playable variants."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    family_id: str = Field(pattern=ID_PATTERN)
+    zone_id: str = Field(pattern=ID_PATTERN)
+    base_title: str = Field(min_length=1)
+    candidate_ids: list[str] = Field(min_length=1)
+    signal_evidence: list[ArcSignalEvidence] = Field(default_factory=list)
+    coherent_score: float = Field(ge=0)
+
+
+class ArcFamilyDecision(BaseModel):
+    """A bounded merge/split/selection decision with its structured evidence."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    decision_id: str = Field(pattern=ID_PATTERN)
+    zone_id: str = Field(pattern=ID_PATTERN)
+    decision: Literal["merge", "split", "keep_separate", "include", "exclude"]
+    candidate_ids: list[str] = Field(min_length=1)
+    family_id: str | None = None
+    reason_codes: list[str] = Field(default_factory=list)
+    signal_evidence: list[ArcSignalEvidence] = Field(default_factory=list)
+    adjudication: dict[str, str] | None = None
+
+
+class ArcCoverage(BaseModel):
+    """Coverage state for a zone's family-first arc selection."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    zone_id: str = Field(pattern=ID_PATTERN)
+    status: Literal["coverage_met", "insufficient_viable_arc_variants"]
+    selected_candidate_ids: list[str] = Field(default_factory=list)
+    attempted_candidate_ids: list[str] = Field(default_factory=list)
+    reason_codes: list[str] = Field(default_factory=list)
+
+
+class QuestlineArcSelectionArtifact(BaseModel):
+    """Versioned family-first questline selection handoff for discovery consumers."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["questline_arc_selection.v1"] = "questline_arc_selection.v1"
+    producer: Literal["discovery.questline_significance"] = "discovery.questline_significance"
+    candidates: list[ArcCandidate] = Field(default_factory=list)
+    families: list[ArcFamily] = Field(default_factory=list)
+    decisions: list[ArcFamilyDecision] = Field(default_factory=list)
+    selected_candidate_ids_by_zone: dict[str, list[str]] = Field(default_factory=dict)
+    family_rankings_by_zone: dict[str, list[str]] = Field(default_factory=dict)
+    coverage: list[ArcCoverage] = Field(default_factory=list)
+    exclusions: list[ArcFamilyDecision] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_selected_candidates(self) -> QuestlineArcSelectionArtifact:
+        candidates = {candidate.candidate_id: candidate for candidate in self.candidates}
+        for zone_id, selected_ids in self.selected_candidate_ids_by_zone.items():
+            labels: set[str] = set()
+            for candidate_id in selected_ids:
+                candidate = candidates.get(candidate_id)
+                if candidate is None or candidate.zone_id != zone_id:
+                    raise ValueError("arc selection references an unknown candidate")
+                label = " ".join(
+                    part for part in (candidate.base_title, candidate.faction_variant, candidate.phase_variant) if part
+                ).casefold()
+                if label in labels:
+                    raise ValueError("arc selection has duplicate normalized variant labels")
+                labels.add(label)
+        return self
 
 
 class DecisionArtifact(BaseModel):

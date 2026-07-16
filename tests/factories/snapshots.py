@@ -22,7 +22,7 @@ def with_required_snapshot_schema(snapshots: list[dict[str, Any]]) -> list[dict[
             str(snapshot.get("entity_type", "")).strip() == "instance"
             and not str(snapshot.get("auxiliary_role", "")).strip()
         ):
-            snapshot.setdefault("character_retail_eligibility", [])
+            snapshot.setdefault("instance_participant_evidence", [])
         blocks = snapshot.setdefault("section_blocks", [])
         if isinstance(blocks, list):
             for block in blocks:

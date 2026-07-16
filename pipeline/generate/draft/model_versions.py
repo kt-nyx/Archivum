@@ -22,10 +22,13 @@ from pipeline.generate.draft.claims import (
     LLM_CLAIM_EXTRACTOR_VERSION,
 )
 
-ENTRY_STATE_CONTRACT_VERSION = "entry_state_contract_v1"
+ENTRY_STATE_CONTRACT_VERSION = "entry_state_contract_v2"
+ENTRY_STATE_CONTRACT_DECISION_SCHEMA = "entry_state_contract_decision.v1"
 TEMPORAL_CLASSIFIER_VERSION = "claim_temporal_classifier_v1"
 CLAIM_VIEW_ROUTING_VERSION = "claim_view_routing_v1"
 HISTORY_COVERAGE_VERSION = "section_coverage_v1"
+PROSE_FINALIZE_DECISION_SCHEMA = "prose_finalize_decision.v1"
+CARD_EVIDENCE_PACK_SCHEMA = "card_evidence_pack.v1"
 
 # Visibility of claim-level metadata relative to the public addon-facing draft JSON.
 CLAIM_METADATA_VISIBILITY = "internal"
@@ -47,6 +50,13 @@ INTERNAL_DECISION_SIDECARS: dict[str, str] = {
     ),
     "section_coverage_decisions.json": (
         "History coverage units and whether required setup-bridge claims were represented."
+    ),
+    "prose_finalize_decisions.json": (
+        "Final prose decisions, including questline CTA lint, bounded rewrite, and fallback records."
+    ),
+    "card_evidence_pack_decisions.json": (
+        "Per-card evidence packs: direct identity evidence, directional relationship evidence, "
+        "support-checked claim views, and provenance ids for every rendered card."
     ),
 }
 
@@ -70,11 +80,14 @@ def build_temporal_model_manifest(*, run_id: str) -> dict[str, Any]:
         },
         "versions": {
             "entry_state_contract_version": ENTRY_STATE_CONTRACT_VERSION,
+            "entry_state_contract_decision_schema": ENTRY_STATE_CONTRACT_DECISION_SCHEMA,
             "claim_extractor_version": CLAIM_EXTRACTOR_VERSION,
             "claim_llm_extractor_version": LLM_CLAIM_EXTRACTOR_VERSION,
             "temporal_classifier_version": TEMPORAL_CLASSIFIER_VERSION,
             "claim_view_routing_version": CLAIM_VIEW_ROUTING_VERSION,
             "history_coverage_version": HISTORY_COVERAGE_VERSION,
+            "prose_finalize_decision_schema": PROSE_FINALIZE_DECISION_SCHEMA,
+            "card_evidence_pack_schema": CARD_EVIDENCE_PACK_SCHEMA,
         },
         "internal_decision_sidecars": dict(INTERNAL_DECISION_SIDECARS),
     }

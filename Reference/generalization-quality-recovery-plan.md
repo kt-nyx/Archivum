@@ -499,3 +499,293 @@ tests and the full suite pass.
 Add a short dated entry after each completed slice: commit SHA, tests run, fresh run ids where
 applicable, intentional behavior changes, and any deferred generic follow-up. Do not replace the
 acceptance criteria with a prose summary.
+
+### 2026-07-09 — Slice 0 complete
+
+- **Baseline SHA:** `a8e1f48` (`feat(generalization): complete pilot-eviction baseline`). Local
+  `main` fast-forwarded to this commit; recovery work begins on
+  `fix/generalization-quality-recovery` from the same SHA.
+- **Verification:** `git diff --check`; `uv run --no-sync ruff check pipeline tests`; `uv run
+  --no-sync mypy pipeline`; focused questline/location/instance/temporal/validation tests
+  (49 passed); `uv run --no-sync pytest -q` (passed, with the suite's existing skips/xfail).
+- **Baseline correction:** the new no-pilot-scaffolding guard no longer scans `.vscode` run
+  configurations, because pilot names are permitted in evaluation/run configuration and forbidden
+  only in shared runtime logic.
+
+### 2026-07-09 — Slice 1 complete
+
+- **Commit SHA:** `737519c` (`feat(discovery): add evidence-based entity-kind admission`).
+- **Behavior:** added the versioned `EntityKindDecision` contract and
+  `entity_kind_decisions.json`; a link with no affirmative target-page or positive registry signal
+  remains `unknown`, and only `place` decisions enter the location-card path. Removed the entity
+  denylist, race/species and faction title lists, location-title type rules, title-shape entity
+  fallbacks, and their vocabulary consumers. The draft reader rejects a missing/mismatched entity
+  decision artifact or a candidate/decision identity mismatch.
+- **Verification:** `uv run --no-sync ruff check pipeline scripts tests`; `uv run --no-sync mypy
+  pipeline`; focused entity/discovery/location/registry/vocabulary tests (55 passed); `uv run
+  --no-sync pytest -q` (passed, with the suite's existing skips/xfail). `mypy pipeline scripts`
+  still reports 14 pre-existing errors in `scripts/harvest_section_labels.py` and
+  `scripts/check_run_semantics.py`; the baseline has never type-checked all scripts, and this
+  slice introduced no additional pipeline MyPy errors.
+- **Deferred:** Slice 2 will progressively probe/fetch unknown location leads and rebuild direct
+  evidence ownership; Slice 3 will apply this contract to named instance participants and their
+  instance-presence evidence.
+
+### 2026-07-09 — Slice 2 complete
+
+- **Commit SHA:** `bacedbe` (`feat(discovery): add direct-evidence location selection`).
+- **Behavior:** replaced the unversioned location significance/classification/profile-target handoff
+  with `location_selection.v1`. Discovery records broad candidates, target-page probes, direct
+  profiles, selections, deferrals, rejections, and per-zone bounded-coverage status in one
+  fail-fast artifact. Profile fetches are progressive (batch, probe, then direct profile), use
+  recorded caps, and only affirmative `place` targets can consume profile budget. Rendering accepts
+  only `selected` direct profiles whose `location_id` and `profile_source_id` exactly match; removed
+  substring/name evidence fallback and seed-page-summary fallback. Strict release now hard-fails an
+  `insufficient_viable_locations` coverage result.
+- **Verification:** `uv run --no-sync ruff check pipeline scripts tests`; `uv run --no-sync mypy
+  pipeline`; focused location/discovery/traverse tests (36 passed); `uv run --no-sync pytest -q`
+  (passed, with the suite's existing skips/xfail); `git diff --check`.
+- **Fresh live retrieval runs:** `test-run-wpl-35` (WPL: 8 selected, `coverage_met`) and
+  `test-run-desolace-6` (Desolace: 6 selected, `coverage_met`). Both use fresh copied manifests and
+  live wiki retrieval; their full synthesis/validation flow could not complete in this execution
+  environment because foreground child processes are terminated at the host's 60-second command
+  limit. The retained decision artifacts verify the Slice 2 retrieval/admission acceptance: selected
+  entries are `place` records with direct profile evidence and no coverage failure.
+- **Deferred:** complete the normal end-to-end live synthesis/validation review for those fresh run
+  families in a host that permits a process longer than 60 seconds; this is an execution-environment
+  limitation, not a generic pipeline behavior deferral.
+
+### 2026-07-10 — Slice 3 complete
+
+- **Commit SHA:** `b1e4c5f` (`feat(discovery): admit named instance participants`).
+- **Behavior:** replaced the retired instance `retail_confirmed` roster filter with separate,
+  evidence-bearing entity-kind, direct-instance-presence, retail-scope, and encounter-relation facts
+  for every participant lead. Only `named_actor` candidates with direct roster-shaped presence and
+  confirmed retail scope can enter the floor or card selection. The versioned
+  `instance_key_character_decision.v1` sidecar records every admitted/rejected candidate, final
+  selection reason, final role, and emitted state; draft-writer, semantic checks, diff reporting,
+  and the instance quality report all fail closed on the new schema. Broad Adventure Guide/guide
+  prose remains a lead but does not itself prove participant presence.
+- **Verification:** targeted instance-admission/retail/draft/semantic tests (58 passed); `uv run
+  --no-sync ruff check pipeline scripts tests`; MyPy on all touched pipeline modules (passed); `git
+  diff --check`; `uv run --no-sync pytest -q` (passed, with the suite's existing skips/xfail).
+- **Fresh live retrieval runs:** `test-run-desolace-7` completed ingest through traverse, coalesce,
+  and the post-traverse evidence artifacts; its remote full-draft attempt stalled and the verified
+  process tree was stopped. `test-run-desolace-8` was then created from a copied fresh manifest and
+  completed ingest, discovery, traverse, and coalesce. Its live Maraudon participant selection
+  admitted only three `named_actor` candidates, each with a direct `encounters_edit` or
+  `dungeon_denizens_edit` presence record; `Centaur`, `Earth elemental`, `Creeping Sludge`, and
+  `Area of Effect` remained rejected kind decisions (`group_or_species`, `unknown`, `unknown`, and
+  `object_or_concept`, respectively).
+- **Deferred:** a normal end-to-end live LLM synthesis/validation review of the fresh run remains
+  blocked by the host's foreground-command limit and stalled remote draft invocation. This is an
+  execution-environment verification limitation, not a schema or admission-contract deferral.
+
+### 2026-07-10 — Slice 4 complete
+
+- **Commit SHA:** `7c8002b` (`feat(questlines): unify metadata and entry-state evidence`).
+- **Behavior:** replaced the retired `ordered_chain_refs` handoff with the versioned,
+  fail-fast `questline_card_metadata.v1` artifact and typed `QuestlineCardMetadata` contract.
+  Discovery, promotion validation, draft rendering, validation context, semantic checks, and
+  decision reporting now consume `chain_refs` as the sole canonical field. Selected metadata
+  carries canonical identity, structured variant fields, a resolved start-anchor ref, ordered and
+  overflow refs, plus source/evidence refs; discovery rejects missing quest records or unresolved
+  anchors, promotion checks graph order, and rendering rejects metadata/graph identity gaps.
+  Entry-state decisions now record metadata identity, setup refs/snippets/NPCs, explicit fallback
+  records, and an active-expansion decision with source evidence and confidence. Unknown active
+  expansion remains reviewable rather than defaulting to a historic era; strict release rejects a
+  non-empty confident `currently` section when that evidence is unknown.
+- **Verification:** focused Slice 4/adversarial metadata, temporal, promotion, pipeline-stage, and
+  model-version tests (52 passed); `uv run --no-sync ruff check pipeline scripts tests`; MyPy on
+  all 11 touched pipeline modules (passed); `git diff --check`; `uv run --no-sync pytest -q`
+  (passed, with the suite's existing skips/xfail). A final semantic review confirmed no production
+  read of `ordered_chain_refs`, versioned producer/consumer handoffs, no pilot-specific rules, and
+  complete selected-metadata-to-entry-state grounding.
+- **Fresh live runs:** not applicable; Slice 4 has no `[LIVE]` acceptance requirement.
+- **Deferred:** none.
+
+### 2026-07-10 — Slice 5 complete
+
+- **Commit SHA:** `1087935` (`feat(questlines): select arc families and structured titles`).
+- **Behavior:** replaced proxy component top-N scoring and the retired
+  `zone_quest_cluster_rankings.json` handoff with fail-fast `questline_arc_selection.v1`.
+  Discovery now records typed `ArcCandidate` and `ArcFamily` models, source-backed campaign
+  signals, deterministic merge/keep-separate decisions, bounded ambiguity rulings, family ranking,
+  variant selection/exclusion reasons, and per-zone coverage state. Selected metadata is now
+  `questline_card_metadata.v2`: it carries a canonical id plus structured `base_title`, faction,
+  and phase fields. The page boundary renders the title once; old rendered-title mutation and
+  cluster-decision gating paths were removed. Missing quest records, weak one-quest candidates,
+  duplicate normalized labels, and non-distinct variants are explicit exclusions rather than
+  downstream metadata failures.
+- **Verification:** focused Slice 5, metadata/entry-state, promotion, draft, temporal, claim, and
+  pipeline-stage tests (109 passed); `uv run --no-sync ruff check pipeline scripts tests`; `uv run
+  --no-sync mypy pipeline`; `git diff --check`; `uv run --no-sync pytest -q` (passed, with the
+  suite's existing skips/xfail). The final independent review checked producer/consumer handoffs,
+  artifact versioning, coverage/exclusion evidence, title uniqueness, generic fixture scope, and
+  the absence of new pilot-, zone-, instance-, title-, race-, or species-specific rules.
+- **Fresh live runs:** foreground `test-run-wpl-37` and `test-run-desolace-9` completed ingest,
+  discovery, coalesce, and the initial enrich stage, then the host terminated the foreground
+  command at its 60-second limit during quest traversal. Fresh hidden retries
+  `test-run-wpl-39` and `test-run-desolace-11` reached `traverse_quests` but stalled there without
+  emitting `questline_arc_selection.json`; the verified process trees were stopped. Thus no fresh
+  full live output is claimed for Slice 5 in this execution environment.
+- **Deferred:** no generic implementation follow-up. Repeat the normal WPL/Desolace end-to-end
+  human review in an environment that permits the remote quest traversal/draft flow to finish;
+  this is a live-verification environment limitation, not a schema or selection-contract deferral.
+
+### 2026-07-10 — Slice 7 complete
+
+- **Commit SHA:** `5a48669` (`feat(draft): build selected-card evidence packs (Slice 7)`).
+- **Behavior:** every selected location/faction/questline/key-character card now owns one typed,
+  versioned `card_evidence_pack.v1` decision built *after* selection (never per crawled paragraph).
+  The pack separates direct identity evidence from directional relationship evidence (owner subject
+  id + `mentions_subject`), records paragraph-granular provenance ids, and runs the targeted claim
+  work — the compound-support check splits a claim keyed on its subject and drops a clause whose
+  grammatical proper-noun agent is a different named entity, rejecting a claim outright when no
+  clause is grounded. The claim extractor is invoked on identity paragraphs of selected cards only,
+  so unselected crawl data incurs no claim-extraction work. Removed the faction `source_title`
+  same-name substring fallback: faction-profile identity now requires an exact `faction_id` match,
+  so an untyped same-name paragraph can no longer establish a card's identity. A card whose pack has
+  no direct identity evidence is dropped (locations/factions) with a recorded reason, and card
+  provenance falls back to the pack's own identity paragraph ids rather than an arbitrary pool
+  source. `draft_writer` writes the fail-fast `card_evidence_pack_decisions.json` sidecar
+  (schema version stamped in `temporal_model_manifest`), and the clean-break reader rejects a
+  missing/mismatched version.
+- **Verification:** new `tests/test_card_evidence_pack.py` (5 required behaviors — mention-only
+  drop, containment-direction preservation, identity-only provenance, compound split/reject,
+  targeted claim work — plus adversarial id/malformed/empty-subject/version cases and a
+  `build_major_factions` producer-wiring test) and the faction same-name-leak test in
+  `tests/test_faction_scoring.py`; focused faction/location/zone-draft/instance/key-character/
+  questline/claim-routing/pipeline-stage/draft-baseline/evidence-pool suites; Ruff on all touched
+  modules; MyPy on the 10 touched pipeline modules (clean); `git diff --check`; full `pytest -q`
+  (passed, with the suite's existing skips/xfail). Checks were run with the project venv
+  (`.venv/Scripts/python.exe -m ...`) because `uv` is not on PATH in this environment; the venv is
+  the same interpreter `uv run --no-sync` selects.
+- **Fresh live runs:** not applicable; Slice 7 has no `[LIVE]` acceptance requirement.
+- **Deferred:** none. Consuming the packs to drive strict fact-checking / release gates is Slice 8,
+  as scheduled by the plan (the reader and artifact are in place for it).
+
+### 2026-07-10 — Slice 6 complete
+
+- **Commit SHA:** `9b7ca4c` (`feat(questlines): finalize complete CTA clauses (Slice 6)`).
+- **Behavior:** deleted `strip_zone_name_from_cta` and every post-synthesis CTA text mutation.
+  CTA synthesis now consumes the matching Slice 4 entry-state setup anchor plus selected early-chain
+  evidence, never substitutes an arbitrary late cluster paragraph when early evidence is absent,
+  and emits a complete metadata-grounded fallback in that case. Final clauses are checked with the
+  repository NLP sentence/clause features plus deterministic boundary, predicate/imperative,
+  dangling-word, malformed-join, length, and excluded-outcome checks. A rejected generation gets
+  one same-evidence rewrite; a second rejection or generation error emits the validated fallback.
+  Every CTA outcome is recorded in the versioned, fail-fast `prose_finalize_decision.v1` sidecar.
+- **Verification:** focused CTA, questline assembly, draft, validation-context, validation-engine,
+  and model-version tests; `uv run --no-sync ruff check pipeline tests`; MyPy on all seven touched
+  pipeline modules; `git diff --check`; `uv run --no-sync pytest -q -ra` (passed, with the suite's
+  existing skips/xfail). Final independent review confirmed no residual zone-name strip, all primary
+  and overflow CTA paths use the same finalizer, the Slice 4 setup handoff is identity-matched, the
+  artifact reader rejects historic/unversioned shapes, and fixtures remain synthetic and generic.
+- **Fresh live runs:** not applicable; Slice 6 has no `[LIVE]` acceptance requirement.
+- **Deferred:** none.
+
+### 2026-07-10 — Slice 8 complete
+
+- **Commit SHA:** `558304b` (`feat(validate): convert semantic/evidence checks into strict release
+  gates (Slice 8)`). Implementation record committed separately as a `docs(plan)` follow-up.
+- **Behavior:** added a new `pipeline/validate/rules/release_gate.py` rule set, wired into the
+  engine after structural/promotion rules, that runs only under `release_gate` and consults the
+  selection/evidence sidecars carried in the validation context. It hard-fails on: a non-`place`
+  location card (item 1a), a non-`named_actor` key character (item 1b, the Maraudon-style generic
+  roster), a card whose Slice 7 evidence pack lacks direct identity evidence or is missing/mistyped
+  (item 1c/2, the Cenarion-Wildlands-style identity inversion), invalid instance-presence/retail
+  scope (item 1d), empty required questline setup evidence in the entry-state contract (item 1f),
+  duplicate normalized card labels within a family (item 1g), and a persisted final CTA clause that
+  still fails lint (item 1h). It also enforces final-card/sidecar agreement (item 2): a location or
+  key-character the selection sidecar never recorded, a key-character that is not an eligible/emitted
+  admission, and a key-character role that disagrees with the recorded selection role. Metadata
+  handoff mismatch (item 1e) remains enforced by the existing `questline_promotion` rules. Every
+  gate is sidecar-gated — when the relevant sidecar was not loaded (unit payload in isolation, or a
+  run without that artifact) the check no-ops rather than inventing a failure. `pipeline/validate/
+  context.py` now loads the `card_evidence_pack.v1` and `instance_key_character_decision.v1`
+  sidecars through their clean-break readers and captures `questline_cta.finalize` records from the
+  `prose_finalize_decision.v1` artifact, and exposes them per entity via `release_gate_entity_flags`.
+- **Fact-check (items 3–4):** fact-check adjudication coverage is no longer confined to
+  manual-link/coalescing risk entities; every drafted page's central section claims and every
+  selected card's identity/relationship summary are now adjudicated (`targeted_for_adjudication`
+  is universal for warn/strict), with the risk set retained only as recorded `target_reasons` plus
+  a new `risk_flagged` report field. `CheckedUnit` gained a `central` flag; in the strict profile an
+  unsupported *central* assertion is now a hard failure (contradictions already were), while a
+  noncentral stylistic unit stays a distinct warning.
+- **Run success (item 5):** `run_validate_stage` computes `release_certified = all_passed and
+  release_gate and profile == strict` and records it in `validation_report.json`, the stage
+  manifest, and its return; the flow return and both CLI echoes surface it, so a warn/off pass is an
+  exploratory success and is never labelled equivalent to a strict certified run.
+- **Intentional behavior changes:** the former "skip LLM for non-target entities" fact-check
+  behavior is replaced by universal coverage (the obsolete `test_..._skips_llm_for_non_target_...`
+  test was rewritten as `test_..._adjudicates_non_risk_flagged_entity`); CLI/flow validate return
+  shapes gained `release_gate`/`fact_check_profile`/`release_certified` keys (affected CLI test
+  fakes updated). No zone/instance/title/race/species-specific logic was introduced.
+- **Verification:** new `tests/test_release_gate.py` (every hard gate independently, sidecar-gated
+  no-op, positive controls, severity check, acceptance adversarial cases) plus new warn-vs-strict
+  unsupported-central and universal-coverage tests in `tests/test_validation_engine.py` and a
+  release-certification test in `tests/test_pipeline_stages.py`; `ruff check pipeline scripts tests`
+  (clean); `mypy pipeline` (128 files, clean); `git diff --check`; full `pytest -q`
+  (1140 passed, 4 skipped, 1 xfailed — the suite's existing skips/xfail). Checks were run with the
+  project venv (`.venv/Scripts/python.exe -m ...`) because `uv` is not on PATH in this environment;
+  it is the same interpreter `uv run --no-sync` selects.
+- **Fresh live runs:** not applicable; Slice 8 has no `[LIVE]` acceptance requirement (the strict
+  multi-subject pilot matrix is Slice 9).
+- **Deferred:** none. The strict gate additionally consumes the Slice 7 pack provenance transitively
+  (card provenance already resolves to the pack's direct identity paragraph ids); routing the pack's
+  support-checked `claim_views` directly into the adjudicator, rather than via the rendered card
+  provenance, remains an optional Slice 9 reporting refinement, not a contract gap.
+
+### 2026-07-11 — Slice 9 complete (non-live deliverables; [LIVE] matrix deferred by environment)
+
+- **Commit SHA:** `a3f6da7` (`feat(eval): add behavioral fixtures, quality summary, pilot matrix,
+  no-pilot guard (Slice 9)`). Implementation record committed separately as a `docs(plan)` follow-up.
+- **Item 1 — behavioral fixtures:** new `tests/test_behavioral_regression.py` is the single durable
+  cross-cutting regression surface. One compact synthetic fixture per behavior, each driven through
+  its real public entry point, with the required adversarial case: entity-kind admission
+  (`decide_entity_kind`; untyped link and conflicting-evidence abstain to `unknown`); direct evidence
+  ownership + containment direction (`build_card_evidence_pack`; a mention owned by another subject
+  cannot establish identity and keeps `mentions_subject` direction with the container as owner); named
+  instance participation (`is_direct_instance_participant_section` + kind gate; a generic type linked
+  in a boss section is not admitted); metadata handoff (`QuestlineCardMetadata` rejects missing start
+  anchor, duplicate refs, canonical/card id disagreement); arc-family/variant selection
+  (`select_zone_arc_families`; parallel faction arcs merge into one family with both variants
+  selected, a weak single-quest fragment is excluded, and the artifact rejects duplicate normalized
+  labels); title idempotence (`render_questline_title`); final CTA validity (`finalize_cta_hook` /
+  `lint_cta_hook`). All names invented; no pilot output is encoded.
+- **Item 2 — machine-readable quality summary:** new `pipeline/validate/quality_summary.py`
+  (`run_quality_summary.v1`) aggregates the existing versioned sidecars + validation report into one
+  object: selected-card kinds, direct-evidence coverage, deferred retrieval reasons, questline setup
+  coverage, arc-family/variant coverage, title collisions, final CTA lint, fact-check scope/verdicts,
+  strict release outcome, observed schema versions, source/input hashes, and model/prompt identifiers.
+  It reuses `load_validation_run_resources` and its clean-break readers; a missing artifact degrades to
+  an empty/None section. Wired into `scripts/check_run_semantics.py` via `--quality-summary` (default
+  path `reports/run_quality_summary.json`), emitted even on a gate failure so a reviewer can inspect.
+  No existing producer/consumer schema changed — this is a read-only reporter.
+- **Item 3 — pilot matrix + Westfall run config:** `evaluation/pilot_matrix.json`
+  (`pilot_matrix.v1`) declares WPL+Scholomance, Desolace+Maraudon, and the Westfall+Deadmines
+  hold-out under identical strict settings. Fresh run-config manifests `evaluation/desolace/` and
+  `evaluation/westfall/source_manifest.json` (schema-valid, not hand-authored output fixtures);
+  WPL reuses the committed `tests/fixtures/pilot` manifest. `evaluation/README.md` documents the
+  hold-out status and the strict-settings + quality-summary run/review flow.
+- **Item 5 — no-pilot-authority guard:** new `tests/test_no_pilot_authority_guard.py` parses every
+  shared `pipeline/`/`scripts/` module and flags a pilot subject name in an *executable* string
+  literal (docstrings/comments excluded; source-native JSON data out of scope). It complements
+  `test_no_zone_specific_scaffolding` (scaffolding ids) and `test_pilot_prompt_leak_guard` (prompts).
+  The guard passes on the current tree — no pilot name drives shared classification/selection logic.
+- **Verification:** new Slice 9 tests (behavioral 16, quality-summary 4, matrix 2, guard 2) plus a
+  CLI smoke run of `check_run_semantics --quality-summary` on a synthetic run; `ruff check pipeline
+  scripts tests` (clean); `mypy pipeline` (129 files, clean); `git diff --check`; full `pytest`
+  (1164 passed, 4 skipped, 1 xfailed — the suite's existing skips/xfail). Checks were run with the
+  project venv (`.venv/Scripts/python.exe -m ...`) because `uv` is not on PATH in this environment;
+  it is the same interpreter `uv run --no-sync` selects.
+- **[LIVE] acceptance deferred (execution environment):** the strict multi-subject matrix runs
+  (item 4) require live wiki retrieval and an OpenAI key for synthesis, and — as recorded for the
+  earlier `[LIVE]` slices (2, 3, 5) — the host terminates foreground pipeline commands at a
+  60-second limit and the remote draft invocation stalls, so a full strict end-to-end run cannot
+  complete here. The matrix definition, the fresh Westfall/Desolace run configs, the strict release
+  gate (Slice 8), and the quality-summary/rubric review surface are all in place to execute the
+  matrix and record findings as generic regression cases in an environment that permits a
+  longer-running live flow. This is an execution-environment verification limitation, not a schema,
+  reporting, guard, or fixture deferral.

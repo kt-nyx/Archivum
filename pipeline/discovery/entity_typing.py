@@ -1,33 +1,52 @@
-"""Deterministic entity typing guardrails for wiki link classification."""
+"""Evidence-based entity-kind decisions for linked wiki pages.
+
+The discovery pass may keep an unclassified link as a crawl lead, but it must
+never promote that lead to a renderable card kind from its title, capitalization,
+or a hand-maintained Warcraft vocabulary.  This module therefore treats missing
+target-page evidence as ``unknown``.
+"""
 
 from __future__ import annotations
 
-import json
 import re
-from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
+from urllib.parse import unquote
 
-from pipeline.common.discovery_vocab import (
-    faction_as_location_denylist,
-    location_meta_titles,
-    location_type_title_rules,
-    meta_page_denylist,
-    race_species_denylist,
-)
 from pipeline.common.text_ids import slugify
-from pipeline.discovery.world_registry import entry_kinds, registry_index
+from pipeline.contracts.models import EntityKind, EntityKindDecision
+from pipeline.discovery.world_registry import entry_kinds
 
 _SUBZONE_CATEGORY_SUFFIX = " subzones"
+_WIKI_NAMESPACE_PREFIXES = frozenset(
+    {"file", "template", "category", "help", "special", "module", "talk", "user"}
+)
+
+TraverseRole = Literal[
+    "storyline",
+    "quest",
+    "faction_profile",
+    "location_profile",
+    "character_profile",
+    "instance_lore",
+]
+
+_QUEST_GRAPH_REGISTRY_KINDS = frozenset(
+    {"zone", "continent", "capital", "region", "instance", "person", "place"}
+)
+_TRAVERSE_BLOCK_BY_ROLE: dict[str, frozenset[str]] = {
+    "quest": _QUEST_GRAPH_REGISTRY_KINDS,
+    "faction_profile": frozenset({"zone", "continent", "instance"}),
+    "location_profile": frozenset({"zone", "continent", "capital", "region", "instance"}),
+    "character_profile": frozenset({"zone", "continent", "capital", "region", "instance"}),
+    "storyline": frozenset(),
+    "instance_lore": frozenset({"zone", "continent", "capital", "region"}),
+    "parent_lore": frozenset({"continent"}),
+    "related_lore": frozenset({"continent", "capital"}),
+}
 
 
 def location_subzone_zone_slugs(categories: list[str] | None) -> set[str]:
-    """Zone-of-record slugs from a location page's ``"<Zone> subzones"`` MediaWiki categories.
-
-    Warcraft wiki tags every place with a ``"<Zone> subzones"`` category naming the zone it actually
-    belongs to (e.g. ``"Western Plaguelands subzones"`` -> ``western-plaguelands``,
-    ``"Hillsbrad Foothills subzones"`` -> ``hillsbrad-foothills``). This is the authoritative
-    zone-of-record, independent of which zone's prose happened to link the place.
-    """
+    """Return source-native zone-of-record slugs from ``<Zone> subzones`` categories."""
     slugs: set[str] = set()
     for category in categories or []:
         text = str(category).strip()
@@ -39,208 +58,191 @@ def location_subzone_zone_slugs(categories: list[str] | None) -> set[str]:
 
 
 def location_is_offzone(categories: list[str] | None, zone_id: str) -> bool:
-    """True when a location's own zone-of-record categories name zones, none of which is the subject
-    zone — i.e. the place is merely *mentioned* in this zone's prose but belongs elsewhere (e.g.
-    Strahnbrad, a Hillsbrad Foothills subzone, named in Western Plaguelands' history). Returns False
-    when the page declares no ``"<Zone> subzones"`` category (no signal — never over-reject) or when
-    one of them matches the subject zone."""
+    """Whether a target page's own subzone category names another zone."""
     subzone_slugs = location_subzone_zone_slugs(categories)
-    if not subzone_slugs:
-        return False
-    return zone_id.strip().removeprefix("zone-") not in subzone_slugs
-
-TraverseRole = Literal[
-    "storyline",
-    "quest",
-    "faction_profile",
-    "location_profile",
-    "character_profile",
-    "instance_lore",
-]
-
-_DATING_CONVENTION_TITLE_RE = re.compile(
-    r"\([^)]*\b(?:BCE|CE|ADP|BDP)\b[^)]*\)|\b\d+\s+(?:BCE|CE|AD)\b",
-    re.IGNORECASE,
-)
-
-_GEOGRAPHY_SOURCE_ROLES = frozenset({"maps_subregions", "geography_edit", "geography", "subregion"})
-
-# WS-C: these title-matched denylists are externalized to
-# pipeline/data/discovery_classification_vocab.v1.json (D-6) — judged on the link
-# title before the target page is fetched, so no category/infobox signal exists.
-_RACE_SPECIES_DENYLIST = race_species_denylist()
-
-_META_PAGE_DENYLIST = meta_page_denylist()
-
-_LOCATION_META_TITLES = location_meta_titles()
-
-_FACTION_AS_LOCATION_DENYLIST = faction_as_location_denylist()
-
-_QUEST_GRAPH_REGISTRY_KINDS = frozenset(
-    {"zone", "continent", "capital", "region", "instance", "person", "place"}
-)
-_TRAVERSE_BLOCK_BY_ROLE: dict[str, frozenset[str]] = {
-    "quest": frozenset({"zone", "continent", "capital", "region", "instance", "person", "place"}),
-    "faction_profile": frozenset({"zone", "continent", "instance"}),
-    "location_profile": frozenset({"zone", "continent", "instance"}),
-    # A character page is never a place: block it from resolving to a zone/continent/instance.
-    "character_profile": frozenset({"zone", "continent", "instance"}),
-    "storyline": frozenset(),
-    "instance_lore": frozenset({"zone", "continent", "capital", "region"}),
-    # Parent-complex lore pages are themselves instance/zone-classified (e.g.
-    # Auchindoun), so they must not be blocked; only continents are too broad.
-    "parent_lore": frozenset({"continent"}),
-    "related_lore": frozenset({"continent", "capital"}),
-}
-
-
-def _denylist_path() -> Path:
-    return Path(__file__).with_name("entity_denylist.json")
-
-
-def load_curated_denylist() -> dict[str, list[str]]:
-    path = _denylist_path()
-    if not path.exists():
-        return {"location_titles": [], "faction_titles": [], "quest_graph_titles": []}
-    blob = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(blob, dict):
-        return {"location_titles": [], "faction_titles": [], "quest_graph_titles": []}
-    return {
-        "location_titles": [
-            str(item).lower() for item in blob.get("location_titles", []) if isinstance(item, str)
-        ],
-        "faction_titles": [
-            str(item).lower() for item in blob.get("faction_titles", []) if isinstance(item, str)
-        ],
-        "quest_graph_titles": [
-            str(item).lower()
-            for item in blob.get("quest_graph_titles", [])
-            if isinstance(item, str)
-        ],
-    }
-
-
-def _registry_titles_for_kinds(*kinds: str) -> frozenset[str]:
-    wanted = frozenset(kinds)
-    titles: set[str] = set()
-    for row in registry_index().values():
-        row_kinds = row.get("kinds", [])
-        if not isinstance(row_kinds, list):
-            continue
-        if wanted.intersection(str(kind) for kind in row_kinds if isinstance(kind, str)):
-            normalized = str(row.get("normalized_title", "")).strip()
-            if normalized:
-                titles.add(normalized)
-    return frozenset(titles)
-
-
-def _geography_hub_titles() -> frozenset[str]:
-    curated = load_curated_denylist()
-    registry_hubs = _registry_titles_for_kinds("zone", "continent", "capital", "region", "instance")
-    return frozenset(curated["quest_graph_titles"] + curated["location_titles"]) | registry_hubs
+    return bool(subzone_slugs) and zone_id.strip().removeprefix("zone-") not in subzone_slugs
 
 
 def _wiki_title_from_link(link: str) -> str:
-    if "://" in link:
-        path = link.split("://", 1)[-1]
-        path = path.split("/", 1)[-1] if "/" in path else path
-    else:
-        path = link
-    title = path.split("/wiki/", 1)[-1].split("#", 1)[0]
-    from urllib.parse import unquote
-
+    value = str(link or "").strip()
+    if "/wiki/" not in value:
+        return ""
+    title = value.split("/wiki/", 1)[1].split("#", 1)[0].split("?", 1)[0]
     return unquote(title).strip().replace("_", " ")
+
+
+def canonical_path_for_link(link: str) -> str:
+    title = _wiki_title_from_link(link)
+    return f"/wiki/{title.replace(' ', '_')}" if title else ""
 
 
 def normalize_title(title: str) -> str:
     return re.sub(r"\s+", " ", title.strip()).lower()
 
 
+def is_bogus_traversal_link(link: str) -> bool:
+    """Reject only generic URL/namespace/redlink hygiene failures."""
+    value = str(link or "").strip()
+    title = _wiki_title_from_link(value)
+    if not title or "#" in value.split("/wiki/", 1)[-1]:
+        return True
+    lowered = title.lower()
+    if "redlink=1" in value.lower() or "action=edit" in value.lower() or lowered.startswith("see "):
+        return True
+    namespace = lowered.split(":", 1)[0] if ":" in lowered else ""
+    return namespace in _WIKI_NAMESPACE_PREFIXES
+
+
+def _category_kinds(categories: list[str]) -> set[EntityKind]:
+    """Map target-page category *structure* to the output enum.
+
+    These are category-family labels supplied by the source wiki, not article
+    titles or Warcraft entity vocabularies.  Conflicting source families abstain.
+    """
+    joined = " ".join(normalize_title(category) for category in categories)
+    kinds: set[EntityKind] = set()
+    if " subzones" in joined or " locations" in joined:
+        kinds.add(EntityKind.PLACE)
+    if any(marker in joined for marker in (" characters", " npcs", " bosses")):
+        kinds.add(EntityKind.NAMED_ACTOR)
+    if any(marker in joined for marker in (" organizations", " factions")):
+        kinds.add(EntityKind.ORGANIZATION)
+    if any(marker in joined for marker in (" races", " species", " creature types")):
+        kinds.add(EntityKind.GROUP_OR_SPECIES)
+    if any(
+        marker in joined
+        for marker in (" abilities", " spells", " items", " concepts", " events", " quests")
+    ):
+        kinds.add(EntityKind.OBJECT_OR_CONCEPT)
+    return kinds
+
+
+def _infobox_kinds(infobox: dict[str, Any]) -> set[EntityKind]:
+    """Use explicit source infobox entity labels when available."""
+    values = {
+        normalize_title(str(value))
+        for key, value in infobox.items()
+        if normalize_title(str(key)) in {"type", "kind", "entity type", "subject type"}
+        and str(value).strip()
+    }
+    kinds: set[EntityKind] = set()
+    if values & {"place", "location", "subzone", "settlement", "landmark"}:
+        kinds.add(EntityKind.PLACE)
+    if values & {"character", "npc", "person"}:
+        kinds.add(EntityKind.NAMED_ACTOR)
+    if values & {"organization", "faction", "guild"}:
+        kinds.add(EntityKind.ORGANIZATION)
+    if values & {"race", "species", "creature type", "group"}:
+        kinds.add(EntityKind.GROUP_OR_SPECIES)
+    if values & {"ability", "spell", "item", "concept", "event", "quest"}:
+        kinds.add(EntityKind.OBJECT_OR_CONCEPT)
+    return kinds
+
+
+def _registry_kind(title: str) -> EntityKind | None:
+    kinds = entry_kinds(title)
+    if "place" in kinds:
+        return EntityKind.PLACE
+    if "person" in kinds:
+        return EntityKind.NAMED_ACTOR
+    if "organization" in kinds:
+        return EntityKind.ORGANIZATION
+    return None
+
+
+def decide_entity_kind(
+    *,
+    candidate_id: str,
+    canonical_title: str,
+    canonical_path: str,
+    source_snapshot: dict[str, Any] | None = None,
+    source_relation: str = "",
+    source_ids: list[str] | None = None,
+) -> EntityKindDecision:
+    """Make one fail-closed entity-kind decision from target-page evidence.
+
+    The registry may supply a positive source-native category signal, but absence
+    from it has no meaning.  A source-page relationship is retained for audit but
+    never settles the entity kind by itself.
+    """
+    signals: list[str] = []
+    reasons: list[str] = []
+    ids = [value for value in (source_ids or []) if value]
+    kinds: set[EntityKind] = set()
+
+    registry_kind = _registry_kind(canonical_title)
+    if registry_kind is not None:
+        kinds.add(registry_kind)
+        signals.append(f"registry:{registry_kind.value}")
+
+    if source_snapshot is not None:
+        snapshot_id = str(source_snapshot.get("source_id", "")).strip()
+        if snapshot_id and snapshot_id not in ids:
+            ids.append(snapshot_id)
+        categories = [
+            str(category) for category in source_snapshot.get("categories", []) if str(category).strip()
+        ]
+        category_kinds = _category_kinds(categories)
+        if category_kinds:
+            kinds.update(category_kinds)
+            signals.extend(f"category:{kind.value}" for kind in sorted(category_kinds, key=str))
+        infobox = source_snapshot.get("infobox")
+        if isinstance(infobox, dict):
+            infobox_kinds = _infobox_kinds(infobox)
+            if infobox_kinds:
+                kinds.update(infobox_kinds)
+                signals.extend(f"infobox:{kind.value}" for kind in sorted(infobox_kinds, key=str))
+    if source_relation:
+        signals.append(f"source_relation:{source_relation}")
+
+    if len(kinds) == 1:
+        kind = next(iter(kinds))
+        confidence = 0.95 if len(signals) > 1 else 0.8
+        reasons.append("affirmative_target_evidence")
+    elif len(kinds) > 1:
+        kind = EntityKind.UNKNOWN
+        confidence = 0.0
+        reasons.append("conflicting_target_evidence")
+    else:
+        kind = EntityKind.UNKNOWN
+        confidence = 0.0
+        reasons.append("insufficient_target_evidence")
+
+    decision_id = f"entity-kind-{slugify(canonical_title)}"
+    return EntityKindDecision(
+        decision_id=decision_id,
+        candidate_id=candidate_id,
+        canonical_title=canonical_title,
+        canonical_path=canonical_path,
+        kind=kind,
+        confidence=confidence,
+        source_signals=signals,
+        source_ids=ids,
+        reason_codes=reasons,
+    )
+
+
 def is_valid_quest_graph_link(link: str, *, zone_name: str = "") -> tuple[bool, list[str]]:
-    """Return (valid, reason_codes) for a quest graph node href."""
-    if not link or "/wiki/" not in link:
+    """Return generic-hygiene and structural-registry validity for a quest node link."""
+    value = str(link or "").strip()
+    if "/wiki/" not in value:
         return False, ["missing_wiki_path"]
-    if "#" in link.split("/wiki/", 1)[-1]:
+    if "#" in value.split("/wiki/", 1)[1]:
         return False, ["fragment_link"]
-    if "redlink=1" in link.lower() or "action=edit" in link.lower():
+    if "redlink=1" in value.lower() or "action=edit" in value.lower():
         return False, ["meta_url"]
     title = _wiki_title_from_link(link)
-    lowered = normalize_title(title)
-    if not lowered:
+    if not title:
         return False, ["empty_title"]
-    if lowered.startswith("file:") or lowered.startswith("category:"):
+    namespace = title.lower().split(":", 1)[0] if ":" in title else ""
+    if namespace in _WIKI_NAMESPACE_PREFIXES:
         return False, ["namespace"]
-    if lowered in _META_PAGE_DENYLIST:
-        return False, ["meta_page"]
-    curated = load_curated_denylist()
-    if lowered in curated["quest_graph_titles"]:
-        return False, ["quest_graph_denylist"]
-    registry_kind = entry_kinds(title)
-    if registry_kind & _QUEST_GRAPH_REGISTRY_KINDS:
-        return False, [f"registry_{sorted(registry_kind & _QUEST_GRAPH_REGISTRY_KINDS)[0]}"]
-    zone_lower = normalize_title(zone_name)
-    if zone_lower and lowered == zone_lower:
+    if normalize_title(title) == normalize_title(zone_name):
         return False, ["self_zone"]
-    if lowered.endswith(" quests"):
-        return False, ["achievement_hub"]
-    if "storyline" in lowered or "questline" in lowered:
-        return False, ["storyline_page"]
+    blocked = entry_kinds(title) & _QUEST_GRAPH_REGISTRY_KINDS
+    if blocked:
+        return False, [f"registry_{sorted(blocked)[0]}"]
     return True, []
-
-
-def should_reject_location_title(
-    title: str,
-    *,
-    zone_name: str = "",
-    source_section_role: str = "other",
-    entity_type: str = "location",
-) -> tuple[bool, list[str]]:
-    """Return (reject, reason_codes) for a location candidate title."""
-    if entity_type != "location":
-        return True, [f"entity_type:{entity_type}"]
-    lowered = normalize_title(title)
-    if not lowered:
-        return True, ["empty_title"]
-    if lowered in _META_PAGE_DENYLIST:
-        return True, ["meta_page"]
-    if lowered in _LOCATION_META_TITLES:
-        return True, ["meta_page"]
-    if lowered in _FACTION_AS_LOCATION_DENYLIST:
-        return True, ["faction_title"]
-    if lowered in _RACE_SPECIES_DENYLIST:
-        return True, ["race_or_species"]
-    curated = load_curated_denylist()
-    if lowered in curated["location_titles"]:
-        return True, ["curated_denylist"]
-    if lowered in curated["faction_titles"]:
-        return True, ["faction_title"]
-    zone_lower = normalize_title(zone_name)
-    if zone_lower and lowered == zone_lower:
-        return True, ["self_zone"]
-    if lowered in _geography_hub_titles():
-        return True, ["geography_hub"]
-    if _DATING_CONVENTION_TITLE_RE.search(title):
-        return True, ["dating_convention"]
-    normalized_role = re.sub(r"\s+", " ", source_section_role.strip()).lower().replace(" ", "_")
-    if (
-        normalized_role not in _GEOGRAPHY_SOURCE_ROLES
-        and source_section_role != "notable_characters"
-        and not _title_has_location_type_token(title)
-        and _is_likely_npc_name(title)
-    ):
-        return True, ["likely_npc"]
-    return False, []
-
-
-def _title_has_location_type_token(title: str) -> bool:
-    """True when a title carries a descriptive place token (tomb, crypt, keep, mill, ...).
-
-    Such a title is structurally a landmark/structure, so the 2-token NPC heuristic must not reject
-    it (e.g. "Uther's Tomb" surfacing in a history section)."""
-    tokens = set(re.findall(r"[a-z]+", title.lower()))
-    if not tokens:
-        return False
-    return any(tokens & type_tokens for _type, type_tokens in location_type_title_rules())
 
 
 def should_skip_registry_traversal(
@@ -250,64 +252,23 @@ def should_skip_registry_traversal(
     zone_name: str = "",
     allowed_instance_titles: frozenset[str] | None = None,
 ) -> tuple[bool, list[str]]:
-    """Return (skip, reason_codes) for auxiliary wiki traversal."""
+    """Apply generic link hygiene and source-taxonomy traversal bounds."""
     role = auxiliary_role.strip().lower()
     if role == "storyline":
         return False, []
     if is_bogus_traversal_link(link):
         return True, ["bogus_link"]
     title = _wiki_title_from_link(link)
-    lowered = normalize_title(title)
-    if not lowered:
+    if not title:
         return True, ["empty_title"]
-    zone_lower = normalize_title(zone_name)
-    if zone_lower and lowered == zone_lower and role in {"quest", "location_profile"}:
+    if normalize_title(title) == normalize_title(zone_name) and role in {"quest", "location_profile"}:
         return True, ["self_zone"]
-    allowed_instances = {
-        normalize_title(value) for value in (allowed_instance_titles or frozenset())
-    }
-    if lowered in allowed_instances and role in {"location_profile", "instance_lore"}:
+    allowed_instances = {normalize_title(value) for value in (allowed_instance_titles or frozenset())}
+    if normalize_title(title) in allowed_instances and role in {"location_profile", "instance_lore"}:
         return False, []
-    block_kinds = _TRAVERSE_BLOCK_BY_ROLE.get(role, frozenset({"zone", "continent", "instance"}))
-    kinds = entry_kinds(title)
-    blocked = kinds & block_kinds
+    blocked = entry_kinds(title) & _TRAVERSE_BLOCK_BY_ROLE.get(
+        role, frozenset({"zone", "continent", "instance"})
+    )
     if blocked:
         return True, [f"registry_{sorted(blocked)[0]}_for_{role}"]
-    curated = load_curated_denylist()
-    if role == "quest" and lowered in curated["quest_graph_titles"]:
-        return True, ["quest_graph_denylist"]
-    if role in {"location_profile", "faction_profile"} and lowered in _geography_hub_titles():
-        registry_kind = entry_kinds(title)
-        if "capital" in registry_kind and role == "location_profile":
-            return True, ["geography_hub_capital"]
-        if lowered not in allowed_instances:
-            return True, ["geography_hub"]
     return False, []
-
-
-def _is_likely_npc_name(title: str) -> bool:
-    parts = [part for part in re.split(r"\s+", title.strip()) if part]
-    # A single token with a mid-word apostrophe (not a possessive "'s") is almost always a
-    # character/NPC in WoW naming (Ner'zhul, Kel'Thuzad, Mal'Ganis), never a sub-location.
-    if len(parts) == 1:
-        return bool(re.search(r"[A-Za-z][''][A-Za-rt-z]", parts[0]))
-    if len(parts) != 2:
-        return False
-    return all(part[:1].isupper() for part in parts if part)
-
-
-def is_bogus_traversal_link(link: str) -> bool:
-    """True when a wiki link should not be fetched during traversal."""
-    if not link or "/wiki/" not in link:
-        return True
-    title = link.split("/wiki/", 1)[-1].split("#", 1)[0]
-    title = title.replace("_", " ").strip().lower()
-    if not title:
-        return True
-    if title.startswith("see "):
-        return True
-    if title in _META_PAGE_DENYLIST:
-        return True
-    if "redlink=1" in link.lower():
-        return True
-    return False

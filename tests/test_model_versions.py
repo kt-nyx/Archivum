@@ -20,6 +20,7 @@ def test_manifest_records_versions_and_internal_schema_decision() -> None:
     versions = manifest["versions"]
     for key in (
         "entry_state_contract_version",
+        "entry_state_contract_decision_schema",
         "claim_extractor_version",
         "temporal_classifier_version",
         "claim_view_routing_version",

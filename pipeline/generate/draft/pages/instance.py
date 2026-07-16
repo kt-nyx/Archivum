@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from pipeline.contracts.models import CardEvidencePackDecision
 from pipeline.generate.draft import finalize_trace
 from pipeline.generate.draft.faction_scoring import (
     harvest_instance_anchor_tokens,
@@ -265,6 +266,7 @@ def build_instance_major_factions(
     faction_profile_targets: list[dict[str, Any]] | None = None,
     parent_zone_evidence_rows: list[dict[str, Any]] | None = None,
     snapshots: list[dict[str, Any]] | None = None,
+    pack_sink: list[CardEvidencePackDecision] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, str]]]]:
     # WS-8: harvest faction candidates from the instance's *own* evidence first. Scholomance et al.
     # carry no faction_pool evidence, so the parent-zone-scoped path returns nothing despite the page
@@ -282,6 +284,9 @@ def build_instance_major_factions(
         )
         if parent_zone_name.strip():
             anchor_tokens.append(parent_zone_name.strip())
+        # Own temp sink so a native attempt that yields no card does not leave orphan packs behind
+        # when the parent-zone fallback runs (only the committed path's packs are recorded).
+        native_packs: list[CardEvidencePackDecision] = []
         cards, provenance = build_major_factions(
             zone_id=instance_id,
             zone_name=instance_name,
@@ -301,8 +306,11 @@ def build_instance_major_factions(
             instance_name=instance_name,
             extra_subregion_tokens=anchor_tokens,
             snapshots=snapshots,
+            pack_sink=native_packs,
         )
         if cards:
+            if pack_sink is not None:
+                pack_sink.extend(native_packs)
             return cards, provenance
 
     # Fallback: the parent zone's faction targets + faction_pool evidence.
@@ -336,6 +344,7 @@ def build_instance_major_factions(
         faction_profile_targets=scoped_targets,
         instance_name=instance_name,
         snapshots=snapshots,
+        pack_sink=pack_sink,
     )
 
 
@@ -366,6 +375,7 @@ def build_instance_page(
         parent_zone_evidence_rows=parent_zone_evidence_rows,
     )
     used_source_ids: set[str] = set()
+    card_evidence_packs: list[CardEvidencePackDecision] = []
 
     # The game's dedicated Adventure Guide page for this instance (per-boss blurbs + an intro),
     # resolved once and reused as reference framing across overview, at_a_glance, and key characters.
@@ -480,6 +490,7 @@ def build_instance_page(
         revision_map=revision_map,
         selection_reasons=key_character_selection.selection_reasons,
         adventure_guide=adventure_guide,
+        pack_sink=card_evidence_packs,
     )
     used_source_ids.update(character_used)
 
@@ -494,6 +505,7 @@ def build_instance_page(
         faction_profile_targets=faction_profile_targets,
         parent_zone_evidence_rows=parent_zone_evidence_rows,
         snapshots=snapshots,
+        pack_sink=card_evidence_packs,
     )
     for pointers in faction_provenance.values():
         for pointer in pointers:
@@ -542,4 +554,8 @@ def build_instance_page(
         selection_sink.append(key_character_selection)
     if section_coverage_decisions:
         page_entity["section_coverage_decisions"] = section_coverage_decisions
+    if card_evidence_packs:
+        page_entity["card_evidence_pack_decisions"] = [
+            pack.model_dump(mode="json") for pack in card_evidence_packs
+        ]
     return page_entity

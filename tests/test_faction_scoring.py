@@ -205,6 +205,33 @@ def test_collect_faction_candidates_from_targets_and_evidence() -> None:
     assert ids == {"faction-argent-crusade", "faction-cenarion-circle"}
 
 
+def test_untyped_same_name_profile_paragraph_is_not_identity_evidence() -> None:
+    # Slice 7: a faction-profile paragraph is this faction's identity evidence only when its
+    # recorded ``faction_id`` matches. An untyped paragraph whose source_title merely contains the
+    # faction name (a same-name page) must NOT become profile identity evidence.
+    zone_id = "zone-example"
+    pools = {
+        "faction_pool": [
+            {
+                "faction_id": "",
+                "source_id": "src-lookalike",
+                "snippet": "The Argent Vanguard drills recruits at a distant academy.",
+                "section_role": "lead",
+                "source_title": "Argent Crusade Hall of Champions",
+            }
+        ],
+        "faction_role_pool": [],
+    }
+    candidates = collect_faction_candidates(
+        zone_id=zone_id,
+        evidence_rows=[],
+        pools=pools,
+        faction_profile_targets=[_target("faction-argent-crusade", "Argent Crusade")],
+    )
+    argent = next(row for row in candidates if row.faction_id == "faction-argent-crusade")
+    assert argent.profile_items == []
+
+
 def test_currently_input_counts_as_high_weight_seed() -> None:
     from pipeline.generate.draft.faction_scoring import _is_high_weight_seed_item
 

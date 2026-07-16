@@ -103,6 +103,79 @@ def _write_ingest_fixtures(context, ingest_dir: Path) -> None:
     (ingest_dir / "source_manifest.json").write_text(
         json.dumps(manifest, indent=2), encoding="utf-8"
     )
+    decisions_dir = context.data_dir / "decisions"
+    decisions_dir.mkdir(parents=True, exist_ok=True)
+    (decisions_dir / "location_selection_decisions.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "location_selection.v1",
+                "producer": "discovery",
+                "decisions": [],
+                "coverage": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (decisions_dir / "entity_kind_decisions.json").write_text(
+        json.dumps({"schema_version": "entity_kind_decision.v1", "decisions": []}),
+        encoding="utf-8",
+    )
+
+
+def _write_location_candidates(context, rows: list[dict[str, object]]) -> None:
+    decisions_dir = context.data_dir / "decisions"
+    decisions = []
+    entity_decisions = []
+    for index, row in enumerate(rows):
+        location_id = str(row["location_id"])
+        title = str(row["name"])
+        entity_id = f"entity-kind-{location_id.removeprefix('location-')}"
+        decisions.append(
+            {
+                "schema_version": "location_selection_decision.v1",
+                "decision_id": f"location-selection-example-{index}",
+                "zone_id": ZONE_ID,
+                "location_id": location_id,
+                "name": title,
+                "source_link": str(row["source_link"]),
+                "source_relation": row.get("source_relation", "maps_subregions"),
+                "candidate_rank": int(row.get("candidate_rank", index)),
+                "state": row.get("state", "candidate"),
+                "entity_kind": row.get("entity_kind", "unknown"),
+                "entity_kind_decision_id": entity_id,
+                "source_ids": ["src-zone"],
+                "reason_codes": ["synthetic_candidate"],
+            }
+        )
+        entity_decisions.append(
+            {
+                "schema_version": "entity_kind_decision.v1",
+                "decision_id": entity_id,
+                "candidate_id": f"entity-{location_id.removeprefix('location-')}",
+                "canonical_title": title,
+                "canonical_path": str(row["source_link"]),
+                "kind": row.get("entity_kind", "unknown"),
+                "confidence": 0.0,
+                "source_signals": [],
+                "source_ids": ["src-zone"],
+                "reason_codes": ["synthetic"],
+            }
+        )
+    (decisions_dir / "location_selection_decisions.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "location_selection.v1",
+                "producer": "discovery",
+                "decisions": decisions,
+                "coverage": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (decisions_dir / "entity_kind_decisions.json").write_text(
+        json.dumps({"schema_version": "entity_kind_decision.v1", "decisions": entity_decisions}),
+        encoding="utf-8",
+    )
 
 
 def test_build_link_category_cache_classifies_seed_outbound_links(
@@ -403,13 +476,30 @@ def test_traverse_skips_defer_location_targets(
         ),
         encoding="utf-8",
     )
+    _write_location_candidates(
+        context,
+        [
+            {
+                "location_id": "location-include",
+                "name": "Include Hold",
+                "source_link": "/wiki/Include_Hold",
+            },
+            {
+                "location_id": "location-concept",
+                "name": "Abstract Principle",
+                    "source_link": "/wiki/Abstract_Principle",
+                    "entity_kind": "object_or_concept",
+                    "state": "rejected",
+            },
+        ],
+    )
 
     fetched_urls: list[str] = []
 
     def fake_fetch(url: str, source_class: str, *, include_parsetree: bool = False):
         fetched_urls.append(url)
         return FetchedSource(
-            "Location profile body with enough narrative detail for enrichment.",
+            "Include Hold is a landmark within Example Zone with enough narrative detail for enrichment.",
             "mw:200",
             "section:lead paragraph:1",
             [{"section_role": "lead", "text": "Location profile body."}],
@@ -419,18 +509,22 @@ def test_traverse_skips_defer_location_targets(
         )
 
     monkeypatch.setattr("pipeline.ingest.traverse_wiki._fetch_url_text", fake_fetch)
+    monkeypatch.setattr(
+        "pipeline.ingest.traverse_wiki.fetch_categories_for_titles",
+        lambda titles, **_kwargs: {str(title).casefold(): ["Example subzones", "Locations"] for title in titles},
+    )
     run_traverse_seed(context)
 
     assert any("Include_Hold" in url for url in fetched_urls)
-    assert not any("Defer_Hold" in url for url in fetched_urls)
+    assert not any("Abstract_Principle" in url for url in fetched_urls)
 
 
-def test_traverse_prioritizes_lore_significant_locations_within_budget(
+def test_traverse_ranks_history_relationship_before_geography(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # With a tight budget, the lore-significant marquee landmark must be fetched even though it sorts
-    # alphabetically after a trivial farm — otherwise the landmark never gets a page snapshot.
+    # Preliminary ordering is relationship based, not title shape: the history lead is probed and
+    # profiled before an alphabetically earlier geography lead.
     context = ensure_run_context(
         "run-test-traverse-location-priority", artifacts_root=tmp_path / "runs"
     )
@@ -474,14 +568,32 @@ def test_traverse_prioritizes_lore_significant_locations_within_budget(
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr("pipeline.ingest.traverse_wiki._MAX_LOCATION", 1)
+    _write_location_candidates(
+        context,
+        [
+            {
+                "location_id": "location-aaa-farm",
+                "name": "Aaa Farm",
+                "source_link": "/wiki/Aaa_Farm",
+                "source_relation": "maps_subregions",
+                "candidate_rank": 1,
+            },
+            {
+                "location_id": "location-zzz-tomb",
+                "name": "Zzz Tomb",
+                "source_link": "/wiki/Zzz_Tomb",
+                "source_relation": "history",
+                "candidate_rank": 0,
+            },
+        ],
+    )
 
     fetched_urls: list[str] = []
 
     def fake_fetch(url: str, source_class: str, *, include_parsetree: bool = False):
         fetched_urls.append(url)
         return FetchedSource(
-            "Location profile body with enough narrative detail for enrichment.",
+            "A direct profile places this landmark in Example Zone with narrative detail.",
             "mw:200",
             "section:lead paragraph:1",
             [{"section_role": "lead", "text": "Location profile body."}],
@@ -491,11 +603,15 @@ def test_traverse_prioritizes_lore_significant_locations_within_budget(
         )
 
     monkeypatch.setattr("pipeline.ingest.traverse_wiki._fetch_url_text", fake_fetch)
+    monkeypatch.setattr(
+        "pipeline.ingest.traverse_wiki.fetch_categories_for_titles",
+        lambda titles, **_kwargs: {str(title).casefold(): ["Example subzones", "Locations"] for title in titles},
+    )
     monkeypatch.setattr("pipeline.ingest.traverse_wiki._throttle", lambda seconds: None)
     run_traverse_seed(context)
 
-    assert any("Zzz_Tomb" in url for url in fetched_urls)
-    assert not any("Aaa_Farm" in url for url in fetched_urls)
+    assert "Zzz_Tomb" in fetched_urls[0]
+    assert any("Aaa_Farm" in url for url in fetched_urls)
 
 
 def test_traverse_fetches_linked_lore_page_not_instance_page_source(
@@ -614,6 +730,21 @@ def test_traverse_fetches_linked_lore_page_not_instance_page_source(
     )
     (context.data_dir / "decisions" / "location_significance_decisions.json").write_text(
         "[]", encoding="utf-8"
+    )
+    (context.data_dir / "decisions" / "location_selection_decisions.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "location_selection.v1",
+                "producer": "discovery",
+                "decisions": [],
+                "coverage": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (context.data_dir / "decisions" / "entity_kind_decisions.json").write_text(
+        json.dumps({"schema_version": "entity_kind_decision.v1", "decisions": []}),
+        encoding="utf-8",
     )
 
     fetched_urls: list[str] = []

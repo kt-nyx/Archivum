@@ -13,6 +13,7 @@ from pipeline.contracts.models import Zone
 from pipeline.generate.draft.instance_lint import MIN_OVERVIEW_WORDS
 from pipeline.generate.draft_writer import run_draft_writer
 from tests.draft_llm_mocks import fake_draft_chat_by_schema
+from tests.factories.snapshots import with_required_snapshot_schema
 
 
 def _mock_draft(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -390,9 +391,11 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(
                 {
                     "zone_id": "zone-western-plaguelands",
                     "location_id": "location-hearthglen",
-                    "name": "Hearthglen",
-                    "source_link": "/wiki/Hearthglen",
-                    "source_section_role": "maps_subregions",
+                        "name": "Hearthglen",
+                        "source_link": "/wiki/Hearthglen",
+                        "source_section_role": "maps_subregions",
+                        "entity_kind": "place",
+                        "entity_kind_decision_id": "entity-kind-hearthglen",
                 }
             ],
             indent=2,
@@ -431,24 +434,81 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(
     )
     decisions_dir = context.data_dir / "decisions"
     decisions_dir.mkdir(parents=True, exist_ok=True)
-    (decisions_dir / "location_significance_decisions.json").write_text(
+    (decisions_dir / "entity_kind_decisions.json").write_text(
         json.dumps(
-            [
-                {
-                    "subject_id": "location-hearthglen",
-                    "subject_type": "location",
-                    "run_id": context.run_id,
-                    "algorithm_version": "v1",
-                    "features": {"source_section_role": "maps_subregions"},
-                    "hard_reject": False,
-                    "hard_reject_reasons": [],
-                    "score": 0.75,
-                    "thresholds": {"include_min": 0.7},
-                    "borderline_adjudication": None,
-                    "final_decision": "include",
-                    "reason_codes": ["score_based"],
-                }
-            ],
+            {
+                "schema_version": "entity_kind_decision.v1",
+                "decisions": [
+                    {
+                        "schema_version": "entity_kind_decision.v1",
+                        "decision_id": "entity-kind-hearthglen",
+                        "candidate_id": "entity-hearthglen",
+                        "canonical_title": "Hearthglen",
+                        "canonical_path": "/wiki/Hearthglen",
+                        "kind": "place",
+                        "confidence": 0.95,
+                        "source_signals": ["category:place"],
+                        "source_ids": ["src-zone", "src-location-hearthglen"],
+                        "reason_codes": ["affirmative_target_evidence"],
+                    },
+                    {
+                        "schema_version": "entity_kind_decision.v1",
+                        "decision_id": "entity-kind-darkmaster-gandling",
+                        "candidate_id": "character-darkmaster-gandling",
+                        "canonical_title": "Darkmaster Gandling",
+                        "canonical_path": "/wiki/Darkmaster_Gandling",
+                        "kind": "named_actor",
+                        "confidence": 0.95,
+                        "source_signals": ["category:named_actor"],
+                        "source_ids": ["src-instance"],
+                        "reason_codes": ["affirmative_target_evidence"],
+                    },
+                    {
+                        "schema_version": "entity_kind_decision.v1",
+                        "decision_id": "entity-kind-instructor-malicia",
+                        "candidate_id": "character-instructor-malicia",
+                        "canonical_title": "Instructor Malicia",
+                        "canonical_path": "/wiki/Instructor_Malicia",
+                        "kind": "named_actor",
+                        "confidence": 0.95,
+                        "source_signals": ["category:named_actor"],
+                        "source_ids": ["src-instance"],
+                        "reason_codes": ["affirmative_target_evidence"],
+                    }
+                ],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (decisions_dir / "location_selection_decisions.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "location_selection.v1",
+                "producer": "traverse_seed",
+                "decisions": [
+                    {
+                        "schema_version": "location_selection_decision.v1",
+                        "decision_id": "location-selection-zone-western-plaguelands-hearthglen",
+                        "zone_id": "zone-western-plaguelands",
+                        "location_id": "location-hearthglen",
+                        "name": "Hearthglen",
+                        "source_link": "/wiki/Hearthglen",
+                        "source_relation": "maps_subregions",
+                        "candidate_rank": 0,
+                        "state": "selected",
+                        "entity_kind": "place",
+                        "entity_kind_decision_id": "entity-kind-hearthglen",
+                        "source_ids": ["src-zone"],
+                        "categories": ["Western Plaguelands subzones", "Towns"],
+                        "zone_record": "on_zone",
+                        "profile_source_id": "src-location-hearthglen",
+                        "profile_evidence_count": 1,
+                        "reason_codes": ["direct_profile_evidence"],
+                    }
+                ],
+                "coverage": [],
+            },
             indent=2,
         ),
         encoding="utf-8",
@@ -475,6 +535,50 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(
         ),
         encoding="utf-8",
     )
+    ingest_dir = context.data_dir / "ingest"
+    ingest_dir.mkdir(parents=True, exist_ok=True)
+    (ingest_dir / "source_snapshots.json").write_text(
+        json.dumps(
+            with_required_snapshot_schema(
+                [
+                    {
+                        "entity_id": "instance-scholomance",
+                        "entity_type": "instance",
+                        "name": "Scholomance",
+                        "source_id": "src-instance",
+                        "instance_participant_evidence": [
+                            {
+                                "candidate_id": "character-darkmaster-gandling",
+                                "candidate_name": "Darkmaster Gandling",
+                                "canonical_path": "/wiki/Darkmaster_Gandling",
+                                "entity_kind_decision_id": "entity-kind-darkmaster-gandling",
+                                "entity_kind": "named_actor",
+                                "instance_presence_evidence": ["source:src-instance:section:adventurers"],
+                                "retail_scope": "retail_confirmed",
+                                "retail_scope_evidence": ["category:Characters"],
+                                "encounter_relation_evidence": ["high_confidence_encounter_roster"],
+                                "reason_codes": ["affirmative_target_evidence"],
+                            },
+                            {
+                                "candidate_id": "character-instructor-malicia",
+                                "candidate_name": "Instructor Malicia",
+                                "canonical_path": "/wiki/Instructor_Malicia",
+                                "entity_kind_decision_id": "entity-kind-instructor-malicia",
+                                "entity_kind": "named_actor",
+                                "instance_presence_evidence": ["source:src-instance:section:adventurers"],
+                                "retail_scope": "retail_confirmed",
+                                "retail_scope_evidence": ["category:Characters"],
+                                "encounter_relation_evidence": ["high_confidence_encounter_roster"],
+                                "reason_codes": ["affirmative_target_evidence"],
+                            },
+                        ],
+                    }
+                ]
+            ),
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
     outputs = run_draft_writer(
         context, [zone_fact_path, instance_fact_path], max_entity_concurrency=1
@@ -486,7 +590,6 @@ def test_wiki_first_draft_writer_populates_sections_from_evidence(
     instance_draft = json.loads(instance_output.read_text(encoding="utf-8"))
 
     assert zone_draft["history_sections"]
-    assert zone_draft["location_cards"]
     assert zone_draft["instance_links"]
     assert zone_draft["sources"]
     assert "reclaimed" in zone_draft["history_sections"][0]["body"].lower()

@@ -168,35 +168,6 @@ def _lore_candidate(name: str, *, lore: bool, seed: bool = True) -> LocationCand
     return cand
 
 
-def test_lore_significant_landmarks_displace_maps_only_farms() -> None:
-    from pipeline.generate.draft.location_scoring import select_location_cards
-
-    candidates = [
-        _lore_candidate("Andorhal", lore=True),
-        _lore_candidate("Hearthglen", lore=True),
-        _lore_candidate("Caer Darrow", lore=True),
-        _lore_candidate("Felstone Field", lore=False),
-        _lore_candidate("Dalson's Farm", lore=False),
-        _lore_candidate("Darrowmere Lake", lore=False),
-    ]
-    selected = {c.name for c in select_location_cards(candidates)}
-    assert selected == {"Andorhal", "Hearthglen", "Caer Darrow"}
-
-
-def test_lore_gate_inactive_when_too_few_lore_landmarks() -> None:
-    # With fewer than MIN_LOCATION_CARDS lore landmarks, fall back to normal scoring (so sparse
-    # zones still surface their maps-listed places).
-    from pipeline.generate.draft.location_scoring import select_location_cards
-
-    candidates = [
-        _lore_candidate("Andorhal", lore=True),
-        _lore_candidate("Felstone Field", lore=False),
-        _lore_candidate("Charred Outpost", lore=False),
-    ]
-    selected = {c.name for c in select_location_cards(candidates)}
-    assert "Felstone Field" in selected  # gate inactive, farms still eligible
-
-
 def test_history_prominent_landmark_outscores_repeated_maps_list_farm() -> None:
     farm = _candidate("Felstone Field", [_seed("maps_subregions")] * 3)
     landmark = _candidate("Hearthglen", [_seed("history")] * 3)

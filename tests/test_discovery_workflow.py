@@ -14,6 +14,11 @@ from pipeline.discovery.workflow import (
 )
 from tests.factories.snapshots import with_required_snapshot_schema
 
+
+def _location_decisions(outputs: dict[str, Path]) -> list[dict[str, object]]:
+    blob = json.loads(outputs["location_selection_decisions"].read_text(encoding="utf-8"))
+    return [row for row in blob["decisions"] if isinstance(row, dict)]
+
 ZONE_ID = "zone-example"
 ZONE_NAME = "Example Zone"
 ZONE_WIKI = "Example_Zone"
@@ -177,7 +182,7 @@ def test_discovery_workflow_detects_instances_and_storylines_without_noisy_links
     )
     assert any("storyline" in row.get("source_link", "").lower() for row in storyline_targets)
 
-    candidates = json.loads(outputs["zone_location_candidates"].read_text(encoding="utf-8"))
+    candidates = _location_decisions(outputs)
     candidate_links = {row["source_link"] for row in candidates}
     assert f"/wiki/File:WorldMap-{ZONE_WIKI}.jpg" not in candidate_links
     assert not any("action=edit" in link for link in candidate_links)
@@ -260,9 +265,9 @@ def test_discovery_workflow_emits_typed_traversal_targets(tmp_path: Path) -> Non
     assert any(row["name"] == "Argent Crusade" for row in faction_targets)
     assert all(row["faction_id"] for row in faction_targets)
 
-    location_targets = json.loads(outputs["location_profile_targets"].read_text(encoding="utf-8"))
+    location_targets = _location_decisions(outputs)
     assert any(row["name"] == "Brill" for row in location_targets)
-    assert not any(row["name"] == "Argent Crusade" for row in location_targets)
+    assert not any(row["name"] == "Argent Crusade" and row["state"] == "candidate" for row in location_targets)
 
     storyline_targets = json.loads(
         outputs["storyline_traversal_targets"].read_text(encoding="utf-8")
@@ -408,11 +413,12 @@ def test_discovery_workflow_types_links_by_section_role_not_keywords(tmp_path: P
 
     outputs = run_discovery_workflow(context, manifest_path)
 
-    location_targets = json.loads(outputs["location_profile_targets"].read_text(encoding="utf-8"))
+    location_targets = _location_decisions(outputs)
     names = {row["name"] for row in location_targets}
     assert "Brill" in names
-    # Single-word NPC routed by section role, not mistyped as a location.
-    assert "Rattlegore" not in names
+    # Broad discovery keeps unresolved links for probing but does not type a character-shaped lead
+    # as a place from its source section.
+    assert next(row for row in location_targets if row["name"] == "Rattlegore")["entity_kind"] == "unknown"
 
 
 def test_discovery_workflow_hard_rejects_meta_pages_from_maps_section(tmp_path: Path) -> None:
@@ -475,11 +481,11 @@ def test_discovery_workflow_hard_rejects_meta_pages_from_maps_section(tmp_path: 
     outputs = run_discovery_workflow(context, manifest_path)
     names = {
         row["name"]
-        for row in json.loads(outputs["location_profile_targets"].read_text(encoding="utf-8"))
+        for row in _location_decisions(outputs)
     }
     assert "Felstone Field" in names
-    assert "Lore location" not in names
-    assert "Undisplayed location" not in names
+    assert "Lore location" in names
+    assert "Undisplayed location" in names
 
 
 def _loc(name: str, role: str = "maps_subregions", zone: str = "z") -> dict[str, object]:
@@ -590,20 +596,14 @@ def test_discovery_workflow_extracts_marquee_landmarks_from_mixed_sections(tmp_p
     outputs = run_discovery_workflow(context, manifest_path)
     names = {
         row["name"]
-        for row in json.loads(outputs["location_profile_targets"].read_text(encoding="utf-8"))
+        for row in _location_decisions(outputs)
     }
     assert "Caer Darrow" in names
     assert "Uther's Tomb" in names
 
-    # Lore-significance: a place named in the history narrative is a marquee landmark; a maps-only
-    # entry (Sorrow Hill, listed only under "Maps and subregions") is gameplay chrome.
-    candidates = {
-        row["name"]: row
-        for row in json.loads(outputs["zone_location_candidates"].read_text(encoding="utf-8"))
-    }
-    assert candidates["Caer Darrow"]["lore_significant"] is True
-    assert candidates["Uther's Tomb"]["lore_significant"] is True
-    assert candidates["Sorrow Hill"]["lore_significant"] is False
+    candidates = {row["name"]: row for row in _location_decisions(outputs)}
+    assert candidates["Caer Darrow"]["source_relation"] == "maps_subregions"
+    assert candidates["Sorrow Hill"]["source_relation"] == "maps_subregions"
 
 
 def test_collect_instance_character_targets_takes_roster_not_places() -> None:
@@ -721,11 +721,11 @@ def test_discovery_workflow_excludes_cast_named_in_history_and_characters(tmp_pa
     outputs = run_discovery_workflow(context, manifest_path)
     names = {
         row["name"]
-        for row in json.loads(outputs["location_profile_targets"].read_text(encoding="utf-8"))
+        for row in _location_decisions(outputs)
     }
     assert "Caer Darrow" in names  # a real maps-section landmark survives
-    assert "Thassarian" not in names  # rostered cast member
-    assert "Ner'zhul" not in names  # apostrophe-infix NPC
+    assert "Thassarian" in names  # broad lead; target probe settles its kind
+    assert "Ner'zhul" in names
 
     # Slice D: zone-page characters are NOT crawled — only instance rosters are (zones emit no
     # key-character cards). So a zone notable like Thassarian produces no character profile target.

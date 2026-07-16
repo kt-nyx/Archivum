@@ -1,370 +1,314 @@
-"""Per-cluster questline significance scoring, inclusion decisions, and ranking (Slice C)."""
+"""Family-first, evidence-bearing story-arc selection (Slice 5)."""
 
 from __future__ import annotations
 
-from typing import Any
+import re
+from collections import defaultdict
+from pathlib import Path
+from typing import Any, Literal
 
 from pipeline.contracts.models import (
     ZONE_MAX_TOTAL_QUESTLINE_CARDS,
-    ZONE_MIN_QUESTLINE_INCLUSION_SCORE,
     ZONE_MIN_TOTAL_QUESTLINE_CARDS,
+    ArcCandidate,
+    ArcCoverage,
+    ArcFamily,
+    ArcFamilyDecision,
+    ArcSignalEvidence,
+    QuestlineArcSelectionArtifact,
 )
-from pipeline.discovery.location_discovery import name_in_seed_text
+from pipeline.discovery.questline_cluster import normalize_quest_title
 
-_ALGORITHM_VERSION = "v2-questline-structural"
-
-_CRITERIA = (
-    "narrative_centrality",
-    "presence_breadth",
-    "named_cast_significance",
-    "consequence_weight",
-    "instance_relevance",
-    "player_discoverability",
+_FACTION_SUFFIX_RE = re.compile(r"\s*\((alliance|horde)\)\s*$", re.IGNORECASE)
+_THEME_STOP_WORDS = frozenset(
+    {"about", "after", "against", "between", "from", "into", "that", "their", "there", "these", "they", "this", "through", "with", "your"}
 )
 
 
-def _presence_breadth_score(quest_count: int) -> int:
-    if quest_count >= 7:
-        return 2
-    if quest_count >= 2:
-        return 1
-    return 0
+def _faction_and_base_title(title: str, faction: str) -> tuple[str, str | None]:
+    match = _FACTION_SUFFIX_RE.search(title.strip())
+    suffix_faction = match.group(1).lower() if match else ""
+    base_title = _FACTION_SUFFIX_RE.sub("", title).strip() or title.strip()
+    variant = suffix_faction or (faction if faction in {"alliance", "horde"} else "")
+    return base_title, variant or None
 
 
-def _extract_cluster_features(
+def _signal(
+    signal: Literal[
+        "shared_hub",
+        "recurring_actor",
+        "recurring_organization",
+        "prerequisite_followup",
+        "conflict_theme",
+        "faction",
+        "phase_expansion",
+    ],
+    values: set[str],
+    refs: list[str],
+) -> ArcSignalEvidence:
+    return ArcSignalEvidence(signal=signal, values=sorted(values), evidence_refs=sorted(set(refs)))
+
+
+def _theme_tokens(records: list[dict[str, Any]]) -> set[str]:
+    tokens: set[str] = set()
+    for record in records:
+        for token in re.findall(r"[A-Za-z][A-Za-z'-]{3,}", str(record.get("description", "")).casefold()):
+            if token not in _THEME_STOP_WORDS:
+                tokens.add(token)
+    return tokens
+
+
+def _candidate_from_component(
     summary: dict[str, Any],
     *,
-    member_records: list[dict[str, Any]],
-    member_rows: list[dict[str, Any]],
-    seed_text: str,
-    storyline_html: str,
-) -> dict[str, Any]:
-    quest_count = int(summary.get("quest_count", len(member_records)) or 0)
-    npcs = {
-        str(record.get("start_npc", "")).strip()
-        for record in member_records
-        if str(record.get("start_npc", "")).strip()
-    }
-    orgs = set(summary.get("reputation_orgs") or [])
-    for record in member_records:
-        org = str(record.get("reputation_org", "")).strip()
-        if org:
-            orgs.add(org)
-    has_chain_start = any(
-        not list(record.get("previous", [])) and record.get("has_questbox", True)
-        for record in member_records
+    records_by_node: dict[str, dict[str, Any]],
+    rows_by_cluster: dict[str, list[dict[str, Any]]],
+) -> ArcCandidate:
+    candidate_id = str(summary["cluster_id"])
+    node_ids = [str(node_id) for node_id in summary.get("quest_node_ids", []) if str(node_id)]
+    records = [records_by_node[node_id] for node_id in node_ids if node_id in records_by_node]
+    missing_records = [node_id for node_id in node_ids if node_id not in records_by_node]
+    rows = rows_by_cluster.get(candidate_id, [])
+    faction = str(summary.get("faction", "shared")).casefold()
+    base_title, faction_variant = _faction_and_base_title(str(summary.get("title", candidate_id)), faction)
+    hubs = {str(record.get("start_location", "")).strip() for record in records} - {""}
+    actors = {
+        str(record.get("start_npc", "")).strip() or str(record.get("end_npc", "")).strip()
+        for record in records
+    } - {""}
+    organizations = {str(record.get("reputation_org", "")).strip() for record in records} - {""}
+    theme = _theme_tokens(records)
+    member_set = set(node_ids)
+    cross_refs = {
+        str(ref).strip()
+        for record in records
+        for field in ("previous", "next")
+        for ref in record.get(field, []) or []
+        if str(ref).strip()
+    } - member_set
+    internal_edges = sum(
+        1
+        for record in records
+        for field in ("previous", "next")
+        for ref in record.get(field, []) or []
+        if str(ref).strip() in member_set
     )
-    cluster_order = 0
-    if member_rows:
-        cluster_order = int(member_rows[0].get("cluster_order", 0) or 0)
-    return {
-        "quest_count": quest_count,
-        "npc_count": len(npcs),
-        "org_count": len(orgs),
-        "has_chain_start": has_chain_start,
-        "cluster_order": cluster_order,
-        "seed_mention": name_in_seed_text(str(summary.get("title", "")), seed_text)
-        or any(name_in_seed_text(npc, seed_text) for npc in npcs),
-        "storyline_html_len": len(storyline_html.strip()),
-    }
-
-
-def _score_criteria(features: dict[str, Any]) -> dict[str, int]:
-    """Structural scoring only — no zone-specific keyword tables.
-
-    Signals: chain length (presence/consequence proxies), named cast breadth, whether the
-    cluster is named in the zone seed text, reputation-faction anchoring, and a resolvable
-    chain start (player discoverability).
-    """
-    quest_count = int(features.get("quest_count", 0))
-    npc_count = int(features.get("npc_count", 0))
-    org_count = int(features.get("org_count", 0))
-
-    narrative = 2 if features.get("seed_mention") else (1 if quest_count >= 5 else 0)
-    presence = _presence_breadth_score(quest_count)
-    named_cast = 2 if npc_count >= 3 else (1 if npc_count >= 1 else 0)
-    consequence = 2 if quest_count >= 7 else (1 if quest_count >= 4 else 0)
-    # Reputation-faction anchoring stands in for narrative significance (zone-agnostic).
-    instance_rel = 1 if org_count >= 1 else 0
-    discoverability = 2 if features.get("has_chain_start") else (1 if quest_count >= 2 else 0)
-
-    return {
-        "narrative_centrality": narrative,
-        "presence_breadth": presence,
-        "named_cast_significance": named_cast,
-        "consequence_weight": consequence,
-        "instance_relevance": instance_rel,
-        "player_discoverability": discoverability,
-    }
-
-
-def _score_single_cluster(
-    summary: dict[str, Any],
-    *,
-    member_records: list[dict[str, Any]],
-    member_rows: list[dict[str, Any]],
-    seed_text: str,
-    storyline_html: str,
-    run_id: str,
-) -> dict[str, Any]:
-    cluster_id = str(summary.get("cluster_id", "")).strip()
-    zone_id = str(summary.get("zone_id", "")).strip()
-    faction = str(summary.get("faction", "shared"))
-    features = _extract_cluster_features(
-        summary,
-        member_records=member_records,
-        member_rows=member_rows,
-        seed_text=seed_text,
-        storyline_html=storyline_html,
+    chain_heads = sum(1 for record in records if not (record.get("previous") or []))
+    setup = 2 if chain_heads and hubs else (1 if chain_heads else 0)
+    connectivity = min(2, internal_edges)
+    continuity = 2 if len(theme) >= 5 else (1 if theme else 0)
+    zone_relevance = 2 if hubs else (1 if rows else 0)
+    cast_faction = min(2, int(bool(actors)) + int(bool(organizations or faction_variant)))
+    coverage = 2 if len(node_ids) >= 3 else (1 if len(node_ids) >= 2 else 0)
+    coherent_score = float(setup + connectivity + continuity + zone_relevance + cast_faction + coverage)
+    signals = [
+        _signal("shared_hub", hubs, node_ids),
+        _signal("recurring_actor", actors, node_ids),
+        _signal("recurring_organization", organizations, node_ids),
+        _signal("prerequisite_followup", cross_refs, node_ids),
+        _signal("conflict_theme", theme, node_ids),
+        _signal("faction", {faction_variant} if faction_variant else set(), node_ids),
+        _signal("phase_expansion", {str(record.get("expansion") or record.get("phase") or "").strip() for record in records} - {""}, node_ids),
+    ]
+    reason_codes = ["coherent_arc_score", f"score:{int(coherent_score)}"]
+    if missing_records:
+        reason_codes.append("missing_quest_records")
+    if len(node_ids) == 1:
+        if setup + zone_relevance + cast_faction >= 5:
+            reason_codes.append("single_quest_high_signal_exception")
+        else:
+            reason_codes.append("single_quest_insufficient_signal")
+    return ArcCandidate(
+        candidate_id=candidate_id,
+        zone_id=str(summary["zone_id"]),
+        component_ids=[candidate_id],
+        quest_node_ids=node_ids,
+        base_title=base_title,
+        faction_variant=faction_variant,
+        phase_variant=next((signal.values[0] for signal in signals if signal.signal == "phase_expansion" and signal.values), None),
+        signal_evidence=signals,
+        coherent_score=coherent_score,
+        reason_codes=reason_codes,
     )
-    criteria = _score_criteria(features)
-    inclusion_score = sum(criteria.values())
-    score = round(inclusion_score / 11.0, 3)
-    feature_payload: dict[str, float | int | str | bool] = {
-        "quest_count": int(features.get("quest_count", 0)),
-        "npc_count": int(features.get("npc_count", 0)),
-        "cluster_order": int(features.get("cluster_order", 0)),
-        "seed_mention": bool(features.get("seed_mention")),
-        "inclusion_score": inclusion_score,
-        "faction": faction,
-        "cluster_title": str(summary.get("title", cluster_id)),
-    }
-    for key, value in criteria.items():
-        feature_payload[f"criterion_{key}"] = int(value)
-
-    borderline = None
-    if inclusion_score >= ZONE_MIN_QUESTLINE_INCLUSION_SCORE:
-        final_decision = "include"
-        reason_codes = ["score_threshold_met"]
-    elif inclusion_score <= 5:
-        final_decision = "exclude"
-        reason_codes = ["below_exclusion_threshold"]
-    else:
-        ruling = "include" if int(features.get("quest_count", 0)) >= 3 else "exclude"
-        borderline = {"prompt_class": "questline_inclusion_borderline", "ruling": ruling}
-        final_decision = ruling
-        reason_codes = ["borderline_adjudicated", f"score_{inclusion_score}"]
-
-    return {
-        "subject_id": cluster_id,
-        "subject_type": "questline_cluster",
-        "run_id": run_id,
-        "algorithm_version": _ALGORITHM_VERSION,
-        "features": feature_payload,
-        "hard_reject": False,
-        "hard_reject_reasons": [],
-        "score": score,
-        "thresholds": {
-            "include_min_score": ZONE_MIN_QUESTLINE_INCLUSION_SCORE,
-            "borderline_min": 6,
-            "borderline_max": 7,
-        },
-        "borderline_adjudication": borderline,
-        "final_decision": final_decision,
-        "reason_codes": reason_codes,
-        "zone_id": zone_id,
-        "cluster_order": int(features.get("cluster_order", 0)),
-        "_sort_score": inclusion_score,
-    }
 
 
-def _apply_cap_trim(
-    scored: list[dict[str, Any]],
-    *,
-    max_cards: int,
-) -> tuple[list[dict[str, Any]], list[str]]:
-    included = [row for row in scored if str(row.get("final_decision", "")) == "include"]
-    included.sort(
-        key=lambda row: (
-            -int(row.get("_sort_score", 0)),
-            int((row.get("features") or {}).get("cluster_order", row.get("cluster_order", 0))),
-            str(row.get("subject_id", "")),
-        )
-    )
-    kept_ids = [str(row.get("subject_id", "")) for row in included[:max_cards]]
-    kept_set = set(kept_ids)
-    for row in scored:
-        cluster_id = str(row.get("subject_id", ""))
-        if str(row.get("final_decision", "")) != "include":
-            continue
-        if cluster_id in kept_set:
-            continue
-        row["final_decision"] = "exclude"
-        row["reason_codes"] = list(row.get("reason_codes") or []) + [
-            "zone_questline_cap_trimming"
-        ]
-    return scored, kept_ids
+def _values(candidate: ArcCandidate, signal: str) -> set[str]:
+    return {value for item in candidate.signal_evidence if item.signal == signal for value in item.values}
 
 
-def build_zone_questline_set_decision(
-    zone_id: str,
-    *,
-    run_id: str,
-    included_count: int,
-    cluster_count: int,
-) -> dict[str, Any]:
-    if included_count >= ZONE_MIN_TOTAL_QUESTLINE_CARDS:
-        final_decision = "include"
-        reason_codes = ["clusters_included", f"included_count:{included_count}"]
-    elif included_count >= 1:
-        final_decision = "defer"
-        reason_codes = ["insufficient_included_clusters"]
-    else:
-        final_decision = "exclude"
-        reason_codes = ["no_included_clusters"]
-    return {
-        "subject_id": zone_id,
-        "subject_type": "zone_questline_set",
-        "run_id": run_id,
-        "algorithm_version": _ALGORITHM_VERSION,
-        "features": {
-            "included_cluster_count": included_count,
-            "total_cluster_count": cluster_count,
-        },
-        "hard_reject": False,
-        "hard_reject_reasons": [],
-        "score": min(1.0, included_count / max(ZONE_MIN_TOTAL_QUESTLINE_CARDS, 1)),
-        "thresholds": {"include_min_clusters": ZONE_MIN_TOTAL_QUESTLINE_CARDS},
-        "borderline_adjudication": None,
-        "final_decision": final_decision,
-        "reason_codes": reason_codes,
-    }
+def _relationship(left: ArcCandidate, right: ArcCandidate) -> tuple[Literal["merge", "keep_separate"], list[ArcSignalEvidence], dict[str, str] | None]:
+    common: list[ArcSignalEvidence] = []
+    for signal in ("shared_hub", "recurring_actor", "recurring_organization", "prerequisite_followup", "conflict_theme"):
+        values = _values(left, signal) & _values(right, signal)
+        if values:
+            common.append(_signal(signal, values, left.quest_node_ids + right.quest_node_ids))
+    same_title = normalize_quest_title(left.base_title) == normalize_quest_title(right.base_title)
+    distinct_variants = (left.faction_variant, left.phase_variant) != (right.faction_variant, right.phase_variant)
+    if same_title and len(common) >= 2:
+        return "merge", common, None
+    if same_title and distinct_variants and common:
+        return "merge", common, None
+    if same_title and len(common) == 1:
+        # Bounded adjudication: only a fixed enum and the exact structured signals are retained.
+        return "keep_separate", common, {
+            "prompt_class": "arc_family_ambiguity.v1",
+            "ruling": "keep_separate",
+            "evidence": common[0].signal,
+        }
+    return "keep_separate", common, None
 
 
-def score_zone_questline_clusters(
+def _family_id(zone_id: str, members: list[ArcCandidate]) -> str:
+    # Quest-title normalization preserves apostrophes for matching, while contract IDs permit only
+    # lowercase alphanumeric segments separated by single hyphens.
+    stem = re.sub(r"[^a-z0-9]+", "-", normalize_quest_title(members[0].base_title)).strip("-") or "arc"
+    return f"arc-{zone_id}-{stem}-{members[0].candidate_id}"
+
+
+def select_zone_arc_families(
     *,
     zone_id: str,
     cluster_summaries: list[dict[str, Any]],
     v3_rows: list[dict[str, Any]],
     quest_records: list[dict[str, Any]],
-    seed_text: str = "",
-    storyline_html: str = "",
-    run_id: str = "",
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Return (decision_artifacts incl. zone gate, zone_ranking_payload)."""
-    records_by_node = {
-        str(record.get("node_id", "")).strip(): record
-        for record in quest_records
-        if str(record.get("zone_id", "")).strip() == zone_id
-    }
-    rows_by_cluster: dict[str, list[dict[str, Any]]] = {}
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    """Build candidates, resolve families, then apply coverage and budget at family level."""
+    records_by_node = {str(row.get("node_id", "")): row for row in quest_records if str(row.get("zone_id", "")) == zone_id}
+    rows_by_cluster: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in v3_rows:
-        if str(row.get("zone_id", "")).strip() != zone_id:
-            continue
-        if str(row.get("node_type", "")) != "quest":
-            continue
-        cluster_id = str(row.get("cluster_id", "")).strip()
-        if cluster_id:
-            rows_by_cluster.setdefault(cluster_id, []).append(row)
-
-    zone_summaries = [
-        summary
+        if str(row.get("zone_id", "")) == zone_id and row.get("node_type") == "quest":
+            rows_by_cluster[str(row.get("cluster_id", ""))].append(row)
+    candidates = [
+        _candidate_from_component(summary, records_by_node=records_by_node, rows_by_cluster=rows_by_cluster)
         for summary in cluster_summaries
-        if str(summary.get("zone_id", "")).strip() == zone_id and summary.get("cluster_id")
+        if str(summary.get("zone_id", "")) == zone_id and summary.get("cluster_id")
     ]
-    scored: list[dict[str, Any]] = []
-    for summary in zone_summaries:
-        cluster_id = str(summary.get("cluster_id", "")).strip()
-        node_ids = list(summary.get("quest_node_ids") or [])
-        member_records = [
-            records_by_node[node_id] for node_id in node_ids if node_id in records_by_node
+    candidates.sort(key=lambda candidate: candidate.candidate_id)
+    parent = {candidate.candidate_id: candidate.candidate_id for candidate in candidates}
+    decisions: list[ArcFamilyDecision] = []
+    def root(value: str) -> str:
+        while parent[value] != value:
+            parent[value] = parent[parent[value]]
+            value = parent[value]
+        return value
+    for index, left in enumerate(candidates):
+        for right in candidates[index + 1 :]:
+            ruling, evidence, adjudication = _relationship(left, right)
+            decisions.append(ArcFamilyDecision(decision_id=f"arc-decision-{left.candidate_id}-{right.candidate_id}", zone_id=zone_id, decision=ruling, candidate_ids=[left.candidate_id, right.candidate_id], reason_codes=["structured_signals_agree"] if ruling == "merge" else ["insufficient_shared_campaign_evidence"], signal_evidence=evidence, adjudication=adjudication))
+            if ruling == "merge":
+                parent[root(right.candidate_id)] = root(left.candidate_id)
+    grouped: dict[str, list[ArcCandidate]] = defaultdict(list)
+    for candidate in candidates:
+        grouped[root(candidate.candidate_id)].append(candidate)
+    families: list[ArcFamily] = []
+    selected: list[str] = []
+    exclusions: list[ArcFamilyDecision] = []
+    remaining = ZONE_MAX_TOTAL_QUESTLINE_CARDS
+    selected_labels: set[str] = set()
+    ordered_groups = sorted(grouped.values(), key=lambda members: (-max(member.coherent_score for member in members), members[0].candidate_id))
+    for members in ordered_groups:
+        members.sort(key=lambda member: (-member.coherent_score, member.candidate_id))
+        family = ArcFamily(family_id=_family_id(zone_id, members), zone_id=zone_id, base_title=members[0].base_title, candidate_ids=[member.candidate_id for member in members], signal_evidence=[signal for member in members for signal in member.signal_evidence if signal.values], coherent_score=max(member.coherent_score for member in members))
+        families.append(family)
+        eligible = [
+            member
+            for member in members
+            if "missing_quest_records" not in member.reason_codes
+            and (
+                len(member.quest_node_ids) > 1
+                or "single_quest_high_signal_exception" in member.reason_codes
+            )
         ]
-        member_rows = sorted(
-            rows_by_cluster.get(cluster_id, []),
-            key=lambda row: int(row.get("order_in_cluster", 0) or 0),
-        )
-        scored.append(
-            _score_single_cluster(
-                summary,
-                member_records=member_records,
-                member_rows=member_rows,
-                seed_text=seed_text,
-                storyline_html=storyline_html,
-                run_id=run_id,
+        if not eligible:
+            reason_code = (
+                "missing_quest_records"
+                if any("missing_quest_records" in member.reason_codes for member in members)
+                else "single_quest_insufficient_signal"
             )
-        )
-
-    # Sparse or imperfect quest records can leave every cluster just below the score floor.
-    # Emit the strongest structurally connected cluster rather than silently producing no
-    # questline coverage; the explicit reason makes this reviewable on every zone.
-    if not any(str(row.get("final_decision", "")) == "include" for row in scored):
-        fallback_candidates = [
-            row
-            for row in scored
-            if int((row.get("features") or {}).get("quest_count", 0)) >= 1
-        ]
-        if fallback_candidates:
-            fallback = max(
-                fallback_candidates,
-                key=lambda row: (
-                    int(row.get("_sort_score", 0)),
-                    -int((row.get("features") or {}).get("cluster_order", 0)),
-                    str(row.get("subject_id", "")),
-                ),
-            )
-            fallback["final_decision"] = "include"
-            fallback["reason_codes"] = ["structural_fallback_top_cluster"]
-
-    scored, included_ids = _apply_cap_trim(
-        scored,
-        max_cards=ZONE_MAX_TOTAL_QUESTLINE_CARDS,
-    )
-
-    rankings: list[dict[str, Any]] = []
-    for rank, cluster_id in enumerate(included_ids, start=1):
-        row = next(item for item in scored if str(item.get("subject_id", "")) == cluster_id)
-        features = row.get("features") or {}
-        rankings.append(
-            {
-                "cluster_id": cluster_id,
-                "rank": rank,
-                "inclusion_score": int(features.get("inclusion_score", 0)),
-                "final_decision": "include",
-                "faction": str(features.get("faction", "shared")),
-                "title": str(features.get("cluster_title", cluster_id)),
-            }
-        )
-    for row in scored:
-        if str(row.get("subject_id", "")) not in included_ids:
-            features = row.get("features") or {}
-            rankings.append(
-                {
-                    "cluster_id": str(row.get("subject_id", "")),
-                    "rank": 0,
-                    "inclusion_score": int(features.get("inclusion_score", 0)),
-                    "final_decision": str(row.get("final_decision", "exclude")),
-                    "faction": str(features.get("faction", "shared")),
-                    "title": str(features.get("cluster_title", "")),
-                }
-            )
-
-    for row in scored:
-        row.pop("_sort_score", None)
-        row.pop("cluster_order", None)
-        row.pop("zone_id", None)
-
-    zone_gate = build_zone_questline_set_decision(
-        zone_id,
-        run_id=run_id,
-        included_count=len(included_ids),
-        cluster_count=len(zone_summaries),
-    )
-    ranking_payload = {
-        "zone_id": zone_id,
-        "included_cluster_ids": included_ids,
-        "rankings": rankings,
-    }
-    return [zone_gate, *scored], ranking_payload
-
-
-def load_included_cluster_ids_by_zone(rankings_blob: list[dict[str, Any]]) -> dict[str, list[str]]:
-    """Parse zone_quest_cluster_rankings.json into zone_id -> ordered cluster ids."""
-    by_zone: dict[str, list[str]] = {}
-    for row in rankings_blob:
-        if not isinstance(row, dict):
+            exclusions.append(ArcFamilyDecision(decision_id=f"arc-exclude-{family.family_id}", zone_id=zone_id, decision="exclude", candidate_ids=family.candidate_ids, family_id=family.family_id, reason_codes=[reason_code], signal_evidence=[]))
             continue
-        zone_id = str(row.get("zone_id", "")).strip()
-        if not zone_id:
-            continue
-        by_zone[zone_id] = [str(cluster_id) for cluster_id in row.get("included_cluster_ids") or []]
-    return by_zone
+        for member in eligible:
+            if remaining <= 0:
+                exclusions.append(ArcFamilyDecision(decision_id=f"arc-exclude-{member.candidate_id}", zone_id=zone_id, decision="exclude", candidate_ids=[member.candidate_id], family_id=family.family_id, reason_codes=["family_coverage_budget_exhausted"], signal_evidence=[]))
+                continue
+            if member is not eligible[0] and not (member.faction_variant or member.phase_variant):
+                exclusions.append(ArcFamilyDecision(decision_id=f"arc-exclude-{member.candidate_id}", zone_id=zone_id, decision="exclude", candidate_ids=[member.candidate_id], family_id=family.family_id, reason_codes=["parallel_variant_not_distinct_playable_path"], signal_evidence=[]))
+                continue
+            label = " ".join(
+                part
+                for part in (member.base_title, member.faction_variant, member.phase_variant)
+                if part
+            ).casefold()
+            if label in selected_labels:
+                exclusions.append(ArcFamilyDecision(decision_id=f"arc-exclude-{member.candidate_id}", zone_id=zone_id, decision="exclude", candidate_ids=[member.candidate_id], family_id=family.family_id, reason_codes=["duplicate_normalized_variant_label"], signal_evidence=[]))
+                continue
+            selected.append(member.candidate_id)
+            selected_labels.add(label)
+            decisions.append(ArcFamilyDecision(decision_id=f"arc-include-{member.candidate_id}", zone_id=zone_id, decision="include", candidate_ids=[member.candidate_id], family_id=family.family_id, reason_codes=["family_coverage_selected"] if member is eligible[0] else ["distinct_faction_or_phase_variant_selected"], signal_evidence=member.signal_evidence))
+            remaining -= 1
+    return ([candidate.model_dump(mode="json") for candidate in candidates], [family.model_dump(mode="json") for family in families], [decision.model_dump(mode="json") for decision in decisions + exclusions], selected)
+
+
+def arc_selection_artifact(
+    *, candidates: list[dict[str, Any]], families: list[dict[str, Any]], decisions: list[dict[str, Any]], selected_candidate_ids_by_zone: dict[str, list[str]],
+) -> dict[str, Any]:
+    parsed_candidates = [ArcCandidate.model_validate(row) for row in candidates]
+    parsed_families = [ArcFamily.model_validate(row) for row in families]
+    parsed_decisions = [ArcFamilyDecision.model_validate(row) for row in decisions]
+    rankings_by_zone: dict[str, list[str]] = defaultdict(list)
+    for family in sorted(
+        parsed_families, key=lambda row: (row.zone_id, -row.coherent_score, row.family_id)
+    ):
+        rankings_by_zone[family.zone_id].append(family.family_id)
+    coverage = [
+        ArcCoverage(
+            zone_id=zone_id,
+            status=(
+                "coverage_met"
+                if len(selected_ids) >= ZONE_MIN_TOTAL_QUESTLINE_CARDS
+                else "insufficient_viable_arc_variants"
+            ),
+            selected_candidate_ids=selected_ids,
+            attempted_candidate_ids=[
+                candidate.candidate_id
+                for candidate in parsed_candidates
+                if candidate.zone_id == zone_id
+            ],
+            reason_codes=(
+                ["family_coverage_met"]
+                if len(selected_ids) >= ZONE_MIN_TOTAL_QUESTLINE_CARDS
+                else ["insufficient_viable_arc_variants", "all_candidates_and_exclusions_recorded"]
+            ),
+        )
+        for zone_id, selected_ids in sorted(selected_candidate_ids_by_zone.items())
+    ]
+    return QuestlineArcSelectionArtifact(
+        candidates=parsed_candidates,
+        families=parsed_families,
+        decisions=[row for row in parsed_decisions if row.decision != "exclude"],
+        exclusions=[row for row in parsed_decisions if row.decision == "exclude"],
+        selected_candidate_ids_by_zone=selected_candidate_ids_by_zone,
+        family_rankings_by_zone=dict(rankings_by_zone),
+        coverage=coverage,
+    ).model_dump(mode="json")
+
+
+def load_arc_selection(path: Path) -> QuestlineArcSelectionArtifact:
+    import json
+
+    from pydantic import ValidationError
+    try:
+        return QuestlineArcSelectionArtifact.model_validate(json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, ValueError, ValidationError) as exc:
+        raise ValueError(f"questline_arc_selection reader: expected discovery.questline_significance artifact questline_arc_selection.v1 at {path}: {exc}") from exc
+
+
+def selected_candidate_ids_by_zone(path: Path) -> dict[str, list[str]]:
+    return load_arc_selection(path).selected_candidate_ids_by_zone
+
+
+def arc_membership(path: Path) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    artifact = load_arc_selection(path)
+    candidates = {row.candidate_id: row.model_dump(mode="json") for row in artifact.candidates}
+    families = {candidate_id: family.model_dump(mode="json") for family in artifact.families for candidate_id in family.candidate_ids}
+    return candidates, families

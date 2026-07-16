@@ -1,196 +1,23 @@
 {
-  "version": 1,
-  "_doc": "WS-C (D-6) externalized classification vocabulary for the discovery + ingest path. Every list here is matched against TITLE or BODY text (not against a section-role identifier), so no MediaWiki category/infobox/section structural signal exists at the decision point. Where a section role IS available the code uses it as the primary structural classifier; these are the irreducible text/title fallbacks. Each entry passed the D-6 gate: (1) no category/infobox/section signal at the decision point, (2) no viable statistical signal (short titles / fixed vocab), (3) externalized (this file), (4) justified with a pilot-bias note below. Section-role taxonomy lists (which ARE the structural signal) are intentionally NOT here — they remain in code as structural infra.",
-  "event_title_tokens": {
-    "_why_no_structural_signal": "Historical events rarely have their own zone-page section and are not a MediaWiki entity kind in the registry; the link title is the only pre-fetch cue.",
-    "_pilot_bias_note": "Generic conflict vocabulary (war/battle/invasion); 'scourging'/'cataclysm' are WoW-era nouns but apply across zones.",
-    "tokens": [
-      "war",
-      "battle",
-      "invasion",
-      "scourging",
-      "cataclysm",
-      "event"
-    ]
-  },
-  "character_role_hints": {
-    "_why_no_structural_signal": "A link in a non-character section may still point to a person; with no fetched infobox/category at decision time, an honorific/title token in the name is the only pre-fetch cue beyond the two-title-case-words heuristic. Section role 'notable_characters' is now the primary structural signal in code; these hints only apply when the section role is uninformative.",
-    "_pilot_bias_note": "Common WoW honorifics; broadly applicable but English-only. Statistical detection is infeasible on a 2-3 token name.",
-    "tokens": [
-      "king",
-      "queen",
-      "lord",
-      "lady",
-      "highlord",
-      "commander",
-      "inquisitor",
-      "master"
-    ]
-  },
-  "non_location_title_tokens": {
-    "_why_no_structural_signal": "Rejects non-place link targets (media/meta/out-of-game) that slipped past section routing; evaluated on the link title before fetch, so no category signal exists yet.",
-    "_pilot_bias_note": "Out-of-game media markers (novel/novella/short stories/rpg) and meta kinds (class/mob/faction); generic, not zone-specific.",
-    "tokens": [
-      "warcraft",
-      "novel",
-      "novella",
-      "short stories",
-      "story",
-      "faction",
-      "class",
-      "mob",
-      "flight path",
-      "instance portal",
-      "rpg"
-    ]
-  },
-  "location_hard_reject_tokens": {
-    "_why_no_structural_signal": "Hard-rejects location candidates by name (undisplayed/meta/out-of-game) during scoring, before the candidate page is fetched, so no MediaWiki category is available. ('removed'/'warcraft iii' overlap S3's retail filter, which is the authoritative post-fetch category signal in pipeline/common/retail.py; this name-level pass is the pre-fetch backstop.)",
-    "_pilot_bias_note": "Generic meta/out-of-game vocabulary, not zone-specific.",
-    "tokens": [
-      "undisplayed",
-      "lore",
-      "removed",
-      "warcraft iii",
-      "other game"
-    ]
-  },
-  "location_rpg_tokens": {
-    "_why_no_structural_signal": "Down-weights location candidates whose name marks them as RPG/novel/Classic-sourced; scored on the name pre-fetch, so no category exists yet.",
-    "_pilot_bias_note": "Out-of-game/non-retail source markers; generic. Authoritative retail filtering remains S3's category check.",
-    "tokens": [
-      "classic",
-      "warcraft rpg",
-      "novel",
-      "novella"
-    ]
-  },
-  "lore_character_role_hints": {
-    "_why_no_structural_signal": "Same pre-fetch link-title judgement as character_role_hints, for the lore-candidate consumer. Kept distinct (adds prince/princess/baron/baroness, drops master) until a live golden run can prove a reconciled list is safe.",
-    "_pilot_bias_note": "Common WoW honorifics; English-only; reconcile with character_role_hints under the WS-C live golden gate.",
-    "tokens": [
-      "king",
-      "queen",
-      "lord",
-      "lady",
-      "highlord",
-      "commander",
-      "inquisitor",
-      "prince",
-      "princess",
-      "baron",
-      "baroness"
-    ]
-  },
-  "entity_typing_race_species_denylist": {
-    "_why_no_structural_signal": "should_reject_location_title rejects a link whose title IS a playable race/species name; judged on the title before fetch, so no infobox/category exists yet.",
-    "_pilot_bias_note": "Closed set of WoW playable races plus 'gnoll'/'undead'; cross-zone, not WPL-specific.",
-    "tokens": [
-      "human", "gnoll", "undead", "night elf", "blood elf", "draenei", "dwarf",
-      "gnome", "troll", "tauren", "orc", "goblin", "worgen", "pandaren",
-      "vulpera", "mechagnome", "dracthyr"
-    ]
-  },
-  "entity_typing_meta_page_denylist": {
-    "_why_no_structural_signal": "Rejects MediaWiki meta/namespace concept pages by exact title (faction/category/world/class/...); evaluated on the title pre-fetch.",
-    "_pilot_bias_note": "Generic wiki meta concepts; zone-independent.",
-    "tokens": [
-      "faction", "category", "world", "class", "race", "quest", "item", "spell", "ability"
-    ]
-  },
-  "entity_typing_location_meta_titles": {
-    "_why_no_structural_signal": "Exact-title meta pages that masquerade as locations ('Lore', 'ADP'); title-only judgement pre-fetch.",
-    "_pilot_bias_note": "Generic; zone-independent.",
-    "tokens": ["lore", "adp"]
-  },
-  "entity_typing_faction_as_location_denylist": {
-    "_why_no_structural_signal": "Rejects faction names that appear as location links; the target page is not fetched, so its faction category is unavailable at decision time.",
-    "_pilot_bias_note": "Includes WPL-relevant factions (Argent Dawn, Scourge, Cult of the Damned) plus the global Alliance/Horde/Forsaken; the WPL-specific ones are flagged for the cross-zone smoke test.",
-    "tokens": [
-      "argent dawn", "scourge", "alliance", "horde", "forsaken", "cult of the damned", "crusade"
-    ]
-  },
+  "version": 2,
+  "_doc": "Small free-text vocabularies retained for quest-record parsing and non-canon evidence filtering. Entity/card admission uses source-native target-page evidence in pipeline.discovery.entity_typing; this file intentionally contains no article-title, race/species, person, location-type, or entity-classification lists.",
   "quest_alliance_binding_tokens": {
-    "_why_no_structural_signal": "Faction binding is read from Questbox wikitext (reputation org / category text), which is free text with no section-role/category signal.",
-    "_pilot_bias_note": "'alliance' only; generic.",
+    "_why_no_structural_signal": "Faction binding is read from Questbox wikitext, which is free text.",
     "tokens": ["alliance"]
   },
   "quest_horde_binding_tokens": {
-    "_why_no_structural_signal": "Faction binding is read from Questbox wikitext, free text with no structural signal.",
-    "_pilot_bias_note": "Horde plus its capital/race org names (Undercity, Orgrimmar, Silvermoon, ...); cross-zone WoW vocabulary, not WPL-specific.",
+    "_why_no_structural_signal": "Faction binding is read from Questbox wikitext, which is free text.",
     "tokens": [
       "horde", "undercity", "orgrimmar", "silvermoon", "thunder bluff",
       "darkspear", "bilgewater", "huojin"
     ]
   },
   "entry_quest_title_keywords": {
-    "_why_no_structural_signal": "Chain heads are computed structurally (indegree 0); this list only PREFERS the player-facing breadcrumb quest among heads, judged on the quest title. No structural signal distinguishes a breadcrumb from another head.",
-    "_pilot_bias_note": "Game-wide conventions only: \"hero's call\"/\"warchief's command\" are the universal Alliance/Horde zone-breadcrumb quest series. Zone-specific quest titles are intentionally absent.",
-    "tokens": [
-      "hero's call",
-      "warchief's command"
-    ]
+    "_why_no_structural_signal": "Chain heads are structural; this only prefers a player-facing breadcrumb among otherwise equivalent heads.",
+    "tokens": ["hero's call", "warchief's command"]
   },
   "non_canon_body_markers": {
-    "_why_no_structural_signal": "Detects non-canon/RPG history snippets from the snippet BODY text; snippets carry no MediaWiki category.",
-    "_pilot_bias_note": "Generic non-canon/RPG disclaimers; zone-independent.",
+    "_why_no_structural_signal": "These filter non-canon evidence body text, not linked entity identity.",
     "tokens": ["non-canon", "non canon", "warcraft rpg", "world of warcraft rpg"]
-  },
-  "generic_non_person_words": {
-    "_why_no_structural_signal": "_looks_like_person rejects a narrative-link title that is a common noun / race / creature type rather than a named NPC; judged on the title text. (entry_kinds/registry handles known places; this catches generic nouns the registry doesn't list.)",
-    "_pilot_bias_note": "Generic common nouns, races, and creature types; cross-zone. Overlaps entity_typing_race_species_denylist (different consumer) by design.",
-    "tokens": [
-      "class", "race", "quest", "item", "mob", "boss", "comic", "comics", "novel",
-      "engineer", "robot", "ram", "rat", "plane", "giant", "demon", "demigod",
-      "undead", "elemental", "human", "orc", "dwarf", "gnome", "troll", "tauren",
-      "goblin", "vrykul", "earthen", "mechagnome", "broken", "aqir", "nathrezim",
-      "golem", "bloodhound", "survivor", "dungeon"
-    ]
-  },
-  "boss_reject_section_titles": {
-    "_why_no_structural_signal": "should_reject_boss_title drops candidate titles that are actually section/meta headers (Loot, Strategy, Gallery, ...) leaking in as links; judged on the title text.",
-    "_pilot_bias_note": "Generic wiki section/meta header names; cross-zone.",
-    "tokens": [
-      "adventurers", "encounters", "bosses", "loot", "achievements", "strategy",
-      "tactics", "abilities", "quotes", "gallery", "notes", "trivia"
-    ]
-  },
-  "non_character_titles": {
-    "_why_no_structural_signal": "Title-matched denylist for game/meta pages and generic creature-class nouns the sparse registry does not classify; judged on the title text from narrative/history link mining.",
-    "_pilot_bias_note": "Universal WoW terms (Lich, Necromancer, Ghoul, ...); not zone/instance specific.",
-    "tokens": [
-      "world of warcraft", "warcraft", "lich", "necromancer", "abomination",
-      "ghoul", "skeleton", "zombie", "geist", "banshee"
-    ]
-  },
-  "non_person_narrative_titles": {
-    "_why_no_structural_signal": "Multi-word capitalized titles that are factions/forces/concepts, not individual characters; judged on the title text (the registry does not enumerate every faction).",
-    "_pilot_bias_note": "Cross-WoW factions/forces/dragonflights plus a few WPL-relevant ones (Scarlet Crusade, Cult of the Damned); the named-faction set is broad but cross-zone, revisit under the cross-zone smoke test.",
-    "tokens": [
-      "burning legion", "the burning legion", "scourge", "the scourge", "alliance",
-      "the alliance", "horde", "the horde", "old god", "old gods", "scarlet crusade",
-      "argent crusade", "argent dawn", "argent tournament", "sons of hodir", "kirin tor",
-      "ashen verdict", "knights of the ebon blade", "bronze dragonflight",
-      "black dragonflight", "green dragonflight", "red dragonflight", "blue dragonflight",
-      "dragonflight", "twilight's hammer", "cult of the damned", "forsaken", "valarjar",
-      "burning crusade", "boneguard", "warsong offensive", "valiance expedition",
-      "gnomeregan army", "saronite", "adventurer", "event", "faction", "novels",
-      "novellas", "short stories", "technology"
-    ]
-  },
-  "location_type_title_tokens": {
-    "_why_no_structural_signal": "Sub-location typing happens at the same pre-fetch link-decision point as the rest of this file: no MediaWiki category/infobox is available, so the only cue is a descriptive common-noun token in the place name (Charred Outpost, Uther's Tomb, Northridge Lumber Mill). Proper-noun-only names (Andorhal, Caer Darrow, Hearthglen) carry no descriptor and fall through to 'major_location_candidate' by design; richer typing for those would require the post-fetch category signal.",
-    "_pilot_bias_note": "English descriptive nouns common to WoW zone geography. Tuned against WPL (Charred Outpost, Felstone Field, Uther's Tomb, Northridge Lumber Mill) but the vocabulary is generic zone-geography, not zone-specific. Rules are evaluated in order; first matching category wins, so destruction (ruins) outranks structure (fortress) outranks settlement (town).",
-    "_value_maps_to": "pipeline.contracts.models.LocationType; 'major_location_candidate' is the no-match default and maps to LocationType.MAJOR_LOCATION downstream.",
-    "ordered_rules": [
-      {"location_type": "city", "tokens": ["city"]},
-      {"location_type": "starter_area", "tokens": ["starter"]},
-      {"location_type": "ruins", "tokens": ["ruins", "ruin"]},
-      {"location_type": "fortress", "tokens": ["keep", "hold", "citadel", "fortress", "stronghold", "bastion", "garrison", "spire", "tower", "bulwark", "fort"]},
-      {"location_type": "landmark", "tokens": ["tomb", "shrine", "monument", "memorial", "statue", "altar", "obelisk", "crypt"]},
-      {"location_type": "outpost", "tokens": ["outpost", "camp", "encampment", "watch", "waystation", "stead", "post"]},
-      {"location_type": "town", "tokens": ["town", "village", "hamlet", "burg", "mill", "crossing", "holdings", "ville"]},
-      {"location_type": "natural_feature", "tokens": ["lake", "river", "falls", "mountain", "mount", "peak", "woods", "wood", "forest", "glade", "glen", "hills", "hill", "vale", "valley", "marsh", "swamp", "bog", "fen", "grove", "pass", "ridge", "hollow", "cleft", "basin", "gorge", "moor"]}
-    ]
   }
 }

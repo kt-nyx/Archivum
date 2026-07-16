@@ -8,17 +8,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from pipeline.common import wiki_html
-from pipeline.common.discovery_vocab import (
-    boss_reject_section_titles,
-    generic_non_person_words,
-    non_character_titles,
-    non_person_narrative_titles,
-)
-from pipeline.common.retail import is_non_retail_title
 from pipeline.common.text_ids import slugify
 from pipeline.common.text_normalize import clean_wiki_snippet
-from pipeline.discovery.entity_typing import _DATING_CONVENTION_TITLE_RE, normalize_title
-from pipeline.discovery.world_registry import entry_kinds
+from pipeline.contracts.models import EntityKind
+from pipeline.discovery.entity_typing import normalize_title
 
 _WIKI_LINK_RE = re.compile(r"/wiki/([^|\s\]#<>\"']+)")
 _WIKITEXT_LINK_RE = re.compile(r"\[\[([^|\]#]+)(?:\|[^\]]+)?\]\]")
@@ -54,22 +47,6 @@ HIGH_CONFIDENCE_BOSS_SECTION_TOKENS = (
     "dungeon_journal",
     "adventure_guide",
 )
-# Registry kinds that mark a link as a location/geography, never an individual character.
-# Shared by both the roster path (should_reject_boss_title) and the narrative path
-# (_looks_like_person) so the two filters can never drift. Includes "place" so instance
-# subzones/areas (e.g. Caer Darrow, Chamber of Summoning) are rejected as candidates.
-_NON_CHARACTER_KINDS = frozenset({"place", "zone", "instance", "continent", "capital", "region"})
-# WS-C: title-matched denylists externalized to
-# pipeline/data/discovery_classification_vocab.v1.json (D-6).
-_REJECT_TITLES = boss_reject_section_titles()
-_NON_CHARACTER_TITLES = non_character_titles()
-# War/era event titles ("Second War", "the Third War", "Fourth War", "Great War").
-_EVENT_ERA_RE = re.compile(
-    r"^(?:the\s+)?(?:first|second|third|fourth|fifth|great)\s+war$",
-    re.IGNORECASE,
-)
-
-
 @dataclass
 class BossCandidate:
     boss_id: str
@@ -80,6 +57,14 @@ class BossCandidate:
     significance: float = 0.0
     role: str = "uncertain"
     role_reason: str = ""
+    canonical_path: str = ""
+    entity_kind: EntityKind = EntityKind.UNKNOWN
+    entity_kind_decision_id: str = ""
+    instance_presence_evidence: list[str] = field(default_factory=list)
+    retail_scope: str = "unknown"
+    retail_scope_evidence: list[str] = field(default_factory=list)
+    encounter_relation_evidence: list[str] = field(default_factory=list)
+    admission_reason_codes: list[str] = field(default_factory=list)
 
 
 def _normalize_role(section_role: str) -> str:
@@ -111,6 +96,23 @@ def is_high_confidence_boss_section(section_role: str) -> bool:
         return True
     # Per-dungeon boss table, e.g. "dungeon_scholomance" (denizens already excluded above).
     return lowered.startswith("dungeon_")
+
+
+def is_direct_instance_participant_section(section_role: str) -> bool:
+    """Whether a section role itself proves roster membership in this instance.
+
+    Broad Adventure Guide and guide prose supply useful encounter leads, but a
+    named link in that prose can describe ancestry, history, or a nearby place.
+    Only roster-shaped encounter/journal/table sections establish direct
+    participant presence; the entity-kind contract then decides whether the
+    participant is an individual actor rather than a generic creature or term.
+    """
+    lowered = _normalize_role(section_role)
+    if _is_denizen_section(lowered):
+        return True
+    if lowered.startswith("dungeon_"):
+        return True
+    return any(token in lowered for token in ("encounter", "dungeon_journal")) or lowered == "bosses"
 
 
 def is_boss_section_role(section_role: str) -> bool:
@@ -177,17 +179,6 @@ def should_reject_boss_title(title: str, *, instance_name: str = "") -> bool:
     if not lowered or len(lowered) < 3:
         return True
     if instance_name and lowered == normalize_title(instance_name):
-        return True
-    if lowered in _REJECT_TITLES:
-        return True
-    if lowered in _NON_CHARACTER_TITLES:
-        return True
-    if is_non_retail_title(title):
-        return True
-    if _EVENT_ERA_RE.search(title) or _DATING_CONVENTION_TITLE_RE.search(title):
-        return True
-    kinds = entry_kinds(title)
-    if kinds & _NON_CHARACTER_KINDS:
         return True
     return False
 
@@ -390,6 +381,11 @@ def _merge_candidate_into(
     ):
         existing.source_section_role = incoming.source_section_role
     _merge_profile_pools(existing, incoming)
+    for attr in ("instance_presence_evidence", "encounter_relation_evidence"):
+        existing_values = getattr(existing, attr)
+        for value in getattr(incoming, attr):
+            if value not in existing_values:
+                existing_values.append(value)
 
 
 def _collect_roster_candidates(
@@ -430,12 +426,37 @@ def _collect_roster_candidates(
             new_is_roster = is_boss_section_role(role)
             if new_is_roster and not is_boss_section_role(existing.source_section_role):
                 existing.source_section_role = role
+            presence = f"instance_section:{_normalize_role(role)}"
+            if (
+                is_direct_instance_participant_section(role)
+                and presence not in existing.instance_presence_evidence
+            ):
+                existing.instance_presence_evidence.append(presence)
+            relation = (
+                "high_confidence_encounter_roster"
+                if is_high_confidence_boss_section(role)
+                else "instance_roster_link"
+            )
+            if relation not in existing.encounter_relation_evidence:
+                existing.encounter_relation_evidence.append(relation)
             return
+        relation = (
+            "high_confidence_encounter_roster"
+            if is_high_confidence_boss_section(role)
+            else "instance_roster_link"
+        )
         candidates[key] = BossCandidate(
             boss_id=boss_id,
             name=display_title,
             wiki_url=url,
             source_section_role=role,
+            canonical_path=f"/wiki/{(canonical_path or href_path).replace(' ', '_')}",
+            instance_presence_evidence=(
+                [f"instance_section:{_normalize_role(role)}"]
+                if is_direct_instance_participant_section(role)
+                else []
+            ),
+            encounter_relation_evidence=[relation],
         )
 
     for block in section_blocks:
@@ -519,8 +540,6 @@ def _candidates_from_pool_items(
         for title, url in _extract_wiki_links(snippet):
             if should_reject_boss_title(title, instance_name=instance_name):
                 continue
-            if not _looks_like_person(title):
-                continue
             key = normalize_title(title)
             if key in seen:
                 continue
@@ -533,6 +552,7 @@ def _candidates_from_pool_items(
                 name=title,
                 wiki_url=url,
                 source_section_role=section_role,
+                canonical_path=f"/wiki/{_wiki_path_from_url(url).replace(' ', '_')}",
             )
             candidate.profile_pool = [
                 {**item, "snippet": _plain_snippet(snippet), "section_role": section_role}
@@ -730,12 +750,9 @@ def _looks_like_multi_token_proper_name(title: str) -> bool:
     return len(words) >= 2 and all(word[0].isupper() for word in words)
 
 
-def _llm_prompt_rank_key(candidate: BossCandidate) -> tuple[int, int, int, str]:
-    kinds = entry_kinds(candidate.name)
-    person_first = 0 if "person" in kinds else 1
+def _llm_prompt_rank_key(candidate: BossCandidate) -> tuple[int, int, str]:
     multi_token = 0 if _looks_like_multi_token_proper_name(candidate.name) else 1
     return (
-        person_first,
         multi_token,
         -_section_weight(candidate.source_section_role),
         candidate.name.lower(),
@@ -853,55 +870,6 @@ _NARRATIVE_SECTION_TOKENS = (
     "background",
 )
 
-_PERSON_HONORIFICS = frozenset(
-    {
-        "highlord",
-        "high",
-        "lord",
-        "lady",
-        "professor",
-        "archmage",
-        "king",
-        "queen",
-        "prince",
-        "princess",
-        "sir",
-        "dame",
-        "captain",
-        "commander",
-        "general",
-        "warchief",
-        "warlord",
-        "grand",
-        "master",
-        "baron",
-        "baroness",
-        "bishop",
-        "sergeant",
-        "marshal",
-        "admiral",
-        "chief",
-        "elder",
-        "prophet",
-        "overlord",
-        "lich",
-        "emperor",
-        "empress",
-        "champion",
-        "keeper",
-        "prime",
-    }
-)
-
-# Multi-word capitalized titles that are factions/forces/concepts, not individual characters.
-# WS-C: externalized to pipeline/data/discovery_classification_vocab.v1.json (D-6).
-_NON_PERSON_NARRATIVE_TITLES = non_person_narrative_titles()
-
-# Generic common-noun / race / creature-type words that are not named characters.
-# WS-C: title-matched, externalized to discovery_classification_vocab.v1.json (D-6).
-_GENERIC_NON_PERSON_WORDS = generic_non_person_words()
-
-
 def _is_narrative_role(section_role: str) -> bool:
     lowered = _normalize_role(section_role)
     return any(token in lowered for token in _NARRATIVE_SECTION_TOKENS)
@@ -923,33 +891,6 @@ def _narrative_structured_link(row: dict[str, Any]) -> bool:
     section = _normalize_role(str(row.get("section_role", "other")))
     if section in {"lead", "patch_changes"} or section.startswith("patch"):
         return False
-    return True
-
-
-def _looks_like_person(title: str) -> bool:
-    """Heuristic person/NPC detector for narrative-fallback link mining."""
-    norm = normalize_title(title)
-    if norm in _NON_PERSON_NARRATIVE_TITLES or norm in _GENERIC_NON_PERSON_WORDS:
-        return False
-    kinds = entry_kinds(title)
-    if kinds & _NON_CHARACTER_KINDS:
-        return False
-    words = title.split()
-    if not words:
-        return False
-    first_word = re.sub(r"[^a-z]", "", words[0].lower())
-    if first_word in _PERSON_HONORIFICS:
-        return True
-    if "person" in kinds:
-        return True
-    if len(words) > 4:
-        return False
-    significant = [word for word in words if re.search(r"[A-Za-z]", word)]
-    if not significant or not all(word[0].isupper() for word in significant):
-        return False
-    if len(significant) == 1:
-        token = re.sub(r"[^A-Za-z'\-]", "", significant[0])
-        return len(token) >= 4
     return True
 
 
@@ -980,8 +921,6 @@ def mine_narrative_character_candidates(
 
     def _accept(title: str, url: str) -> None:
         if should_reject_boss_title(title, instance_name=instance_name):
-            return
-        if not _looks_like_person(title):
             return
         key = normalize_title(title)
         if key not in first_seen:
@@ -1027,6 +966,7 @@ def mine_narrative_character_candidates(
             name=title,
             wiki_url=url,
             source_section_role="narrative_fallback",
+            canonical_path=f"/wiki/{_wiki_path_from_url(url).replace(' ', '_')}",
         )
         candidate.profile_pool = _profile_pool_for_boss(
             candidate.name,

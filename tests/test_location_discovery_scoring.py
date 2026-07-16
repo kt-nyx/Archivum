@@ -1,124 +1,58 @@
 from __future__ import annotations
 
-import pytest
-
-from pipeline.discovery.entity_typing import should_reject_location_title
+from pipeline.contracts.models import EntityKind, LocationSelectionState
 from pipeline.discovery.location_discovery import (
-    classify_location_candidate,
-    score_location_candidate,
-)
-from pipeline.generate.draft.location_scoring import (
-    _INCLUDE_CLASSIFICATIONS,
-    classification_to_location_type,
+    build_location_candidate_decision,
+    location_candidate_rank,
+    profile_establishes_zone_record,
 )
 
 
-def _candidate(name: str, *, role: str = "maps_subregions") -> dict:
-    return {
-        "location_id": f"location-{name.lower().replace(' ', '-')}",
-        "name": name,
-        "source_section_role": role,
-    }
-
-
-def test_wpl_landmarks_reach_include_threshold_with_seed_text() -> None:
-    seed_text = "Western Plaguelands contains Andorhal, Hearthglen, and Caer Darrow among its ruined settlements."
-    for name in ("Andorhal", "Hearthglen", "Caer Darrow"):
-        score, decision, _reasons = score_location_candidate(_candidate(name), seed_text=seed_text)
-        assert score >= 0.7, f"{name} scored {score}"
-        assert decision == "include"
-
-
-def test_borderline_location_score_promotes_to_include() -> None:
-    score, decision, reasons = score_location_candidate(
-        _candidate("Andorhal", role="history"),
-        seed_text="Western Plaguelands history mentions Andorhal repeatedly.",
+def test_candidate_rank_uses_source_relationship_not_title_shape() -> None:
+    assert location_candidate_rank("history", "Small Hut") < location_candidate_rank(
+        "maps_subregions", "Grand Citadel"
     )
-    assert round(score, 2) == 0.65
-    assert decision == "include"
-    assert "borderline_include" in reasons
 
 
-@pytest.mark.parametrize(
-    ("name", "expected"),
-    [
-        ("Charred Outpost", "outpost"),
-        ("Menders' Stead", "outpost"),
-        ("Uther's Tomb", "landmark"),
-        ("Durnholde Keep", "fortress"),
-        ("Northridge Lumber Mill", "town"),
-        ("Tarren Mill", "town"),
-        ("Darrowmere Lake", "natural_feature"),
-        ("Ruins of Andorhal", "ruins"),
-        ("Stormwind City", "city"),
-        # Proper-noun-only names carry no descriptive token (no pre-fetch category
-        # signal) and intentionally fall through to the generic candidate type.
-        ("Andorhal", "major_location_candidate"),
-        ("Caer Darrow", "major_location_candidate"),
-        ("Hearthglen", "major_location_candidate"),
-    ],
-)
-def test_classify_location_candidate_types_from_name_tokens(name: str, expected: str) -> None:
-    assert classify_location_candidate(name, hard_reject_reasons=[]) == expected
-
-
-def test_hard_reject_short_circuits_classification() -> None:
-    assert classify_location_candidate("Anything", hard_reject_reasons=["rpg_marker"]) == "reject"
-
-
-def test_typed_classifications_are_included_and_map_to_location_type() -> None:
-    for classification in ("outpost", "landmark", "fortress", "town", "ruins", "natural_feature"):
-        assert classification in _INCLUDE_CLASSIFICATIONS
-        assert classification_to_location_type(classification) == classification
-    # The generic candidate token collapses to the published major_location value.
-    assert classification_to_location_type("major_location_candidate") == "major_location"
-
-
-def test_typed_landmark_preserves_generic_score_path() -> None:
-    # A descriptive name that now types as 'outpost' must score identically to the
-    # pre-change 'major_location_candidate' path (named_place bonus still applies).
-    score, decision, reasons = score_location_candidate(
-        _candidate("Charred Outpost", role="maps_subregions"),
-        seed_text="Western Plaguelands contains the Charred Outpost.",
+def test_unknown_target_remains_a_probe_candidate() -> None:
+    row = build_location_candidate_decision(
+        zone_id="zone-example",
+        location_id="location-unresolved-lead",
+        name="Unresolved Lead",
+        source_link="/wiki/Unresolved_Lead",
+        source_relation="geography",
+        candidate_rank=0,
+        entity_kind=EntityKind.UNKNOWN,
+        entity_kind_decision_id="entity-kind-unresolved-lead",
+        source_ids=["src-zone"],
+        reason_codes=["insufficient_target_evidence"],
     )
-    assert decision == "include"
-    assert "named_place" in reasons
+
+    assert row.state is LocationSelectionState.CANDIDATE
 
 
-def test_junk_location_titles_are_rejected() -> None:
-    for title in ("Lore", "ADP", "Scourge", "Argent Dawn"):
-        reject, reasons = should_reject_location_title(title, zone_name="Western Plaguelands")
-        assert reject, f"{title} should be rejected ({reasons})"
-
-
-def test_real_landmarks_are_not_rejected() -> None:
-    for title in ("Andorhal", "Hearthglen", "Caer Darrow"):
-        reject, _reasons = should_reject_location_title(
-            title,
-            zone_name="Western Plaguelands",
-            source_section_role="maps_subregions",
-        )
-        assert not reject, title
-
-
-def test_single_token_apostrophe_npc_rejected_outside_geography() -> None:
-    # Apostrophe-infix single-token names (Ner'zhul, Mal'Ganis) are characters, not places, when
-    # they surface outside a geography/maps section — caught by the name heuristic.
-    from pipeline.discovery.entity_typing import _is_likely_npc_name
-
-    for title in ("Ner'zhul", "Mal'Ganis", "Vol'jin"):
-        assert _is_likely_npc_name(title), title
-        reject, reasons = should_reject_location_title(
-            title, source_section_role="history", entity_type="location"
-        )
-        assert reject and "likely_npc" in reasons, title
-    # Possessive single tokens are not NPCs.
-    assert not _is_likely_npc_name("Dalson's")
-
-
-def test_possessive_geography_locations_not_treated_as_npc() -> None:
-    # A maps-section place with a possessive apostrophe must survive (gate protects geography).
-    reject, _ = should_reject_location_title(
-        "Dalson's Tears", source_section_role="maps_subregions", entity_type="location"
+def test_known_concept_is_rejected_before_profile_budget() -> None:
+    row = build_location_candidate_decision(
+        zone_id="zone-example",
+        location_id="location-abstract-principle",
+        name="Abstract Principle",
+        source_link="/wiki/Abstract_Principle",
+        source_relation="history",
+        candidate_rank=0,
+        entity_kind=EntityKind.OBJECT_OR_CONCEPT,
+        entity_kind_decision_id="entity-kind-abstract-principle",
+        source_ids=["src-zone"],
+        reason_codes=["affirmative_target_evidence"],
     )
-    assert not reject
+
+    assert row.state is LocationSelectionState.REJECTED
+    assert "entity_kind_not_place" in row.reason_codes
+
+
+def test_zone_record_requires_the_profile_page_to_name_its_zone() -> None:
+    assert profile_establishes_zone_record(
+        {"body": "The landmark lies in Example Zone.", "section_blocks": []}, "Example Zone"
+    )
+    assert not profile_establishes_zone_record(
+        {"body": "The landmark lies beyond the frontier.", "section_blocks": []}, "Example Zone"
+    )

@@ -9,7 +9,11 @@ from typing import Any
 from pipeline.common.draft_vocab import expansion_release_order
 from pipeline.common.linguistics import action_relations
 from pipeline.common.text_normalize import clean_wiki_snippet
-from pipeline.contracts.models import INSTANCE_MAX_KEY_CHARACTERS
+from pipeline.contracts.models import (
+    INSTANCE_MAX_KEY_CHARACTERS,
+    CardEvidencePackDecision,
+    EntityKind,
+)
 from pipeline.discovery.adventure_guide import (
     AdventureGuideInstance,
     default_provider,
@@ -26,6 +30,7 @@ from pipeline.discovery.instance_bosses import (
     must_include_key_character_names,
     prefilter_character_pool,
 )
+from pipeline.generate.draft.card_evidence_pack import build_card_evidence_pack
 from pipeline.generate.draft.claim_routing import (
     CLAIM_VIEW_KEY,
     KEY_CHARACTER_ROUTE,
@@ -53,8 +58,8 @@ from pipeline.generate.draft.pages.assembly import (
     _cap_card_pointers,
     _extract_instance_infobox,
     _extract_instance_structured_links,
+    _instance_participant_records,
     _pointers_for_evidence_ids,
-    _retail_confirmed_character_names,
 )
 from pipeline.generate.draft.prose_gate import prose_gate_violations
 from pipeline.generate.draft.prose_lint import word_count
@@ -137,6 +142,63 @@ class InstanceKeyCharacterSelection:
     pool: list[BossCandidate] = field(default_factory=list)
     selection_reasons: dict[str, str] = field(default_factory=dict)
     context_text: str = ""
+
+
+def _admit_named_instance_participants(
+    candidates: list[BossCandidate],
+    participant_records: list[dict[str, Any]] | None,
+) -> list[BossCandidate]:
+    """Apply Slice 3's complete card-admission contract.
+
+    ``None`` means this is a small direct unit call without an ingest seed.  A real
+    instance seed always supplies records (and the assembly helper rejects a stale
+    seed that does not), so production rendering cannot bypass this boundary.
+    """
+    if participant_records is None:
+        return candidates
+    by_id = {
+        str(row.get("candidate_id", "")).strip(): row
+        for row in participant_records
+        if str(row.get("candidate_id", "")).strip()
+    }
+    admitted: list[BossCandidate] = []
+    for candidate in candidates:
+        row = by_id.get(candidate.boss_id)
+        if row is None:
+            candidate.admission_reason_codes.append("missing_participant_decision")
+            continue
+        try:
+            candidate.entity_kind = EntityKind(str(row.get("entity_kind", "unknown")))
+        except ValueError:
+            candidate.entity_kind = EntityKind.UNKNOWN
+        candidate.entity_kind_decision_id = str(row.get("entity_kind_decision_id", "")).strip()
+        candidate.instance_presence_evidence = [
+            str(value) for value in row.get("instance_presence_evidence", []) if str(value).strip()
+        ]
+        candidate.retail_scope = str(row.get("retail_scope", "unknown")).strip() or "unknown"
+        candidate.retail_scope_evidence = [
+            str(value) for value in row.get("retail_scope_evidence", []) if str(value).strip()
+        ]
+        candidate.encounter_relation_evidence = [
+            str(value) for value in row.get("encounter_relation_evidence", []) if str(value).strip()
+        ]
+        candidate.admission_reason_codes = [
+            str(value) for value in row.get("reason_codes", []) if str(value).strip()
+        ]
+        if not candidate.entity_kind_decision_id:
+            candidate.admission_reason_codes.append("missing_entity_kind_decision")
+            continue
+        if candidate.entity_kind is not EntityKind.NAMED_ACTOR:
+            candidate.admission_reason_codes.append("entity_kind_not_named_actor")
+            continue
+        if not candidate.instance_presence_evidence:
+            candidate.admission_reason_codes.append("missing_direct_instance_presence")
+            continue
+        if candidate.retail_scope != "retail_confirmed":
+            candidate.admission_reason_codes.append("retail_scope_not_confirmed")
+            continue
+        admitted.append(candidate)
+    return admitted
 
 
 def _instance_key_character_context_text(pools: dict[str, list[dict[str, Any]]]) -> str:
@@ -241,7 +303,7 @@ def build_instance_key_character_selection(
     history_pool = pools.get("history_pool", [])
     context_text = _instance_key_character_context_text(pools)
 
-    raw_pool = collect_character_pool(
+    all_candidates = collect_character_pool(
         section_blocks=blocks,
         instance_name=instance_name,
         boss_pool_items=pools["boss_pool"],
@@ -249,19 +311,22 @@ def build_instance_key_character_selection(
         narrative_pool=narrative_pool,
         history_pool=history_pool,
     )
-    confirmed_retail = _retail_confirmed_character_names(snapshots, instance_id)
-    if confirmed_retail is not None:
-        raw_pool = [
-            candidate
-            for candidate in raw_pool
-            if normalize_title(candidate.name) in confirmed_retail
-        ]
+    raw_pool = _admit_named_instance_participants(
+        all_candidates,
+        _instance_participant_records(snapshots, instance_id),
+    )
     pool = prefilter_character_pool(
         raw_pool,
         instance_name=instance_name,
     )
+    # The decision sidecar records candidates that reached the participant-decision boundary.
+    # A lead without such a decision is not an admissible participant and cannot satisfy the
+    # sidecar's required entity_kind_decision_id contract.
+    sidecar_candidates = [
+        candidate for candidate in all_candidates if candidate.entity_kind_decision_id
+    ]
     if not pool:
-        return InstanceKeyCharacterSelection(context_text=context_text)
+        return InstanceKeyCharacterSelection(pool=sidecar_candidates, context_text=context_text)
 
     floor = must_include_key_character_names(
         boss_pool_items=pools["boss_pool"],
@@ -301,7 +366,7 @@ def build_instance_key_character_selection(
     cast = merged_cast_candidates(pool, merged_names, instance_name=instance_name)
     _merge_character_profile_evidence(cast, pools.get("character_pool", []))
     sidecar_pool = _order_sidecar_pool_candidates(
-        pool,
+        sidecar_candidates,
         cast_names=merged_names,
         context_text=context_text,
     )
@@ -891,6 +956,7 @@ def _finalize_key_characters(
     revision_map: dict[str, str],
     selection_reasons: dict[str, str] | None = None,
     adventure_guide: AdventureGuideInstance | None = None,
+    pack_sink: list[CardEvidencePackDecision] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, str]]], set[str]]:
     cards: list[dict[str, Any]] = []
     provenance_map: dict[str, list[dict[str, str]]] = {}
@@ -917,6 +983,7 @@ def _finalize_key_characters(
 
         card: dict[str, Any] | None = None
         card_pointers: list[dict[str, str]] = []
+        card_pack: CardEvidencePackDecision | None = None
         structural_role = candidate.role or "uncertain"
         # A must-include boss is a confirmed encounter: it must always ship (Cause 2a). On
         # validation failure it falls back to the spoiler-free structural-presence seed rather
@@ -1162,6 +1229,8 @@ def _finalize_key_characters(
                 )
                 if role != "uncertain":
                     role_reason = "llm_tiebreaker"
+            candidate.role = role
+            candidate.role_reason = role_reason
             # WS-4 confidence gate: stop padding the roster to the cap with narrative-only
             # mentions. A non-floor candidate must carry a real in-instance structural
             # signal; a pure narrative fallback (no boss/denizen section, no adventure-guide
@@ -1177,6 +1246,13 @@ def _finalize_key_characters(
                 reason_codes.append(selection_reason)
             if candidate.source_section_role:
                 reason_codes.append(candidate.source_section_role)
+            reason_codes.extend(candidate.admission_reason_codes)
+            reason_codes.append(f"entity_kind:{candidate.entity_kind.value}")
+            reason_codes.extend(
+                f"instance_presence:{evidence}"
+                for evidence in candidate.instance_presence_evidence
+            )
+            reason_codes.append(f"retail_scope:{candidate.retail_scope}")
             if role_reason:
                 reason_codes.append(f"role:{role}:{role_reason}")
             # Slice 9 spoiler-safety audit. With claim views, record how much safe vs unsafe
@@ -1210,10 +1286,22 @@ def _finalize_key_characters(
                 "thumbnail_asset_id": None,
             }
             card_pointers = pointers
+            # Slice 7: a named participant's identity evidence is the very material its summary was
+            # synthesized from (its own crawled biography / boss-section presence, scoped to this
+            # named actor). Recorded so every emitted key-character card carries an evidence pack.
+            card_pack = build_card_evidence_pack(
+                card_id=candidate.boss_id,
+                card_type="key_character",
+                subject_id=candidate.boss_id,
+                subject_name=candidate.name,
+                identity_items=synthesis_items,
+            )
             break
         if card is None:
             continue
         cards.append(card)
+        if pack_sink is not None and card_pack is not None:
+            pack_sink.append(card_pack)
         provenance_map[str(card["id"])] = card_pointers
         used_source_ids.update(str(pointer["source_id"]) for pointer in card_pointers)
         if len(cards) >= INSTANCE_MAX_KEY_CHARACTERS:

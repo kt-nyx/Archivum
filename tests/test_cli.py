@@ -116,6 +116,9 @@ def test_validate_cli_accepts_case_variant_profile_and_normalizes(
         observed["profile"] = kwargs["fact_check_profile"]
         return {
             "passed": True,
+            "release_gate": kwargs.get("release_gate", False),
+            "fact_check_profile": kwargs["fact_check_profile"],
+            "release_certified": False,
             "validation_report_path": context.reports_dir / "validate" / "validation_report.json",
             "fact_check_report_path": context.reports_dir / "validate" / "fact_check_report.json",
             "fact_check_summary_path": context.reports_dir / "validate" / "fact_check_summary.md",
@@ -143,7 +146,7 @@ def test_run_cli_accepts_case_variant_profile_and_normalizes(monkeypatch) -> Non
         observed["profile"] = kwargs["fact_check_profile"]
         return {
             "run_id": "run-test",
-            "validate": {"passed": True},
+            "validate": {"passed": True, "release_certified": False},
         }
 
     monkeypatch.setattr("pipeline.cli.run_pipeline_flow", fake_run_flow)
@@ -169,6 +172,9 @@ def test_validate_cli_passes_release_gate_flag(tmp_path, monkeypatch) -> None:
         observed["release_gate"] = kwargs["release_gate"]
         return {
             "passed": True,
+            "release_gate": kwargs["release_gate"],
+            "fact_check_profile": "off",
+            "release_certified": False,
             "validation_report_path": context.reports_dir / "validate" / "validation_report.json",
             "fact_check_report_path": context.reports_dir / "validate" / "fact_check_report.json",
             "fact_check_summary_path": context.reports_dir / "validate" / "fact_check_summary.md",
@@ -191,7 +197,7 @@ def test_run_cli_passes_release_gate_flag(monkeypatch) -> None:
         observed["release_gate"] = kwargs["release_gate"]
         return {
             "run_id": "run-test",
-            "validate": {"passed": True},
+            "validate": {"passed": True, "release_certified": False},
         }
 
     monkeypatch.setattr("pipeline.cli.run_pipeline_flow", fake_run_flow)
@@ -211,7 +217,7 @@ def test_run_cli_passes_force_new_suffix_flag(monkeypatch) -> None:
         observed["force_new_suffix"] = kwargs["force_new_suffix"]
         return {
             "run_id": "run-test-2",
-            "validate": {"passed": True},
+            "validate": {"passed": True, "release_certified": False},
         }
 
     monkeypatch.setattr("pipeline.cli.run_pipeline_flow", fake_run_flow)

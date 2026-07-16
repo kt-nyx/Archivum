@@ -82,20 +82,20 @@ def test_classic_variant_and_self_and_noise_excluded() -> None:
     assert "Caer Darrow" in titles
 
 
-def test_character_and_faction_links_excluded() -> None:
+def test_registry_organizations_are_excluded_without_title_role_hints() -> None:
     candidates = build_instance_lore_candidates(
         instance_id="instance-x",
         instance_name="Some Dungeon",
         section_blocks=[],
         wiki_links=[],
         structured_links=[
-            _structured("/wiki/Prince_Malchezaar", "history"),  # character role hint
-            _structured("/wiki/Argent_Crusade", "history"),  # faction keyword
+            _structured("/wiki/Prince_Malchezaar", "history"),  # unresolved target identity
+            _structured("/wiki/Argent_Crusade", "history"),  # registry organization
             _structured("/wiki/Ancient_Battlefield", "history"),  # place -> kept
         ],
     )
     titles = {c["title"] for c in candidates}
-    assert "Prince Malchezaar" not in titles
+    assert "Prince Malchezaar" in titles
     assert "Argent Crusade" not in titles
     assert "Ancient Battlefield" in titles
 

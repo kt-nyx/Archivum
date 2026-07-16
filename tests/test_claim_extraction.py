@@ -617,7 +617,7 @@ def test_setup_and_outcome_boundary_overlap_marks_candidate(monkeypatch) -> None
         questline_card_metadata={
             "cluster-1": {
                 "zone_id": "zone-example",
-                "display_title": "Road Campaign",
+                "base_title": "Road Campaign",
                 "chain_refs": ["q1", "q2", "q3", "q4"],
             }
         },

@@ -240,7 +240,7 @@ def test_wiki_first_stage_chain_includes_discovery_and_enrich(
         ingest_output["source_manifest_path"],
         phase="significance",
     )
-    assert significance_outputs["zone_quest_cluster_rankings"].exists()
+    assert significance_outputs["questline_arc_selection"].exists()
 
     card_polish_outputs = run_discovery_enrich_stage(
         context,
@@ -251,13 +251,15 @@ def test_wiki_first_stage_chain_includes_discovery_and_enrich(
     metadata = json.loads(
         card_polish_outputs["zone_questline_card_metadata"].read_text(encoding="utf-8")
     )
-    assert isinstance(metadata, list)
-    decisions = json.loads(
-        significance_outputs["questline_inclusion_decisions"].read_text(encoding="utf-8")
+    assert metadata["schema_version"] == "questline_card_metadata.v2"
+    assert metadata["producer"] == "discovery.questline_card_polish"
+    assert isinstance(metadata["metadata"], list)
+    selection = json.loads(
+        significance_outputs["questline_arc_selection"].read_text(encoding="utf-8")
     )
-    cluster_decisions = [row for row in decisions if row.get("subject_type") == "questline_cluster"]
-    assert cluster_decisions
-    assert any(row.get("final_decision") == "include" for row in cluster_decisions)
+    assert selection["schema_version"] == "questline_arc_selection.v1"
+    assert selection["candidates"]
+    assert any(selection["selected_candidate_ids_by_zone"].values())
 
     clustered_v3 = json.loads(cluster_outputs["zone_quest_graph_v3"].read_text(encoding="utf-8"))
     quest_cluster_ids = {
@@ -426,6 +428,39 @@ def test_validate_stage_records_release_gate_in_report(tmp_path: Path) -> None:
     payload = json.loads(output["validation_report_path"].read_text(encoding="utf-8"))
     assert payload["release_gate"] is True
     assert output["passed"] is True
+    # Slice 8, item 5: an `off`-profile pass under the release gate is not a certified strict run.
+    assert payload["release_certified"] is False
+    assert output["release_certified"] is False
+
+
+def test_validate_stage_release_certified_only_under_strict_release_gate(tmp_path: Path) -> None:
+    """Slice 8, item 5: release certification requires a strict release-gated pass; a warn pass is
+    an exploratory success and never labelled equivalent."""
+    context = ensure_run_context(
+        "run-test-validate-release-certified",
+        artifacts_root=tmp_path / "runs",
+    )
+    certified = run_validate_stage(
+        context,
+        [],
+        fact_check_profile="strict",
+        release_gate=True,
+    )
+    assert certified["passed"] is True
+    assert certified["release_certified"] is True
+
+    warn_context = ensure_run_context(
+        "run-test-validate-release-warn-not-certified",
+        artifacts_root=tmp_path / "runs",
+    )
+    warn_output = run_validate_stage(
+        warn_context,
+        [],
+        fact_check_profile="warn",
+        no_llm_fact_check=True,
+    )
+    assert warn_output["passed"] is True
+    assert warn_output["release_certified"] is False
 
 
 def test_coalesce_prefers_manifest_priority_for_tie_break(

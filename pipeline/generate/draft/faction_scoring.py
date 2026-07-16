@@ -757,14 +757,14 @@ def collect_faction_candidates(
         link = str(target.get("source_link", "")).strip()
         wiki_url = _wiki_url_from_link(link) if link else _wiki_url_from_name(name)
 
+        # Direct identity ownership only (Slice 7): a faction-profile paragraph is this faction's
+        # identity evidence when its recorded ``faction_id`` matches. The former same-name
+        # ``source_title`` substring fallback let an untyped paragraph on a similarly-titled page
+        # establish the card's identity — a paragraph fallback masquerading as ownership.
         profile_items = [
             item
             for item in faction_pool
             if str(item.get("faction_id", "")).strip() == faction_id
-            or (
-                not str(item.get("faction_id", "")).strip()
-                and name.lower() in str(item.get("source_title", "")).lower()
-            )
         ]
         seed_mentions = [
             item for item in faction_role_pool if _name_in_text(name, str(item.get("snippet", "")))

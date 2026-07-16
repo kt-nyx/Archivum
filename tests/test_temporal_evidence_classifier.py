@@ -303,7 +303,7 @@ def test_boundary_uses_early_quest_records_not_late_outcomes(monkeypatch) -> Non
         questline_card_metadata={
             "cluster-1": {
                 "zone_id": "zone-example",
-                "display_title": "Road to the Gate",
+                "base_title": "Road to the Gate",
                 "faction": "Alliance",
                 "chain_refs": ["q1", "q2", "q3", "q4"],
                 "overflow_chain_refs": ["q5"],
@@ -450,7 +450,7 @@ def test_boundary_llm_classifies_unregistered_war_names(monkeypatch) -> None:
         questline_card_metadata={
             "cluster-1": {
                 "zone_id": "zone-example",
-                "display_title": "Hold the Gate",
+                "base_title": "Hold the Gate",
                 "chain_refs": ["q1"],
             }
         },
@@ -524,7 +524,7 @@ def test_contract_aware_llm_keeps_background_campaign_pre_entry(monkeypatch) -> 
         questline_card_metadata={
             "cluster-1": {
                 "zone_id": "zone-example",
-                "display_title": "Battle for the Town",
+                "base_title": "Battle for the Town",
                 "faction": "Argent Crusade",
                 "chain_refs": ["q1", "q2", "q3"],
             }
@@ -611,7 +611,7 @@ def test_profile_context_with_independent_contract_match_can_be_entry_state(monk
         questline_card_metadata={
             "cluster-1": {
                 "zone_id": "zone-example",
-                "display_title": "Road Defense",
+                "base_title": "Road Defense",
                 "faction": "Argent Crusade",
                 "chain_refs": ["q1", "q2"],
             }
@@ -824,7 +824,7 @@ def test_zone_history_duplicate_uses_current_entry_state_as_setup_bridge(monkeyp
         questline_card_metadata={
             "cluster-1": {
                 "zone_id": "zone-example",
-                "display_title": "Hold the Town",
+                "base_title": "Hold the Town",
                 "chain_refs": ["q1"],
             }
         },
@@ -1067,6 +1067,25 @@ def test_seed_recency_floor_overrides_confident_llm_boundary_verdict(monkeypatch
                 "entity_id": "zone-example",
                 "entity_type": "zone",
                 "name": "Example Zone",
+            }
+        },
+        questline_card_metadata={
+            "arc-example": {
+                "metadata_id": "metadata-ql-arc-example",
+                "zone_id": "zone-example",
+                "cluster_id": "arc-example",
+                "card_id": "ql-arc-example",
+                "base_title": "Example Defense",
+                "start_anchor": "First Watch",
+                "start_anchor_ref": "quest-first-watch",
+                "chain_refs": ["quest-first-watch"],
+            }
+        },
+        quest_records_by_node={
+            "quest-first-watch": {
+                "node_id": "quest-first-watch",
+                "title": "First Watch",
+                "description": "Defenders organize the current watch.",
             }
         },
         run_id="test",

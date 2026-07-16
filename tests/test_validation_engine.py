@@ -896,6 +896,42 @@ def test_fact_check_strict_profile_blocks_contradictions() -> None:
     assert contradiction_issue.severity.value == "hard-fail"
 
 
+def test_fact_check_warn_profile_keeps_unsupported_central_as_warning() -> None:
+    """Slice 8, item 4: warn profile keeps an unsupported central assertion visible as a warning."""
+    payload = _validation_ready_zone_page_payload()
+    payload["currently"] = f"{payload['currently']} [UNSUPPORTED]"
+    report = validate_payload(
+        "zone_page",
+        payload,
+        validation_context={"fact_check_profile": "warn"},
+    )
+    unsupported = next(
+        issue
+        for issue in report.issues
+        if issue.code == "fact_check.unsupported" and issue.path == "$.currently"
+    )
+    assert unsupported.severity == ValidationSeverity.WARN
+    assert report.passed is True
+
+
+def test_fact_check_strict_profile_blocks_unsupported_central_assertion() -> None:
+    """Slice 8, item 4: strict profile hard-fails an unsupported central assertion."""
+    payload = _validation_ready_zone_page_payload()
+    payload["currently"] = f"{payload['currently']} [UNSUPPORTED]"
+    report = validate_payload(
+        "zone_page",
+        payload,
+        validation_context={"fact_check_profile": "strict"},
+    )
+    unsupported = next(
+        issue
+        for issue in report.issues
+        if issue.code == "fact_check.unsupported" and issue.path == "$.currently"
+    )
+    assert unsupported.severity == ValidationSeverity.HARD_FAIL
+    assert report.passed is False
+
+
 def test_fact_check_uses_local_snapshots_for_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
     _mock_fact_check_llm(monkeypatch, status="supported")
     payload = _validation_ready_zone_page_payload()
@@ -1094,9 +1130,11 @@ def test_fact_check_warn_profile_runs_llm_adjudication_for_targeted_entity(
     assert llm_calls["count"] > 0
 
 
-def test_fact_check_warn_profile_skips_llm_for_non_target_entities(
+def test_fact_check_warn_profile_adjudicates_non_risk_flagged_entity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Slice 8, item 3: fact-check coverage is universal. An entity that is *not* in the risk set
+    (no manual-link / coalescing flag) is still adjudicated; the risk set only records reasons."""
     payload = _validation_ready_zone_page_payload()
     settings = SimpleNamespace(
         openai_ready=True,
@@ -1123,12 +1161,21 @@ def test_fact_check_warn_profile_skips_llm_for_non_target_entities(
         validation_context={
             "fact_check_profile": "warn",
             "fact_check_enable_llm": True,
+            # Risk set names a different entity — this page is not risk-flagged.
             "fact_check_target_entity_ids": ["zone-other"],
+            "fact_check_source_snapshots": [
+                {
+                    "source_id": "src-wiki-wpl",
+                    "url": "https://example.test/wpl",
+                    "body": "Western Plaguelands remains contested across campaign fronts.",
+                }
+            ],
         },
     )
     assert report.fact_check_report is not None
-    assert llm_calls["count"] == 0
-    assert report.fact_check_report["targeted_for_adjudication"] is False
+    assert report.fact_check_report["targeted_for_adjudication"] is True
+    assert report.fact_check_report["risk_flagged"] is False
+    assert llm_calls["count"] > 0
 
 
 def test_similarity_warns_on_high_token_overlap_with_ingest_body() -> None:

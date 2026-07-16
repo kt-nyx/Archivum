@@ -9,9 +9,7 @@ from urllib.parse import unquote
 
 from pipeline.contracts.models import LocationType
 from pipeline.discovery.entity_typing import (
-    location_is_offzone,
     normalize_title,
-    should_reject_location_title,
 )
 from pipeline.generate.draft.temporal import strict_generation_category_signal
 
@@ -170,6 +168,10 @@ class LocationCandidate:
     # Empty until the Slice 12 re-crawl; the type/significance precedence skips a missing infobox.
     infobox: dict[str, Any] = field(default_factory=dict)
     significance_tag: str = "major_location"
+    # Set from Slice 1's entity-kind decision artifact. Unknown is deliberately
+    # non-renderable: source-section context and a title cannot promote it.
+    entity_kind: str = "unknown"
+    entity_kind_decision_id: str = ""
 
 
 def _normalize_role(section_role: str) -> str:
@@ -237,20 +239,14 @@ def location_zone_relevant(
 def _profile_items_for_location(
     location_pool: list[dict[str, Any]],
     location_id: str,
-    name: str,
+    profile_source_id: str,
 ) -> list[dict[str, Any]]:
-    scoped = [
-        item
-        for item in location_pool
-        if str(item.get("location_id", "")).strip() == location_id and location_id
-    ]
-    if scoped:
-        return scoped
+    """Return only evidence whose recorded subject and source match the selected place."""
     return [
         item
         for item in location_pool
-        if _name_in_text(name, str(item.get("source_title", "")))
-        or _name_in_text(name, str(item.get("snippet", "")))
+        if str(item.get("location_id", "")).strip() == location_id
+        and str(item.get("source_id", "")).strip() == profile_source_id
     ]
 
 
@@ -277,141 +273,63 @@ def collect_location_candidates(
     *,
     zone_id: str,
     zone_name: str,
-    location_rows: list[dict[str, Any]],
-    location_candidate_map: dict[str, dict[str, Any]],
-    location_decision_map: dict[str, dict[str, Any]],
+    location_selection_decisions: list[dict[str, Any]],
     pools: dict[str, list[dict[str, Any]]],
-    location_profile_targets: list[dict[str, Any]] | None = None,
 ) -> list[LocationCandidate]:
     location_pool = pools.get("location_pool") or []
     location_seed_pool = pools.get("location_seed_pool") or []
-    subregion_tokens = extract_subregion_tokens(location_seed_pool, zone_name=zone_name)
-
-    by_id: dict[str, LocationCandidate] = {}
-
-    def _ensure_candidate(
-        location_id: str,
-        name: str,
-        *,
-        source_link: str = "",
-        classification: str = "major_location_candidate",
-        source_section_role: str = "other",
-    ) -> LocationCandidate:
-        if location_id not in by_id:
-            candidate_map_row = location_candidate_map.get(location_id, {})
-            link = source_link or str(candidate_map_row.get("source_link", "")).strip()
-            by_id[location_id] = LocationCandidate(
-                location_id=location_id,
-                name=name,
-                wiki_url=_wiki_url_from_link(link) if link else _wiki_url_from_link(name),
-                classification=classification,
-                source_section_role=source_section_role,
-                lore_significant=bool(candidate_map_row.get("lore_significant", False)),
-                categories=[
-                    str(category)
-                    for category in (candidate_map_row.get("categories") or [])
-                    if str(category).strip()
-                ],
-                infobox=dict(candidate_map_row.get("infobox") or {}),
-            )
-        else:
-            row = by_id[location_id]
-            if not row.classification:
-                row.classification = classification
-            if source_section_role != "other":
-                row.source_section_role = source_section_role
-        return by_id[location_id]
-
-    for row in location_rows:
+    candidates: list[LocationCandidate] = []
+    for row in location_selection_decisions:
         if str(row.get("zone_id", "")).strip() != zone_id:
             continue
+        if str(row.get("state", "")).strip() != "selected":
+            continue
         location_id = str(row.get("location_id", "")).strip()
-        if not location_id:
+        profile_source_id = str(row.get("profile_source_id", "")).strip()
+        name = str(row.get("name", "")).strip()
+        if (
+            not location_id
+            or not profile_source_id
+            or not name
+            or str(row.get("entity_kind", "")).strip() != "place"
+            or str(row.get("zone_record", "")).strip() != "on_zone"
+        ):
             continue
-        classification = str(row.get("classification", "")).strip()
-        if classification == "reject" or classification not in _INCLUDE_CLASSIFICATIONS:
-            continue
-        typing = row.get("typing_signals") or {}
-        source_section_role = str(
-            typing.get("source_section_role", row.get("source_section_role", "other"))
-        ).strip()
-        candidate = _ensure_candidate(
-            location_id,
-            str(row.get("name", location_id)).strip(),
-            classification=classification,
-            source_section_role=source_section_role,
+        candidate = LocationCandidate(
+            location_id=location_id,
+            name=name,
+            wiki_url=_wiki_url_from_link(str(row.get("source_link", ""))),
+            classification="direct_profile",
+            source_section_role=str(row.get("source_relation", "other")),
+            categories=[str(category) for category in row.get("categories", []) if str(category).strip()],
+            infobox={
+                str(key): str(value)
+                for key, value in (row.get("infobox") or {}).items()
+                if str(key).strip() and str(value).strip()
+            },
+            entity_kind="place",
+            entity_kind_decision_id=str(row.get("entity_kind_decision_id", "")),
+            decision="include",
+            zone_relevant=True,
         )
-        candidate_map_row = location_candidate_map.get(location_id, {})
-        link = str(candidate_map_row.get("source_link", "")).strip()
-        if link:
-            candidate.wiki_url = _wiki_url_from_link(link)
-
-    for target in location_profile_targets or []:
-        if str(target.get("zone_id", "")).strip() != zone_id:
-            continue
-        location_id = str(target.get("location_id", "")).strip()
-        name = str(target.get("name", "")).strip()
-        if not location_id or not name:
-            continue
-        _ensure_candidate(
-            location_id,
-            name,
-            source_link=str(target.get("source_link", "")).strip(),
-            source_section_role=str(target.get("source_section_role", "other")).strip(),
-        )
-
-    for item in location_pool:
-        location_id = str(item.get("location_id", "")).strip()
-        if not location_id:
-            continue
-        name = str(item.get("location_name", "")).strip() or location_id
-        _ensure_candidate(location_id, name)
-
-    for location_id, candidate in by_id.items():
-        decision_row = location_decision_map.get(location_id, {})
-        candidate.decision = str(decision_row.get("final_decision", "defer")).strip() or "defer"
-        reject, reasons = should_reject_location_title(
-            candidate.name,
-            zone_name=zone_name,
-            source_section_role=candidate.source_section_role,
-        )
-        if reject:
-            candidate.rejected = True
-            candidate.reject_reasons = reasons
-            continue
-        # Zone-of-record gate: a place linked from this zone's prose but tagged to a *different*
-        # zone's subzone category (e.g. Strahnbrad -> Hillsbrad Foothills) is an off-zone mention,
-        # not one of this zone's locations. The location page's own categories are only known
-        # post-fetch (joined onto the candidate in draft_writer), so this is the first stage that can
-        # see them.
-        if location_is_offzone(candidate.categories, zone_id):
-            candidate.rejected = True
-            candidate.reject_reasons = ["offzone_subzone_category"]
-            continue
         candidate.profile_items = _profile_items_for_location(
-            location_pool, location_id, candidate.name
+            location_pool, location_id, profile_source_id
         )
+        # A seed-page mention is relational support only. It cannot replace or supplement the
+        # selected page as the primary card-evidence pool.
         candidate.seed_mentions = _seed_mentions_for_location(candidate.name, location_seed_pool)
-        evidence_text = " ".join(
-            str(item.get("snippet", ""))
-            for item in candidate.profile_items + candidate.seed_mentions
-        )
+        if not candidate.profile_items:
+            candidate.rejected = True
+            candidate.reject_reasons = ["direct_profile_identity_mismatch"]
+            continue
         category_signal = strict_generation_category_signal(candidate.categories)
         if category_signal.disposition in {"strong_drop", "soft_drop"}:
             candidate.rejected = True
             candidate.reject_reasons = list(category_signal.reasons) or [
                 "strict_generation_category_exclusion"
             ]
-            continue
-        # significance_tag is finalized at card-build time from structured signals + the LLM's
-        # own classification (Slice 10); the selection-time default stands until then.
-        candidate.zone_relevant = location_zone_relevant(
-            evidence_text,
-            zone_name=zone_name,
-            subregion_tokens=subregion_tokens,
-        )
-
-    return list(by_id.values())
+        candidates.append(candidate)
+    return candidates
 
 
 def score_location_candidate(candidate: LocationCandidate) -> LocationCandidate:
@@ -453,11 +371,7 @@ def score_location_candidate(candidate: LocationCandidate) -> LocationCandidate:
         score += 2.0
 
     candidate.lede_only = _is_lede_only_profile(candidate)
-    if candidate.lede_only and not candidate.seed_mentions:
-        candidate.score = 0.0
-        return candidate
-
-    if not candidate.zone_relevant and not candidate.seed_mentions:
+    if not candidate.zone_relevant:
         candidate.score = 0.0
         return candidate
 
@@ -496,17 +410,13 @@ def _lore_significant_pool(candidates: list[LocationCandidate]) -> list[Location
 def _candidate_is_finalize_eligible(candidate: LocationCandidate) -> bool:
     if candidate.rejected or candidate.decision != "include":
         return False
-    if candidate.lede_only and not candidate.seed_mentions:
-        return False
-    if not candidate.zone_relevant and not candidate.seed_mentions and not candidate.profile_items:
+    if not candidate.zone_relevant or not candidate.profile_items:
         return False
     return candidate.score > 0 or bool(candidate.profile_items or candidate.seed_mentions)
 
 
 def _is_electable(candidate: LocationCandidate) -> bool:
     if candidate.rejected or candidate.decision != "include":
-        return False
-    if candidate.lede_only and not candidate.seed_mentions:
         return False
     return candidate.score >= MIN_SCORE
 
@@ -580,11 +490,6 @@ def _suppress_contained_locations(
 
 def select_location_cards(candidates: list[LocationCandidate]) -> list[LocationCandidate]:
     ranked = rank_location_candidates(candidates)
-    # When the zone's lore narrative names enough landmarks, those ARE the location cards — the
-    # maps/travel gazetteer (farms, lakes, travel hubs) is gameplay chrome, not compendium content.
-    lore = _lore_significant_pool(ranked)
-    if len(lore) >= MIN_LOCATION_CARDS:
-        return _suppress_contained_locations(lore[:MAX_LOCATION_CARDS])
     eligible = [candidate for candidate in ranked if _is_electable(candidate)]
     if not eligible:
         thin = [candidate for candidate in ranked if _candidate_is_finalize_eligible(candidate)]
@@ -597,9 +502,6 @@ def candidates_for_finalize(
 ) -> tuple[int, list[LocationCandidate]]:
     ranked = rank_location_candidates(candidates)
     target_count = len(select_location_cards(candidates))
-    lore = _lore_significant_pool(ranked)
-    if len(lore) >= MIN_LOCATION_CARDS:
-        return target_count, _suppress_contained_locations(lore)
     has_eligible = any(_is_electable(candidate) for candidate in ranked)
     if has_eligible:
         queue = [candidate for candidate in ranked if _is_electable(candidate)]
@@ -609,14 +511,9 @@ def candidates_for_finalize(
 
 
 def finalize_evidence_pools(candidate: LocationCandidate) -> list[list[dict[str, Any]]]:
-    pools: list[list[dict[str, Any]]] = []
-    if candidate.profile_items:
-        pools.append(candidate.profile_items)
-    if candidate.seed_mentions and (
-        not candidate.profile_items or candidate.seed_mentions != candidate.profile_items
-    ):
-        pools.append(candidate.seed_mentions)
-    return pools
+    # The selected target page owns primary card evidence.  Zone-page mentions can
+    # document a directed relation, but cannot become a fallback description.
+    return [candidate.profile_items] if candidate.profile_items else []
 
 
 def _decision_reason_codes(

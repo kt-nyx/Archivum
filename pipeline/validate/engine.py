@@ -12,6 +12,7 @@ from pipeline.validate.rules.budget import validate_budget_rules
 from pipeline.validate.rules.fact_check import validate_fact_check_rules
 from pipeline.validate.rules.provenance import validate_provenance_rules
 from pipeline.validate.rules.questline_promotion import validate_questline_promotion_rules
+from pipeline.validate.rules.release_gate import validate_release_gate_rules
 from pipeline.validate.rules.similarity import validate_similarity_rules
 from pipeline.validate.rules.structure import validate_structural_rules
 from pipeline.validate.types import ValidationIssue, ValidationReport, ValidationSeverity
@@ -87,6 +88,11 @@ def validate_payload(
     )
     issues.extend(
         validate_questline_promotion_rules(
+            entity_type, parsed_entity, validation_context=dict(validation_context or {})
+        )
+    )
+    issues.extend(
+        validate_release_gate_rules(
             entity_type, parsed_entity, validation_context=dict(validation_context or {})
         )
     )

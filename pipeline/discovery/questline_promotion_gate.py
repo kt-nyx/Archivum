@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from pipeline.discovery.questline_anchor import ENTRY_QUEST_TITLE_KEYWORDS
-from pipeline.discovery.questline_significance import load_included_cluster_ids_by_zone
+from pipeline.discovery.questline_card_polish import load_questline_card_metadata
+from pipeline.discovery.questline_significance import selected_candidate_ids_by_zone
 
 _MAX_CHAIN_REFS = 12
 
@@ -43,18 +44,20 @@ def load_questline_run_artifacts(run_root: Path, zone_id: str) -> QuestlineRunAr
         cards = [row for row in draft.get("major_questlines", []) if isinstance(row, dict)]
 
     included_cluster_ids: list[str] = []
-    rankings = _load_json(run_root / "data" / "discovery" / "zone_quest_cluster_rankings.json")
-    if isinstance(rankings, list):
-        included_cluster_ids = load_included_cluster_ids_by_zone(rankings).get(zone_id, [])
+    selection_path = run_root / "data" / "discovery" / "questline_arc_selection.json"
+    if selection_path.exists():
+        included_cluster_ids = selected_candidate_ids_by_zone(selection_path).get(zone_id, [])
 
-    metadata_by_cluster: dict[str, dict[str, Any]] = {}
-    metadata = _load_json(run_root / "data" / "discovery" / "zone_questline_card_metadata.json")
-    if isinstance(metadata, list):
-        for row in metadata:
-            if isinstance(row, dict) and str(row.get("zone_id", "")).strip() == zone_id:
-                cluster_id = str(row.get("cluster_id", "")).strip()
-                if cluster_id:
-                    metadata_by_cluster[cluster_id] = row
+    metadata_path = run_root / "data" / "discovery" / "zone_questline_card_metadata.json"
+    metadata_by_cluster = (
+        {
+            cluster_id: row
+            for cluster_id, row in load_questline_card_metadata(metadata_path).items()
+            if str(row.get("zone_id", "")).strip() == zone_id
+        }
+        if metadata_path.exists()
+        else {}
+    )
 
     excluded_cluster_ids: set[str] = set()
     decisions = _load_json(run_root / "data" / "decisions" / "questline_inclusion_decisions.json")
@@ -120,6 +123,9 @@ def check_questline_promotion(
         rows.sort(key=lambda row: int(row.get("order_in_cluster", 0) or 0))
 
     emitted_clusters: set[str] = set()
+    for cluster_id in artifacts.included_cluster_ids:
+        if cluster_id not in artifacts.metadata_by_cluster:
+            errors.append(f"included cluster {cluster_id!r} has no questline metadata")
     for index, card in enumerate(cards):
         card_id = str(card.get("id", "")).strip()
         title = str(card.get("title", "")).strip() or f"card[{index}]"
@@ -141,7 +147,12 @@ def check_questline_promotion(
         expected_id = str(metadata.get("card_id", "")).strip()
         if expected_id and card_id != expected_id and not card_id.startswith(f"{expected_id}-segment-"):
             errors.append(f"questline card {card_id!r} does not derive from metadata for {cluster_id!r}")
-        expected_refs = [str(value).strip() for value in metadata.get("ordered_chain_refs", [])]
+        expected_refs = [
+            str(value).strip()
+            for value in metadata.get("chain_refs", []) + metadata.get("overflow_chain_refs", [])
+        ]
+        if metadata and not expected_refs:
+            errors.append(f"questline metadata for {cluster_id!r} has no chain_refs")
         if expected_refs and any(str(ref).strip() not in expected_refs for ref in chain_refs):
             errors.append(f"questline card {card_id!r} contains a chain ref outside its cluster")
         rows = rows_by_cluster.get(cluster_id, [])
@@ -161,7 +172,7 @@ def check_questline_promotion(
                 f"major_questlines cluster mapping (got {sorted(emitted_clusters)}, expected {sorted(expected)})"
             )
     elif require_rankings:
-        errors.append("zone_quest_cluster_rankings missing or has no included clusters for zone")
+        errors.append("questline_arc_selection missing or has no selected arc candidates for zone")
 
     if require_evidence_coverage and artifacts.included_cluster_ids:
         missing = set(artifacts.included_cluster_ids) - set(covered_cluster_ids or set())

@@ -43,6 +43,21 @@ def test_run_prefix_fails_before_creating_a_folder_without_manifest(
     assert not list(runs_root.iterdir())
 
 
+def test_run_prefix_can_seed_a_new_family_from_a_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _runner_module()
+    runs_root = tmp_path / "runs"
+    seed_manifest = tmp_path / "westfall_manifest.json"
+    seed_manifest.write_text("westfall", encoding="utf-8")
+    monkeypatch.setenv("WOW_LORE_ARTIFACTS_ROOT", str(runs_root))
+
+    assert runner.prepare_next_run("test-run-westfall", seed_manifest=seed_manifest) == "test-run-westfall-1"
+    assert (
+        runs_root / "test-run-westfall-1" / "source_manifest.json"
+    ).read_text(encoding="utf-8") == "westfall"
+
+
 def test_run_prefix_rejects_a_numbered_name() -> None:
     runner = _runner_module()
     with pytest.raises(RuntimeError, match="must not end with a number"):

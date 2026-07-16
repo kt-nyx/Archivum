@@ -7,11 +7,7 @@ import json
 import pytest
 
 from pipeline.common import retail
-from pipeline.discovery.instance_bosses import (
-    BossCandidate,
-    prefilter_character_pool,
-    should_reject_boss_title,
-)
+from pipeline.discovery.instance_bosses import BossCandidate, prefilter_character_pool
 from pipeline.discovery.workflow import _classify_retail_eligibility
 from pipeline.ingest import fetch_wiki, traverse_wiki
 
@@ -32,15 +28,7 @@ def test_is_non_retail_title_parenthetical() -> None:
     assert not retail.is_non_retail_title("Darkmaster Gandling")
 
 
-def test_should_reject_boss_title_drops_classic_parenthetical() -> None:
-    assert should_reject_boss_title("Scholomance (Classic)")
-    # Clean-href Classic NPCs are NOT rejected here (handled by the exclusion set), so the
-    # structural filter stays general and never hardcodes named entities.
-    assert not should_reject_boss_title("Ravenian")
-    assert not should_reject_boss_title("Lord Alexei Barov")
-
-
-def test_prefilter_character_pool_applies_exclusion_set() -> None:
+def test_prefilter_character_pool_applies_explicit_exclusion_set() -> None:
     pool = [
         BossCandidate(
             boss_id="character-ravenian",
@@ -56,7 +44,7 @@ def test_prefilter_character_pool_applies_exclusion_set() -> None:
         ),
     ]
     filtered = prefilter_character_pool(
-        pool, instance_name="Scholomance", excluded_normalized_names={"ravenian"}
+        pool, instance_name="Example Vault", excluded_normalized_names={"ravenian"}
     )
     assert [c.name for c in filtered] == ["Darkmaster Gandling"]
 
@@ -111,13 +99,14 @@ def test_fetch_categories_for_titles_resolves_and_strips(monkeypatch: pytest.Mon
     assert not retail.is_classic_categorized(result["darkmaster gandling"])
 
 
-def test_retail_eligibility_records_confirmed_non_retail_and_unresolved_candidates(
+def test_participant_evidence_records_separate_kind_presence_and_retail_facts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     instance = {
-        "entity_id": "instance-scholomance",
+        "entity_id": "instance-example-vault",
         "entity_type": "instance",
-        "name": "Scholomance",
+        "name": "Example Vault",
+        "source_id": "src-example-vault",
         "auxiliary_role": "",
         "section_blocks": [
             {
@@ -138,26 +127,29 @@ def test_retail_eligibility_records_confirmed_non_retail_and_unresolved_candidat
 
     def fake_categories(titles: object, **kwargs: object) -> dict[str, list[str]]:
         return {
-            "ravenian": ["Scholomance bosses", "Removed creatures"],
-            "darkmaster gandling": ["Scholomance bosses"],
+                "ravenian": ["Example bosses", "Removed creatures", "Characters"],
+                "darkmaster gandling": ["Example bosses", "Characters"],
         }
 
     monkeypatch.setattr(traverse_wiki, "fetch_categories_for_titles", fake_categories)
     report: list[dict[str, object]] = []
-    traverse_wiki._record_instance_character_retail_eligibility([instance], report)
-    records = {row["candidate_name"]: row for row in instance["character_retail_eligibility"]}
-    assert records["ravenian"]["status"] == "non_retail"
-    assert records["darkmaster gandling"]["status"] == "retail_confirmed"
-    assert any(row["status"] == "retail_eligibility_recorded" for row in report)
+    decisions = {}
+    traverse_wiki._record_instance_participant_evidence([instance], report, decisions)
+    records = {row["candidate_name"]: row for row in instance["instance_participant_evidence"]}
+    assert records["Ravenian"]["retail_scope"] == "non_retail"
+    assert records["Darkmaster Gandling"]["retail_scope"] == "retail_confirmed"
+    assert records["Darkmaster Gandling"]["entity_kind"] == "named_actor"
+    assert records["Darkmaster Gandling"]["instance_presence_evidence"]
+    assert any(row["status"] == "instance_participant_evidence_recorded" for row in report)
 
 
-def test_retail_eligibility_no_instances_is_noop() -> None:
+def test_participant_evidence_no_instances_is_noop() -> None:
     report: list[dict[str, object]] = []
-    traverse_wiki._record_instance_character_retail_eligibility([{"entity_type": "zone"}], report)
+    traverse_wiki._record_instance_participant_evidence([{"entity_type": "zone"}], report, {})
     assert report == []
 
 
-def test_retail_eligibility_marks_category_fetch_failure_unresolved(
+def test_participant_evidence_marks_category_fetch_failure_unknown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     instance = {
@@ -166,5 +158,5 @@ def test_retail_eligibility_marks_category_fetch_failure_unresolved(
         "structured_links": [{"href": "/wiki/Example_Boss", "section_role": "bosses", "label": "Example Boss"}],
     }
     monkeypatch.setattr(traverse_wiki, "fetch_categories_for_titles", lambda _titles: (_ for _ in ()).throw(RuntimeError("offline")))
-    traverse_wiki._record_instance_character_retail_eligibility([instance], [])
-    assert instance["character_retail_eligibility"][0]["status"] == "unresolved"
+    traverse_wiki._record_instance_participant_evidence([instance], [], {})
+    assert instance["instance_participant_evidence"][0]["retail_scope"] == "unknown"
