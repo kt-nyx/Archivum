@@ -12,7 +12,7 @@ from pipeline.generate.draft.prose_lint import lint_adp_date_style, split_senten
 
 MAX_CTA_HOOK_WORDS = 36
 _TRAILING_FRAGMENT_RE = re.compile(
-    r"\b(and|or|but|with|for|to|the|a|an|in|on|at|of)\.?$", re.IGNORECASE
+    r"\b(and|or|but|with|for|to|the|a|an|in|on|at|of|before)\.?$", re.IGNORECASE
 )
 # A token-chop can land on a possessive/content word ("the Warchief's") that the stop-word
 # list above misses; flag a trailing possessive with no following noun as truncated too.
@@ -89,7 +89,7 @@ def finalize_cta_hook(text: str, *, max_words: int = MAX_CTA_HOOK_WORDS) -> str:
 
 def _repair_tail(text: str) -> str:
     """Drop a dangling trailing function word and ensure terminal sentence punctuation."""
-    cleaned = _TRAILING_FRAGMENT_RE.sub(".", text.strip()).strip()
+    cleaned = _TRAILING_FRAGMENT_RE.sub("", text.strip()).rstrip()
     if cleaned and cleaned[-1] not in ".?!":
         cleaned = f"{cleaned}."
     return cleaned

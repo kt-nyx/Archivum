@@ -381,6 +381,8 @@ def test_finalized_cta_is_a_single_complete_clause() -> None:
 def test_cta_lint_flags_malformed_and_truncated_clauses() -> None:
     # Adversarial: a dangling trailing function word.
     assert lint_cta_hook("Rally the wardens and secure the") != []
+    # Adversarial: a dangling subordinating tail that should be treated as truncated.
+    assert lint_cta_hook("Rally the wardens before.") != []
     # Adversarial: a malformed conjunction join.
     assert lint_cta_hook("Rally the wardens and and secure the fire.") != []
     # Adversarial: multiple sentences where one complete clause is required.

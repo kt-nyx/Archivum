@@ -27,6 +27,7 @@ def test_lint_cta_hook_accepts_imperative_clause() -> None:
         ("Across the ruined bridge.", "finite predicate or imperative"),
         ("Rally the wardens -.", "malformed join"),
         ("Answer the call to, where the threat gathers.", "mid-sentence gap"),
+        ("Rally the wardens before.", "truncated"),
     ],
 )
 def test_lint_cta_hook_rejects_incomplete_or_malformed_final_clause(hook: str, reason: str) -> None:
@@ -51,6 +52,12 @@ def test_finalize_cta_hook_trims_to_complete_sentence() -> None:
     out = finalize_cta_hook(hook, max_words=12)
     assert out.endswith((".", "!", "?"))
     assert not out.rstrip(".").endswith("captain's")
+    assert lint_cta_hook(out) == []
+
+
+def test_finalize_cta_hook_repairs_dangling_before_tail() -> None:
+    out = finalize_cta_hook("Rally the wardens before.")
+    assert out == "Rally the wardens."
     assert lint_cta_hook(out) == []
 
 
