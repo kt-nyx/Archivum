@@ -1,8 +1,8 @@
 ## Interface: 110200
-## Title: Lore Companion
+## Title: Archivum
 ## Notes: Retail wiki-first lore reference
-## Author: Lore Companion
+## Author: kt-nyx
 ## Version: 0.1.0
-## SavedVariables: LoreCompanionDB
+## SavedVariables: ArchivumDB
 
 Core.lua

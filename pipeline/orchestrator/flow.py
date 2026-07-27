@@ -82,7 +82,7 @@ def _run_stage_with_retry[T](
         )
         if verbose:
             print(
-                f"[lore-pipeline] run_id={run_id} stage={stage_name} attempt={attempt} starting...",
+                f"[archivum-pipeline] run_id={run_id} stage={stage_name} attempt={attempt} starting...",
                 file=sys.stderr,
                 flush=True,
             )
@@ -108,7 +108,7 @@ def _run_stage_with_retry[T](
         )
         if verbose:
             print(
-                f"[lore-pipeline] run_id={run_id} stage={stage_name} attempt={attempt} "
+                f"[archivum-pipeline] run_id={run_id} stage={stage_name} attempt={attempt} "
                 f"done duration_ms={duration_ms}",
                 file=sys.stderr,
                 flush=True,
@@ -118,7 +118,7 @@ def _run_stage_with_retry[T](
     return _stage_task()
 
 
-@flow(name="lore-pipeline-ingest-to-validate", log_prints=True)
+@flow(name="archivum-pipeline-ingest-to-validate", log_prints=True)
 def run_pipeline_flow(
     *,
     run_id: str | None = None,

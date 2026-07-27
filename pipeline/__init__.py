@@ -1,1 +1,1 @@
-"""Pipeline package root for WoW Lore Companion."""
+"""Pipeline package root for Archivum."""

@@ -5,6 +5,11 @@
 .github/
 Reference/
 
+# Local-only companion repository. Keep both names ignored so the private
+# workflow can never be staged during or after the Archivum rename.
+/archivum-workflow/
+/lore-workflow/
+
 # Cache folders
 __pycache__/
 .cache/

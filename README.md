@@ -1,6 +1,10 @@
-# WoW Lore Companion
+# Archivum
 
-Retail-focused wiki-first repository for building deterministic lore discovery artifacts and compiling zone/instance pages for the WoW addon runtime.
+Archivum is a World of Warcraft lore addon and its supporting authoring pipeline.
+
+This public repository contains the in-game addon, deterministic wiki-first discovery and
+authoring pipeline, schemas, validation rules, and tests used to compile zone and instance pages.
+Personal development orchestration and generated run artifacts are intentionally excluded.
 
 ## Branch and release model
 
@@ -25,13 +29,12 @@ Detailed policy lives in `docs/process/release_model.md`.
 - `tests/` - test suites and fixtures.
 - `docs/legal/` - legal and attribution documentation.
 - `artifacts/` - run/build evidence bundles and manifests.
-- `.github/workflows/` - CI workflow definitions.
 
 ## Local bootstrap
 
 1. Install dependencies and create a virtual environment:
    - `uv sync --group dev`
-2. Optional: copy `.env.example` to `.env` in the repo root and set API keys. On first `load_ai_settings()` (for example via `lore-pipeline health`), variables from `.env` are merged into the process environment; values already set in the shell or container take precedence over the file.
+2. Optional: copy `.env.example` to `.env` in the repo root and set API keys. On first `load_ai_settings()` (for example via `archivum-pipeline health`), variables from `.env` are merged into the process environment; values already set in the shell or container take precedence over the file.
 3. Run baseline checks:
    - `uv run ruff check .`
    - `uv run mypy pipeline`
@@ -39,10 +42,10 @@ Detailed policy lives in `docs/process/release_model.md`.
 
 ## Baseline CLI
 
-- `uv run lore-pipeline --help`
-- `uv run lore-pipeline health`
-- `uv run lore-pipeline ingest`
-- `uv run lore-pipeline run --fact-check-profile warn`
+- `uv run archivum-pipeline --help`
+- `uv run archivum-pipeline health`
+- `uv run archivum-pipeline ingest`
+- `uv run archivum-pipeline run --fact-check-profile warn`
 
 ### Manifest prerequisite (MP3)
 
@@ -56,8 +59,8 @@ Minimal local flow:
    - `uv run python -c "from pipeline.common.run_context import ensure_run_context; c=ensure_run_context('run-local-mp3'); print(c.root_dir)"`
    - Copy or author `<run_root>/source_manifest.json` (see `tests/fixtures/pilot/source_manifest.json` for shape).
 2. Execute pipeline against that run id:
-   - `uv run lore-pipeline ingest --run-id run-local-mp3`
-   - `uv run lore-pipeline run --run-id run-local-mp3 --fact-check-profile warn`
+   - `uv run archivum-pipeline ingest --run-id run-local-mp3`
+   - `uv run archivum-pipeline run --run-id run-local-mp3 --fact-check-profile warn`
 
 ### Generalization acceptance
 
@@ -96,8 +99,8 @@ End-to-end run now includes discovery-first artifacts before writing:
 
 Additional stage commands:
 
-- `uv run lore-pipeline discovery --run-id <run_id>`
-- `uv run lore-pipeline addon-bundle --run-id <run_id>`
+- `uv run archivum-pipeline discovery --run-id <run_id>`
+- `uv run archivum-pipeline addon-bundle --run-id <run_id>`
 
 Optional external fact-check uses Google Custom Search and OpenAI adjudication.
 
@@ -116,7 +119,7 @@ Global provider defaults for AI-enabled stages (set in the environment or in a r
 - `WOW_LORE_DRAFT_MAX_QUESTLINES_PER_BUCKET`, `WOW_LORE_DRAFT_MAX_STORY_BEATS`, `WOW_LORE_DRAFT_MAX_LINK_CARDS`, `WOW_LORE_DRAFT_MAX_GLOSSARY_TERMS` — post-LLM output caps.
 - `WOW_LORE_DOTENV` — set to `0` / `false` / `no` / `off` to skip loading `.env` (tests default to skipping `.env` unless you export `WOW_LORE_DOTENV=1`)
 
-Use **`uv run lore-pipeline run ... --verbose`** (or **`-v`**) to print each pipeline stage (and draft substep) start/finish to stderr while Prefect runs.
+Use **`uv run archivum-pipeline run ... --verbose`** (or **`-v`**) to print each pipeline stage (and draft substep) start/finish to stderr while Prefect runs.
 
 **Staged draft flow (zone / sub-zone):** fact pack → structure plan (`_plans/`) → parallel prose / questline / links workers → stitch → canonical JSON + `draft_llm_trace.jsonl`.
 
@@ -130,7 +133,7 @@ Use **`uv run lore-pipeline run ... --verbose`** (or **`-v`**) to print each pip
 
 Example:
 
-- `uv run lore-pipeline health --json-output`
-- `uv run lore-pipeline run --fact-check-profile warn --fact-check-web-search`
-- `uv run lore-pipeline run --fact-check-profile strict --fact-check-web-search`
-- `uv run lore-pipeline run --run-id my-run --fact-check-profile off -v`
+- `uv run archivum-pipeline health --json-output`
+- `uv run archivum-pipeline run --fact-check-profile warn --fact-check-web-search`
+- `uv run archivum-pipeline run --fact-check-profile strict --fact-check-web-search`
+- `uv run archivum-pipeline run --run-id my-run --fact-check-profile off -v`

@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "wow-lore-companion"
+name = "archivum"
 version = "0.1.0"
-description = "Foundational toolchain and scaffolding for WoW Lore Companion"
+description = "Foundational toolchain and scaffolding for Archivum"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -40,7 +40,7 @@ dev = [
 ]
 
 [project.scripts]
-lore-pipeline = "pipeline.cli:main"
+archivum-pipeline = "pipeline.cli:main"
 
 [tool.pytest.ini_options]
 minversion = "8.0"
@@ -49,6 +49,9 @@ addopts = "-q"
 
 [tool.hatch.build.targets.wheel]
 packages = ["pipeline"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel.force-include]
 "pipeline/data" = "pipeline/data"

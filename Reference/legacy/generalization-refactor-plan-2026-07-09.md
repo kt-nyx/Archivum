@@ -313,7 +313,7 @@ Warcraft/domain semantics into a generic parser.
   subjectless clause head (root or conjoined verb) that is base-form VB or has a base-form
   aux/auxpass spine ("Be warned"), excluding infinitival (`to`) and modal-bearing fragments
   ("Can be found in..." — imperatives never take modals).
-- Diagnostics: `describe()` + CLI `lore-pipeline debug-linguistics "<text>"` print model pins,
+- Diagnostics: `describe()` + CLI `archivum-pipeline debug-linguistics "<text>"` print model pins,
   sentence spans, per-token features, tense profile, and content lemmas.
 - Tests (`tests/test_linguistics.py`, real model, no fixtures/skips): pin-drift smoke test
   (hard failure; also asserts NER absent), offset/round-trip properties, and feature snapshots

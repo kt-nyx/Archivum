@@ -1,25 +1,25 @@
 local ADDON_NAME = ...
-local LoreCompanion = {}
-_G.LoreCompanion = LoreCompanion
+local Archivum = {}
+_G.Archivum = Archivum
 
-LoreCompanion.state = {
+Archivum.state = {
   currentPageType = "zone",
   currentPageId = nil,
   history = {},
 }
 
 local function ensureFrame()
-  if LoreCompanion.frame then
-    return LoreCompanion.frame
+  if Archivum.frame then
+    return Archivum.frame
   end
-  local frame = CreateFrame("Frame", "LoreCompanionFrame", UIParent, "BasicFrameTemplateWithInset")
+  local frame = CreateFrame("Frame", "ArchivumFrame", UIParent, "BasicFrameTemplateWithInset")
   frame:SetSize(760, 520)
   frame:SetPoint("CENTER")
   frame:Hide()
   frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   frame.title:SetPoint("LEFT", frame.TitleBg, "LEFT", 8, 0)
-  frame.title:SetText("Lore Companion")
-  LoreCompanion.frame = frame
+  frame.title:SetText("Archivum")
+  Archivum.frame = frame
   return frame
 end
 
@@ -37,9 +37,9 @@ local function ensureBodyWidgets(frame)
   frame.back:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 12, 12)
   frame.back:SetText("Back")
   frame.back:SetScript("OnClick", function()
-    local prev = table.remove(LoreCompanion.state.history)
+    local prev = table.remove(Archivum.state.history)
     if prev then
-      LoreCompanion:OpenPage(prev.pageType, prev.pageId, false)
+      Archivum:OpenPage(prev.pageType, prev.pageId, false)
     end
   end)
 
@@ -48,15 +48,15 @@ local function ensureBodyWidgets(frame)
   frame.wiki:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -12, 12)
   frame.wiki:SetText("Wiki Link")
   frame.wiki:SetScript("OnClick", function()
-    if LoreCompanion.state.currentWikiUrl then
-      LoreCompanion:ShowWikiCopyModal(LoreCompanion.state.currentWikiUrl)
+    if Archivum.state.currentWikiUrl then
+      Archivum:ShowWikiCopyModal(Archivum.state.currentWikiUrl)
     end
   end)
 end
 
-function LoreCompanion:ShowWikiCopyModal(url)
+function Archivum:ShowWikiCopyModal(url)
   if not self.copyFrame then
-    local copyFrame = CreateFrame("Frame", "LoreCompanionCopyModal", UIParent, "BasicFrameTemplateWithInset")
+    local copyFrame = CreateFrame("Frame", "ArchivumCopyModal", UIParent, "BasicFrameTemplateWithInset")
     copyFrame:SetSize(560, 140)
     copyFrame:SetPoint("CENTER")
     copyFrame:Hide()
@@ -84,7 +84,7 @@ function LoreCompanion:ShowWikiCopyModal(url)
   self.copyFrame.edit:HighlightText()
 end
 
-function LoreCompanion:OpenPage(pageType, pageId, pushHistory)
+function Archivum:OpenPage(pageType, pageId, pushHistory)
   local frame = ensureFrame()
   ensureBodyWidgets(frame)
   if pushHistory ~= false and self.state.currentPageId then
@@ -96,24 +96,24 @@ function LoreCompanion:OpenPage(pageType, pageId, pushHistory)
   self.state.currentPageType = pageType
   self.state.currentPageId = pageId
   self.state.currentWikiUrl = "https://warcraft.wiki.gg/wiki/" .. (pageId or "")
-  frame.title:SetText("Lore Companion - " .. (pageType or "page"))
+  frame.title:SetText("Archivum - " .. (pageType or "page"))
   frame.body:SetText("Page: " .. (pageId or "unknown") .. "\n\nData integration hook point.")
   frame:Show()
 end
 
-SLASH_LORECOMPANION1 = "/lorecompanion"
-SLASH_LORECOMPANION2 = "/lore"
-SlashCmdList["LORECOMPANION"] = function(msg)
+SLASH_ARCHIVUM1 = "/archivum"
+SLASH_ARCHIVUM2 = "/lore"
+SlashCmdList["ARCHIVUM"] = function(msg)
   local pageId = msg and msg:match("^%s*(.-)%s*$") or ""
   if pageId == "" then
     local frame = ensureFrame()
     ensureBodyWidgets(frame)
-    LoreCompanion.state.currentPageId = nil
-    LoreCompanion.state.currentWikiUrl = nil
-    frame.title:SetText("Lore Companion")
-    frame.body:SetText("Use /lore <zone-or-instance-id> to open a page.")
+    Archivum.state.currentPageId = nil
+    Archivum.state.currentWikiUrl = nil
+    frame.title:SetText("Archivum")
+    frame.body:SetText("Use /archivum <zone-or-instance-id> to open a page.")
     frame:Show()
     return
   end
-  LoreCompanion:OpenPage("zone", pageId, false)
+  Archivum:OpenPage("zone", pageId, false)
 end

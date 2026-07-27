@@ -25,7 +25,7 @@ from pipeline.orchestrator.stages import (
     run_validate_stage,
 )
 
-app = typer.Typer(help="WoW Lore Companion pipeline CLI.")
+app = typer.Typer(help="Archivum pipeline CLI.")
 
 
 @app.callback()
@@ -392,7 +392,7 @@ def run_all(
 
 
 def main() -> None:
-    """Script entrypoint used by `lore-pipeline`."""
+    """Script entrypoint used by `archivum-pipeline`."""
     app()
 
 

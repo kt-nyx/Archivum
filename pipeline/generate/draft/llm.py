@@ -48,7 +48,7 @@ def draft_chat_json_completion(
         started = time.perf_counter()
         if _VERBOSE and trace is not None:
             print(
-                f"[lore-pipeline] draft entity={trace.entity_id} substep={substep} "
+                f"[archivum-pipeline] draft entity={trace.entity_id} substep={substep} "
                 f"schema={response_schema_name} starting...",
                 file=sys.stderr,
             )
@@ -77,7 +77,7 @@ def draft_chat_json_completion(
             )
             if _VERBOSE:
                 print(
-                    f"[lore-pipeline] draft entity={trace.entity_id} substep={substep} "
+                    f"[archivum-pipeline] draft entity={trace.entity_id} substep={substep} "
                     f"done duration_ms={duration_ms}",
                     file=sys.stderr,
                 )
@@ -87,7 +87,7 @@ def draft_chat_json_completion(
     started = time.perf_counter()
     if _VERBOSE and trace is not None:
         print(
-            f"[lore-pipeline] draft entity={trace.entity_id} substep={substep} "
+            f"[archivum-pipeline] draft entity={trace.entity_id} substep={substep} "
             f"schema={response_schema_name} starting...",
             file=sys.stderr,
         )
@@ -115,7 +115,7 @@ def draft_chat_json_completion(
         )
         if _VERBOSE:
             print(
-                f"[lore-pipeline] draft entity={trace.entity_id} substep={substep} "
+                f"[archivum-pipeline] draft entity={trace.entity_id} substep={substep} "
                 f"done duration_ms={duration_ms}",
                 file=sys.stderr,
             )
