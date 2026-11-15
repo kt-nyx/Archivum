@@ -2,7 +2,10 @@
 .agents/
 .claude/
 .codex/
-.github/
+/.github/*
+!/.github/workflows/
+/.github/workflows/*
+!/.github/workflows/pr-fast.yml
 Reference/
 
 # Local-only companion repository. Keep both names ignored so the private
@@ -19,7 +22,8 @@ cache/
 .ruff_cache/
 *.py[cod]
 .venv/
-.vscode
+/.vscode/*
+!/.vscode/run-incrementing-pipeline.py
 
 # Local secrets and overrides (use `.env.example` as the template)
 .env
